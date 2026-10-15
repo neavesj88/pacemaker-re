@@ -106,7 +106,7 @@
 
 <div class="app">
   <header>
-    <div class="brand">Pacemaker <span>Editor</span></div>
+    <div class="brand">Pacemaker <span>Revival</span></div>
     <div class="source">
       {#if volumes.length > 0}
         <select onchange={(e) => load((e.currentTarget as HTMLSelectElement).value)}>

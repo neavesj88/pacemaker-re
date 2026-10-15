@@ -1,4 +1,4 @@
-# Pacemaker Editor (app)
+# Pacemaker Revival (app)
 
 Desktop app for the Pacemaker: Tauri 2 shell (`src-tauri/`) over the workspace crates, with a
 Svelte 5 + TypeScript UI (`src/`).

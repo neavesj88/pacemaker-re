@@ -28,10 +28,10 @@ Every codec is byte-exact against files written by the original Editor. What rem
 device-side details, listed at the end of
 FINDINGS.
 
-## The new Editor (Rust + Tauri, in progress)
+## Pacemaker Revival: the new Editor (Rust + Tauri, in progress)
 
-A cross-platform replacement Editor: a Rust core with a Tauri 2 + Svelte desktop app. Mobile
-is planned.
+**Pacemaker Revival** is the cross-platform replacement for the original Pacemaker Editor: a
+Rust core with a Tauri 2 + Svelte desktop app. Mobile is planned.
 
 | Part | Purpose |
 |---|---|
@@ -39,7 +39,7 @@ is planned.
 | `crates/pm-analysis` | Our own tempo and beat-grid analyser: spectral-flux onsets, autocorrelation tempo candidates with a triplet-alias check, a whole-track locked-grid search with BPM snapping, kick-detector phase placement, and a configurable BPM range (default matches the original Editor). On a 60-track test set: tempo agrees with the original Editor on 55/56, and the kick is within 15 ms of the grid on 37/40. |
 | `crates/pm-cli` | `pm volumes`, `pm ls <volume>`, `pm add <volume> <audio>...` |
 | `crates/pm-bench` | Scores the analyser against BPM tags and the original Editor's beat grids (`pm-bench`, `phase`, `kickcheck`). |
-| `app/` | Desktop app (Tauri 2, Svelte 5). Finds a docked Pacemaker or opens a folder, checks device compatibility, and browses tracks, mixes and cases (read-only for now). |
+| `app/` | Pacemaker Revival desktop app (Tauri 2, Svelte 5). Finds a docked Pacemaker or opens a folder, checks device compatibility, and browses tracks, mixes and cases (read-only for now). |
 
     cargo test --workspace --release
     cargo run --release -p pm-cli -- ls <volume>

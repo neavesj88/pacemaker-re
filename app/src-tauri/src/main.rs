@@ -2,5 +2,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
-    pacemaker_editor_lib::run()
+    pacemaker_revival_lib::run()
 }

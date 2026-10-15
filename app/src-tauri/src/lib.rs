@@ -1,4 +1,4 @@
-//! Pacemaker Editor: Tauri shell over the pm-formats / pm-analysis crates.
+//! Pacemaker Revival: Tauri shell over the pm-formats / pm-analysis crates.
 
 use std::path::PathBuf;
 
