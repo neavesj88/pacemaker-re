@@ -25,7 +25,7 @@ or debug path.
 | Path (relative to volume root) | Source | Notes |
 |---|---|---|
 | `.Pacemaker/music.db` | pmplayer + Editor UTF-32 strings | SQLite 3 library database |
-| `.Pacemaker/Music/` | Editor (`/.Pacemaker/Music/`) | audio files copied by the Editor |
+| `.Pacemaker/Music/A/B/C.ext` | Editor (decompiled) | audio files, hashed two-level fan-out (see below) |
 | `.Pacemaker/mixdocument.xml` | pmplayer | mix document; boost XML (`MixDocument`). The Editor can optionally obfuscate it (`MixDocumentObfuscatorFilter`). |
 | `.Pacemaker/settings.dat` | pmplayer | device settings |
 | `.Pacemaker/system.xml` | pmplayer | product info: SW/FW version, `EDITOR_COMPATIBLE_FLAG` |
@@ -33,11 +33,20 @@ or debug path.
 | `.Pacemaker/tmp/` | `startHdd.sh` | |
 | `.Pacemaker/Licenses/` | pmplayer | |
 | `.PaceMakerDiscId.txt` | Mac Editor | volume identity, location not yet pinned |
-| `.Pacemaker/Music/<hash>.str` | pmplayer (decompiled) | per-track analysis sidecar, see section 4 |
+| `.Pacemaker/Music/A/B/C.str` | pmplayer + Editor (decompiled) | per-track analysis sidecar, see section 4 |
 | `pmdb_tracks/`, `.PDBL.DB`, `.PDDB.DB`, `.PDTL.DB` | Editor | unresolved, probably Editor-side caches |
 
 Device-side mount points: `/mnt/public` (the FAT32 volume) and `/mnt/private/language_setting.dat`.
 SQLite temp files go to `/pmdb` (`PRAGMA temp_store_directory = '/pmdb'`).
+
+**Track naming and `tracks.location`** (Mac Editor `TrackLibrarySyncer::transferTrackToDevice`,
+`createHashedFilePath`, `osal::getEncodedFilePath`, all decompiled). The file is copied to
+`.Pacemaker/Music/A/B/C.<ext>`, where A and B are the last hex digit of two hashes of the file
+size and C is a hash of the original filename stem. `tracks.location` is set to `/pmdb_tracks/` (the
+localised `before_url_device`) + `A/B/C.<ext>`. `/pmdb_tracks` is an empty mount-point directory in
+the device rootfs. `scripts/pmname.py` implements this. Two details are still unconfirmed by a dump:
+the integer is the file size, and the hex is lowercase. The device itself only follows `location`,
+so these matter for interop with libraries written by the original Editor, not for playback.
 
 ## 3. Database schema (verified)
 
@@ -101,10 +110,18 @@ version 0). The members, in order, come from the decompiled `oserializer::save_o
 | `beatStartOffset` | long | |
 | `realBeatLocations` | string | base64 → zlib-inflate → XML whose root has `<beat pos="INT" bpm="DOUBLE"/>` children. `pos` is a frame position divided by the clip's rate ratio on load; the list feeds `TimeStretch::generateBeatVector`. |
 
-`scripts/strfile.py` encodes and decodes this format and round-trips its own output. Still
-inferred and unchecked against an Editor-written file: archive version "4", beat-XML root name
-`beats` (the device accepts any root), and zlib rather than gzip framing (the decoder accepts
-both). One real `.str` from a device settles all three.
+The writer side is now decompiled too (Mac Editor `BpmAnalysis::postProcess`): the root is
+`<beats>`, and the first downbeat carries `firstDownBeat="1"`. **The encoding is
+`juce::MemoryBlock::toBase64Encoding`, not RFC 4648 base64.** It is `<byte count>.` followed by
+6-bit groups packed LSB-first over the alphabet `.A-Za-z0-9+`, confirmed from pmplayer's
+`getBitRange`/`fromBase64Encoding` and the table string in the binary. Compression is JUCE
+`GZIPCompressorOutputStream(noWrap=false)`. `scripts/strfile.py` implements all of this and
+round-trips. Still inferred: boost archive version "4", and zlib framing (the decoder accepts gzip
+too).
+
+`tracks.structured_ct` is the old home of this analysis. The Editor's upgrade path reads
+`location, structured_ct`, writes each value out as `.str` (`moveStructuredContentToFile`), then
+runs `UPDATE tracks SET structured_ct=''`. New writers should leave it empty.
 
 **Mix documents.** `.Pacemaker/mixdocument.xml` and prefab mixes (`.pmk`) are boost XML
 `MixDocument` (class version 1). Prefab/exported mixes are zlib-compressed and then XORed with the

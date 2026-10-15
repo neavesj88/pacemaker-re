@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Headless Ghidra decompilation for targets rea's Windows lane won't admit (ARM ELF, Mach-O).
 # First run per binary imports + auto-analyzes into work/ghidra/<name>.gpr (slow); later runs reuse it.
-# Usage: scripts/ghidra-decompile.sh <binary> <outdir> <name-regex> [callers]
+# Usage: scripts/ghidra-decompile.sh <binary> <outdir> <name-regex> [callers|list]
 set -euo pipefail
 here="$(cd "$(dirname "$0")/.." && pwd)"
 bin="$(cd "$(dirname "$1")" && pwd)/$(basename "$1")"; out="$2"; regex="$3"; mode="${4:-}"

@@ -1,6 +1,6 @@
 // Decompile every function whose namespace-qualified name matches a regex, optionally with
 // its direct callers, writing one .c file per function plus an index.
-// Args: <outdir> <regex-or-@file> [callers]
+// Args: <outdir> <regex-or-@file> [callers|list]
 // The pattern may instead be addr:<hex>[,<hex>...] to select the functions containing those addresses.
 // A regex is passed via @file because analyzeHeadless.bat runs through cmd.exe, which eats '|'.
 //@category pacemaker-re
@@ -26,6 +26,7 @@ public class DecompileMatching extends GhidraScript {
             : args[1];
         Pattern re = Pattern.compile(expr.startsWith("addr:") ? "$^" : expr);
         boolean callers = args.length > 2 && args[2].equals("callers");
+        boolean listOnly = args.length > 2 && args[2].equals("list");
         out.mkdirs();
 
         Set<Function> targets = new LinkedHashSet<>();
@@ -57,6 +58,9 @@ public class DecompileMatching extends GhidraScript {
                 String role = targets.contains(f) ? "match" : "caller";
                 String file = f.getEntryPoint().toString() + ".c";
                 idx.printf("%s %s %s%n", f.getEntryPoint(), role, f.getName(true));
+                if (listOnly) {
+                    continue;
+                }
                 DecompileResults r = di.decompileFunction(f, 120, monitor);
                 try (PrintWriter w = new PrintWriter(new File(out, file), StandardCharsets.UTF_8)) {
                     w.printf("// %s  %s  (%s)%n", f.getEntryPoint(), f.getName(true), role);
