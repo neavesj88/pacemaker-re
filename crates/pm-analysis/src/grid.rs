@@ -28,18 +28,34 @@ impl Grid {
     }
 }
 
-/// Linearly interpolated envelope value at time `t` seconds.
-fn odf_at(env: &Envelope, t: f64) -> f64 {
-    let x = t * env.frames_per_sec();
+/// Linearly interpolated value of an envelope series at time `t` seconds.
+fn series_at(series: &[f32], fps: f64, t: f64) -> f64 {
+    let x = t * fps;
     if x < 0.0 {
         return 0.0;
     }
     let i = x.floor() as usize;
-    if i + 1 >= env.odf.len() {
+    if i + 1 >= series.len() {
         return 0.0;
     }
     let f = x - i as f64;
-    env.odf[i] as f64 * (1.0 - f) + env.odf[i + 1] as f64 * f
+    series[i] as f64 * (1.0 - f) + series[i + 1] as f64 * f
+}
+
+fn odf_at(env: &Envelope, t: f64) -> f64 {
+    series_at(&env.odf, env.frames_per_sec(), t)
+}
+
+/// Mean bass-band (kick) onset strength on a grid.
+fn bass_energy(env: &Envelope, phase: f64, period: f64, duration: f64) -> f64 {
+    let (mut e, mut n) = (0.0, 0usize);
+    let mut t = phase.rem_euclid(period);
+    while t <= duration {
+        e += series_at(&env.bass, env.frames_per_sec(), t);
+        n += 1;
+        t += period;
+    }
+    if n == 0 { 0.0 } else { e / n as f64 }
 }
 
 /// Mean envelope value on the grid lines inside the track.
@@ -71,7 +87,12 @@ pub fn best_phase(env: &Envelope, period: f64, duration: f64, from: f64, to: f64
     (best_e, best_p, sum / n.max(1) as f64)
 }
 
-pub fn lock(env: &Envelope, candidates: &[Candidate], duration: f64, snap: bool) -> Option<Grid> {
+/// Share of the winning grid's energy a faster related tempo (4:3, 3:2, 5:4) needs to take over.
+/// Calibrated with examples/ratiodebug.rs: the real triplet alias (psytrance) measured 1.24;
+/// house and techno false swaps 0.62-0.78; a correct 140 with a 3:2 sibling 0.86.
+const RELATED_TEMPO_SHARE: f64 = 1.0;
+
+pub fn lock(env: &Envelope, candidates: &[Candidate], duration: f64, range_hi: f64, snap: bool) -> Option<Grid> {
     let mut best: Option<(f64, f64, f64, f64)> = None; // (contrast, score, period, phase)
     for c in candidates {
         let p0 = 60.0 / c.bpm;
@@ -87,6 +108,30 @@ pub fn lock(env: &Envelope, candidates: &[Candidate], duration: f64, snap: bool)
     }
     let (contrast, _, mut period, mut phase) = best?;
 
+    // Triplet-alias check: a 3:4 alias of the true tempo can out-score it on triplet basslines
+    // (the alias grid lands on the triplet notes). If a faster related tempo still collects
+    // at least as much energy as the winner, it is the real beat (the winner only won on
+    // autocorrelation strength). Off-beat hats and sixteenths give house a 4:3 grid with
+    // 60-80 % of the energy, so anything lower is left alone.
+    let (e_win, _, _) = best_phase(env, period, duration, 0.0, period, 0.002);
+    let mut swap: Option<(f64, f64, f64)> = None;
+    for ratio in [4.0 / 3.0, 3.0 / 2.0, 5.0 / 4.0] {
+        let p_fast = period / ratio;
+        if 60.0 / p_fast >= range_hi {
+            continue;
+        }
+        for i in -15..=15 {
+            let pb = p_fast * (1.0 + i as f64 * 0.0002);
+            let (e, ph, _) = best_phase(env, pb, duration, 0.0, pb, 0.002);
+            if e >= RELATED_TEMPO_SHARE * e_win && swap.is_none_or(|s| e > s.0) {
+                swap = Some((e, pb, ph));
+            }
+        }
+    }
+    if let Some((_, pb, ph)) = swap {
+        (period, phase) = (pb, ph);
+    }
+
     // fine: period within one coarse step, phase within +-3 ms
     let mut e_best = f64::MIN;
     let p_coarse = period;
@@ -96,6 +141,11 @@ pub fn lock(env: &Envelope, candidates: &[Candidate], duration: f64, snap: bool)
         if e > e_best {
             (e_best, period, phase) = (e, pb, ph);
         }
+    }
+    // Beat vs off-beat: off-beat hats (house) and off-beat bass (psytrance) can outweigh the
+    // kick in the full-band envelope; the beat is where the kick is, so let the bass band decide.
+    if bass_energy(env, phase + period / 2.0, period, duration) > bass_energy(env, phase, period, duration) {
+        phase += period / 2.0;
     }
     let mut grid = Grid { period, phase, contrast, snapped: false };
 
@@ -180,4 +230,31 @@ pub fn downbeat_phase(env: &Envelope, beat_times: &[f64]) -> usize {
         }
     }
     (0..4).max_by(|&a, &b| score[a].partial_cmp(&score[b]).unwrap()).unwrap()
+}
+
+/// Re-express a grid inside the user's BPM range. Halving the tempo keeps every other beat,
+/// choosing the parity with more kick (bass-band) energy; doubling adds lines between beats.
+pub fn fold_to_range(env: &Envelope, g: &Grid, duration: f64, range: crate::tempo::BpmRange) -> Grid {
+    let mut g = g.clone();
+    while g.bpm() >= 2.0 * range.lo {
+        // keep the kick: in drum & bass the snare on the other parity is as loud in full band
+        let a = bass_energy(env, g.phase, 2.0 * g.period, duration);
+        let b = bass_energy(env, g.phase + g.period, 2.0 * g.period, duration);
+        g.phase = if b > a { g.phase + g.period } else { g.phase };
+        g.period *= 2.0;
+    }
+    while g.bpm() < range.lo {
+        g.period /= 2.0;
+    }
+    g
+}
+
+/// Every other beat, starting with whichever of the two parities carries more kick energy.
+pub fn stronger_parity(env: &Envelope, times: &[f64]) -> Vec<f64> {
+    let fps = env.frames_per_sec();
+    let energy = |start: usize| -> f64 {
+        times.iter().skip(start).step_by(2).map(|&t| series_at(&env.bass, fps, t)).sum()
+    };
+    let start = if energy(1) > energy(0) { 1 } else { 0 };
+    times.iter().skip(start).step_by(2).copied().collect()
 }

@@ -21,6 +21,7 @@ const TIGHTNESS: f64 = 100.0;
 /// More than this fraction of tracked beats off the grid also marks the tempo as variable.
 const MAX_OFF_GRID: f64 = 0.6;
 const CANDIDATES: usize = 5;
+const DETECT_RANGE: tempo::BpmRange = tempo::BpmRange { lo: 100.0 };
 /// The centred 2048-sample spectral-flux frame registers an onset this much before the true
 /// attack. Measured as a constant 13.3 ms (+-0.3) across 120-174 BPM and all phases with
 /// examples/latency.rs, and added back to every beat.
@@ -42,13 +43,27 @@ pub struct Result {
     pub tag_bpm: Option<f64>,
 }
 
+/// The original Editor places beats this much later than our analysis does on the same audio:
+/// median 21.9 ms over 25 tracks where both agree on tempo (20.9 ms on files without a LAME
+/// gapless header, 23.1 ms with one, so it is not gapless trimming). Whether it comes from
+/// Tonium's MP3 decoder or its detector can't be separated without the device. Exported beat
+/// positions follow the Editor so mixed libraries line up when the device syncs. Provisional:
+/// refine against a real device.
+pub const DEVICE_OFFSET_SECS: f64 = 0.022;
+
 impl Result {
+    /// Beat positions in the device's convention (see [`DEVICE_OFFSET_SECS`]).
+    pub fn device_beats(&self) -> Vec<i64> {
+        let shift = (DEVICE_OFFSET_SECS * self.sample_rate as f64).round() as i64;
+        self.beats.iter().map(|p| p + shift).collect()
+    }
+
     pub fn to_str_analysis(&self) -> strfile::Analysis {
+        let beats = self.device_beats();
         strfile::Analysis {
             normalize_factor: 1.0,
-            beat_start_offset: self.beats.first().copied().unwrap_or(0),
-            beats: self
-                .beats
+            beat_start_offset: beats.first().copied().unwrap_or(0),
+            beats: beats
                 .iter()
                 .zip(&self.beat_bpm)
                 .map(|(&pos, &bpm)| strfile::Beat { pos, bpm })
@@ -71,8 +86,11 @@ pub fn analyze_with(mono: &[f32], sample_rate: u32, tag_bpm: Option<f64>, range:
     let duration = mono.len() as f64 / sample_rate as f64;
     let env = onset::envelope(mono, sample_rate);
     let fps = env.frames_per_sec();
-    let candidates = tempo::candidates(&env.odf, fps, CANDIDATES, range);
-    let locked = grid::lock(&env, &candidates, duration, true);
+    // Detect in a full-time internal range so drum & bass is ~174 while the triplet-alias
+    // check runs (at 87 its 4:3 sibling, 116, collects real breakbeat energy and wins); the
+    // user's range is applied only to the final result.
+    let candidates = tempo::candidates(&env.odf, fps, CANDIDATES, DETECT_RANGE);
+    let locked = grid::lock(&env, &candidates, duration, 2.0 * DETECT_RANGE.lo, true);
     // the beat tracker runs at the chosen tempo; how far its beats stray from the locked grid
     // decides whether the track really has a constant tempo
     let period_frames = locked.as_ref().map(|g| g.period * fps).unwrap_or(fps * 60.0 / 120.0);
@@ -85,6 +103,7 @@ pub fn analyze_with(mono: &[f32], sample_rate: u32, tag_bpm: Option<f64>, range:
 
     let (beat_times, beat_bpm, bpm, locked, snapped, resid) = match fit {
         Some((g, rms, outside)) if rms <= VARIABLE_TEMPO_MS && outside <= MAX_OFF_GRID => {
+            let g = grid::fold_to_range(&env, &g, duration, range);
             let t = grid::grid_times(&g, duration);
             let n = t.len();
             (t, vec![g.bpm(); n], g.bpm(), true, g.snapped, rms)
@@ -100,7 +119,16 @@ pub fn analyze_with(mono: &[f32], sample_rate: u32, tag_bpm: Option<f64>, range:
                 s.get(s.len() / 2).copied().unwrap_or(0.0)
             };
             let resid = other.map(|(_, rms, _)| rms).unwrap_or(f64::NAN);
-            (times.clone(), bpms, median, false, false, resid)
+            let (mut times, mut bpms, mut median) = (times.clone(), bpms, median);
+            while median >= 2.0 * range.lo && times.len() >= 4 {
+                times = grid::stronger_parity(&env, &times);
+                bpms = times.windows(2).map(|w| 60.0 / (w[1] - w[0])).collect();
+                if let Some(&last) = bpms.last() {
+                    bpms.push(last);
+                }
+                median /= 2.0;
+            }
+            (times, bpms, median, false, false, resid)
         }
     };
     let first_downbeat = (beat_times.len() >= 4).then(|| grid::downbeat_phase(&env, &beat_times));

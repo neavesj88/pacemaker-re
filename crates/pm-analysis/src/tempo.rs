@@ -9,8 +9,12 @@ pub const MIN_BPM: f64 = 60.0;
 pub const MAX_BPM: f64 = 200.0;
 
 /// Preferred tempo window, the analogue of DJ software's "BPM range" setting: candidate
-/// tempos are doubled or halved into [lo, 2 * lo). The default makes drum & bass read as ~174,
-/// not ~87.
+/// tempos are doubled or halved into [lo, 2 * lo).
+///
+/// The default matches the original Editor (observed range 79-150: it folds 158 to 79 and
+/// drum & bass to ~87), because the device syncs tracks by BPM and a library mixing our
+/// analysis with the Editor's must agree. [`BpmRange::DNB_FULL_TIME`] gives the rekordbox-style
+/// reading (drum & bass at ~174).
 #[derive(Debug, Clone, Copy)]
 pub struct BpmRange {
     pub lo: f64,
@@ -18,11 +22,14 @@ pub struct BpmRange {
 
 impl Default for BpmRange {
     fn default() -> Self {
-        BpmRange { lo: 88.0 }
+        Self::EDITOR_COMPATIBLE
     }
 }
 
 impl BpmRange {
+    pub const EDITOR_COMPATIBLE: BpmRange = BpmRange { lo: 78.0 };
+    pub const DNB_FULL_TIME: BpmRange = BpmRange { lo: 88.0 };
+
     pub fn fold(&self, mut bpm: f64) -> f64 {
         while bpm < self.lo {
             bpm *= 2.0;
@@ -90,7 +97,10 @@ mod tests {
 
     #[test]
     fn fold_into_range() {
-        let r = BpmRange::default();
+        assert_eq!(BpmRange::default().fold(174.0), 87.0);
+        assert_eq!(BpmRange::default().fold(158.0), 79.0);
+        assert_eq!(BpmRange::default().fold(150.0), 150.0);
+        let r = BpmRange::DNB_FULL_TIME;
         assert_eq!(r.fold(87.0), 174.0);
         assert_eq!(r.fold(174.0), 174.0);
         assert_eq!(r.fold(256.0), 128.0);

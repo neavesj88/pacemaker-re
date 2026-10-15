@@ -151,7 +151,8 @@ fn main() {
         };
         let secs = t0.elapsed().as_secs_f64();
         let sr = r.sample_rate as f64;
-        let ours: Vec<f64> = r.beats.iter().map(|&p| p as f64 / sr).collect();
+        // compare in the device convention, which is what gets exported
+        let ours: Vec<f64> = r.device_beats().iter().map(|&p| p as f64 / sr).collect();
         let ed = a.editor_str.as_deref().and_then(|d| editor_analysis(d, f));
         let (ed_bpm, fm, off) = match &ed {
             Some(e) => {

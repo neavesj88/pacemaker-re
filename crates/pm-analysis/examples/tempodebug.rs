@@ -22,9 +22,9 @@ fn main() {
         println!("  {b:>5} bpm  energy {e:.4}  contrast {c:.3}");
     }
     let five: Vec<_> = cands.iter().take(5).copied().collect();
-    let g = grid::lock(&env, &five, dur, false).unwrap();
+    let g = grid::lock(&env, &five, dur, 156.0, false).unwrap();
     println!("lock(no snap): {:.4} bpm phase {:.4} contrast {:.3}", g.bpm(), g.phase, g.contrast);
-    let g = grid::lock(&env, &five, dur, true).unwrap();
+    let g = grid::lock(&env, &five, dur, 156.0, true).unwrap();
     println!("lock(snap):    {:.4} bpm phase {:.4} snapped {}", g.bpm(), g.phase, g.snapped);
     let r = pm_analysis::analyze(&d.mono, d.sample_rate, d.tag_bpm);
     println!("analyze: {:.4} locked {} snapped {} residual {:.2}", r.bpm, r.locked_grid, r.snapped, r.residual_ms);
