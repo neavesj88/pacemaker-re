@@ -28,7 +28,20 @@ Every codec is byte-exact against files written by the original Editor. What rem
 device-side details, listed at the end of
 FINDINGS.
 
-## Tools in this repo
+## The new Editor (Rust, in progress)
+
+A cross-platform replacement Editor is being built in Rust, with a Tauri UI to follow.
+
+| Crate | Purpose |
+|---|---|
+| `crates/pm-formats` | Device formats: `music.db` create/check, `.str` beat grids, mix blobs and `.pmk`, track naming, `.pfw` firmware. Tested byte-exact against original-Editor output and all 7 firmware images (those inputs are local-only, so those tests skip without them). |
+| `crates/pm-analysis` | Our own tempo and beat-grid analyser: spectral-flux onsets, autocorrelation tempo candidates, Ellis DP beat tracking, a whole-track locked-grid search with BPM snapping, and a configurable BPM range. Beat placement is within +-0.5 ms on synthetic kicks. |
+| `crates/pm-bench` | Scores the analyser on a folder of tracks against BPM tags and the original Editor's beat grids. |
+
+    cargo test --workspace --release
+    cargo run --release -p pm-bench -- <tracks dir> --editor-str "%APPDATA%/Tonium/Pacemaker/str"
+
+## Reverse-engineering tools
 
 | Script | Purpose |
 |---|---|

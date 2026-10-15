@@ -1,0 +1,11 @@
+[package]
+name = "pm-analysis"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+pm-formats = { version = "0.1.0", path = "../pm-formats" }
+rustfft = "6.4.1"
+symphonia = { version = "0.6.1", features = ["all"] }
