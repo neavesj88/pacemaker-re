@@ -75,6 +75,9 @@ Rules a replacement must follow (verified by decompiling `tl::DirectAccessRepo` 
   `GetKeyFunc`) are likewise registered at runtime for queries.
 - The `ind_*` columns (VARCHAR(32)) are browse/sort keys. How they are derived is still open, and
   it's worth checking against a real DB.
+- `PreCollateTitle(x)` strips a leading "The " (case-insensitive, followed by a blank) for sorting.
+  `GetFirstTitleUChar(x)` returns the first alphanumeric character uppercased, for the A–Z jump.
+  Both are query-time only and nothing needs storing for them.
 - **Negative track_id convention.** Removing a track from the library rewrites references with
   `track_id = -track_id` and fills `dup_title/dup_artist/dup_album/dup_play_time_secs`, so mixes
   keep a placeholder for missing tracks. A writer has to preserve this.
