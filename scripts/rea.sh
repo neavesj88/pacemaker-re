@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
-# rea needs Node >= 22.19 on Windows (system Node 22.14 fails with ESTALE on every target).
-# Use the project-local portable Node until the system install is upgraded.
+# Run rea with Ghidra/JDK 21 scoped to this process only: the machine-wide JDK stays 17
+# because the Android/Capacitor builds are pinned to it.
 set -euo pipefail
-here="$(cd "$(dirname "$0")/.." && pwd)"
-node_exe="$here/tools/node/node.exe"
-[[ -x $node_exe ]] || node_exe=node
-exec "$node_exe" "$(npm root -g)/rea-agents/scripts/rea.mjs" "$@"
+export GHIDRA_INSTALL_DIR="${GHIDRA_INSTALL_DIR:-C:\tools\ghidra_12.1.4_PUBLIC}"
+export JAVA_HOME="${REA_JAVA_HOME:-C:\tools\jdk-21.0.12.1+1}"
+exec rea "$@"

@@ -92,22 +92,42 @@ column, the `pmdb_tracks/` files, or `.PD*.DB`), and how `realBeatLocations` enc
 its string. This is the main open question. Decompile `TrackAnalysedData::save` and its callers in
 pmplayer (symbols are present).
 
-## 5. Firmware images and update path (verified / inferred)
+## 5. Firmware: container, flash layout, update and restore (verified)
 
-- Each `dfw_<ver>.pfw` is a raw **ext2** image (superblock at offset 0) of the system partition:
-  `bin/pmplayer` (the whole device app, ARM ELF, **not stripped**), codec plugins,
-  `boot/{zImage,cramfs.little,redboot.bin,system.xml}`, fonts and symbols. `scripts/unpack-firmware.sh`
-  extracts it with 7-Zip.
-- The rootfs (`cramfs.little`) is LTIB, Linux 2.6.19.2, read-only cramfs. Init order is in
-  `/etc/rc.d/rc.conf`, and `pm-setup` → `pwrLauncherApp` → `pwrApplication` starts the app.
-- Flash is **A/B banked** (`swConfig`: kernel on mtd2/3, rootfs on mtd4/5). Bank, status and
-  upgrade flags sit in `/dev/mtdblock1` (`swGetStatus`/`swSetStatus.sh`), and `swUpdatePost.sh`
-  marks a bank good after a successful boot. This should make firmware experiments recoverable,
-  but that is *inferred* until we read the RedBoot side.
-- Editor-side update (inferred from Mac Editor strings): download the compressed firmware, copy
-  `dfw_*.pfw` onto the device volume, unmount, and let the device apply it on reboot. The
-  download URLs in `paceStartupData.xml` (`www.pacemaker.net/Default.aspx?documentID=158/159/172`)
-  are dead. The exact copy destination is not pinned yet.
+The GPL drop `pmib.tar.bz2` is Tonium's image-build tree, and its scripts are the spec for
+everything below. Each point was checked against the shipped files.
+
+**`.pfw` container** (`pace/linux/ltib/ltibCreateDmgFile`). This is a 50,000 KiB ext3 image
+(`dfw_<sw>.dmg`) followed by a 512-byte trailer. The trailer holds length-prefixed ASCII fields:
+`ver`(4) `tag`(128) `swver`(32) `fwver`(32) `bootloaderver`(32) `uid`(38), padding, then
+`md5sum`(34), which is the MD5 of every byte before it. `scripts/pfw-trailer.py` parses and checks
+it. All 7 downloaded images verify (`md5=OK`) and all carry bootloader 12838. Image contents are
+`bin/pmplayer` (the whole device app, ARM ELF, **not stripped**), codec plugins, `system.xml`,
+and `boot/{zImage,cramfs.little,redboot.bin,system.xml}`. Building our own `.pfw` needs nothing
+else.
+
+**Flash map** (`ltibCreateBinFile`, factory `pm_<rev>.bin`): RedBoot 256 KiB | status 128 KiB |
+kernel 2 MiB | rootfs 12.5 MiB (cramfs) | 1 MiB jffs2. Partitions are padded with 0xFF. Runtime
+`swConfig` names A/B banks (kernel mtd2/3, rootfs mtd4/5). Bank, status and upgrade flags are
+4 ASCII bytes in mtdblock1 (`swGetStatus`/`swSetStatus.sh`), and `swUpdatePost.sh` confirms a bank
+after a good boot.
+
+**Restore / unbrick** (PMD-Restore-14142, Mac DMG): stock `dfu-util` + libusb over USB DFU.
+
+    dfu-util -d 0x5e1d:0xa7a4 -a kernel -t 4088 -R -D zImage_14142.dfu
+    dfu-util -d 0x5e1d:0xa7a4 -a rootfs -t 4088 -R -D cramfs_14142.dfu
+    dfu-util -d 0x5e1d:0xa7a4 -a status -t 4088 -R -D start.dfu     # payload "A 0 1\n"
+
+The DFU payloads are byte-identical to the `.pfw`'s `boot/zImage` / `boot/cramfs.little`,
+0xFF-padded to the partition size minus one, plus a standard 16-byte DFU suffix
+(`ltibCreateDfuFiles` + `dfuSuffixCreator.c`). **We can generate a restore set for any firmware
+version and flash it with current dfu-util on Windows, Linux or macOS.** How the device is put
+into DFU mode (a button combo at power-on?) is not yet known. Check the manual or RedBoot.
+
+**Editor-side update** (inferred from Mac Editor strings): download, copy the `.pfw` to the
+device volume, unmount, then the device applies it on reboot. The URLs in `paceStartupData.xml`
+(`www.pacemaker.net/Default.aspx?documentID=158/159/172`) are dead. The copy destination is not
+pinned yet.
 
 ## 6. The Editor binaries
 
@@ -122,13 +142,14 @@ pmplayer (symbols are present).
 
 ## 7. Tooling status
 
-- `rea` 6.5.0 (`npm i -g rea-agents`) is installed. On this host it fails every target with ESTALE
-  under the system Node 22.14. It needs Node ≥ 22.19 on Windows. `scripts/rea.sh` runs it under the
-  portable Node in `tools/node` until the system Node is upgraded.
+- `rea` 6.5.0 (`npm i -g rea-agents`) needs Node >= 22.19 on Windows. System Node was upgraded
+  from 22.14 to 22.23.2 on 15 Oct 2026.
+- Ghidra 12.1.4 and Temurin JDK 21 are unpacked in `C:\tools`. `scripts/rea.sh` sets
+  `GHIDRA_INSTALL_DIR`/`JAVA_HOME` for rea's process only, because the machine-wide JDK stays 17
+  for the Android builds.
 - rea's managed (.NET) and artifact lanes work here. **Its Windows Ghidra lane only accepts
   x86/x64 PE**, so it can take `pacemaker.exe` but not the ARM `pmplayer` or the Mach-O Editor.
-  Those need rea on Linux (WSL) or Ghidra headless directly. Ghidra 12.1.x and JDK 21 are not
-  installed. The only JDK on this machine is 17.
+  Those go through Ghidra headless directly (`scripts/ghidra-decompile.sh`).
 - rea's firmware lane (binwalk/unblob) is Linux-only. It hasn't been needed: the images are plain
   ext2 and cramfs, and 7-Zip reads both.
 
