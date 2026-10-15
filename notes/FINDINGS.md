@@ -34,7 +34,7 @@ or debug path.
 | `.Pacemaker/Licenses/` | pmplayer | |
 | `.PaceMakerDiscId.txt` | Mac Editor | volume identity, location not yet pinned |
 | `.Pacemaker/Music/A/B/C.str` | pmplayer + Editor (decompiled) | per-track analysis sidecar, see section 4 |
-| `pmdb_tracks/`, `.PDBL.DB`, `.PDDB.DB`, `.PDTL.DB` | Editor | unresolved, probably Editor-side caches |
+| `.PDBL.DB`, `.PDDB.DB`, `.PDTL.DB` | Editor | unresolved, probably Editor-side caches (`/pmdb_tracks/` is the `location` prefix, see below) |
 
 Device-side mount points: `/mnt/public` (the FAT32 volume) and `/mnt/private/language_setting.dat`.
 SQLite temp files go to `/pmdb` (`PRAGMA temp_store_directory = '/pmdb'`).
@@ -132,9 +132,8 @@ encode(decode(x)) round-trips. Tracks inside a mix are referenced by `FilePath` 
 filename in `Music/`), `toniumId`, `fuzzyId`, `libraryID` and per-track `Bpm`, with
 automation envelopes (volume, pitch, key) as `PositionedEvent` lists.
 
-**Still open:** how the Editor names files in `.Pacemaker/Music/` (32 hex digits, but not the
-MD5 of the file content), and what `pmdb_tracks/` and `.PD*.DB` hold. They are probably
-Editor-side caches.
+**Still open:** what the `.PD*.DB` files hold (probably Editor-side caches). The `Music/` naming is
+resolved in section 2. The 32-hex names of the Editor's bundled demo tracks are a separate scheme.
 
 ## 5. Firmware: container, flash layout, update and restore (verified)
 
@@ -211,5 +210,5 @@ pinned yet.
 ## Next probes, in order
 
 1. Get a device dump (`.Pacemaker/` as-is) to confirm the `.str` details listed in section 4, the
-   Music/ naming scheme and the `ind_*` key derivation.
+   `Music/` hash details (file-size argument, hex case) and the `ind_*` key derivation.
 2. Prototype the library writer: create `music.db` from `schema-14142.sql` and `user_version` 677, copy one track plus a `.str`, and check that the device loads it.
