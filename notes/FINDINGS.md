@@ -124,8 +124,11 @@ everything below. Each point was checked against the shipped files.
 **`.pfw` container** (`pace/linux/ltib/ltibCreateDmgFile`). This is a 50,000 KiB ext3 image
 (`dfw_<sw>.dmg`) followed by a 512-byte trailer. The trailer holds length-prefixed ASCII fields:
 `ver`(4) `tag`(128) `swver`(32) `fwver`(32) `bootloaderver`(32) `uid`(38), padding, then
-`md5sum`(34), which is the MD5 of every byte before it. `scripts/pfw-trailer.py` parses and checks
-it. All 7 downloaded images verify (`md5=OK`) and all carry bootloader 12838. Image contents are
+`md5sum`(34), which is the MD5 of every byte before it. `scripts/pfw-trailer.py` parses, checks
+and rebuilds it. Each field is `createBlock`: an uppercase 2-digit hex length (from `dc`), the value,
+then NUL padding, and the padding region is itself an empty block (`"00"` + NULs). All 7 downloaded
+images verify (`md5=OK`) and **rebuild byte-identical** from their ext3 image plus their UID. All
+carry bootloader 12838. Image contents are
 `bin/pmplayer` (the whole device app, ARM ELF, **not stripped**), codec plugins, `system.xml`,
 and `boot/{zImage,cramfs.little,redboot.bin,system.xml}`. Building our own `.pfw` needs nothing
 else.
