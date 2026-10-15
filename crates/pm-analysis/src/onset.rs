@@ -9,8 +9,12 @@ pub const HOP: usize = 512;
 pub struct Envelope {
     /// One value per hop; index i covers samples centred on i * HOP.
     pub odf: Vec<f32>,
-    /// Bass-only flux, used to choose the downbeat phase.
+    /// Bass-only flux (<= 200 Hz).
     pub bass: Vec<f32>,
+    /// Kick detector: geometric mean of sub-bass (30-90 Hz) flux and click-band (2-8 kHz) flux.
+    /// A kick hits both at once; a rolling bass note has only the sub, a hi-hat only the click.
+    /// Used to put the grid on the kick rather than on psytrance bass or off-beat hats.
+    pub kick: Vec<f32>,
     pub hop: usize,
     pub sample_rate: u32,
 }
@@ -31,11 +35,16 @@ pub fn envelope(mono: &[f32], sample_rate: u32) -> Envelope {
     let hz_per_bin = sample_rate as f32 / FRAME as f32;
     let bass_top = (200.0 / hz_per_bin).ceil() as usize;
     let weight: Vec<f32> = (0..bins).map(|b| if b <= bass_top { 2.0 } else { 1.0 }).collect();
+    let band = |lo: f32, hi: f32| ((lo / hz_per_bin).floor().max(1.0) as usize, (hi / hz_per_bin).ceil() as usize);
+    let (sub_lo, sub_hi) = band(30.0, 90.0);
+    let (clk_lo, clk_hi) = band(2000.0, 8000.0);
 
     let n_frames = mono.len() / HOP + 1;
     let mut prev = vec![0f32; bins];
     let mut odf = Vec::with_capacity(n_frames);
     let mut bass = Vec::with_capacity(n_frames);
+    let mut subs = Vec::with_capacity(n_frames);
+    let mut clicks = Vec::with_capacity(n_frames);
     let mut buf = vec![Complex::new(0f32, 0f32); FRAME];
     for f in 0..n_frames {
         let centre = f * HOP;
@@ -44,7 +53,7 @@ pub fn envelope(mono: &[f32], sample_rate: u32) -> Envelope {
             *c = Complex::new(s * window[i], 0.0);
         }
         fft.process(&mut buf);
-        let (mut total, mut low) = (0f32, 0f32);
+        let (mut total, mut low, mut sb, mut ck) = (0f32, 0f32, 0f32, 0f32);
         for b in 1..bins {
             let mag = (1.0 + 1000.0 * buf[b].norm()).ln();
             let d = (mag - prev[b]).max(0.0);
@@ -53,13 +62,24 @@ pub fn envelope(mono: &[f32], sample_rate: u32) -> Envelope {
             if b <= bass_top {
                 low += d;
             }
+            if (sub_lo..=sub_hi).contains(&b) {
+                sb += d;
+            }
+            if (clk_lo..=clk_hi).contains(&b) {
+                ck += d;
+            }
         }
         odf.push(total);
         bass.push(low);
+        subs.push(sb);
+        clicks.push(ck);
     }
     let odf = detrend(&odf, 16);
     let bass = detrend(&bass, 16);
-    Envelope { odf, bass, hop: HOP, sample_rate }
+    let subs = detrend(&subs, 16);
+    let clicks = detrend(&clicks, 16);
+    let kick = subs.iter().zip(&clicks).map(|(a, b)| (a * b).sqrt()).collect();
+    Envelope { odf, bass, kick, hop: HOP, sample_rate }
 }
 
 /// Subtract a centred moving average (removes loudness swells), clamp at zero, scale to unit std.

@@ -19,6 +19,9 @@ pub struct Grid {
     pub phase: f64,
     /// Peak-to-mean ratio of grid energy over phases: how clearly the grid stands out.
     pub contrast: f64,
+    /// Phase of the full-band onset grid before moving onto the kick. The beat tracker follows
+    /// the full-band envelope, so tempo stability is judged against this phase.
+    pub onset_phase: f64,
     pub snapped: bool,
 }
 
@@ -46,12 +49,13 @@ fn odf_at(env: &Envelope, t: f64) -> f64 {
     series_at(&env.odf, env.frames_per_sec(), t)
 }
 
-/// Mean bass-band (kick) onset strength on a grid.
-fn bass_energy(env: &Envelope, phase: f64, period: f64, duration: f64) -> f64 {
+/// Mean kick-detector strength on a grid (see `Envelope::kick`).
+fn kick_energy(env: &Envelope, phase: f64, period: f64, duration: f64) -> f64 {
+    let series = &env.kick;
     let (mut e, mut n) = (0.0, 0usize);
     let mut t = phase.rem_euclid(period);
     while t <= duration {
-        e += series_at(&env.bass, env.frames_per_sec(), t);
+        e += series_at(series, env.frames_per_sec(), t);
         n += 1;
         t += period;
     }
@@ -91,6 +95,8 @@ pub fn best_phase(env: &Envelope, period: f64, duration: f64, from: f64, to: f64
 /// Calibrated with examples/ratiodebug.rs: the real triplet alias (psytrance) measured 1.24;
 /// house and techno false swaps 0.62-0.78; a correct 140 with a 3:2 sibling 0.86.
 const RELATED_TEMPO_SHARE: f64 = 1.0;
+/// The kick decides the phase only if its best grid has this multiple of its mean over phases.
+const KICK_CONTRAST: f64 = 1.5;
 
 pub fn lock(env: &Envelope, candidates: &[Candidate], duration: f64, range_hi: f64, snap: bool) -> Option<Grid> {
     let mut best: Option<(f64, f64, f64, f64)> = None; // (contrast, score, period, phase)
@@ -142,15 +148,10 @@ pub fn lock(env: &Envelope, candidates: &[Candidate], duration: f64, range_hi: f
             (e_best, period, phase) = (e, pb, ph);
         }
     }
-    // Beat vs off-beat: off-beat hats (house) and off-beat bass (psytrance) can outweigh the
-    // kick in the full-band envelope; the beat is where the kick is, so let the bass band decide.
-    if bass_energy(env, phase + period / 2.0, period, duration) > bass_energy(env, phase, period, duration) {
-        phase += period / 2.0;
-    }
-    let mut grid = Grid { period, phase, contrast, snapped: false };
-
+    // snap to a whole or half BPM when that costs almost nothing (full-band phase)
+    let mut snapped = false;
     if snap {
-        let bpm = grid.bpm();
+        let bpm = 60.0 / period;
         let mut targets = vec![bpm.round(), (bpm * 2.0).round() / 2.0];
         targets.dedup();
         for target in targets {
@@ -158,14 +159,47 @@ pub fn lock(env: &Envelope, candidates: &[Candidate], duration: f64, range_hi: f
                 continue;
             }
             let pb = 60.0 / target;
-            let (e, ph, _) = best_phase(env, pb, duration, grid.phase - 0.01, grid.phase + 0.01, 0.00025);
+            let (e, ph, _) = best_phase(env, pb, duration, phase - 0.01, phase + 0.01, 0.00025);
             if e >= 0.985 * e_best {
-                grid = Grid { period: pb, phase: ph, snapped: true, ..grid };
+                (period, phase, snapped) = (pb, ph, true);
                 break;
             }
         }
     }
-    Some(grid)
+    let onset_phase = phase;
+    let phase = place_on_kick(env, period, onset_phase, duration);
+    Some(Grid { period, phase, contrast, onset_phase, snapped })
+}
+
+/// Put the beat on the kick. The full-band envelope can lock to off-beat hats (house), off-beat
+/// bass (psytrance) or a triplet bass note a third of a beat early (psytrance), so the kick
+/// detector is scanned over the whole beat. It is only trusted when the kick stands out clearly
+/// (`KICK_CONTRAST`); with soft or absent kicks the full-band phase is kept.
+fn place_on_kick(env: &Envelope, period: f64, onset_phase: f64, duration: f64) -> f64 {
+    let (mut k_best, mut k_phase, mut k_sum, mut k_n) = (f64::MIN, onset_phase, 0.0, 0usize);
+    let mut ph = onset_phase;
+    while ph < onset_phase + period {
+        let e = kick_energy(env, ph, period, duration);
+        k_sum += e;
+        k_n += 1;
+        if e > k_best {
+            (k_best, k_phase) = (e, ph);
+        }
+        ph += 0.002;
+    }
+    let k_mean = k_sum / k_n.max(1) as f64;
+    if k_mean <= 0.0 || k_best < KICK_CONTRAST * k_mean {
+        return onset_phase;
+    }
+    let (mut fine, mut phase) = (f64::MIN, k_phase);
+    for j in -20..=20 {
+        let p = k_phase + j as f64 * 0.00025;
+        let e = kick_energy(env, p, period, duration);
+        if e > fine {
+            (fine, phase) = (e, p);
+        }
+    }
+    phase
 }
 
 /// Sub-frame time of the onset peak nearest each tracked beat.
@@ -196,7 +230,7 @@ pub fn residual(g: &Grid, times: &[f64]) -> (f64, f64) {
     let mut sq = 0.0;
     let mut n_in = 0usize;
     for &t in times {
-        let d = (t - g.phase).rem_euclid(g.period);
+        let d = (t - g.onset_phase).rem_euclid(g.period);
         let d = d.min(g.period - d);
         if d < 0.040 {
             sq += d * d;
@@ -238,8 +272,8 @@ pub fn fold_to_range(env: &Envelope, g: &Grid, duration: f64, range: crate::temp
     let mut g = g.clone();
     while g.bpm() >= 2.0 * range.lo {
         // keep the kick: in drum & bass the snare on the other parity is as loud in full band
-        let a = bass_energy(env, g.phase, 2.0 * g.period, duration);
-        let b = bass_energy(env, g.phase + g.period, 2.0 * g.period, duration);
+        let a = kick_energy(env, g.phase, 2.0 * g.period, duration);
+        let b = kick_energy(env, g.phase + g.period, 2.0 * g.period, duration);
         g.phase = if b > a { g.phase + g.period } else { g.phase };
         g.period *= 2.0;
     }
