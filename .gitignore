@@ -2,3 +2,4 @@ vendor/
 work/
 *.part
 tools/
+__pycache__/
