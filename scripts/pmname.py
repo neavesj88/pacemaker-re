@@ -10,8 +10,8 @@ where, over S = str(int_arg) and N = filename without extension (UTF-8 bytes as 
   A = last hex digit of oaat(S), B = last hex digit of elf(S), C = hex(oaat(N)).
 Both hashes are the decompiled variants. They use arithmetic (signed) shifts, so they differ
 from the textbook one-at-a-time and ELF hashes for some inputs.
-Inferred, not yet checked against a device dump: int_arg is the source file size (it is in
-getEncodedAbsoluteFilePath, which shares this routine), and juce::String::toHexString prints
+Verified against the Windows Editor's own output (its AppData str/ cache names match for all three
+demo tracks): int_arg is the source file size, and juce::String::toHexString prints
 lowercase without leading zeros.
 """
 import os, sys

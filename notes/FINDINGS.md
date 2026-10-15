@@ -82,8 +82,8 @@ Rules a replacement must follow (verified by decompiling `tl::DirectAccessRepo` 
   `COLLATE icuCollationTable`. It appears only in runtime `ORDER BY` clauses, so a writer does not
   need ICU. The custom functions (`PreCollateTitle`, `GetFirstTitleUChar`, `GetDateFunc`,
   `GetKeyFunc`) are likewise registered at runtime for queries.
-- The `ind_*` columns (VARCHAR(32)) are browse/sort keys. How they are derived is still open, and
-  it's worth checking against a real DB.
+- The `ind_*` columns are the lowercased title/artist/album/genre, as seen in Editor-written rows.
+  Truncation at 32 characters (VARCHAR(32)) is unconfirmed: no sample is that long yet.
 - `PreCollateTitle(x)` strips a leading "The " (case-insensitive, followed by a blank) for sorting.
   `GetFirstTitleUChar(x)` returns the first alphanumeric character uppercased, for the A–Z jump.
   Both are query-time only and nothing needs storing for them.
@@ -134,6 +134,29 @@ automation envelopes (volume, pitch, key) as `PositionedEvent` lists.
 
 **Still open:** what the `.PD*.DB` files hold (probably Editor-side caches). The `Music/` naming is
 resolved in section 2. The 32-hex names of the Editor's bundled demo tracks are a separate scheme.
+
+## 4b. Validation against real Editor output (verified)
+
+Running the installed Windows Editor 2.0.2.14170 imports and analyses its three demo tracks into
+`%APPDATA%\Tonium\Pacemaker\` (`music.db`, `str/A/B/<hash>.<hash64>.str`,
+`PeakCache/A/B/...dat`). Checked against that output:
+
+- `scripts/pmdb.py check` passes on the Editor's `music.db`: same 7 tables and columns, 3 indexes,
+  `user_version` 677. This independently confirms the schema recovered from the device binary.
+- `scripts/strfile.py` re-encodes all three real `.str` files **byte-identical**. That covers the
+  archive version, the missing closing `</boost_serialization>`, CRLF line ends, JUCE base64, zlib
+  at the default level, `%.9g` bpm, and `firstDownBeat`.
+- `scripts/pmname.py` reproduces the Editor's `A/B/<hash>` names for all three tracks from filename
+  stem + file size. This confirms both hash variants, the file-size argument and lowercase hex.
+- `scripts/pmk.py`: the mix in `mixes.structured_ct` is zlib + the same XOR with start index
+  `len(blob) % 18`, and round-trips **byte-identical**. `.pmk` files use start 12 and default zlib,
+  also byte-identical. `miximages.data` is a JUCE-base64 PNG.
+- Track rows: `global_id` is a random `juce::Uuid` (32 lowercase hex) assigned at import
+  (`tl::processFile`, `TrackOperations::getGlobalIdFromTrack`). `date_added`/`date_modified` are
+  Unix milliseconds. `track_flags` is 2 after analysis, `analysis_ver` is 1,
+  `analyzed_by_ed`/`modified_by_ed` hold the Editor version, and `discid` is the volume
+  (`C:`). Computer-side `location` is an absolute path. Device-side it is `/pmdb_tracks/A/B/C.ext`.
+- Not yet decoded: the `PeakCache` `.dat` files (waveform overviews). They are Editor-side only.
 
 ## 5. Firmware: container, flash layout, update and restore (verified)
 
@@ -211,6 +234,6 @@ pinned yet.
 
 ## Next probes, in order
 
-1. Get a device dump (`.Pacemaker/` as-is) to confirm the `.str` details listed in section 4, the
-   `Music/` hash details (file-size argument, hex case) and the `ind_*` key derivation.
+1. Get a device dump (`.Pacemaker/` as-is) to confirm the device-side `location` prefix, a
+   device-written DB, and how the device updates rows (play counts, cues) for sync back.
 2. Prototype the library writer: create `music.db` from `schema-14142.sql` and `user_version` 677, copy one track plus a `.str`, and check that the device loads it.

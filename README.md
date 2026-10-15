@@ -24,7 +24,8 @@ The device-side contract is mapped and mostly verified against the shipped binar
 | Firmware `.pfw` | Container fully specified; all 7 known images rebuild byte-identical |
 | Restore / unbrick | Stock `dfu-util` to `5e1d:a7a4`; DFU entry = hold Play+Cue+Forward+Back at power-on |
 
-Still open: a few details to confirm against a real device dump. They're listed at the end of
+Every codec is byte-exact against files written by the original Editor. What remains are a few
+device-side details, listed at the end of
 FINDINGS.
 
 ## Tools in this repo
