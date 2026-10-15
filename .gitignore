@@ -1,0 +1,4 @@
+vendor/
+work/
+*.part
+tools/
