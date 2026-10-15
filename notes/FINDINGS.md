@@ -59,15 +59,22 @@ Column definitions are byte-identical across all seven firmwares (13557, 14108, 
 the 2012/2014/2015 betas), and every one ships `EDITOR_COMPATIBLE_FLAG="002"`. There is one format
 to target, not seven.
 
-Compatibility hazards a replacement must handle:
+Rules a replacement must follow (verified by decompiling `tl::DirectAccessRepo` in pmplayer 14142):
 
-- **Custom SQL functions and collation.** pmplayer registers `icuCollationTable` (loaded via
-  `icu_load_collation`), `PreCollateTitle`, `GetFirstTitleUChar`, `GetDateFunc` and `GetKeyFunc`.
-  Queries use `COLLATE icuCollationTable`. Stock sqlite3 can read the tables, but anything that
-  touches an index or view defined with that collation needs the collation registered.
-- **Schema versioning.** The Editor migrates through `Convert from version 1 to version 2` …
-  `11 to 12` with `PRAGMA user_version`. The current value is *inferred* to be 12 and is
-  unverified. Check it against a real `music.db` before writing one.
+- **`PRAGMA user_version` must be exactly 677 (0x2a5).** `mountExistingDb` throws if it is below
+  677 or above 677, and `formatEmptyDb` writes 677. (The Editor's "Convert from version N to N+1"
+  strings are its own migration steps, not this value.)
+- **The device creates its own DB if none exists.** `formatEmptyDb` writes `user_version`, the 7
+  tables from the field arrays and the 3 indexes. A DB written by plain SQLite from
+  `schema-14142.sql` plus `PRAGMA user_version=677` is equivalent.
+- **The collation is query-time only.** On every connection the device calls
+  `sqlite3_create_collation` + `icu_load_collation('<locale>','icuCollationTable')`. The locale is
+  `en` by default and is then replaced by the UI language. No table or index declares
+  `COLLATE icuCollationTable`. It appears only in runtime `ORDER BY` clauses, so a writer does not
+  need ICU. The custom functions (`PreCollateTitle`, `GetFirstTitleUChar`, `GetDateFunc`,
+  `GetKeyFunc`) are likewise registered at runtime for queries.
+- The `ind_*` columns (VARCHAR(32)) are browse/sort keys. How they are derived is still open, and
+  it's worth checking against a real DB.
 - **Negative track_id convention.** Removing a track from the library rewrites references with
   `track_id = -track_id` and fills `dup_title/dup_artist/dup_album/dup_play_time_secs`, so mixes
   keep a placeholder for missing tracks. A writer has to preserve this.
@@ -142,8 +149,12 @@ version and flash it with current dfu-util on Windows, Linux or macOS.** The Win
 (NSIS) ships the same payloads plus a WinUSB INF for `USB\VID_5e1d&PID_a7a4` and `flash.cmd`.
 Kernel and rootfs transfers go without `-R`, `status` goes last with `-R`, and the script then
 says to wait while the device programs flash. On modern Windows, Zadig (WinUSB) plus a current
-dfu-util should be the equivalent. That's untested. How the device is put
-into DFU mode (a button combo at power-on?) is not yet known. Check the manual or RedBoot.
+dfu-util should be the equivalent. That's untested. **Entering DFU mode** (Tonium RedBoot patch, `do_pmSetup`):
+hold **Play + Cue + Forward + Back** while powering on. The bootloader prints "Forced to DFU mode",
+sets the LEDs to the DFU idle pattern and starts the USB DFU slave with alt settings `Redboot`,
+`status`, `kernel` and `rootfs`. The patch is dated 2009 and the shipped bootloader is 12838, so it
+is assumed (not proven) to be this code. The kernel console is `ttymxc0` (serial), and RedBoot
+has a serial command line with `pmInit`/`pmSetup`/`pmBoot`/`pmTest`.
 
 **Editor-side update** (inferred from Mac Editor strings): download, copy the `.pfw` to the
 device volume, unmount, then the device applies it on reboot. The URLs in `paceStartupData.xml`
@@ -176,8 +187,6 @@ pinned yet.
 
 ## Next probes, in order
 
-1. Get a device dump (`.Pacemaker/` as-is) to confirm `user_version`, the `.str` details listed in
-   section 4, and the Music/ naming scheme.
-2. Find how to enter DFU mode (manual or RedBoot sources in `pmib/ext/packages/redboot_200712`).
-3. Prototype the library writer: create `music.db` from `schema-14142.sql` with the ICU
-   collation registered, copy one track plus a `.str`, and check that the device loads it.
+1. Get a device dump (`.Pacemaker/` as-is) to confirm the `.str` details listed in section 4, the
+   Music/ naming scheme and the `ind_*` key derivation.
+2. Prototype the library writer: create `music.db` from `schema-14142.sql` and `user_version` 677, copy one track plus a `.str`, and check that the device loads it.
