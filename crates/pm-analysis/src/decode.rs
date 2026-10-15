@@ -15,6 +15,8 @@ pub struct Decoded {
     pub sample_rate: u32,
     /// BPM tag (ID3 TBPM etc.) if present: a reference for evaluation, never used for analysis.
     pub tag_bpm: Option<f64>,
+    /// Tags and stream facts in the shape the library writer takes.
+    pub meta: pm_formats::library::TrackMeta,
 }
 
 #[derive(Debug)]
@@ -32,6 +34,36 @@ impl std::fmt::Display for Error {
 }
 
 impl std::error::Error for Error {}
+
+fn fill_meta(rev: &MetadataRevision, m: &mut pm_formats::library::TrackMeta) {
+    for t in &rev.media.tags {
+        let set = |field: &mut String, v: &str| {
+            if field.is_empty() {
+                *field = v.trim().to_string();
+            }
+        };
+        match &t.std {
+            Some(StandardTag::TrackTitle(v)) => set(&mut m.title, v),
+            Some(StandardTag::Artist(v)) => set(&mut m.artist, v),
+            Some(StandardTag::AlbumArtist(v)) => set(&mut m.album_artist, v),
+            Some(StandardTag::Album(v)) => set(&mut m.album, v),
+            Some(StandardTag::Composer(v)) => set(&mut m.composer, v),
+            Some(StandardTag::Genre(v)) => set(&mut m.genre, v),
+            Some(StandardTag::Label(v)) => set(&mut m.label, v),
+            Some(StandardTag::InitialKey(v)) => set(&mut m.key, v),
+            Some(StandardTag::Comment(v)) => set(&mut m.comment, v),
+            Some(StandardTag::Producer(v)) => set(&mut m.producer, v),
+            Some(StandardTag::Remixer(v)) => set(&mut m.remixer, v),
+            Some(StandardTag::TrackNumber(n)) if m.track_number == 0 => m.track_number = *n as i64,
+            Some(StandardTag::DiscNumber(n)) if m.disc_number == 0 => m.disc_number = *n as i64,
+            Some(StandardTag::ReleaseYear(y)) | Some(StandardTag::RecordingYear(y)) if m.year == 0 => m.year = *y as i64,
+            Some(StandardTag::ReleaseDate(v)) | Some(StandardTag::RecordingDate(v)) if m.year == 0 => {
+                m.year = v.get(..4).and_then(|y| y.parse().ok()).unwrap_or(0)
+            }
+            _ => {}
+        }
+    }
+}
 
 fn bpm_from(rev: &MetadataRevision) -> Option<f64> {
     rev.media.tags.iter().find_map(|t| match t.std {
@@ -51,11 +83,18 @@ pub fn decode(path: &Path) -> Result<Decoded, Error> {
         .probe(&hint, mss, FormatOptions::default(), MetadataOptions::default())
         .map_err(Error::Decode)?;
 
+    let mut meta = pm_formats::library::TrackMeta::default();
     let tag_bpm = {
         let mut md = format.metadata();
-        let mut bpm = md.current().and_then(bpm_from);
-        while bpm.is_none() && md.pop().is_some() {
-            bpm = md.current().and_then(bpm_from);
+        let mut bpm = None;
+        loop {
+            if let Some(rev) = md.current() {
+                fill_meta(rev, &mut meta);
+                bpm = bpm.or_else(|| bpm_from(rev));
+            }
+            if md.pop().is_none() {
+                break;
+            }
         }
         bpm
     };
@@ -97,5 +136,16 @@ pub fn decode(path: &Path) -> Result<Decoded, Error> {
             Err(e) => return Err(Error::Decode(e)),
         }
     }
-    Ok(Decoded { mono, sample_rate, tag_bpm })
+    let secs = mono.len() as f64 / sample_rate as f64;
+    meta.sample_rate = sample_rate as i64;
+    meta.play_time_secs = secs.round() as i64;
+    meta.format = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_ascii_uppercase();
+    if secs > 0.0 {
+        let bytes = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
+        meta.bit_rate_kbps = (bytes as f64 * 8.0 / secs / 1000.0).round() as i64;
+    }
+    if meta.title.is_empty() {
+        meta.title = path.file_stem().and_then(|s| s.to_str()).unwrap_or("").to_string();
+    }
+    Ok(Decoded { mono, sample_rate, tag_bpm, meta })
 }
