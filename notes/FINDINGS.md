@@ -194,18 +194,20 @@ pinned yet.
 - The Editor and pmplayer share code (`tl::Repo`, `TrackAnalysedData`, `MixDocument`, the
   `xponaut::audioengine` namespace), so symbols recovered on one side carry over to the other.
 
-## 7. Tooling status
+## 7. Tooling
 
-- `rea` 6.5.0 (`npm i -g rea-agents`) needs Node >= 22.19 on Windows. System Node was upgraded
-  from 22.14 to 22.23.2 on 15 Oct 2026.
-- Ghidra 12.1.4 and Temurin JDK 21 are unpacked in `C:\tools`. `scripts/rea.sh` sets
-  `GHIDRA_INSTALL_DIR`/`JAVA_HOME` for rea's process only, because the machine-wide JDK stays 17
-  for the Android builds.
-- rea's managed (.NET) and artifact lanes work here. **Its Windows Ghidra lane only accepts
-  x86/x64 PE**, so it can take `pacemaker.exe` but not the ARM `pmplayer` or the Mach-O Editor.
-  Those go through Ghidra headless directly (`scripts/ghidra-decompile.sh`).
-- rea's firmware lane (binwalk/unblob) is Linux-only. It hasn't been needed: the images are plain
-  ext2 and cramfs, and 7-Zip reads both.
+- [rea](https://github.com/morluto/rea) 6.5.x (`npm i -g rea-agents`) needs Node >= 22.19 on
+  Windows; older Node fails every target with ESTALE. Its managed (.NET) and artifact lanes work
+  on Windows. Its Windows Ghidra lane only admits x86/x64 PE (so `pacemaker.exe`, but not the ARM
+  `pmplayer` or the Mach-O Editor).
+- Ghidra 12.1.4 + JDK 21 handle everything else through `scripts/ghidra-decompile.sh`, which
+  imports and analyzes once per binary into `work/ghidra/` and then decompiles by name regex,
+  `addr:<hex>`, with `callers`, or `list`. `scripts/ghidra/RefName.java` resolves PIC-indirect
+  globals. `scripts/rea.sh` and the wrapper default to `C:\tools\...` and take
+  `GHIDRA_INSTALL_DIR` / `REA_JAVA_HOME` overrides.
+- The Mac Editor is a fat binary. `scripts/thin-macho.py` extracts the i386 slice for Ghidra.
+- rea's firmware lane (binwalk/unblob) is Linux-only and wasn't needed: the images are plain
+  ext2/ext3 and cramfs, and 7-Zip reads both.
 
 ## Next probes, in order
 
