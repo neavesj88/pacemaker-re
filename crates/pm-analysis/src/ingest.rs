@@ -274,7 +274,7 @@ mod tests {
         assert_eq!(analysis_problem(&lib, &t).as_deref(), Some("no .str file"));
         std::fs::write(&sidecar, b"").unwrap();
         let item = Existing { track_id, location: t.location.clone(), label: "Click".into() };
-        let s = reanalyse(&mut lib, &[item.clone()], |_| {});
+        let s = reanalyse(&mut lib, std::slice::from_ref(&item), |_| {});
         assert_eq!(s, Summary { reanalysed: 1, ..Default::default() });
         let text = std::fs::read_to_string(&sidecar).unwrap();
         let a = strfile::decode(&text).unwrap();
