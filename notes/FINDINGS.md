@@ -182,6 +182,21 @@ against everything above. Its library: 241 tracks, 3 cases, last synced by Edito
   bitrate (audio payload only, not tags or artwork), the rest are expected: `location` (source
   file name), tag text the owner edited in the Editor, and our own `*_by_ed` identifier.
 
+**Analyser vs the original Editor on this library** (`pm-bench --sidecar`, from a verified
+backup of the drive; 240 tracks with a readable `.str`, all 44.1 kHz):
+- Tempo agrees within 0.5 BPM on 210/240. Of the 30 disagreements, 27 are exactly 2x: we say
+  ~140 and the Editor ~70 (tags mostly 140-146). The Editor halves only some 140 BPM tracks, so
+  its octave choice is per-track, not a range fold, and can't be matched by a BpmRange setting.
+  Of the other three, one is our 2:3 alias (87 vs 130) and two are variable-tempo tracks.
+- Beat phase agrees within 0.05 beat on 130 of the 210 tempo-agreeing tracks. 62 are half-beat
+  flips. An independent sub-bass check (`kickcheck`, no code shared with the analyser) puts our
+  grid on the kick in 56 of those 62, the Editor's in 5.
+- With the +22 ms device offset, our beats sit a median +2.1 ms from the Editor's (10th-90th
+  percentile -1.8 to +8.8 ms), so the offset calibration holds on a second, independent set.
+
+`settings.dat` is decoded in notes/settings-dat.md (`scripts/settingsdat.py`, byte-exact).
+Replacing the hard drive is covered in notes/ssd-swap.md.
+
 ## 5. Firmware: container, flash layout, update and restore (verified)
 
 The GPL drop `pmib.tar.bz2` is Tonium's image-build tree, and its scripts are the spec for
