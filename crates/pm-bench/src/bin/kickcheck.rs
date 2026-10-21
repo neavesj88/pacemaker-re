@@ -4,27 +4,30 @@
 //! off-beat shows little. This is direct evidence for half-beat disputes, independent of
 //! either analyser.
 //!
-//!   kickcheck <tracks dir> <editor str dir>
+//!   kickcheck <tracks dir> <editor str dir | --sidecar>
+//!
+//! Ends with a tally of which grid sits on the kick, over all tracks and over those whose tempo
+//! agrees within 0.5 BPM.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
-use pm_formats::{naming, strfile};
+use pm_bench::{audio_files, EditorSource};
 
 fn main() {
+    let usage = "usage: kickcheck <tracks dir> <editor str dir | --sidecar>";
     let mut args = std::env::args().skip(1);
-    let dir = PathBuf::from(args.next().expect("usage: kickcheck <tracks dir> <editor str dir>"));
-    let str_dir = PathBuf::from(args.next().expect("editor str dir"));
-    let mut files: Vec<PathBuf> = std::fs::read_dir(&dir)
-        .unwrap()
-        .flatten()
-        .map(|e| e.path())
-        .filter(|p| p.extension().is_some_and(|x| x == "mp3"))
-        .collect();
-    files.sort();
+    let dir = PathBuf::from(args.next().expect(usage));
+    let src = match args.next().expect(usage).as_str() {
+        "--sidecar" => EditorSource::Sidecar,
+        d => EditorSource::Dir(PathBuf::from(d)),
+    };
+    let files = audio_files(&dir);
+    // [ours, editor, same] over all tracks and over tempo-agreeing tracks
+    let (mut all, mut agreeing) = ([0usize; 3], [0usize; 3]);
     println!("{:40} {:>9} {:>9}  verdict", "track", "ours", "editor");
     for f in files {
-        let Some(ed) = editor(&str_dir, &f) else { continue };
-        let d = pm_analysis::decode::decode(&f).unwrap();
+        let Some(ed) = src.analysis(&f) else { continue };
+        let Ok(d) = pm_analysis::decode::decode(&f) else { continue };
         let r = pm_analysis::analyze(&d.mono, d.sample_rate, None);
         let sr = d.sample_rate as f64;
         let sub = lowpass(&d.mono, 100.0, sr);
@@ -41,8 +44,22 @@ fn main() {
         } else {
             "EDITOR on kick"
         };
+        let ed_bpm = pm_bench::median(ed.beats.iter().map(|b| b.bpm).collect());
+        let which = match verdict {
+            "OURS on kick" => 0,
+            "EDITOR on kick" => 1,
+            _ => 2,
+        };
+        all[which] += 1;
+        if (r.bpm - ed_bpm).abs() <= 0.5 {
+            agreeing[which] += 1;
+        }
         let name = f.file_name().unwrap().to_string_lossy().into_owned();
         println!("{:40} {:9.5} {:9.5}  {verdict}", name.chars().take(40).collect::<String>(), ours, theirs);
+    }
+    println!();
+    for (label, t) in [("all tracks", all), ("tempo-agreeing tracks", agreeing)] {
+        println!("{label}: {} ours on kick, {} Editor on kick, {} same", t[0], t[1], t[2]);
     }
 }
 
@@ -74,16 +91,4 @@ fn rise(sub: &[f32], beats: &[i64], sr: f64) -> f64 {
         n += 1;
     }
     if n == 0 { 0.0 } else { total / n as f64 }
-}
-
-fn editor(str_dir: &Path, audio: &Path) -> Option<strfile::Analysis> {
-    let size = std::fs::metadata(audio).ok()?.len();
-    let enc = naming::encoded_name(audio.file_stem()?.to_str()?, size);
-    let (ab, c) = enc.rsplit_once('/')?;
-    let hit = std::fs::read_dir(str_dir.join(ab))
-        .ok()?
-        .flatten()
-        .map(|e| e.path())
-        .find(|p| p.file_name().and_then(|n| n.to_str()).is_some_and(|n| n.starts_with(&format!("{c}."))))?;
-    strfile::decode(&std::fs::read_to_string(hit).ok()?).ok()
 }

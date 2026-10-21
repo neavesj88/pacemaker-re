@@ -4,6 +4,7 @@
 //! Ellis dynamic-programming beat tracking), followed by a locked-grid fit tuned for DJ music.
 //! Output converts directly to the device's `.str` sidecar via [`Result::to_str_analysis`].
 
+pub mod align;
 pub mod beats;
 pub mod decode;
 pub mod grid;
@@ -26,7 +27,7 @@ const DETECT_RANGE: tempo::BpmRange = tempo::BpmRange { lo: 100.0 };
 /// The centred 2048-sample spectral-flux frame registers an onset this much before the true
 /// attack. Measured as a constant 13.3 ms (+-0.3) across 120-174 BPM and all phases with
 /// examples/latency.rs, and added back to every beat.
-const ONSET_LEAD_SECS: f64 = 0.0133;
+pub(crate) const ONSET_LEAD_SECS: f64 = 0.0133;
 
 #[derive(Debug, Clone)]
 pub struct Result {
