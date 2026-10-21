@@ -114,6 +114,8 @@ pub fn decode(path: &Path) -> Result<Decoded, Error> {
 
     let mut mono = Vec::new();
     let mut interleaved: Vec<f32> = Vec::new();
+    // audio payload bytes only: tags and embedded artwork must not inflate the bitrate
+    let mut audio_bytes = 0u64;
     loop {
         let packet = match format.next_packet() {
             Ok(Some(p)) => p,
@@ -124,6 +126,7 @@ pub fn decode(path: &Path) -> Result<Decoded, Error> {
         if packet.track_id != track_id {
             continue;
         }
+        audio_bytes += packet.data.len() as u64;
         match decoder.decode(&packet) {
             Ok(buf) => {
                 let ch = buf.spec().channels().count().max(1);
@@ -141,8 +144,7 @@ pub fn decode(path: &Path) -> Result<Decoded, Error> {
     meta.play_time_secs = secs.round() as i64;
     meta.format = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_ascii_uppercase();
     if secs > 0.0 {
-        let bytes = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
-        meta.bit_rate_kbps = (bytes as f64 * 8.0 / secs / 1000.0).round() as i64;
+        meta.bit_rate_kbps = (audio_bytes as f64 * 8.0 / secs / 1000.0).round() as i64;
     }
     if meta.title.is_empty() {
         meta.title = path.file_stem().and_then(|s| s.to_str()).unwrap_or("").to_string();

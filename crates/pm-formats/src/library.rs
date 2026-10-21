@@ -14,6 +14,11 @@ use crate::{db, naming, strfile};
 /// the row (the original Editor writes its own version, e.g. "2.0.2.14170").
 pub const EDITOR_ID: &str = concat!("pacemaker-re/", env!("CARGO_PKG_VERSION"));
 
+/// "No cue point" as stored on real devices: 2^64 as a REAL (an unsigned -1 that went through a
+/// double; pmplayer contains the literal "1.84467440737096e+19"). 240 of 241 tracks on a real
+/// device carry it; the computer-side library uses -1 instead. Written in the INSERT below.
+pub const NO_CUE: f64 = 18446744073709551615.0;
+
 #[derive(Debug)]
 pub enum Error {
     Db(rusqlite::Error),
@@ -259,7 +264,13 @@ impl Library {
         let str_dest = PathBuf::from(naming::str_path(&dest.to_string_lossy()));
         std::fs::write(&str_dest, strfile::encode(analysis, strfile::Newline::Crlf))?;
 
-        let bpm = analysis.beats.first().map(|b| b.bpm).unwrap_or(0.0);
+        // the track tempo is the median local tempo: on a variable-tempo grid the first beat's
+        // own value can be far off (seen: 132.86 vs 135.24)
+        let bpm = {
+            let mut v: Vec<f64> = analysis.beats.iter().map(|b| b.bpm).collect();
+            v.sort_by(|a, b| a.total_cmp(b));
+            v.get(v.len() / 2).copied().unwrap_or(0.0)
+        };
         let now = now_ms();
         let lower = |s: &str| s.to_lowercase();
         let ind_bpm = (bpm / 10.0).floor() as i64 * 10;
@@ -270,7 +281,7 @@ impl Library {
                 track_flags, global_id, loop_in, loop_out, structured_ct, ind_title, ind_artist,
                 ind_album, ind_genre, ind_bpm, discid, producer, remixer, key, number_of_tracks,
                 disc_number, number_of_discs, date_modified, modified_by_ed, analyzed_by_ed, analysis_ver)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 0, ?9, ?10, ?11, ?12, ?13, ?14, 0, ?15, ?16, -1, 0, -1,
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 0, ?9, ?10, ?11, ?12, ?13, ?14, 0, ?15, ?16, -1, 0, 18446744073709551615.0,
                 0, ?17, ?18, 2, ?19, -1, -1, '', ?20, ?21, ?22, ?23, ?24, '', ?25, ?26, ?27, 0, ?28, 0,
                 ?16, ?29, ?29, 1)",
             params![
@@ -355,6 +366,11 @@ mod tests {
         assert_eq!(t.title, "Some Track");
         assert!(t.analysed);
         assert_eq!(t.bpm, 128.0);
+        let (kind, cue): (String, f64) = lib
+            .con
+            .query_row("SELECT typeof(cue_point), cue_point FROM tracks", [], |r| Ok((r.get(0)?, r.get(1)?)))
+            .unwrap();
+        assert_eq!((kind.as_str(), cue), ("real", NO_CUE), "device-style 'no cue' sentinel");
         let (rel, loc) = naming::device_paths("Some Artist - Some Track.mp3", 12345);
         assert_eq!(t.location, loc);
         let audio = vol.join(naming::MUSIC_DIR).join(&rel);

@@ -158,6 +158,30 @@ Running the installed Windows Editor 2.0.2.14170 imports and analyses its three 
   (`C:`). Computer-side `location` is an absolute path. Device-side it is `/pmdb_tracks/A/B/C.ext`.
 - Not yet decoded: the `PeakCache` `.dat` files (waveform overviews). They are Editor-side only.
 
+## 4c. Validation against a real device (verified, Oct 2026)
+
+A real Pacemaker running the last firmware (180096069, December 2015 beta; `system.xml` reports
+`EDITOR_COMPATIBLE_FLAG="002"`, bootloader 12838) was read over USB mass storage and checked
+against everything above. Its library: 241 tracks, 3 cases, last synced by Editor 2.0.2.14170.
+
+- `music.db` passes `pmdb.py check`: same schema, indexes, `user_version` 677.
+- 240 of 241 `.str` sidecars re-encode byte-identical (CRLF, as the Windows Editor writes them).
+  The 241st is a 0-byte file, dated 2012, so a real-world corrupt sidecar. Its row has
+  `track_flags` 6 rather than 2 (meaning of bit 0x4 unconfirmed; plausibly "analysis
+  missing/failed"). Readers must treat an empty or unreadable `.str` as "needs analysis".
+- Naming: the `A/B` fan-out digits match the file-size hashes for 241/241 files, and every
+  `location` is `/pmdb_tracks/A/B/<hash>.mp3` with rows and files matching one-to-one.
+- Device-side row conventions: `discid` is empty (the computer-side library uses the drive,
+  e.g. `C:`). `cue_point` "unset" is stored as the REAL 2^64 = 1.8446744073709552e19 (240
+  rows; pmplayer contains the literal), where the computer-side library uses -1. `ind_bpm` is
+  `floor(bpm / 10) * 10` of the analysed BPM. `loop_in`/`loop_out`/`last_played` are -1. This
+  device never wrote play counts back (`times_played` 0 everywhere).
+- `settings.dat` is a boost text archive (decoding in progress).
+- Writer comparison: three of the device's own tracks re-added with `pm add` match the device
+  rows on 37 of 46 columns, types included. After fixing the track BPM (median beat tempo) and
+  bitrate (audio payload only, not tags or artwork), the rest are expected: `location` (source
+  file name), tag text the owner edited in the Editor, and our own `*_by_ed` identifier.
+
 ## 5. Firmware: container, flash layout, update and restore (verified)
 
 The GPL drop `pmib.tar.bz2` is Tonium's image-build tree, and its scripts are the spec for
