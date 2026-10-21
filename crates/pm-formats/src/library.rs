@@ -326,6 +326,46 @@ impl Library {
             }
         }
     }
+
+    /// `(audio file, .str sidecar)` on this volume for a `tracks.location`, or `None` when the
+    /// location is not a device-side `/pmdb_tracks/...` path.
+    pub fn track_paths(&self, location: &str) -> Option<(PathBuf, PathBuf)> {
+        let rel = location.strip_prefix(naming::LOCATION_PREFIX)?;
+        let audio = self.root.join(naming::MUSIC_DIR).join(rel);
+        let sidecar = PathBuf::from(naming::str_path(&audio.to_string_lossy()));
+        Some((audio, sidecar))
+    }
+
+    /// Replaces the `.str` of an existing track and updates its row (bpm, analysed flag). The
+    /// audio file is not touched. `location` must be the track's `tracks.location`.
+    pub fn store_analysis(&mut self, track_id: i64, location: &str, analysis: &strfile::Analysis) -> Result<(), Error> {
+        let (_, sidecar) = self.track_paths(location).ok_or_else(|| {
+            Error::Io(std::io::Error::new(std::io::ErrorKind::InvalidInput, "track is not stored under /pmdb_tracks/"))
+        })?;
+        let tmp = sidecar.with_extension("str.tmp");
+        let written = std::fs::write(&tmp, strfile::encode(analysis, strfile::Newline::Crlf))
+            .and_then(|_| std::fs::rename(&tmp, &sidecar));
+        if let Err(e) = written {
+            let _ = std::fs::remove_file(&tmp);
+            return Err(e.into());
+        }
+        let bpm = analysis.beats.first().map(|b| b.bpm).unwrap_or(0.0);
+        let ind_bpm = (bpm / 10.0).floor() as i64 * 10;
+        self.con.execute(
+            "UPDATE tracks SET bpm = ?1, ind_bpm = ?2, track_flags = IFNULL(track_flags,0) | 2,
+                    date_modified = ?3, modified_by_ed = ?4, analyzed_by_ed = ?4, analysis_ver = 1
+             WHERE track_id = ?5",
+            params![bpm, ind_bpm, now_ms(), EDITOR_ID, track_id],
+        )?;
+        Ok(())
+    }
+
+    /// Ids of the tracks in a case, in the order they were added.
+    pub fn case_track_ids(&self, case_id: i64) -> Result<Vec<i64>, Error> {
+        let mut st = self.con.prepare("SELECT track_id FROM casetracks WHERE case_id = ?1 ORDER BY rowid")?;
+        let rows = st.query_map([case_id], |r| r.get(0))?;
+        Ok(rows.collect::<Result<_, _>>()?)
+    }
 }
 
 #[cfg(test)]

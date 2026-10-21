@@ -32,5 +32,5 @@ pm-analysis = { version = "0.1.0", path = "../../crates/pm-analysis" }
 codegen-units = 1
 lto = true
 opt-level = 3
-panic = "abort"
+# unwind (not abort): a codec panic while analysing one file must not take the app down
 strip = true

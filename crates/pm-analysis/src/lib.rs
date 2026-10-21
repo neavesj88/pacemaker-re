@@ -7,6 +7,7 @@
 pub mod beats;
 pub mod decode;
 pub mod grid;
+pub mod ingest;
 pub mod onset;
 pub mod tempo;
 
