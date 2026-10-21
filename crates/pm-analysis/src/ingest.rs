@@ -258,7 +258,7 @@ mod tests {
         assert_eq!(lib.tracks().unwrap().len(), 1);
 
         // adding again skips without re-analysing
-        let s = add_files(&mut lib, &[good.clone()], |_| {});
+        let s = add_files(&mut lib, std::slice::from_ref(&good), |_| {});
         assert_eq!(s, Summary { skipped: 1, ..Default::default() });
 
         // a 0-byte .str (as seen on a real device) is detected and repaired from the audio

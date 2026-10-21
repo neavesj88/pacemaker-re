@@ -134,8 +134,9 @@
   const volumeName = (root: string) => root.replace(/[\\/]+$/, "").split(/[\\/]/).pop() || root;
 
   async function refreshVolumes() {
+    // Detected devices are listed, never opened automatically: opening reads every track's .str,
+    // and a docked device may have an ageing hard drive. The user chooses when to read it.
     volumes = await invoke<string[]>("list_volumes");
-    if (!library && volumes.length > 0) await load(volumes[0]);
   }
 
   async function load(root: string, keepView = false) {
@@ -325,6 +326,7 @@
     <div class="source">
       {#if volumes.length > 0}
         <select onchange={(e) => load((e.currentTarget as HTMLSelectElement).value)}>
+          <option value="" disabled selected={!library}>Choose a device…</option>
           {#each volumes as v}
             <option value={v} selected={library?.root === v}>{volumeName(v)}</option>
           {/each}
@@ -479,11 +481,20 @@
   {:else if !loading}
     <div class="welcome">
       <h1>Connect your Pacemaker</h1>
-      <p>Dock it over USB: it appears as a drive and is picked up here automatically.</p>
+      {#if volumes.length > 0}
+        <p>Found on this computer:</p>
+        <div class="actions">
+          {#each volumes as v}
+            <button class="primary" onclick={() => load(v)}>Open {volumeName(v)}</button>
+          {/each}
+        </div>
+      {:else}
+        <p>Dock it over USB: it appears as a drive, then press Rescan.</p>
+      {/if}
       <p>Or open a folder that contains a <code>.Pacemaker</code> library.</p>
       <div class="actions">
         <button onclick={refreshVolumes}>Rescan</button>
-        <button class="primary" onclick={openFolder}>Open folder…</button>
+        <button onclick={openFolder}>Open folder…</button>
       </div>
     </div>
   {/if}
