@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Pacemaker Revival screens</title>
+<!--
+  The final device screens, drawn at 240x296 from the same geometry as the design canvas.
+  The browser lays out the text (Doto and Silkscreen from Google Fonts) and the canvas copies
+  its exact glyph positions, so the PNGs match the design boards. Open this page, then save
+  each image with the link under it, or read window.screenPngs (name -> PNG data URL).
+-->
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Doto:wght@900&family=Silkscreen&display=swap">
+<style>
+body{margin:16px;background:#1c1c1c;color:#ccc;font:13px system-ui,sans-serif;display:flex;flex-wrap:wrap;gap:24px}
+figure{margin:0;display:flex;flex-direction:column;gap:6px}
+canvas{width:480px;height:592px;image-rendering:pixelated}
+a{color:#00ff46}
+.layout{position:absolute;left:-9999px;top:0;width:240px;height:296px}
+</style>
+</head>
+<body>
+<script>
+const GREEN = '#00ff46', DIM = '#0b5e24', MAGENTA = '#ff00c8';
+
+const SCREENS = {
+  // the launcher's first screen: a dim flatline that comes back to life
+  startup: {
+    lines: [
+      { color: DIM, width: 4, pts: [-10,128, 66,128, 74,122, 82,128, 96,128] },
+      { color: GREEN, width: 4, pts: [96,128, 102,138, 114,70, 126,150, 134,128, 146,128, 156,116, 168,128, 250,128] },
+    ],
+    circles: [
+      { x: 114, y: 70, r: 13, stroke: MAGENTA, width: 2 },
+      { x: 114, y: 70, r: 7, fill: MAGENTA },
+    ],
+    text: { top: 196, gap: 8, rows: [
+      { text: 'PACEMAKER', family: 'Silkscreen', size: 10, spacing: 4, pad: 4, color: GREEN },
+      { text: 'REVIVAL', family: 'Doto', weight: 900, size: 40, lineHeight: 40, spacing: 2, color: GREEN },
+    ] },
+  },
+  // the system image's loading screen: Tonium's four-dot mark, one dot magenta
+  boot: {
+    lines: [
+      { color: GREEN, width: 3, pts: [36,196, 84,196, 90,191, 96,196, 104,196, 109,204, 119,150, 129,214, 135,196, 145,196, 152,186, 161,196, 204,196] },
+    ],
+    circles: [
+      { x: 104, y: 51, r: 11, fill: GREEN },
+      { x: 136, y: 51, r: 11, fill: MAGENTA },
+      { x: 104, y: 83, r: 11, fill: GREEN },
+      { x: 104, y: 115, r: 11, fill: GREEN },
+    ],
+    text: { top: 230, gap: 6, rows: [
+      { text: 'REVIVAL', family: 'Doto', weight: 900, size: 28, lineHeight: 28, spacing: 2, color: GREEN },
+      { text: 'LOADING', family: 'Silkscreen', size: 8, spacing: 3, pad: 3, color: '#0b8a33' },
+    ] },
+  },
+};
+
+const font = r => `${r.weight ?? 400} ${r.size}px ${r.family}`;
+
+// Lay a screen's text out in the DOM as the design board does; return each row's first-glyph x
+// and baseline y (an empty inline-block's bottom edge sits on the baseline).
+function layoutText(t) {
+  const box = document.createElement('div');
+  box.className = 'layout';
+  const col = document.createElement('div');
+  col.style.cssText = `position:absolute;left:0;right:0;top:${t.top}px;display:flex;flex-direction:column;align-items:center;gap:${t.gap}px`;
+  const parts = t.rows.map(r => {
+    const row = document.createElement('div');
+    row.style.cssText = `font:${font(r)};letter-spacing:${r.spacing}px;padding-left:${r.pad ?? 0}px` +
+      (r.lineHeight ? `;line-height:${r.lineHeight}px` : '');
+    const mark = document.createElement('span');
+    mark.style.cssText = 'display:inline-block;width:0;height:0';
+    const txt = document.createTextNode(r.text);
+    row.append(mark, txt);
+    col.append(row);
+    return { mark, txt };
+  });
+  box.append(col);
+  document.body.append(box);
+  const origin = box.getBoundingClientRect();
+  const out = parts.map(({ mark, txt }) => {
+    const range = document.createRange();
+    range.selectNodeContents(txt);
+    return { x: range.getBoundingClientRect().left - origin.left, y: mark.getBoundingClientRect().bottom - origin.top };
+  });
+  box.remove();
+  return out;
+}
+
+function draw(s) {
+  const c = document.createElement('canvas');
+  c.width = 240; c.height = 296;
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, 240, 296);
+  ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
+  for (const l of s.lines) {
+    ctx.beginPath();
+    for (let i = 0; i < l.pts.length; i += 2) ctx.lineTo(l.pts[i], l.pts[i + 1]);
+    ctx.strokeStyle = l.color;
+    ctx.lineWidth = l.width;
+    ctx.stroke();
+  }
+  for (const o of s.circles) {
+    ctx.beginPath();
+    ctx.arc(o.x, o.y, o.r, 0, 2 * Math.PI);
+    if (o.fill) { ctx.fillStyle = o.fill; ctx.fill(); }
+    if (o.stroke) { ctx.strokeStyle = o.stroke; ctx.lineWidth = o.width; ctx.stroke(); }
+  }
+  layoutText(s.text).forEach((p, i) => {
+    const r = s.text.rows[i];
+    ctx.font = font(r);
+    ctx.letterSpacing = `${r.spacing}px`;
+    ctx.textBaseline = 'alphabetic';
+    ctx.fillStyle = r.color;
+    ctx.fillText(r.text, p.x, p.y);
+  });
+  return c;
+}
+
+(async () => {
+  for (const s of Object.values(SCREENS))
+    for (const r of s.text.rows) await document.fonts.load(font(r), r.text);
+  window.screenPngs = {};
+  for (const [name, s] of Object.entries(SCREENS)) {
+    const c = draw(s);
+    const url = c.toDataURL('image/png');
+    window.screenPngs[name] = url;
+    const fig = document.createElement('figure');
+    const link = Object.assign(document.createElement('a'), { href: url, download: `${name}.png`, textContent: `${name}.png` });
+    fig.append(c, link);
+    document.body.append(fig);
+  }
+})();
+</script>
+</body>
+</html>
