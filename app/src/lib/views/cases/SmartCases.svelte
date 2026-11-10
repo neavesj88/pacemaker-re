@@ -17,8 +17,12 @@
   });
 
   function open(id: number) {
-    cases.openSmart(id);
-    nav.go("cases");
+    if (nav.view === "cases" && cases.smartOpen === id) return;
+    // asks first if the editor now open holds unsaved edits
+    cases.leave(() => {
+      cases.openSmart(id);
+      nav.go("cases");
+    });
   }
 </script>
 

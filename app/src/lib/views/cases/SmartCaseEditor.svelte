@@ -58,12 +58,28 @@
   let counting = $state(false);
   let ticket = 0;
 
+  // A cleared number box gives null, which the backend cannot take: say so next to the rules.
+  let fieldError = $derived.by(() => {
+    for (const r of draft.rules) {
+      if (r.kind === "plays_min" && !(Number.isInteger(r.n) && r.n >= 1)) return "“Played at least” needs a whole number of 1 or more.";
+      if (r.kind === "played_within" && !(Number.isInteger(r.days) && r.days >= 1)) return "“Last played within” needs a whole number of days, 1 or more.";
+      if (r.kind === "bpm_range" && r.min == null && r.max == null) return "A BPM rule needs a minimum, a maximum or both.";
+    }
+    return "";
+  });
+
   $effect(() => {
     const rules = $state.snapshot(draft.rules) as Rule[];
     const root = session.library?.root;
     // library tracks are read so a reload (a refresh after a write) re-runs the count
     void session.library?.tracks;
     if (!root) return;
+    if (fieldError) {
+      ticket++;
+      matchIds = [];
+      counting = false;
+      return;
+    }
     const mine = ++ticket;
     counting = true;
     const timer = setTimeout(async () => {
@@ -86,6 +102,16 @@
 
   // ---- actions ----------------------------------------------------------------------------
   let deleting = $state(false);
+  let leaving = $state<(() => void) | null>(null);
+
+  // Unsaved edits are not thrown away silently: leaving through the store asks first.
+  $effect(() => {
+    if (!dirty) return;
+    cases.leaveGuard = (proceed) => (leaving = proceed);
+    return () => {
+      cases.leaveGuard = null;
+    };
+  });
   let alsoDevice = $state(false);
   let takingOff = $state(false);
 
@@ -104,10 +130,10 @@
 </script>
 
 <div class="crumb">
-  <Button small onclick={() => cases.close()}>← Cases</Button>
+  <Button small onclick={() => cases.leave(() => cases.close())}>← Cases</Button>
   <span class="muted">Smart case</span>
   <input class="name" bind:value={draft.name} aria-label="Smart case name" maxlength="200" />
-  <Button variant="primary" onclick={save} disabled={!dirty || draft.name.trim() === "" || draft.rules.length === 0 || !!ruleError}>
+  <Button variant="primary" onclick={save} disabled={!dirty || draft.name.trim() === "" || draft.rules.length === 0 || !!ruleError || !!fieldError}>
     {id === 0 ? "Create" : "Save"}
   </Button>
   {#if id !== 0}<Button onclick={() => ((alsoDevice = false), (deleting = true))}>Delete…</Button>{/if}
@@ -161,7 +187,9 @@
 
   <aside class="side">
     <div class="count" aria-live="polite">
-      {#if ruleError}
+      {#if fieldError}
+        <span class="err">{fieldError}</span>
+      {:else if ruleError}
         <span class="err">{ruleError}</span>
       {:else}
         <b>{matchIds.length}</b> track{matchIds.length === 1 ? "" : "s"} match{counting ? "…" : ""}
@@ -175,7 +203,7 @@
           role="switch"
           aria-checked={sc?.on_device ?? false}
           aria-label="Put on Pacemaker"
-          disabled={id === 0 || dirty || !!ruleError || !jobs.canWrite}
+          disabled={id === 0 || dirty || !!ruleError || !!fieldError || !jobs.canWrite}
           onclick={() => (sc?.on_device ? (takingOff = true) : cases.setSmartOnDevice(id, true))}
         ><span></span></button>
         <b>Put on Pacemaker</b>
@@ -202,6 +230,17 @@
 <TrackTable {rows} />
 {#if rows.length === 0 && !ruleError}
   <p class="empty">No tracks match these rules.</p>
+{/if}
+
+{#if leaving}
+  {@const proceed = leaving}
+  <ConfirmDialog
+    title="Discard unsaved changes?"
+    message={`The smart case “${draft.name.trim() || "New smart case"}” has changes that are not saved. Leaving now discards them.`}
+    confirmLabel="Discard changes"
+    onconfirm={() => proceed()}
+    onclose={() => (leaving = null)}
+  />
 {/if}
 
 {#if takingOff && sc}

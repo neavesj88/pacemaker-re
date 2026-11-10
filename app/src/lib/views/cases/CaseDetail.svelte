@@ -41,7 +41,37 @@
   // ---- selection --------------------------------------------------------------------------
   let anchor = $state<number | null>(null);
 
+  // Roving tab stop: one row is in the tab order, the arrow keys move it.
+  let focusIdx = $state(0);
+  let tbody = $state<HTMLElement>();
+
+  function rowKey(e: KeyboardEvent, i: number) {
+    if (e.altKey || e.ctrlKey || e.metaKey || (e.target as HTMLElement).closest("button")) return;
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault();
+      const n = Math.max(0, Math.min(rows.length - 1, i + (e.key === "ArrowDown" ? 1 : -1)));
+      if (e.shiftKey && anchor !== null && anchor < rows.length) {
+        const [a, b] = [Math.min(anchor, n), Math.max(anchor, n)];
+        selection.trackIds = rows.slice(a, b + 1).map((r) => r.id);
+      } else {
+        selection.trackIds = [rows[n].id];
+        anchor = n;
+      }
+      focusIdx = n;
+      (tbody?.children[n] as HTMLElement | undefined)?.focus();
+    } else if (e.key === " ") {
+      e.preventDefault();
+      const id = rows[i].id;
+      selection.trackIds = selected.has(id) ? selection.trackIds.filter((x) => x !== id) : [...selection.trackIds, id];
+      anchor = i;
+    } else if (e.key === "Enter" && rows[i].t) {
+      e.preventDefault();
+      play(rows[i].id);
+    }
+  }
+
   function pick(i: number, e: MouseEvent) {
+    focusIdx = i;
     const id = rows[i].id;
     if (e.shiftKey && anchor !== null && anchor < rows.length) {
       const [a, b] = [Math.min(anchor, i), Math.max(anchor, i)];
@@ -58,16 +88,44 @@
   // ---- reorder ----------------------------------------------------------------------------
   /** Moves `moving` (kept in their current relative order) so they sit before original index `at`. */
   function moveBlock(moving: Set<number>, at: number) {
-    const list = cases.trackIds;
+    // Work on the rows as shown (a track repeated in the case is listed once), so row indices
+    // line up; the de-duplicated order is what gets written back.
+    const list = all.map((r) => r.id);
     const block = list.filter((id) => moving.has(id));
     const rest = list.filter((id) => !moving.has(id));
     const into = list.slice(0, at).filter((id) => !moving.has(id)).length;
     const next = [...rest.slice(0, into), ...block, ...rest.slice(into)];
-    if (next.every((id, i) => id === list[i])) return;
+    if (next.every((id, i) => id === list[i]) && list.length === cases.trackIds.length) return;
     cases.reorder(next);
   }
 
   let drag = $state<{ ids: Set<number>; over: number; after: boolean } | null>(null);
+
+  // Tracks dragged in from the Tracks view carry their ids under this type (JSON number array).
+  const TRACKS_MIME = "application/x-pacemaker-tracks";
+  let dropping = $state(false);
+
+  function externalOver(e: DragEvent) {
+    if (drag || !jobs.canWrite || !e.dataTransfer?.types.includes(TRACKS_MIME)) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "copy";
+    dropping = true;
+  }
+
+  async function externalDrop(e: DragEvent) {
+    dropping = false;
+    const raw = drag ? "" : e.dataTransfer?.getData(TRACKS_MIME);
+    if (!raw) return;
+    e.preventDefault();
+    let ids: number[] = [];
+    try {
+      const v = JSON.parse(raw);
+      if (Array.isArray(v)) ids = v.filter((x): x is number => Number.isInteger(x));
+    } catch {
+      return;
+    }
+    if (ids.length > 0) await cases.addTracks(open.id, ids);
+  }
 
   function dragStart(e: DragEvent, i: number) {
     const id = rows[i].id;
@@ -110,7 +168,9 @@
   }
 
   function onkey(e: KeyboardEvent) {
-    if ((e.target as HTMLElement).closest("input, select, textarea")) return;
+    // Not while a dialog is up: its keys must not act on the case behind it.
+    if (adding || renaming || deleting || removing) return;
+    if ((e.target as HTMLElement).closest("input, select, textarea, [role='dialog']")) return;
     if (e.key === "Delete" && jobs.canWrite && selectedRows.length > 0) removing = selectedRows;
     else if (e.altKey && e.key === "ArrowUp") (e.preventDefault(), nudge(-1));
     else if (e.altKey && e.key === "ArrowDown") (e.preventDefault(), nudge(1));
@@ -170,7 +230,7 @@
         onclick={() => metadataEditor.edit(selectedRows.filter((r) => r.t).map((r) => r.id))}
         disabled={selectedRows.every((r) => !r.t)}
       >Edit tracks…</Button>
-      <span class="muted hint">Drag rows to reorder · the order is the order on the Pacemaker</span>
+      <span class="muted hint">Drag rows to reorder, or drop tracks here from the Tracks view · the order is the order on the Pacemaker</span>
     </div>
 
     {#if missing.length > 0}
@@ -182,8 +242,17 @@
     {/if}
 
     <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-    <div class="scroll" tabindex="0" role="region" aria-label="Tracks in the case">
-      <table>
+    <div
+      class="scroll"
+      class:dropping
+      tabindex="0"
+      role="region"
+      aria-label="Tracks in the case"
+      ondragover={externalOver}
+      ondragleave={() => (dropping = false)}
+      ondrop={externalDrop}
+    >
+      <table role="grid" aria-multiselectable="true" aria-label="Tracks in the case">
         <thead>
           <tr>
             <th class="grip">#</th>
@@ -196,9 +265,12 @@
             <th class="num">Time</th>
           </tr>
         </thead>
-        <tbody>
+        <tbody bind:this={tbody}>
           {#each rows as r, i (r.id)}
             <tr
+              tabindex={i === Math.min(focusIdx, rows.length - 1) ? 0 : -1}
+              aria-selected={selected.has(r.id)}
+              onkeydown={(e) => rowKey(e, i)}
               draggable={canReorder}
               class:sel={selected.has(r.id)}
               class:dim={!r.t || session.needs.has(r.id)}
@@ -293,6 +365,8 @@
   <NameDialog
     title="Rename case"
     initial={open.name}
+    note={open.name === "Favourites" ? "This is the case the heart on a track uses. If you rename it, the next heart click starts a new, empty “Favourites” case and the hearts stop showing." : undefined}
+    taken={cases.infos.filter((x) => x.id !== open.id).map((x) => x.name)}
     confirmLabel="Rename"
     onconfirm={(name) => ((renaming = false), cases.rename(open.id, name))}
     onclose={() => (renaming = false)}
@@ -318,7 +392,7 @@
 {#if deleting}
   <ConfirmDialog
     title="Delete this case?"
-    message={`Delete the case “${open.name}” (${all.length} track${all.length === 1 ? "" : "s"}) from the Pacemaker? The tracks stay in the library; only the case is removed.`}
+    message={`Delete the case “${open.name}” (${all.length} track${all.length === 1 ? "" : "s"}) from the Pacemaker? The tracks stay in the library; only the case is removed.${open.name === "Favourites" ? " This is the case the heart on a track uses: deleting it clears every heart, and the next heart click starts a new, empty Favourites case." : ""}`}
     confirmLabel="Delete case"
     onconfirm={() => cases.remove(open.id)}
     onclose={() => (deleting = false)}
@@ -354,6 +428,9 @@
     background: var(--bad-bg);
     color: var(--bad-text);
     border-bottom: 1px solid var(--line);
+  }
+  .scroll.dropping {
+    box-shadow: inset 0 0 0 2px var(--accent);
   }
   .scroll {
     flex: 1;
@@ -407,6 +484,10 @@
   }
   tbody tr.sel {
     background: var(--accent-soft);
+  }
+  tbody tr:focus-visible {
+    outline: 1px solid var(--accent);
+    outline-offset: -1px;
   }
   tr.dim {
     color: var(--muted);

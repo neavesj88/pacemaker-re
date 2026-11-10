@@ -45,6 +45,10 @@ class Cases {
   /** The smart case being viewed: its id, 0 for a new unsaved one, null for none. */
   smartOpen = $state<number | null>(null);
   busy = $state(false);
+  /** True once the case list has been read for the current library (false: still loading). */
+  loaded = $state(false);
+  /** Set by the smart case editor while it holds unsaved edits: asks before `proceed` runs. */
+  leaveGuard: ((proceed: () => void) => void) | null = null;
 
   get openInfo(): CaseInfo | undefined {
     return this.open ? this.infos.find((c) => c.id === this.open!.id) : undefined;
@@ -52,6 +56,12 @@ class Cases {
 
   #root(): string | null {
     return session.library?.root ?? null;
+  }
+
+  /** Runs `proceed` (leaving the editor), after the editor has asked about unsaved edits. */
+  leave(proceed: () => void) {
+    if (this.leaveGuard) this.leaveGuard(proceed);
+    else proceed();
   }
 
   close() {
@@ -69,6 +79,7 @@ class Cases {
       const [infos, favs] = await Promise.all([listCases(root), favouriteIds(root)]);
       if (session.library?.root !== root) return;
       this.infos = infos;
+      this.loaded = true;
       this.favourites = new Set(favs);
       session.library.cases = infos.map((c) => ({ id: c.id, name: c.name, play_time_secs: c.play_time_secs, track_count: c.track_count }));
       if (this.open) {
@@ -78,6 +89,7 @@ class Cases {
       }
     } catch (e) {
       session.error = String(e);
+      this.loaded = true;
     }
     await this.refreshSmartCounts();
   }
@@ -261,6 +273,7 @@ class Cases {
   reset() {
     this.close();
     this.infos = [];
+    this.loaded = false;
     this.favourites = new Set();
     this.smart = [];
     this.smartCounts = {};

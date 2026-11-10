@@ -6,7 +6,7 @@
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
-use pm_formats::library::{Error, Library, MAX_RATING, Track};
+use pm_formats::library::{Error, Library, MAX_CASE_NAME_CHARS, MAX_RATING, Track};
 use serde::{Deserialize, Serialize};
 
 /// Prefix of the device case a smart case is materialised as, so it is recognisable on the
@@ -133,6 +133,11 @@ impl Camelot {
 pub fn validate(name: &str, rules: &[Rule]) -> Result<(), String> {
     if name.trim().is_empty() {
         return Err("The smart case needs a name.".into());
+    }
+    // The device copy is named with the star prefix, and the device limit applies to that.
+    if DEVICE_PREFIX.chars().count() + name.trim().chars().count() > MAX_CASE_NAME_CHARS {
+        let max = MAX_CASE_NAME_CHARS - DEVICE_PREFIX.chars().count();
+        return Err(format!("The smart case name is too long (at most {max} characters)."));
     }
     validate_rules(rules)
 }
@@ -285,19 +290,27 @@ pub fn device_name(sc: &SmartCase) -> String {
     format!("{DEVICE_PREFIX}{}", sc.name.trim())
 }
 
+/// The device case a smart case remembers, but only while it is still ours: the id must exist
+/// and the case must still carry [`DEVICE_PREFIX`]. A different card mounted at the same path,
+/// or a case the user renamed and repurposed, fails this and is left alone.
+fn owned_device_case(lib: &Library, sc: &SmartCase) -> Result<Option<i64>, Error> {
+    let Some(id) = sc.device_case_id else {
+        return Ok(None);
+    };
+    Ok(lib.case_info(id)?.filter(|c| c.name.starts_with(DEVICE_PREFIX)).map(|_| id))
+}
+
 /// Creates or refreshes the device case for `sc` so it holds exactly the current matches, in
-/// match order; returns the case id and how many tracks it holds. The case is ours: it is
-/// renamed back if someone renamed it, and recreated if it was deleted on the device.
+/// match order; returns the case id and how many tracks it holds. The case is ours only while
+/// it still carries the star prefix: it is recreated if it was deleted on the device or no
+/// longer looks like ours, and a prefixed case that was merely renamed is renamed back.
 pub fn put_on_device(lib: &mut Library, sc: &SmartCase, ids: &[i64]) -> Result<(i64, usize), Error> {
     let name = device_name(sc);
-    let existing = match sc.device_case_id {
-        Some(id) => lib.case_info(id)?.map(|_| id),
-        None => None,
-    };
-    let case_id = match existing {
+    let case_id = match owned_device_case(lib, sc)? {
         Some(id) => {
-            lib.rename_case(id, &name)?;
+            // Members first: if that fails nothing has been renamed yet.
             lib.set_case_tracks(id, ids)?;
+            lib.rename_case(id, &name)?;
             id
         }
         None => lib.create_case_with_tracks(&name, ids)?,
@@ -305,9 +318,10 @@ pub fn put_on_device(lib: &mut Library, sc: &SmartCase, ids: &[i64]) -> Result<(
     Ok((case_id, ids.len()))
 }
 
-/// Deletes the device case of `sc`, if it still exists; returns whether one was deleted.
+/// Deletes the device case of `sc` if it still exists and is still ours (see
+/// [`owned_device_case`]); returns whether one was deleted.
 pub fn take_off_device(lib: &mut Library, sc: &SmartCase) -> Result<bool, Error> {
-    match sc.device_case_id {
+    match owned_device_case(lib, sc)? {
         Some(id) => lib.delete_case(id),
         None => Ok(false),
     }
@@ -603,7 +617,7 @@ mod tests {
         assert_eq!(lib.case_track_ids(case_id).unwrap(), vec![ids[2], ids[0]]);
 
         // refresh replaces the membership in place (same case) and restores a changed name
-        lib.rename_case(case_id, "Someone renamed it").unwrap();
+        lib.rename_case(case_id, "\u{2605} Someone renamed it").unwrap();
         let (again, _) = put_on_device(&mut lib, &s, &[ids[1]]).unwrap();
         assert_eq!(again, case_id);
         assert_eq!(lib.case_track_ids(case_id).unwrap(), vec![ids[1]]);
@@ -626,6 +640,21 @@ mod tests {
         let (fresh, _) = put_on_device(&mut lib, &s, &[ids[0]]).unwrap();
         assert_ne!(fresh, case_id, "ids are never reused");
         assert!(!take_off_device(&mut lib, &sc("never on device")).unwrap());
+
+        // a case at the remembered id that is not ours (other card, renamed away) is never
+        // overwritten or deleted
+        let foreign = lib.create_case_with_tracks("Plain case", &[ids[1]]).unwrap();
+        let stale = SmartCase { device_case_id: Some(foreign), ..s.clone() };
+        assert!(!take_off_device(&mut lib, &stale).unwrap());
+        assert_eq!(lib.case_info(foreign).unwrap().unwrap().name, "Plain case");
+        let (made, _) = put_on_device(&mut lib, &stale, &[ids[0], ids[2]]).unwrap();
+        assert_ne!(made, foreign);
+        assert_eq!(lib.case_info(foreign).unwrap().unwrap().name, "Plain case");
+        assert_eq!(lib.case_track_ids(foreign).unwrap(), vec![ids[1]]);
+
+        // the name limit counts the star prefix
+        assert!(validate(&"x".repeat(MAX_CASE_NAME_CHARS - 2), &[Rule::PlaysZero]).is_ok());
+        assert!(validate(&"x".repeat(MAX_CASE_NAME_CHARS - 1), &[Rule::PlaysZero]).is_err());
 
         // an over-long name is refused before any write
         let long = SmartCase { name: "x".repeat(300), device_case_id: None, ..s.clone() };

@@ -33,6 +33,19 @@
   let selected = $derived(selection.trackIds.length);
   // the device copy of a smart case, so deleting it can say so
   const smartOf = (c: CaseInfo) => cases.smart.find((s) => s.device_case_id === c.id);
+  // the heart on a track looks this case up by its exact name
+  const isFav = (c: CaseInfo) => c.name === "Favourites";
+  const FAV_NOTE = "This is the case the heart on a track uses.";
+  const othersThan = (id?: number) => cases.infos.filter((x) => x.id !== id).map((x) => x.name);
+
+  // The shared Table has no row context-menu hook, so find the row from the event.
+  function rowMenu(e: MouseEvent) {
+    const tr = (e.target as HTMLElement).closest("tbody tr") as HTMLTableRowElement | null;
+    const c = tr ? rows[tr.sectionRowIndex] : undefined;
+    if (!c) return;
+    e.preventDefault();
+    menu = { x: e.clientX, y: e.clientY, c };
+  }
 
   const menuItems = (c: CaseInfo): MenuItem[] => [
     { label: "Open", onclick: () => open(c) },
@@ -76,14 +89,13 @@
   <span class="muted">Cases are the Pacemaker's own playlists; the order here is the order on the device.</span>
 </div>
 
+<div role="presentation" oncontextmenu={rowMenu}>
 <Table {columns} {rows} rowKey={(c) => c.id} onrowclick={open}>
   {#snippet cell(c, col)}
     {#if col.key === "name"}
-      <span
-        role="presentation"
-        oncontextmenu={(e) => (e.preventDefault(), e.stopPropagation(), (menu = { x: e.clientX, y: e.clientY, c }))}
-      >
+      <span>
         <Button variant="link" onclick={(e) => (e.stopPropagation(), open(c))}>{c.name}</Button>
+        {#if isFav(c)}<span class="tag" title={FAV_NOTE}>hearts</span>{/if}
         {#if smartOf(c)}<span class="tag" title="Made by the smart case “{smartOf(c)?.name}”">smart</span>{/if}
       </span>
     {:else if col.key === "track_count"}
@@ -102,7 +114,10 @@
     {/if}
   {/snippet}
 </Table>
-{#if rows.length === 0}
+</div>
+{#if !cases.loaded}
+  <p class="empty">Loading cases…</p>
+{:else if rows.length === 0}
   <p class="empty">{filters.query ? "No cases match the search." : "No cases on this device yet. Use New case, or the heart on a track for Favourites."}</p>
 {/if}
 
@@ -114,6 +129,8 @@
   <NameDialog
     title={naming.kind === "rename" ? "Rename case" : naming.kind === "from-selection" ? `New case from ${selected} selected track${selected === 1 ? "" : "s"}` : "New case"}
     initial={naming.kind === "rename" ? naming.c.name : ""}
+    note={naming.kind === "rename" && isFav(naming.c) ? `${FAV_NOTE} If you rename it, the next heart click starts a new, empty “Favourites” case and the hearts here stop showing.` : undefined}
+    taken={othersThan(naming.kind === "rename" ? naming.c.id : undefined)}
     confirmLabel={naming.kind === "rename" ? "Rename" : "Create"}
     onconfirm={confirmName}
     onclose={() => (naming = null)}
@@ -124,7 +141,7 @@
   {@const c = deleting}
   <ConfirmDialog
     title="Delete this case?"
-    message={`Delete the case “${c.name}” (${c.track_count} track${c.track_count === 1 ? "" : "s"}) from the Pacemaker? The tracks stay in the library; only the case is removed.${smartOf(c) ? ` It is the Pacemaker copy of the smart case “${smartOf(c)?.name}”, which will make it again the next time you refresh it.` : ""}`}
+    message={`Delete the case “${c.name}” (${c.track_count} track${c.track_count === 1 ? "" : "s"}) from the Pacemaker? The tracks stay in the library; only the case is removed.${isFav(c) ? ` ${FAV_NOTE} Deleting it clears every heart; the next heart click starts a new, empty Favourites case.` : ""}${smartOf(c) ? ` It is the Pacemaker copy of the smart case “${smartOf(c)?.name}”, which will make it again the next time you refresh it.` : ""}`}
     confirmLabel="Delete case"
     onconfirm={() => cases.remove(c.id)}
     onclose={() => (deleting = null)}
