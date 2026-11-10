@@ -1,9 +1,493 @@
 <script lang="ts">
-  import Placeholder from "$lib/ui/Placeholder.svelte";
+  import { onMount, untrack } from "svelte";
+  import { nav } from "$lib/state/nav.svelte";
+  import { playback } from "$lib/state/playback.svelte";
+  import { selection } from "$lib/state/selection.svelte";
+  import { session } from "$lib/state/session.svelte";
+  import Button from "$lib/ui/Button.svelte";
+  import Modal from "$lib/ui/Modal.svelte";
+  import { editor, tempoMap } from "./editor.svelte";
+  import { fmtTime, lowerBound } from "./gridMath";
+  import { Metronome } from "./metronome";
+  import Overview from "./Overview.svelte";
+  import WaveCanvas from "./WaveCanvas.svelte";
+
+  // ---- which track ----
+  const tracks = $derived(session.library?.tracks ?? []);
+  const meta = $derived(tracks.find((t) => t.track_id === editor.trackId));
+  const label = (t: { artist: string; title: string; location: string }) =>
+    t.artist && t.title ? `${t.artist} - ${t.title}` : t.title || t.location;
+
+  let pendingOpen = $state<number | null>(null);
+  let confirmSave = $state(false);
+
+  function open(id: number) {
+    cursor = 0;
+    viewStart = 0;
+    pxPerSec = 0; // the waveform refits when the new track's length arrives
+    editor.open(id);
+  }
+
+  /** Switching away from unsaved edits asks first. */
+  function request(id: number) {
+    if (id === editor.trackId) return;
+    if (editor.dirty) pendingOpen = id;
+    else open(id);
+  }
+
+  onMount(() => {
+    const want = nav.take<number>("grid.trackId") ?? nav.take<number>("trackId");
+    if (typeof want === "number") request(want);
+    else if (editor.trackId === null) {
+      // nothing open yet: start from the highlighted or playing track
+      const first = selection.trackIds[0] ?? playback.trackId;
+      if (first !== null && first !== undefined) open(first);
+    }
+  });
+
+  // a deep link while the view is already showing
+  $effect(() => {
+    const id = nav.params["grid.trackId"] ?? nav.params["trackId"];
+    if (typeof id !== "number") return;
+    untrack(() => {
+      nav.take("grid.trackId");
+      nav.take("trackId");
+      request(id);
+    });
+  });
+
+  // ---- view window ----
+  let viewStart = $state(0);
+  let pxPerSec = $state(0);
+  let width = $state(0);
+  let wave = $state<ReturnType<typeof WaveCanvas> | null>(null);
+  const viewSpan = $derived(pxPerSec > 0 ? width / pxPerSec : 0);
+
+  // ---- playhead: the transport's position when our track is loaded there, else a cursor ----
+  let cursor = $state(0);
+  let head = $state(0);
+  let stamp = 0;
+  let stampPos = 0;
+  const loadedHere = $derived(editor.trackId !== null && playback.trackId === editor.trackId);
+
+  // the player reports position in coarse steps: extrapolate between them for a smooth playhead
+  $effect(() => {
+    stampPos = playback.position;
+    stamp = performance.now();
+  });
+  const livePos = () => (loadedHere && playback.playing ? stampPos + (performance.now() - stamp) / 1000 : loadedHere ? playback.position : cursor);
+
+  $effect(() => {
+    if (!(loadedHere && playback.playing)) {
+      head = loadedHere ? playback.position : cursor;
+      return;
+    }
+    let raf = 0;
+    const loop = () => {
+      head = Math.min(livePos(), editor.duration || Infinity);
+      const span = viewSpan;
+      if (span > 0 && (head > viewStart + span * 0.92 || head < viewStart)) {
+        viewStart = Math.max(0, Math.min(head - span * 0.08, Math.max(0, editor.duration - span)));
+      }
+      raf = requestAnimationFrame(loop);
+    };
+    loop();
+    return () => cancelAnimationFrame(raf);
+  });
+
+  function seek(secs: number) {
+    cursor = secs;
+    if (loadedHere) playback.seek(secs);
+  }
+
+  function togglePlay() {
+    const id = editor.trackId;
+    if (id === null) return;
+    if (!loadedHere) {
+      playback.load(id, true);
+      if (cursor > 0) playback.seek(cursor);
+    } else playback.toggle();
+  }
+
+  // ---- metronome ----
+  const metro = new Metronome();
+  let click = $state(false);
+  let latency = $state(0);
+  const beatSecs = $derived(Float64Array.from(editor.doc?.beats ?? [], (b) => b.pos / editor.sampleRate));
+  const fd = $derived(editor.doc?.first_downbeat ?? null);
+
+  $effect(() => {
+    metro.latencyMs = latency;
+  });
+
+  $effect(() => {
+    if (!click || !loadedHere || !playback.playing) return;
+    metro.reset();
+    const beats = beatSecs;
+    const first = fd;
+    const h = setInterval(() => metro.tick(livePos(), beats, first), 20);
+    return () => clearInterval(h);
+  });
+
+  async function toggleClick() {
+    if (!click) await metro.arm();
+    click = !click;
+  }
+
+  onMount(() => () => metro.close());
+
+  // ---- editing helpers ----
+  let bpmText = $state("");
+  $effect(() => {
+    bpmText = editor.bpm ? editor.bpm.toFixed(2) : "";
+  });
+
+  async function applyBpm() {
+    const v = Number(bpmText.replace(",", "."));
+    if (!Number.isFinite(v) || v <= 0) return;
+    await editor.setBpm(v);
+  }
+
+  const canEdit = $derived(!!editor.doc && !editor.busy);
+  const firstBeatSecs = $derived(editor.doc ? editor.doc.beats[0].pos / editor.sampleRate : 0);
+  const beatNo = $derived(beatSecs.length ? Math.max(0, lowerBound(beatSecs, head + 0.0005) - 1) + 1 : 0);
+  const cueSecs = $derived(editor.cue === null ? null : editor.cue / editor.sampleRate);
+  const strPath = $derived((editor.loaded?.location ?? "").replace(/\.[^./]+$/, ".str"));
+  const signed = (n: number, digits = 1) => `${n >= 0 ? "+" : "-"}${Math.abs(n).toFixed(digits)}`;
+
+  function onkey(e: KeyboardEvent) {
+    const t = e.target as HTMLElement | null;
+    if (t && /^(INPUT|SELECT|TEXTAREA)$/.test(t.tagName)) return;
+    if (confirmSave || pendingOpen !== null) return;
+    const mod = e.ctrlKey || e.metaKey;
+    if (mod && e.key.toLowerCase() === "z") {
+      e.preventDefault();
+      if (e.shiftKey) editor.redo();
+      else editor.undo();
+    } else if (mod && e.key.toLowerCase() === "y") {
+      e.preventDefault();
+      editor.redo();
+    } else if (e.key === " " && editor.trackId !== null && !(t instanceof HTMLButtonElement)) {
+      e.preventDefault();
+      togglePlay();
+    }
+  }
+
+  async function doSave() {
+    confirmSave = false;
+    await editor.save();
+  }
 </script>
 
-<Placeholder
-  title="Beat grid editor"
-  description="Check and correct a track's beat grid, which is written to the same .str file the device reads."
-  planned={["Waveform with beat lines", "BPM and first-downbeat offset", "Cue points"]}
-/>
+<svelte:window onkeydown={onkey} />
+
+<div class="grid">
+  {#if !session.library}
+    <p class="empty">Open a library to edit beat grids.</p>
+  {:else}
+    <div class="bar">
+      <select
+        aria-label="Track"
+        value={editor.trackId ?? ""}
+        onchange={(e) => request(Number(e.currentTarget.value))}
+      >
+        {#if editor.trackId === null}<option value="" disabled>Choose a track…</option>{/if}
+        {#each tracks as t (t.track_id)}<option value={t.track_id}>{label(t)}</option>{/each}
+      </select>
+      {#if editor.loaded}
+        <span class="chip" class:g={!editor.dirty && !!editor.doc} class:bad={!editor.doc}>
+          {!editor.doc ? "no grid" : editor.dirty ? "unsaved changes" : "saved"}
+        </span>
+        {#if editor.doc}
+          <span class="muted num">
+            {editor.bpm.toFixed(2)} BPM{meta?.key ? ` · ${meta.key}` : ""} · first downbeat {fmtTime(firstBeatSecs)}
+          </span>
+        {/if}
+      {/if}
+      <span class="spacer"></span>
+      <Button small disabled={!editor.canUndo || editor.busy} onclick={() => editor.undo()} title="Undo (Ctrl+Z)">Undo</Button>
+      <Button small disabled={!editor.canRedo || editor.busy} onclick={() => editor.redo()} title="Redo (Ctrl+Shift+Z)">Redo</Button>
+      <Button variant="primary" small disabled={!editor.dirty || editor.busy} onclick={() => (confirmSave = true)}>Save…</Button>
+    </div>
+
+    {#if editor.loaded}
+      <div class="tools">
+        <div class="grp" role="group" aria-label="Nudge the whole grid">
+          <span class="lab">Nudge</span>
+          {#each [-20, -5, -1, 1, 5, 20] as ms (ms)}
+            <Button small disabled={!canEdit} onclick={() => editor.nudgeMs(ms)} title="Move every beat {ms < 0 ? 'earlier' : 'later'} by {Math.abs(ms)} ms">
+              {ms > 0 ? "+" : "−"}{Math.abs(ms)}
+            </Button>
+          {/each}
+          <span class="lab">ms</span>
+        </div>
+        <div class="grp" role="group" aria-label="Beat lines">
+          <Button small disabled={!canEdit} onclick={() => editor.shiftBeats(-1)} title="Move the beat lines one beat earlier">◀ beat</Button>
+          <Button small disabled={!canEdit} onclick={() => editor.shiftBeats(1)} title="Move the beat lines one beat later">beat ▶</Button>
+          <Button small disabled={!canEdit} onclick={() => editor.setDownbeatAt(head)} title="Make the beat nearest the playhead a bar line">Set downbeat</Button>
+        </div>
+        <div class="grp" role="group" aria-label="Tempo">
+          <Button small disabled={!canEdit} onclick={() => editor.halve()} title="Keep every second beat">½ BPM</Button>
+          <Button small disabled={!canEdit} onclick={() => editor.double()} title="Add a beat between every two">×2 BPM</Button>
+          <input
+            class="bpm num"
+            aria-label="BPM"
+            inputmode="decimal"
+            bind:value={bpmText}
+            disabled={!canEdit}
+            onkeydown={(e) => e.key === "Enter" && applyBpm()}
+          />
+          <Button small disabled={!canEdit} onclick={applyBpm} title="Rebuild a constant grid at this tempo from the first beat">Set BPM</Button>
+        </div>
+        <div class="grp" role="group" aria-label="Analysis and cue">
+          <Button small disabled={editor.busy} onclick={() => editor.reanalyse()} title="Replace the grid with a fresh analysis of the audio (nothing is saved until you save)">Re-analyse</Button>
+          <Button small disabled={editor.busy} onclick={() => editor.setCue(head)} title="Use the playhead as the device cue point">Set cue</Button>
+          <Button small disabled={editor.busy || editor.cue === null} onclick={() => editor.setCue(null)}>Clear cue</Button>
+        </div>
+      </div>
+
+      <div class="transport">
+        <Button small onclick={togglePlay}>{loadedHere && playback.playing ? "❚❚ Pause" : "▶ Play"}</Button>
+        <span class="num time">{fmtTime(head)}</span>
+        <span class="muted num">beat {beatNo}</span>
+        <span class="spacer"></span>
+        <Button small active={click} onclick={toggleClick} title="Click on every beat while playing; bar lines click higher">Metronome</Button>
+        {#if click}
+          <label class="muted" title="Shift the click later (+) or earlier (−) to match your output device">
+            latency <input class="lat num" type="number" step="5" bind:value={latency} /> ms
+          </label>
+        {/if}
+        <Button small onclick={() => wave?.zoom(1 / 1.6)} aria-label="Zoom out">−</Button>
+        <Button small onclick={() => wave?.zoom(1.6)} aria-label="Zoom in">+</Button>
+        <Button small onclick={() => wave?.fit()}>Fit</Button>
+      </div>
+
+      {#if editor.error}<p class="err">{editor.error}</p>{/if}
+      {#if !editor.doc}
+        <p class="warn">
+          No usable beat grid ({editor.loaded.problem ?? "unknown"}). Use Re-analyse to build one from the audio, then Save.
+        </p>
+      {/if}
+
+      <WaveCanvas
+        bind:this={wave}
+        bind:viewStart
+        bind:pxPerSec
+        bind:width
+        peaks={editor.peaks}
+        {beatSecs}
+        firstDownbeat={fd}
+        duration={editor.duration}
+        cue={cueSecs}
+        playhead={head}
+        onseek={seek}
+      />
+      <Overview
+        peaks={editor.peaks}
+        {beatSecs}
+        firstDownbeat={fd}
+        duration={editor.duration}
+        cue={cueSecs}
+        playhead={head}
+        {viewStart}
+        {viewSpan}
+        oncentre={(s) => wave?.centre(s)}
+      />
+
+      <div class="cols">
+        <div class="card">
+          <h4>Grid</h4>
+          <div class="field"><span class="lab">BPM</span><span class="num">{editor.doc ? editor.bpm.toFixed(2) : "-"}</span></div>
+          <div class="field">
+            <span class="lab">Offset</span>
+            <span class="num">{signed(editor.offsetMs)} ms</span>
+          </div>
+          <div class="field"><span class="lab">Beats</span><span class="num">{editor.doc?.beats.length ?? 0}</span></div>
+          <div class="field"><span class="lab">Tempo map</span><span>{tempoMap(editor.doc)}</span></div>
+          <p class="note">Writes the same .str file the Pacemaker reads, so sync locks to these beats.</p>
+        </div>
+        <div class="card">
+          <h4>Device cue</h4>
+          <div class="field">
+            <span class="lab">Cue point</span>
+            <span class="num">{cueSecs === null ? "not set" : fmtTime(cueSecs)}{editor.cueDirty ? " (unsaved)" : ""}</span>
+          </div>
+          <p class="note">
+            The Pacemaker holds one cue point per track. It is stored in the track's row with the grid, in source sample
+            frames (unit not yet confirmed on a device).
+          </p>
+        </div>
+        <div class="card">
+          <h4>Keys</h4>
+          <div class="field"><span class="lab">Space</span><span>play / pause</span></div>
+          <div class="field"><span class="lab">Ctrl+Z</span><span>undo (Ctrl+Shift+Z redo)</span></div>
+          <div class="field"><span class="lab">Wheel</span><span>zoom; Shift+wheel or drag to scroll</span></div>
+        </div>
+      </div>
+    {:else if editor.busy}
+      <p class="empty">Loading…</p>
+    {:else}
+      <p class="empty">{editor.error || "Choose a track above to check and correct its beat grid."}</p>
+    {/if}
+  {/if}
+</div>
+
+{#if confirmSave && editor.loaded}
+  <Modal title="Save to the device?" onclose={() => (confirmSave = false)}>
+    <p>This changes the files and database of the open library:</p>
+    <ul class="what">
+      {#if editor.gridDirty && editor.doc}
+        <li>
+          Replaces the beat grid of <strong>{label(editor.loaded)}</strong> ({strPath}): {editor.doc.beats.length} beats at
+          {editor.bpm.toFixed(2)} BPM, first beat {signed(editor.offsetMs)} ms from the saved one.
+        </li>
+      {/if}
+      {#if editor.cueDirty}
+        <li>
+          Sets the cue point of <strong>{label(editor.loaded)}</strong> to
+          {editor.cue === null ? "not set" : fmtTime((editor.cue ?? 0) / editor.sampleRate)}.
+        </li>
+      {/if}
+    </ul>
+    <p class="muted">The previous grid cannot be restored from here. No backup file is written to the device.</p>
+    {#snippet actions()}
+      <Button data-autofocus onclick={() => (confirmSave = false)}>Cancel</Button>
+      <Button variant="primary" onclick={doSave}>Save to device</Button>
+    {/snippet}
+  </Modal>
+{/if}
+
+{#if pendingOpen !== null}
+  <Modal title="Discard unsaved changes?" onclose={() => (pendingOpen = null)}>
+    <p>
+      <strong>{editor.loaded ? label(editor.loaded) : "This track"}</strong> has grid or cue edits that are not saved.
+      Opening another track discards them.
+    </p>
+    {#snippet actions()}
+      <Button data-autofocus onclick={() => (pendingOpen = null)}>Keep editing</Button>
+      <Button
+        variant="primary"
+        onclick={() => {
+          const id = pendingOpen;
+          pendingOpen = null;
+          if (id !== null) open(id);
+        }}>Discard and open</Button
+      >
+    {/snippet}
+  </Modal>
+{/if}
+
+<style>
+  .grid {
+    --g-low: #ff48a8;
+    --g-mid: #e070ff;
+    --g-high: #00ff46;
+    --g-beat: #3a5a42;
+    --g-cue: #ffd23b;
+    padding: 12px;
+    overflow: auto;
+    height: 100%;
+  }
+  .bar,
+  .tools,
+  .transport {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 10px;
+  }
+  .grp {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding-right: 10px;
+    border-right: 1px solid var(--line);
+  }
+  .grp:last-child {
+    border-right: none;
+  }
+  .spacer {
+    flex: 1;
+  }
+  select {
+    max-width: 380px;
+  }
+  .chip {
+    font-size: 11px;
+    padding: 1px 7px;
+    border-radius: 9px;
+    background: var(--accent-soft);
+    color: var(--accent);
+  }
+  .chip.g {
+    background: rgba(0, 255, 70, 0.1);
+    color: var(--green);
+  }
+  .chip.bad {
+    background: var(--bad-bg);
+    color: var(--bad-text);
+  }
+  .lab {
+    color: var(--muted);
+    font-size: 12px;
+  }
+  .bpm {
+    width: 74px;
+    text-align: right;
+  }
+  .lat {
+    width: 60px;
+  }
+  .time {
+    min-width: 76px;
+  }
+  .err {
+    color: var(--bad);
+    margin: 4px 0 8px;
+  }
+  .empty {
+    color: var(--muted);
+    padding: 24px;
+  }
+  .cols {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 14px;
+    padding: 12px 0;
+  }
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 12px;
+  }
+  .card h4 {
+    margin: 0 0 8px;
+  }
+  .field {
+    display: grid;
+    grid-template-columns: 96px 1fr;
+    gap: 6px;
+    align-items: center;
+    margin: 6px 0;
+  }
+  .note {
+    font-size: 12px;
+    color: var(--muted);
+    border-top: 1px solid var(--line);
+    margin: 12px 0 0;
+    padding-top: 10px;
+  }
+  .warn {
+    color: var(--muted);
+    margin: 0 0 10px;
+  }
+  .what {
+    margin: 8px 0;
+    padding-left: 18px;
+  }
+  .what li {
+    margin: 6px 0;
+  }
+</style>
