@@ -339,6 +339,30 @@ through the normal update path without touching kernel, rootfs or bootloader.
   `_INIT_*` code (read with `scripts/ghidra/EmulateInitsAt.java`): dim ring = donut*Passed colours
   (800000, 008000, 008080, 800080), bright arcs = donut*Cursor colours (ff0000, 00ff00, 00ffff,
   ff00ff). Recolouring it means patching pwrApplication, i.e. a rootfs build.
+- **Ring draw order and the magenta patch (`scripts/patch-pwr-ring.py`, Nov 2026).** In
+  `PwrComponent::render` (only the branch taken when the status string is empty) one stroke width
+  of 22 is set, then 8 arcs: four **dim** ones with sweep pi/2 (the visible ring) and four
+  **bright cursor** ones with sweep 0.001 rad (a 22 px radial tick, nearly invisible), each pair at
+  start angle +0, +pi/2, +pi, +3pi/2. Colour = `memcpy(.., literal-pool ptr, 4)`, R,G,B,A. Pool words
+  (render pool 0x62220..0x62248): dim Q0 0x62220 -> donutGainPassedColor (0x1f8d15), Q1 0x62230 ->
+  donut2pPassed (0x1f8d39), Q2 0x62234 -> donut1pPassed (0x1f8d2d), Q3 0x62238 -> donutEQPassed
+  (0x1f8d21); bright Q0 0x6223c -> donutGainCursor (0x1f8d19), Q1 0x62240 -> donut2pCursor
+  (0x1f8d3d), Q2 0x62244 -> donut1pCursor (0x1f8d31), Q3 0x62248 -> donutEQCursor (0x1f8d25).
+  (Ghidra labels these as `donut*Color+4`; the dynsym names above are exact.) The palette is set
+  by `_INIT_5` (0x7d314..0x7d6bc, called via 0x7d740), a run of `strb` from shared registers
+  (r7 = 0x80 feeds six dim colours), and `donutEQCursorColor` is also read by `ErrorComponent` and
+  `ErrorWindowComponent::render`, so editing the initialiser would recolour the error screens too.
+  The patch therefore leaves `_INIT_5` alone and repoints the 8 pool words at 8 new RGBA constants
+  at vaddr 0x1f7ab4..0x1f7ad3 (file 0x1e7ab4), in the spare `.dynamic` slots after `DT_NULL`
+  (file 0x1e7aac; 0x1e7ab4..0x1e7ae4 are zero, the binary is not prelinked, ld.so stops at the
+  first `DT_NULL`). 48 bytes change, size unchanged (2,006,288): stock dim 800000/008000/008080/
+  800080 -> 4a2554/551a55/551a45/551838, bright ff0000/00ff00/00ffff/ff00ff -> e070ff/ff50ff/
+  ff50d0/ff48a8, alpha ff. Output `work/build/pwrApplication-ring`; proof by emulating all 28
+  initialisers on the patched program (`scripts/ghidra/RenderColours.java`, result in
+  `work/build/ring-emulation.txt`); one-frame preview `work/build/ring-preview.png`
+  (`scripts/ring-preview.py`). Not yet run on hardware. Note the dim ring is what is on screen;
+  the bright arcs are barely visible ticks, so if a bright magenta ring is wanted the *dim*
+  values need to be brighter than the 84/255 ratio.
 
 ## 5c. Boot images and the SD adapter on real hardware (verified on the device, Nov 2026)
 
