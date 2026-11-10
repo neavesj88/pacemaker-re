@@ -35,8 +35,17 @@ impl Key {
         format!("{}{}", NAMES[(self.tonic % 12) as usize], if self.minor { "m" } else { "" })
     }
 
+    /// Camelot wheel code for display and compatible-key filters: "8B" for C, "8A" for Am.
+    /// A minor key shares its number with its relative major.
+    pub fn camelot(&self) -> String {
+        let major_tonic = if self.minor { (self.tonic as u32 + 3) % 12 } else { self.tonic as u32 % 12 };
+        let number = (major_tonic * 7 + 7) % 12 + 1;
+        format!("{number}{}", if self.minor { "A" } else { "B" })
+    }
+
     /// Parses "C", "Am", "F#m", "Bb", "Ebm", "A minor", "C major" (case of the note letter is
-    /// ignored; flats accepted). `None` for anything else, including Camelot codes.
+    /// ignored; flats accepted). `None` for anything else, including Camelot codes (those are
+    /// produced by [`Key::camelot`], not read back).
     pub fn parse(text: &str) -> Option<Key> {
         let t = text.trim();
         let mut ch = t.chars();
@@ -256,6 +265,17 @@ mod tests {
     use super::*;
 
     const SR: u32 = 22050;
+
+    #[test]
+    fn camelot_codes_follow_the_wheel() {
+        let code = |t: &str| Key::parse(t).unwrap().camelot();
+        for (k, c) in [("C", "8B"), ("Am", "8A"), ("G", "9B"), ("Em", "9A"), ("F", "7B"), ("Dm", "7A"), ("B", "1B"), ("G#m", "1A"), ("F#", "2B"), ("D#m", "2A")] {
+            assert_eq!(code(k), c, "{k}");
+        }
+        let all: std::collections::HashSet<String> =
+            (0..12).flat_map(|t| [false, true].map(|m| Key { tonic: t, minor: m }.camelot())).collect();
+        assert_eq!(all.len(), 24);
+    }
 
     #[test]
     fn names_round_trip_and_fit_the_column() {

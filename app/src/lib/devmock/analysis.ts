@@ -25,38 +25,64 @@ export const handlers: Handlers = {
     });
   },
 
-  // like the real job: only keyless tracks (unless overwrite), one progress event each, then done
+  // like the real job: only keyless tracks (unless overwrite, which needs named tracks), one
+  // progress event each, then done. Every 4th target is skipped as too short and the 6th fails,
+  // and results under minConfidence are skipped, so the UI's skipped and failed states show up.
   analysis_detect_keys: (a) => {
     if (jobLock.running) throw "Another job is still running.";
     const ids = a.trackIds as number[] | null;
-    const targets = tracks.filter((t) => (!ids || ids.includes(t.track_id)) && (a.overwrite || !t.key.trim()));
     if (ids && ids.length === 0) throw "No tracks to analyse.";
+    if (a.overwrite && !ids) throw "Overwriting existing keys needs the tracks to be named.";
+    const floor = Number(a.minConfidence) || 0;
+    const targets = tracks.filter((t) => (!ids || ids.includes(t.track_id)) && (a.overwrite || !t.key.trim()));
     jobLock.running = true;
+    let ok = 0;
+    let failed = 0;
+    let skipped = 0;
     const finish = async () => {
       jobLock.running = false;
-      await emit("job-done", {
-        job: "keys",
-        ok: targets.length,
-        failed: 0,
-        summary: targets.length ? `${targets.length} key${targets.length === 1 ? "" : "s"} written` : "nothing to do",
-        error: null,
-      });
+      const parts = [
+        ok ? `${ok} key${ok === 1 ? "" : "s"} written` : "",
+        skipped ? `${skipped} skipped` : "",
+        failed ? `${failed} failed` : "",
+      ].filter(Boolean);
+      await emit("job-done", { job: "keys", ok, failed, summary: parts.join(", ") || "nothing to do", error: null });
     };
     if (!targets.length) setTimeout(finish, 300);
     targets.forEach((t, i) =>
       setTimeout(async () => {
         const r = seeded(t.location);
         const key = KEYS[Math.floor(r() * 12)] + (r() < 0.5 ? "m" : "");
-        t.key = key;
+        const confidence = (60 + Math.floor(r() * 35)) / 100;
+        let status = "detected";
+        let detail: string | null = `${key} (${Math.round(confidence * 100)}%)`;
+        let error: string | null = null;
+        if (i % 6 === 5) {
+          status = "failed";
+          detail = null;
+          error = "could not decode the file";
+          failed++;
+        } else if (i % 4 === 3) {
+          status = "skipped";
+          detail = "no clear key (too short, silent or atonal)";
+          skipped++;
+        } else if (confidence < floor) {
+          status = "skipped";
+          detail = `low confidence: ${key} (${Math.round(confidence * 100)}%)`;
+          skipped++;
+        } else {
+          t.key = key;
+          ok++;
+        }
         await emit("job-progress", {
           job: "keys",
           label: `${t.artist} - ${t.title}`,
           done: i + 1,
           total: targets.length,
-          status: "detected",
+          status,
           bpm: null,
-          detail: `${key} (${60 + Math.floor(r() * 35)}%)`,
-          error: null,
+          detail,
+          error,
         });
         if (i === targets.length - 1) await finish();
       }, 500 * (i + 1)),

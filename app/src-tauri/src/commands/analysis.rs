@@ -146,15 +146,42 @@ pub fn analysis_detect_keys(
     overwrite: Option<bool>,
     min_confidence: Option<f32>,
 ) -> AppResult<()> {
-    if track_ids.as_ref().is_some_and(|ids| ids.is_empty()) {
-        return Err("No tracks to analyse.".into());
-    }
+    check_key_args(track_ids.as_deref(), overwrite.unwrap_or(false))?;
     spawn_job(app, &lock, KEYS_JOB, move |app| {
         let mut lib = Library::open(Path::new(&root))?;
         Ok(detect_keys(&mut lib, track_ids.as_deref(), overwrite.unwrap_or(false), min_confidence.unwrap_or(0.0), |p| {
             events::emit(app, JOB_PROGRESS, p)
         })?)
     })
+}
+
+fn check_key_args(track_ids: Option<&[i64]>, overwrite: bool) -> AppResult<()> {
+    if track_ids.is_some_and(|ids| ids.is_empty()) {
+        return Err("No tracks to analyse.".into());
+    }
+    // replacing keys someone set is only allowed for tracks the caller names one by one
+    if overwrite && track_ids.is_none() {
+        return Err("Overwriting existing keys needs the tracks to be named; refusing to rewrite the whole library.".into());
+    }
+    Ok(())
+}
+
+/// Writes a batch of keys. `set_track_keys` is all-or-nothing, so if it fails (a track removed
+/// meanwhile, say) the entries are written one by one and only the bad ones are returned, with
+/// the reason. Returns (rows changed, failures).
+fn write_keys(lib: &mut Library, pending: &[(i64, String)]) -> (usize, Vec<(i64, String)>) {
+    if let Ok(n) = lib.set_track_keys(pending) {
+        return (n, Vec::new());
+    }
+    let mut written = 0;
+    let mut bad = Vec::new();
+    for (id, key) in pending {
+        match lib.set_track_key(*id, key) {
+            Ok(changed) => written += usize::from(changed),
+            Err(e) => bad.push((*id, e.to_string())),
+        }
+    }
+    (written, bad)
 }
 
 /// The body of the key job, apart from Tauri so it can be tested on a temp library.
@@ -207,11 +234,20 @@ fn detect_keys(
                 failed += 1;
             }
         }
+        progress(p);
         if pending.len() >= KEY_BATCH || (done == total && !pending.is_empty()) {
-            written += lib.set_track_keys(&pending)?;
+            let (n, bad) = write_keys(lib, &pending);
+            written += n;
+            for (id, e) in bad {
+                ok -= 1;
+                failed += 1;
+                let label = targets.iter().find(|t| t.track_id == id).map(label_of).unwrap_or_default();
+                let mut f = Progress::new(KEYS_JOB, label, done, total, "failed");
+                f.error = Some(format!("key not saved: {e}"));
+                progress(f);
+            }
             pending.clear();
         }
-        progress(p);
     }
     let mut parts = Vec::new();
     if written > 0 {
@@ -377,6 +413,29 @@ mod tests {
         drop((lib, lib2));
         std::fs::remove_dir_all(base).unwrap();
         std::fs::remove_dir_all(base2).unwrap();
+    }
+
+    #[test]
+    fn overwrite_needs_named_tracks() {
+        assert!(check_key_args(None, true).is_err());
+        assert!(check_key_args(Some(&[]), false).is_err());
+        assert!(check_key_args(None, false).is_ok());
+        assert!(check_key_args(Some(&[1]), true).is_ok());
+    }
+
+    #[test]
+    fn a_failing_batch_write_keeps_the_other_keys() {
+        let (mut lib, base, ids) = library("keys-batch", &[("a.wav", wav_bytes(&chords(7, false))), ("b.wav", wav_bytes(&chords(2, true)))]);
+        let batch = vec![(ids[0], "G".to_string()), (987_654, "Am".to_string()), (ids[1], "Dm".to_string())];
+        let (written, bad) = write_keys(&mut lib, &batch);
+        assert_eq!(written, 2);
+        assert_eq!(bad.len(), 1);
+        assert_eq!(bad[0].0, 987_654);
+        let keys: Vec<String> = lib.tracks().unwrap().into_iter().map(|t| t.key).collect();
+        assert_eq!(keys, vec!["G", "Dm"]);
+        assert!(lib.compatibility_problems().unwrap().is_empty());
+        drop(lib);
+        std::fs::remove_dir_all(base).unwrap();
     }
 
     #[test]
