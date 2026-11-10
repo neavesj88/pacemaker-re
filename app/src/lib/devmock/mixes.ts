@@ -257,7 +257,12 @@ export const handlers: Handlers = {
     sync(saved);
     return { id: doc.id, name: doc.name, playTimeSecs: Math.floor(saved.length / SR), trackCount: saved.clips.length, dateModified: Date.now() };
   },
-  mix_validate: (a) => problems(a.doc as MixDoc),
+  mix_validate: (a) => {
+    const doc = a.doc as MixDoc;
+    const p = problems(doc);
+    if (mixes.some((m) => m.name === doc.name && m.id !== doc.id)) p.push(`a mix called "${doc.name}" already exists`);
+    return p;
+  },
   mix_rename: (a) => {
     const d = docs.get(a.id);
     if (!d) throw `no mix ${a.id}`;

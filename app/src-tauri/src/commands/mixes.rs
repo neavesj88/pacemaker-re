@@ -74,13 +74,23 @@ pub(crate) fn open_in(lib: &Library, id: i64) -> AppResult<MixDoc> {
     Ok(doc)
 }
 
+/// Everything that would stop a save: the document's own problems plus a name another mix uses
+/// (checked here because the document alone cannot know).
+pub(crate) fn problems_in(lib: &Library, doc: &MixDoc) -> AppResult<Vec<String>> {
+    let ids: Vec<i64> = doc.clips.iter().map(|c| c.track_id).filter(|t| *t >= 0).collect();
+    let known: HashSet<i64> = lib.mix_track_sources(&ids)?.into_iter().map(|s| s.track_id).collect();
+    let mut problems = doc.validate(Some(&known));
+    if lib.mix_infos()?.iter().any(|m| m.id != doc.id && m.name == doc.name) {
+        problems.push(format!("a mix called {:?} already exists", doc.name));
+    }
+    Ok(problems)
+}
+
 pub(crate) fn save_in(lib: &mut Library, id: i64, doc: &MixDoc) -> AppResult<MixSaved> {
     if doc.id != id {
         return Err(format!("this document belongs to mix {}, not mix {id}", doc.id).into());
     }
-    let ids: Vec<i64> = doc.clips.iter().map(|c| c.track_id).filter(|t| *t >= 0).collect();
-    let known: HashSet<i64> = lib.mix_track_sources(&ids)?.into_iter().map(|s| s.track_id).collect();
-    let problems = doc.validate(Some(&known));
+    let problems = problems_in(lib, doc)?;
     if !problems.is_empty() {
         return Err(many(&problems).into());
     }
@@ -119,9 +129,7 @@ pub async fn mix_save(root: String, id: i64, doc: MixDoc) -> AppResult<MixSaved>
 pub async fn mix_validate(root: String, doc: MixDoc) -> AppResult<Vec<String>> {
     tauri::async_runtime::spawn_blocking(move || -> AppResult<Vec<String>> {
         let lib = Library::open_read_only(Path::new(&root))?;
-        let ids: Vec<i64> = doc.clips.iter().map(|c| c.track_id).filter(|t| *t >= 0).collect();
-        let known: HashSet<i64> = lib.mix_track_sources(&ids)?.into_iter().map(|s| s.track_id).collect();
-        Ok(doc.validate(Some(&known)))
+        problems_in(&lib, &doc)
     })
     .await?
 }
@@ -419,6 +427,14 @@ mod tests {
         assert!(e.contains("Nowhere"), "{e}");
         assert_eq!(lib.mix_infos().unwrap().len(), before);
         assert!(import_in(&mut lib, b"not a mix", "f").is_err());
+
+        // a name another mix uses is a live validation problem, not only a save-time refusal
+        let mut clash = open_in(&lib, third).unwrap();
+        assert!(problems_in(&lib, &clash).unwrap().is_empty());
+        clash.name = "Original (2)".into();
+        let p = problems_in(&lib, &clash).unwrap();
+        assert!(p.iter().any(|x| x.contains("already exists")), "{p:?}");
+        assert!(save_in(&mut lib, third, &clash).unwrap_err().to_string().contains("already exists"));
         cleanup(lib, dirs);
     }
 }

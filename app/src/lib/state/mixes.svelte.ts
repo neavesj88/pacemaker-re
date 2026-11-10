@@ -40,6 +40,19 @@ const COALESCE_MS = 1500;
 
 type Snapshot = { doc: MixDoc; label: string };
 
+/** True when two documents hold the same saved content. Documents are replaced, never mutated,
+ * so untouched parts are shared and a reference comparison per field is enough. The reference
+ * tempo is not part of the saved mix, so it is ignored. */
+function sameContent(a: MixDoc, b: MixDoc): boolean {
+  if (a === b) return true;
+  const x = a as Record<string, unknown>;
+  const y = b as Record<string, unknown>;
+  const keys = new Set([...Object.keys(x), ...Object.keys(y)]);
+  keys.delete("tempoBpm");
+  for (const k of keys) if (x[k] !== y[k]) return false;
+  return true;
+}
+
 export type EditOptions = {
   /** Edits with the same group within `COALESCE_MS` of each other are one undo step (a drag). */
   group?: string;
@@ -119,12 +132,18 @@ class Mixes {
     this.busy = true;
     try {
       const saved = await mixSave(root, doc.id, doc);
-      this.#savedDoc = doc;
-      this.dirty = false;
-      this.problems = [];
-      if (doc.meta) {
-        this.doc = { ...doc, name: saved.name, meta: { ...doc.meta, dateModified: saved.dateModified, playTimeSecs: saved.playTimeSecs } };
-        this.#savedDoc = this.doc;
+      const stamp = (d: MixDoc): MixDoc =>
+        d.meta ? { ...d, meta: { ...d.meta, dateModified: saved.dateModified, playTimeSecs: saved.playTimeSecs } } : d;
+      // The user may have kept editing while the write was in flight: what was written is `doc`,
+      // so it becomes the saved baseline, and the live document (possibly newer) stays dirty.
+      this.#savedDoc = stamp(doc);
+      const cur = this.doc;
+      if (cur && cur.id === doc.id) {
+        if (cur === doc) this.doc = this.#savedDoc;
+        else this.doc = { ...stamp(cur), name: cur.name === doc.name ? saved.name : cur.name };
+        this.dirty = !sameContent(this.doc, this.#savedDoc);
+        this.problems = this.dirty ? this.problems : [];
+        if (this.dirty) this.#scheduleCheck();
       }
       toast.show(`Saved "${saved.name}"`, "ok");
       void this.refreshList();
@@ -175,6 +194,11 @@ class Mixes {
     const after = fn(before);
     if (after === before) return;
     const now = Date.now();
+    if (opts.dirties === false) {
+      // not part of the saved document (the reference tempo): no undo step, history untouched
+      this.doc = after;
+      return;
+    }
     const merge = !!opts.group && opts.group === this.#group && now - this.#groupAt < COALESCE_MS && this.#undo.length > 0;
     if (!merge) {
       this.#undo.push({ doc: before, label });
@@ -184,7 +208,7 @@ class Mixes {
     this.#group = opts.group ?? "";
     this.#groupAt = now;
     this.doc = after;
-    if (opts.dirties !== false) this.dirty = true;
+    this.dirty = true;
     this.#syncDepth();
     this.#scheduleCheck();
   }
@@ -198,7 +222,7 @@ class Mixes {
     const s = this.#undo.pop();
     if (!s || !this.doc) return;
     this.#redo.push({ doc: this.doc, label: s.label });
-    this.doc = s.doc;
+    this.doc = { ...s.doc, tempoBpm: this.doc.tempoBpm };
     this.#afterHistory();
   }
 
@@ -206,13 +230,13 @@ class Mixes {
     const s = this.#redo.pop();
     if (!s || !this.doc) return;
     this.#undo.push({ doc: this.doc, label: s.label });
-    this.doc = s.doc;
+    this.doc = { ...s.doc, tempoBpm: this.doc.tempoBpm };
     this.#afterHistory();
   }
 
   #afterHistory() {
     this.#group = "";
-    this.dirty = this.doc !== this.#savedDoc;
+    this.dirty = !(this.doc && this.#savedDoc && sameContent(this.doc, this.#savedDoc));
     // drop selected ids that no longer exist
     const doc = this.doc;
     if (doc) this.selected = this.selected.filter((id) => E.find(doc, id));
@@ -234,8 +258,11 @@ class Mixes {
       const p = await mixValidate(root, doc);
       if (this.doc === doc) this.problems = p;
       return p;
-    } catch {
-      return this.problems;
+    } catch (e) {
+      // validation did not run: say so rather than showing a stale (maybe empty) list
+      const p = [`validation could not run: ${e instanceof Error ? e.message : String(e)}`];
+      if (this.doc === doc) this.problems = p;
+      return p;
     }
   }
 
