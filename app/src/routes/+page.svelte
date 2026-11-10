@@ -4,6 +4,7 @@
   import { getCurrentWebview } from "@tauri-apps/api/webview";
   import { open as openDialog } from "@tauri-apps/plugin-dialog";
   import { onMount } from "svelte";
+  import RMark from "$lib/RMark.svelte";
 
   type Track = {
     track_id: number;
@@ -322,7 +323,7 @@
 
 <div class="app">
   <header>
-    <div class="brand">Pacemaker <span>Revival</span></div>
+    <div class="brand"><RMark size={20} /><b>Pacemaker <span>Revival</span></b></div>
     <div class="source">
       {#if volumes.length > 0}
         <select onchange={(e) => load((e.currentTarget as HTMLSelectElement).value)}>
@@ -480,6 +481,7 @@
     </div>
   {:else if !loading}
     <div class="welcome">
+      <RMark size={96} />
       <h1>Connect your Pacemaker</h1>
       {#if volumes.length > 0}
         <p>Found on this computer:</p>
@@ -591,6 +593,9 @@
     border-bottom: 1px solid var(--line);
   }
   .brand {
+    display: flex;
+    align-items: center;
+    gap: 8px;
     font-weight: 700;
     letter-spacing: 0.02em;
   }

@@ -17,8 +17,9 @@ ROOT = Path(__file__).resolve().parent.parent
 SRC = ROOT / "work/fw-180096069/bin/resources/symbols/blips.png"
 OUT = ROOT / "work/branding/blips.png"
 
-# D1: violet -> magenta -> hot pink, red clip on top (rows 3..9, lit colours)
-RAMP = ["8000ff", "a000ff", "c800ff", "ff00ff", "ff00c8", "ff0090", "ff0000"]
+# L2: bright magenta, lifted with green/white so it reads on the washed-out panel (D1's violet
+# looked dark purple on the device); red clip on top (rows 3..9, lit colours)
+RAMP = ["e070ff", "f060ff", "ff50ff", "ff50e8", "ff50d0", "ff48a8", "ff3030"]
 UNLIT = 84 / 255  # Tonium's unlit tiles are the lit colour at 0x54/0xff
 
 
