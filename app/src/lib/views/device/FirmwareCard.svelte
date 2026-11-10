@@ -6,6 +6,7 @@
     pickFirmwareFile,
     type PfwInfo,
   } from "$lib/api/device";
+  import { jobs } from "$lib/state/jobs.svelte";
   import { session } from "$lib/state/session.svelte";
   import { toast } from "$lib/state/toast.svelte";
   import Button from "$lib/ui/Button.svelte";
@@ -66,7 +67,11 @@
   {/if}
 
   <div class="actions">
-    <Button disabled={inspecting || !!device.job || !session.library} onclick={choose}>
+    <Button
+      disabled={inspecting || device.blocked || !session.library}
+      title={jobs.busy ? "Another job is still running" : undefined}
+      onclick={choose}
+    >
       {inspecting ? "Checking file…" : "Install firmware…"}
     </Button>
   </div>
@@ -86,7 +91,8 @@
       </ol>
       <p class="muted">A new firmware number also resets the device settings. An equal one flashes nothing.</p>
       <Button
-        disabled={device.ejecting || !!device.job || !session.library}
+        disabled={device.blocked || !session.library}
+        title={jobs.busy ? "Another job is still running" : undefined}
         onclick={() => session.library && device.eject(session.library.root)}
       >
         {device.ejecting ? "Ejecting…" : "Eject now"}

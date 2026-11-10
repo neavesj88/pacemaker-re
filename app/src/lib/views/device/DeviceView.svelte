@@ -14,10 +14,11 @@
   // Storage, health, firmware, backup and settings of the docked Pacemaker. Everything is read
   // when the view opens and again whenever the library is re-read (after an add or re-analysis).
   let lib = $derived(session.library);
+  let detached = $derived(device.isDetached(lib));
 
   $effect(() => {
     const root = lib?.root;
-    if (root) untrack(() => device.load(root));
+    if (root && !untrack(() => device.isDetached(lib))) untrack(() => device.load(root));
   });
 </script>
 
@@ -26,13 +27,22 @@
   {#if lib}
     <span class="chip">{volumeName(lib.root)}</span>
     <span class="sp"></span>
-    <Button disabled={device.ejecting || !!device.job} onclick={() => device.eject(lib.root)}>
+    <Button
+      disabled={device.blocked || detached}
+      title={device.blocked && !device.ejecting ? "A job is still writing to the device" : undefined}
+      onclick={() => device.eject(lib.root)}
+    >
       {device.ejecting ? "Ejecting…" : "Eject"}
     </Button>
   {/if}
 </div>
 
-{#if lib}
+{#if lib && detached}
+  <p class="muted pad" role="status">
+    {volumeName(lib.root)} was ejected. It is safe to unplug the USB cable. To work with a Pacemaker again, plug it in
+    and open it from the drive list.
+  </p>
+{:else if lib}
   <div class="cols">
     <StorageCard />
     <HealthCard />

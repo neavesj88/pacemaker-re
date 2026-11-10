@@ -12,6 +12,16 @@
   let needs = $derived(session.needs.size);
 
   // "Show tracks" lands in the tracks view with the affected rows highlighted
+  // the first few affected tracks by name, so they can be found without leaving this card
+  let missingNames = $derived.by(() => {
+    const byId = new Map((session.library?.tracks ?? []).map((t) => [t.track_id, t]));
+    const names = (h?.missing_audio ?? []).map((m) => {
+      const t = byId.get(m.track_id);
+      return t?.title || m.location.split("/").pop() || m.location;
+    });
+    return names.length > 4 ? `${names.slice(0, 4).join(", ")} and ${names.length - 4} more` : names.join(", ");
+  });
+
   function showMissing() {
     selection.trackIds = (h?.missing_audio ?? []).map((m) => m.track_id);
     nav.go("tracks");
@@ -23,7 +33,7 @@
     <Button
       small
       disabled={device.scanning || !!device.job || !session.library}
-      onclick={() => session.library && device.scan(session.library.root)}
+      onclick={() => session.library && device.load(session.library.root)}
     >
       {device.scanning ? "Scanning…" : "Scan again"}
     </Button>
@@ -51,7 +61,7 @@
         <span class="mark">{h.missing_audio.length ? "✗" : "✓"}</span>
         <div class="what">
           {#if h.missing_audio.length}
-            {plural(h.missing_audio.length, "track")} listed in the library but without an audio file on the drive.
+            {plural(h.missing_audio.length, "track")} listed in the library but without an audio file on the drive: {missingNames}.
           {:else}
             Every track has its audio file.
           {/if}
@@ -84,7 +94,7 @@
           {/if}
         </div>
         {#if h.unreferenced_checked && h.unreferenced.length}
-          <Button small disabled={!!device.job} onclick={() => (device.cleanupOpen = true)}>Review…</Button>
+          <Button small disabled={device.blocked} onclick={() => (device.cleanupOpen = true)}>Review…</Button>
         {/if}
       </li>
     </ul>

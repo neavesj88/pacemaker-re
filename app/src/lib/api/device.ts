@@ -88,6 +88,8 @@ export const deviceFirmwareInstall = (root: string, path: string) =>
   invoke<void>("device_firmware_install", { root, path });
 export const deviceBackup = (root: string, dest: string, includeAudio: boolean) =>
   invoke<void>("device_backup", { root, dest, includeAudio });
+/** Asks the running device job (firmware copy, backup, clean-up) to stop at the next file. */
+export const deviceCancel = () => invoke<void>("device_cancel");
 export const deviceCleanup = (root: string, files: string[]) => invoke<void>("device_cleanup", { root, files });
 /** True once the library has disappeared from the volume. */
 export const deviceEject = (root: string) => invoke<boolean>("device_eject", { root });

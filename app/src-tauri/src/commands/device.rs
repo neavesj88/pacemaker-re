@@ -5,17 +5,39 @@
 //! cannot overlap another write job.
 
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use pm_formats::ops_device::{self, FirmwareInfo, Health, PfwInfo, SettingsView, Storage};
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Manager, State};
 
 use crate::error::AppResult;
 use crate::events::{self, JOB_PROGRESS};
 use crate::jobs::{JobOutcome, Progress, spawn_job};
-use crate::state::JobLock;
+use crate::state::{JobGuard, JobLock};
 
-pub fn setup(_app: &mut tauri::App) {}
+/// Set by `device_cancel`, polled by the running device job between files / chunks. Cleared when
+/// a job starts, so a cancel never leaks into the next job.
+#[derive(Default)]
+pub struct DeviceCancel(AtomicBool);
+
+pub fn setup(app: &mut tauri::App) {
+    app.manage(DeviceCancel::default());
+}
+
+fn start_job_cancel(app: &AppHandle) {
+    app.state::<DeviceCancel>().0.store(false, Ordering::SeqCst);
+}
+
+fn cancelled(app: &AppHandle) -> bool {
+    app.state::<DeviceCancel>().0.load(Ordering::SeqCst)
+}
+
+/// Asks the running device job (firmware copy, backup, clean-up) to stop at the next file.
+#[tauri::command]
+pub fn device_cancel(app: AppHandle) {
+    app.state::<DeviceCancel>().0.store(true, Ordering::SeqCst);
+}
 
 fn mb(bytes: u64) -> String {
     if bytes >= 1 << 30 {
@@ -65,7 +87,12 @@ pub struct SettingChange {
 /// Writes the given setting changes to `settings.dat`. Returns how many settings changed.
 /// The UI asks for confirmation first.
 #[tauri::command]
-pub async fn device_settings_write(root: String, changes: Vec<SettingChange>) -> AppResult<usize> {
+pub async fn device_settings_write(lock: State<'_, JobLock>, root: String, changes: Vec<SettingChange>) -> AppResult<usize> {
+    // settings.dat is on the volume an import or re-analysis is writing to: not while one runs
+    if !lock.try_acquire() {
+        return Err("Another job is still running. Write the settings when it has finished.".into());
+    }
+    let _guard = JobGuard(&lock.0);
     tauri::async_runtime::spawn_blocking(move || -> AppResult<usize> {
         let pairs: Vec<(i64, f64)> = changes.iter().map(|c| (c.id, c.value)).collect();
         Ok(ops_device::write_settings(Path::new(&root), &pairs)?)
@@ -83,11 +110,17 @@ pub async fn device_firmware_inspect(path: String) -> AppResult<PfwInfo> {
 #[tauri::command]
 pub fn device_firmware_install(app: AppHandle, lock: State<'_, JobLock>, root: String, path: String) -> AppResult<()> {
     spawn_job(app, &lock, "device-firmware", move |app| {
-        let rep = ops_device::install_pfw(Path::new(&root), Path::new(&path), &mut |done, total| {
-            let mut p = Progress::new("device-firmware", "Copying the firmware file", done as usize, total as usize, "copying");
-            p.detail = Some(format!("{done} of {total} MB"));
-            events::emit(app, JOB_PROGRESS, p);
-        })?;
+        start_job_cancel(app);
+        let rep = ops_device::install_pfw(
+            Path::new(&root),
+            Path::new(&path),
+            &mut |done, total| {
+                let mut p = Progress::new("device-firmware", "Copying the firmware file", done as usize, total as usize, "copying");
+                p.detail = Some(format!("{done} of {total} MB"));
+                events::emit(app, JOB_PROGRESS, p);
+            },
+            &|| cancelled(app),
+        )?;
         let same = if rep.same_version_as_installed {
             " Its firmware number equals the installed one, so the device will flash nothing."
         } else {
@@ -102,9 +135,16 @@ pub fn device_firmware_install(app: AppHandle, lock: State<'_, JobLock>, root: S
 #[tauri::command]
 pub fn device_backup(app: AppHandle, lock: State<'_, JobLock>, root: String, dest: String, include_audio: bool) -> AppResult<()> {
     spawn_job(app, &lock, "device-backup", move |app| {
-        let rep = ops_device::backup_snapshot(Path::new(&root), Path::new(&dest), include_audio, &mut |done, total, label| {
-            events::emit(app, JOB_PROGRESS, Progress::new("device-backup", label, done, total, "copied"));
-        })?;
+        start_job_cancel(app);
+        let rep = ops_device::backup_snapshot(
+            Path::new(&root),
+            Path::new(&dest),
+            include_audio,
+            &mut |done, total, label| {
+                events::emit(app, JOB_PROGRESS, Progress::new("device-backup", label, done, total, "copied"));
+            },
+            &|| cancelled(app),
+        )?;
         Ok(JobOutcome {
             ok: rep.files,
             failed: 0,
@@ -127,14 +167,23 @@ pub fn device_cleanup(app: AppHandle, lock: State<'_, JobLock>, root: String, fi
         return Err("No files to delete.".into());
     }
     spawn_job(app, &lock, "device-cleanup", move |app| {
-        let rep = ops_device::delete_unreferenced(Path::new(&root), &files, &mut |done, total, label| {
-            if !label.is_empty() {
-                events::emit(app, JOB_PROGRESS, Progress::new("device-cleanup", label, done, total, "deleting"));
-            }
-        })?;
+        start_job_cancel(app);
+        let rep = ops_device::delete_unreferenced(
+            Path::new(&root),
+            &files,
+            &mut |done, total, label| {
+                if !label.is_empty() {
+                    events::emit(app, JOB_PROGRESS, Progress::new("device-cleanup", label, done, total, "deleting"));
+                }
+            },
+            &|| cancelled(app),
+        )?;
         let mut parts = vec![format!("Deleted {} file{} ({})", rep.deleted, if rep.deleted == 1 { "" } else { "s" }, mb(rep.bytes))];
         if !rep.skipped.is_empty() {
             parts.push(format!("{} left alone because they are no longer unused", rep.skipped.len()));
+        }
+        if rep.cancelled {
+            parts.push("stopped early at your request; the rest were not touched".to_string());
         }
         if !rep.failed.is_empty() {
             parts.push(format!("{} could not be deleted: {}", rep.failed.len(), rep.failed.join("; ")));
@@ -145,7 +194,12 @@ pub fn device_cleanup(app: AppHandle, lock: State<'_, JobLock>, root: String, fi
 
 /// Asks the OS to eject the volume. True once the library has disappeared from it.
 #[tauri::command]
-pub async fn device_eject(root: String) -> AppResult<bool> {
+pub async fn device_eject(lock: State<'_, JobLock>, root: String) -> AppResult<bool> {
+    // ejecting under a running copy would cut it off half-written
+    if !lock.try_acquire() {
+        return Err("A job is still writing to the device. Eject when it has finished.".into());
+    }
+    let _guard = JobGuard(&lock.0);
     tauri::async_runtime::spawn_blocking(move || -> AppResult<bool> { Ok(ops_device::eject(Path::new(&root))?) }).await?
 }
 
@@ -165,6 +219,7 @@ macro_rules! device_commands {
                 $crate::commands::device::device_backup,
                 $crate::commands::device::device_cleanup,
                 $crate::commands::device::device_eject,
+                $crate::commands::device::device_cancel,
             ];
             $($rest),*
         }

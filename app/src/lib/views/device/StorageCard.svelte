@@ -9,6 +9,14 @@
   let lib = $derived(session.library);
   let unused = $derived(device.health?.unreferenced_checked ? device.health.unreferenced.length : 0);
 
+  let meterLabel = $derived(
+    s
+      ? s.total_bytes > 0
+        ? `Storage use: ${bytes(s.music_bytes)} music, ${bytes(s.grids_mixes_bytes)} grids and mixes, ${bytes(s.other_bytes)} other, ${bytes(s.free_bytes)} free of ${bytes(s.total_bytes)}`
+        : `Storage use: ${bytes(s.music_bytes)} music, ${bytes(s.grids_mixes_bytes)} grids and mixes; free space unknown`
+      : "Storage use",
+  );
+
   // a non-empty segment is never thinner than a sliver, so small use stays visible
   const pct = (n: number) => (s && s.total_bytes > 0 ? Math.max((n / s.total_bytes) * 100, n > 0 ? 0.6 : 0) : 0);
 </script>
@@ -17,7 +25,7 @@
   {#if !s}
     <p class="muted">Reading the drive…</p>
   {:else}
-    <div class="meter" role="img" aria-label="Storage use">
+    <div class="meter" role="img" aria-label={meterLabel}>
       <i class="music" style="width:{pct(s.music_bytes)}%"></i>
       <i class="grids" style="width:{pct(s.grids_mixes_bytes)}%"></i>
       <i class="other" style="width:{pct(s.other_bytes)}%"></i>
@@ -42,7 +50,7 @@
   {/if}
   <div class="actions">
     <Button
-      disabled={!device.health?.unreferenced_checked || unused === 0 || !!device.job}
+      disabled={!device.health?.unreferenced_checked || unused === 0 || device.blocked}
       onclick={() => (device.cleanupOpen = true)}
     >
       {unused > 0 ? `Clean up ${unused} unused file${unused === 1 ? "" : "s"}…` : "Clean up…"}
@@ -69,7 +77,7 @@
     background: var(--text);
   }
   .other {
-    background: var(--line-hi);
+    background: var(--muted);
   }
   .legend {
     display: flex;

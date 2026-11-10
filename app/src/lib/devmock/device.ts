@@ -75,26 +75,42 @@ let settings: S[] = [
   float(300, "Lineout volume (mix)", 1.3456, 2.284794807434082),
 ];
 
+// Switches keyed on the drive's name, like "broken" below: open a folder whose path contains
+// "nosettings" (no settings.dat yet), "nofree" (free space unreadable) or "pending" (a firmware file
+// already waits, so an install is refused) to see those states.
+const has = (a: Record<string, unknown>, word: string) => String(a.root ?? "").toLowerCase().includes(word);
+
+let running: { job: string; timers: ReturnType<typeof setTimeout>[]; what: string } | null = null;
+
 /** One job-progress event per step on a timer, then job-done, like jobs.rs. */
 function runSteps(job: string, labels: string[], status: string, summary: string, after?: () => void, detail?: (i: number, n: number) => string) {
+  const timers: ReturnType<typeof setTimeout>[] = [];
+  const what = job === "device-backup" ? "the backup was stopped and the partial copy was removed"
+    : job === "device-firmware" ? "the firmware copy was stopped and nothing was installed"
+    : "";
+  running = { job, timers, what };
   labels.forEach((label, i) =>
-    setTimeout(
+    timers.push(setTimeout(
       () =>
         emit("job-progress", {
           job, label, done: i + 1, total: labels.length, status,
           bpm: null, detail: detail ? detail(i + 1, labels.length) : null, error: null,
         }),
       350 * (i + 1),
-    ),
+    )),
   );
-  setTimeout(() => {
+  timers.push(setTimeout(() => {
+    running = null;
     after?.();
     emit("job-done", { job, ok: labels.length, failed: 0, summary, error: null });
-  }, 350 * (labels.length + 1));
+  }, 350 * (labels.length + 1)));
 }
 
 export const handlers: Handlers = {
-  device_overview: () => ({ storage, firmware: { ...firmware } }),
+  device_overview: (a) => ({
+    storage: has(a, "nofree") ? { ...storage, total_bytes: 0, free_bytes: 0 } : storage,
+    firmware: { ...firmware, pending_pfw: has(a, "pending") ? ["waiting-demo.pfw"] : [...firmware.pending_pfw] },
+  }),
 
   device_health: (a) => {
     if (String(a.root).includes("broken")) {
@@ -117,7 +133,7 @@ export const handlers: Handlers = {
     };
   },
 
-  device_settings: () => ({ settings, other_items: 30, total_items: 104 }),
+  device_settings: (a) => (has(a, "nosettings") ? null : { settings, other_items: 30, total_items: 104 }),
 
   device_settings_write: (a) => {
     let n = 0;
@@ -148,7 +164,10 @@ export const handlers: Handlers = {
     };
   },
 
-  device_firmware_install: () => {
+  device_firmware_install: (a) => {
+    if (has(a, "pending")) {
+      throw "invalid: another firmware file (waiting-demo.pfw) is already waiting in .Pacemaker; remove it first so the device does not pick the wrong one";
+    }
     runSteps("device-firmware", ["Copying the firmware file", "Copying the firmware file", "Copying the firmware file"], "copying",
       "Copied firmware-demo.pfw (48.8 MB) to .Pacemaker.", () => (firmware.pending_pfw = ["firmware-demo.pfw"]), (d, t) => `${d * 16} of ${t * 16} MB`);
   },
@@ -165,4 +184,17 @@ export const handlers: Handlers = {
   },
 
   device_eject: () => true,
+
+  // stops the running copy like the backend: the work is undone and job-done carries the error
+  device_cancel: () => {
+    const r = running;
+    if (!r) return;
+    running = null;
+    r.timers.forEach(clearTimeout);
+    if (r.job === "device-cleanup") {
+      emit("job-done", { job: r.job, ok: 0, failed: 0, summary: "Deleted 0 files, stopped early at your request; the rest were not touched", error: null });
+    } else {
+      emit("job-done", { job: r.job, ok: 0, failed: 0, summary: "", error: `invalid: Cancelled: ${r.what}` });
+    }
+  },
 };

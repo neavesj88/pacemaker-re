@@ -1,5 +1,6 @@
 <script lang="ts">
   import { deviceBackup, JOB_BACKUP, pickBackupFolder } from "$lib/api/device";
+  import { jobs } from "$lib/state/jobs.svelte";
   import { session } from "$lib/state/session.svelte";
   import { toast } from "$lib/state/toast.svelte";
   import Button from "$lib/ui/Button.svelte";
@@ -44,7 +45,12 @@
     Include the audio files{audioBytes ? ` (${bytes(audioBytes)})` : ""}
   </label>
   <div class="actions">
-    <Button variant="primary" disabled={!lib || !!device.job} onclick={choose}>Back up…</Button>
+    <Button
+      variant="primary"
+      disabled={!lib || device.blocked}
+      title={jobs.busy ? "Another job is still running" : undefined}
+      onclick={choose}>Back up…</Button
+    >
   </div>
   <JobProgress kind={JOB_BACKUP} />
   {#if device.results[JOB_BACKUP]}<p class="note">{device.results[JOB_BACKUP]}</p>{/if}

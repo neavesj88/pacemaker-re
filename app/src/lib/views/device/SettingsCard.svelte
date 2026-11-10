@@ -1,5 +1,7 @@
 <script lang="ts">
+  import { untrack } from "svelte";
   import { deviceSettingsWrite, type SettingView } from "$lib/api/device";
+  import { jobs } from "$lib/state/jobs.svelte";
   import { session } from "$lib/state/session.svelte";
   import { toast } from "$lib/state/toast.svelte";
   import Button from "$lib/ui/Button.svelte";
@@ -12,6 +14,15 @@
   let edits = $state<Record<number, number>>({});
   let confirming = $state(false);
   let saving = $state(false);
+
+  // edits belong to the drive they were made on
+  $effect(() => {
+    void session.library?.root;
+    untrack(() => {
+      edits = {};
+      confirming = false;
+    });
+  });
 
   let view = $derived(device.settings);
   let groups = $derived.by(() => {
@@ -74,7 +85,7 @@
         <summary>{group}</summary>
         {#each list as s (s.id)}
           <div class="field" class:edited={s.id in edits}>
-            <label for="set-{s.id}">{s.title}</label>
+            <label for={s.editable ? `set-${s.id}` : undefined} id="lbl-{s.id}">{s.title}</label>
             {#if s.editable}
               <select
                 id="set-{s.id}"
@@ -85,7 +96,7 @@
                 {#each s.options as o, i (i)}<option value={i}>{o}</option>{/each}
               </select>
             {:else}
-              <span id="set-{s.id}" class="num ro">{s.value.toPrecision(5)}</span>
+              <span class="num ro" role="group" aria-labelledby="lbl-{s.id}">{s.value.toPrecision(5)}</span>
             {/if}
             {#if s.changed && !(s.id in edits)}<span class="tag" title="Differs from the factory default">changed</span>{/if}
           </div>
@@ -100,7 +111,8 @@
     <div class="actions">
       <Button
         variant="primary"
-        disabled={changes.length === 0 || saving || !!device.job}
+        disabled={changes.length === 0 || saving || device.blocked}
+        title={jobs.busy ? "Another job is still running" : undefined}
         onclick={() => (confirming = true)}
       >
         Write {changes.length ? plural(changes.length, "change") : "changes"}…

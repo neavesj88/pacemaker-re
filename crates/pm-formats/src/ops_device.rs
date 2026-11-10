@@ -20,6 +20,9 @@ fn invalid<T>(msg: impl Into<String>) -> Result<T, Error> {
     Err(Error::Invalid(msg.into()))
 }
 
+/// Start of the message of an operation stopped by the user (the UI shows it without "Failed").
+pub const CANCELLED: &str = "Cancelled";
+
 fn pacemaker_dir(root: &Path) -> PathBuf {
     root.join(".Pacemaker")
 }
@@ -387,10 +390,13 @@ fn inspect_pfw_bytes(file_name: &str, data: &[u8]) -> PfwInfo {
         Err(pfw::Error::TooShort) => info.problems.push("the file is too short to be a firmware image".into()),
         Err(pfw::Error::BadField(f)) => info.problems.push(format!("the trailer field {f} is unreadable: not a Pacemaker firmware file")),
         Ok(t) => {
-            info.tag = t.tag;
+            info.tag = t.tag.clone();
             info.sw_version = t.sw_version;
             info.fw_version = t.fw_version;
             info.bootloader_version = t.bootloader_version;
+            if t.ver.parse::<u64>() != Ok(1) {
+                info.problems.push(format!("the trailer version is {:?}, not 1: the device ignores images whose trailer version is not 1", t.ver));
+            }
             info.md5_ok = pfw::verify(data).unwrap_or(false);
             if !info.md5_ok {
                 info.problems.push("the checksum in the trailer does not match the file: it is damaged or incomplete".into());
@@ -438,8 +444,15 @@ fn pfw_dest_name(src: &Path) -> String {
 /// Copies a verified `.pfw` into `.Pacemaker` of the volume (the Editor's own destination:
 /// the device scans that folder for `*.pfw` when it next starts). The copy goes to a `.part`
 /// file first, is read back and verified, and only then renamed, so the device never sees a
-/// half-written image. `progress(done_mib, total_mib)` is called after each megabyte chunk.
-pub fn install_pfw(root: &Path, src: &Path, progress: &mut dyn FnMut(u64, u64)) -> Result<InstallReport, Error> {
+/// half-written image. `progress(done_mib, total_mib)` is called after each megabyte chunk;
+/// `cancel()` is polled before each chunk. On every failure or cancel the `.part` file is removed,
+/// and a stale one left by an earlier aborted copy is removed before starting.
+pub fn install_pfw(
+    root: &Path,
+    src: &Path,
+    progress: &mut dyn FnMut(u64, u64),
+    cancel: &dyn Fn() -> bool,
+) -> Result<InstallReport, Error> {
     let data = fs::read(src)?;
     let name = src.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
     let info = inspect_pfw_bytes(&name, &data);
@@ -461,32 +474,39 @@ pub fn install_pfw(root: &Path, src: &Path, progress: &mut dyn FnMut(u64, u64)) 
     }
     let part = dir.join(format!("{dest_name}.part"));
     let total_mib = (data.len() as u64).div_ceil(CHUNK as u64);
-    let mut write = || -> Result<(), Error> {
+    let _ = fs::remove_file(&part);
+    let copied = (|| -> Result<(), Error> {
         let mut f = File::create(&part)?;
         for (i, c) in data.chunks(CHUNK).enumerate() {
+            if cancel() {
+                return invalid(format!("{CANCELLED}: the firmware copy was stopped and nothing was installed"));
+            }
             f.write_all(c)?;
             progress(i as u64 + 1, total_mib);
         }
         f.sync_all()?;
+        drop(f);
+        if fs::read(&part)? != data {
+            return invalid("the copy on the device does not match the source (read back differs); nothing was installed");
+        }
         Ok(())
-    };
-    let verified = |part: &Path| -> Result<bool, Error> {
-        let back = fs::read(part)?;
-        Ok(back == data)
-    };
-    if let Err(e) = write() {
+    })();
+    if let Err(e) = copied {
         let _ = fs::remove_file(&part);
         return Err(e);
     }
-    if !verified(&part)? {
-        let _ = fs::remove_file(&part);
-        return invalid("the copy on the device does not match the source (read back differs); nothing was installed");
-    }
     let dest = dir.join(&dest_name);
-    if dest.exists() {
-        fs::remove_file(&dest)?;
+    let moved = (|| -> Result<(), Error> {
+        if dest.exists() {
+            fs::remove_file(&dest)?;
+        }
+        fs::rename(&part, &dest)?;
+        Ok(())
+    })();
+    if let Err(e) = moved {
+        let _ = fs::remove_file(&part);
+        return Err(e);
     }
-    fs::rename(&part, &dest)?;
     let installed = firmware_info(root).fw_version;
     Ok(InstallReport {
         dest_name,
@@ -603,14 +623,18 @@ pub struct DeleteReport {
     /// Asked for, but no longer unreferenced (a track now uses it) or already gone: left alone.
     pub skipped: Vec<String>,
     pub failed: Vec<String>,
+    /// The user stopped it: the files after the last one deleted were not touched.
+    pub cancelled: bool,
 }
 
 /// Deletes the named files, but only those a fresh scan still finds unreferenced, so a stale
-/// list can never remove a file a track now uses. `progress(done, total, path)` per file.
+/// list can never remove a file a track now uses. `progress(done, total, path)` per file;
+/// `cancel()` is polled before each file.
 pub fn delete_unreferenced(
     root: &Path,
     requested: &[String],
     progress: &mut dyn FnMut(usize, usize, &str),
+    cancel: &dyn Fn() -> bool,
 ) -> Result<DeleteReport, Error> {
     let lib = Library::open_read_only(root)?;
     let problems = lib.compatibility_problems()?;
@@ -622,6 +646,10 @@ pub fn delete_unreferenced(
     let base = music_dir(root);
     let mut report = DeleteReport::default();
     for (i, path) in requested.iter().enumerate() {
+        if cancel() {
+            report.cancelled = true;
+            break;
+        }
         progress(i, requested.len(), path);
         let Some(f) = fresh.iter().find(|f| &f.path == path) else {
             report.skipped.push(path.clone());
@@ -728,12 +756,16 @@ fn inside(parent: &Path, child: &Path) -> bool {
 /// Copies the library's data (music.db, settings.dat, system.xml, the mix document, every `.str`
 /// and, only when asked, the audio) into a new folder `pacemaker-backup-<UTC stamp>` inside
 /// `dest_dir`, each file read back and checked, and writes `MANIFEST.sha256` in `sha256sum`
-/// format. Reads the device only. `progress(done, total, path)` is called per file.
+/// format. Reads the device only. `progress(done, total, path)` is called per file; `cancel()` is
+/// polled before each file. The copy is built in `<name>.partial` and renamed to `<name>` only
+/// once the manifest is written, so a folder with the final name is always complete; on any
+/// failure or cancel the partial folder is removed.
 pub fn backup_snapshot(
     root: &Path,
     dest_dir: &Path,
     include_audio: bool,
     progress: &mut dyn FnMut(usize, usize, &str),
+    cancel: &dyn Fn() -> bool,
 ) -> Result<BackupReport, Error> {
     if !dest_dir.is_dir() {
         return invalid(format!("{} is not a folder", dest_dir.display()));
@@ -746,26 +778,45 @@ pub fn backup_snapshot(
         return Err(Error::NotALibrary(root.to_path_buf()));
     }
     let secs = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
-    let folder = dest_dir.join(format!("pacemaker-backup-{}", utc_stamp(secs)));
-    fs::create_dir(&folder).map_err(|e| Error::Invalid(format!("cannot create {}: {e}", folder.display())))?;
-    let mut manifest = String::new();
-    let mut bytes = 0u64;
-    for (i, rel) in rels.iter().enumerate() {
-        progress(i, rels.len(), rel);
-        let mut dst = folder.clone();
-        dst.extend(rel.split('/'));
-        let (sum, n) = copy_hashed(&root.join(rel), &dst)?;
-        manifest.push_str(&format!("{sum}  {rel}\n"));
-        bytes += n;
+    let name = format!("pacemaker-backup-{}", utc_stamp(secs));
+    let folder = dest_dir.join(&name);
+    let partial = dest_dir.join(format!("{name}.partial"));
+    if folder.exists() || partial.exists() {
+        return invalid(format!("cannot create {}: it already exists", folder.display()));
     }
-    let manifest_path = folder.join(MANIFEST_NAME);
-    fs::write(&manifest_path, manifest)?;
+    fs::create_dir(&partial).map_err(|e| Error::Invalid(format!("cannot create {}: {e}", folder.display())))?;
+    let built = (|| -> Result<u64, Error> {
+        let mut manifest = String::new();
+        let mut bytes = 0u64;
+        for (i, rel) in rels.iter().enumerate() {
+            if cancel() {
+                return invalid(format!("{CANCELLED}: the backup was stopped and the partial copy was removed"));
+            }
+            progress(i, rels.len(), rel);
+            let mut dst = partial.clone();
+            dst.extend(rel.split('/'));
+            let (sum, n) = copy_hashed(&root.join(rel), &dst)?;
+            manifest.push_str(&format!("{sum}  {rel}
+"));
+            bytes += n;
+        }
+        fs::write(partial.join(MANIFEST_NAME), &manifest)?;
+        fs::rename(&partial, &folder)?;
+        Ok(bytes)
+    })();
+    let bytes = match built {
+        Ok(v) => v,
+        Err(e) => {
+            let _ = fs::remove_dir_all(&partial);
+            return Err(e);
+        }
+    };
     progress(rels.len(), rels.len(), "");
     Ok(BackupReport {
         folder: folder.display().to_string(),
         files: rels.len(),
         bytes,
-        manifest: manifest_path.display().to_string(),
+        manifest: folder.join(MANIFEST_NAME).display().to_string(),
         includes_audio: include_audio,
     })
 }
@@ -1367,6 +1418,40 @@ mod tests {
     }
 
     #[test]
+    fn pfw_trailer_version_must_be_one() {
+        let mut f = fake_pfw("180096069", "12838");
+        let t0 = f.len() - pfw::TRAILER;
+        assert_eq!(&f[t0..t0 + 4], b"0201");
+        f[t0 + 3] = b'2';
+        // keep the checksum valid so only the version is wrong
+        let body = f.len() - 34;
+        let sum = format!("{:x}", md5::compute(&f[..body]));
+        let blk = format!("{:02X}{sum}", sum.len());
+        f[body..body + blk.len()].copy_from_slice(blk.as_bytes());
+        let info = inspect_pfw_bytes("a.pfw", &f);
+        assert!(info.md5_ok);
+        assert_eq!(info.problems.len(), 1, "{:?}", info.problems);
+        assert!(info.problems[0].contains("trailer version"));
+    }
+
+    #[test]
+    fn pfw_install_cancel_and_stale_part_leave_nothing() {
+        let root = scratch("pfw-cancel");
+        fs::create_dir_all(root.join(".Pacemaker")).unwrap();
+        let src_dir = scratch("pfw-cancel-src");
+        let src = src_dir.join("fw.pfw");
+        fs::write(&src, fake_pfw("180096070", "12838")).unwrap();
+        // a stale part from an aborted copy is replaced; a cancel removes the part again
+        fs::write(root.join(".Pacemaker/fw.pfw.part"), b"stale").unwrap();
+        let e = install_pfw(&root, &src, &mut |_, _| {}, &|| true).unwrap_err().to_string();
+        assert!(e.contains(CANCELLED), "{e}");
+        assert!(fs::read_dir(root.join(".Pacemaker")).unwrap().next().is_none());
+        install_pfw(&root, &src, &mut |_, _| {}, &|| false).unwrap();
+        assert!(root.join(".Pacemaker/fw.pfw").is_file());
+        assert!(!root.join(".Pacemaker/fw.pfw.part").exists());
+    }
+
+    #[test]
     fn pfw_install_copies_and_guards() {
         let root = scratch("pfw");
         fs::create_dir_all(root.join(".Pacemaker")).unwrap();
@@ -1376,7 +1461,7 @@ mod tests {
         fs::write(&src, fake_pfw("180096070", "12838")).unwrap();
 
         let mut calls = Vec::new();
-        let rep = install_pfw(&root, &src, &mut |d, t| calls.push((d, t))).unwrap();
+        let rep = install_pfw(&root, &src, &mut |d, t| calls.push((d, t)), &|| false).unwrap();
         assert_eq!(rep.dest_name, "my_fw__1_.pfw");
         assert!(rep.same_version_as_installed, "system.xml says FWVERSION 180096070");
         assert_eq!(calls.last(), Some(&(1, 1)));
@@ -1385,11 +1470,11 @@ mod tests {
         assert_eq!(firmware_info(&root).pending_pfw, vec!["my_fw__1_.pfw".to_string()]);
 
         // the same name may be replaced
-        install_pfw(&root, &src, &mut |_, _| {}).unwrap();
+        install_pfw(&root, &src, &mut |_, _| {}, &|| false).unwrap();
         // a different one is refused while another waits
         let other = src_dir.join("other.pfw");
         fs::write(&other, fake_pfw("180096071", "12838")).unwrap();
-        let e = install_pfw(&root, &other, &mut |_, _| {}).unwrap_err().to_string();
+        let e = install_pfw(&root, &other, &mut |_, _| {}, &|| false).unwrap_err().to_string();
         assert!(e.contains("already waiting"), "{e}");
         // a damaged image is refused and leaves nothing behind
         let root2 = scratch("pfw2");
@@ -1398,7 +1483,7 @@ mod tests {
         bad_bytes[5] ^= 0xff;
         let bad_src = src_dir.join("bad.pfw");
         fs::write(&bad_src, bad_bytes).unwrap();
-        assert!(install_pfw(&root2, &bad_src, &mut |_, _| {}).is_err());
+        assert!(install_pfw(&root2, &bad_src, &mut |_, _| {}, &|| false).is_err());
         assert!(firmware_info(&root2).pending_pfw.is_empty());
         assert!(fs::read_dir(root2.join(".Pacemaker")).unwrap().next().is_none());
     }
@@ -1467,6 +1552,7 @@ mod tests {
             &root,
             &["0/0/stray.mp3".into(), referenced.clone(), "../music.db".into(), "0/0/gone.mp3".into()],
             &mut |d, t, p| seen.push((d, t, p.to_string())),
+            &|| false,
         )
         .unwrap();
         assert_eq!(rep.deleted, 1);
@@ -1477,6 +1563,13 @@ mod tests {
         assert!(tracks[0].1.exists(), "a referenced file is never deleted");
         assert!(root.join(".Pacemaker/music.db").exists());
         assert_eq!(seen.last().unwrap().0, 4);
+
+        // a cancel before the first file deletes nothing
+        fs::write(music.join("0/0/stray2.mp3"), vec![1u8; 20]).unwrap();
+        let r = delete_unreferenced(&root, &["0/0/stray2.mp3".into()], &mut |_, _, _| {}, &|| true).unwrap();
+        assert!(r.cancelled);
+        assert_eq!(r.deleted, 0);
+        assert!(music.join("0/0/stray2.mp3").exists());
     }
 
     #[test]
@@ -1499,7 +1592,7 @@ mod tests {
         let dest = scratch("backup");
 
         let mut ticks = 0;
-        let r = backup_snapshot(&root, &dest, false, &mut |_, _, _| ticks += 1).unwrap();
+        let r = backup_snapshot(&root, &dest, false, &mut |_, _, _| ticks += 1, &|| false).unwrap();
         assert!(ticks > 3);
         let folder = PathBuf::from(&r.folder);
         assert!(folder.file_name().unwrap().to_string_lossy().starts_with("pacemaker-backup-"));
@@ -1525,14 +1618,14 @@ mod tests {
         assert_eq!(problems.len(), 2, "{problems:?}");
 
         // with audio, the audio files are in too
-        let r2 = backup_snapshot(&root, &dest, true, &mut |_, _, _| {});
+        let r2 = backup_snapshot(&root, &dest, true, &mut |_, _, _| {}, &|| false);
         // the stamp has one-second resolution: a second snapshot in the same second is refused, not merged
         let r2 = match r2 {
             Ok(r) => r,
             Err(e) => {
                 assert!(e.to_string().contains("cannot create"), "{e}");
                 std::thread::sleep(std::time::Duration::from_millis(1100));
-                backup_snapshot(&root, &dest, true, &mut |_, _, _| {}).unwrap()
+                backup_snapshot(&root, &dest, true, &mut |_, _, _| {}, &|| false).unwrap()
             }
         };
         assert_eq!(r2.files, 9);
@@ -1543,16 +1636,42 @@ mod tests {
     }
 
     #[test]
+    fn backup_cancel_and_failure_leave_no_folder() {
+        let (root, tracks) = device_volume();
+        let dest = scratch("backup-cancel");
+        let calls = std::cell::Cell::new(0);
+        let e = backup_snapshot(&root, &dest, false, &mut |_, _, _| {}, &|| {
+            calls.set(calls.get() + 1);
+            calls.get() > 2
+        })
+        .unwrap_err()
+        .to_string();
+        assert!(e.contains(CANCELLED), "{e}");
+        assert!(fs::read_dir(&dest).unwrap().next().is_none(), "no partial folder is left");
+
+        // a file that vanishes mid-way fails the backup and removes the partial copy
+        let db = root.join(".Pacemaker/music.db");
+        let e = backup_snapshot(&root, &dest, false, &mut |i, _, _| {
+            if i == 0 {
+                fs::remove_file(&db).unwrap();
+            }
+        }, &|| false);
+        assert!(e.is_err());
+        assert!(fs::read_dir(&dest).unwrap().next().is_none(), "no partial folder is left");
+        assert!(tracks[0].1.is_file(), "the device is untouched");
+    }
+
+    #[test]
     fn backup_refuses_the_device_itself_and_non_libraries() {
         let (root, _) = device_volume();
         let inside_dev = root.join("backups");
         fs::create_dir_all(&inside_dev).unwrap();
-        assert!(backup_snapshot(&root, &inside_dev, false, &mut |_, _, _| {}).unwrap_err().to_string().contains("another drive"));
+        assert!(backup_snapshot(&root, &inside_dev, false, &mut |_, _, _| {}, &|| false).unwrap_err().to_string().contains("another drive"));
         let empty = scratch("empty");
         let dest = scratch("dest");
-        assert!(backup_snapshot(&empty, &dest, false, &mut |_, _, _| {}).is_err());
+        assert!(backup_snapshot(&empty, &dest, false, &mut |_, _, _| {}, &|| false).is_err());
         assert!(fs::read_dir(&dest).unwrap().next().is_none(), "nothing is created for a non-library");
-        assert!(backup_snapshot(&root, &dest.join("nope"), false, &mut |_, _, _| {}).is_err());
+        assert!(backup_snapshot(&root, &dest.join("nope"), false, &mut |_, _, _| {}, &|| false).is_err());
     }
 
     #[test]

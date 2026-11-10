@@ -2,6 +2,7 @@
 // Reads are plain commands; copying and deleting run as background jobs whose events arrive
 // through init.ts.
 import {
+  deviceCancel,
   deviceEject,
   deviceHealth,
   deviceOverview,
@@ -11,6 +12,7 @@ import {
   type SettingsView,
 } from "$lib/api/device";
 import type { DoneEvent, ProgressEvent } from "$lib/api/types";
+import { jobs } from "$lib/state/jobs.svelte";
 import { session } from "$lib/state/session.svelte";
 import { toast } from "$lib/state/toast.svelte";
 
@@ -26,7 +28,24 @@ class DeviceStore {
   /** The finished line of the last job of each kind, kept on screen until the next one starts. */
   results = $state<Record<string, string>>({});
   cleanupOpen = $state(false);
+  /** The library object that was ejected. The session has no way to close a library, so the
+   *  view treats exactly this object as detached; opening a drive again gives a new object. */
+  ejected = $state.raw<unknown>(null);
   #root = "";
+
+  /** Anything that writes to the volume (a device job here, an import or re-analysis elsewhere,
+   *  an eject) is running: eject, settings writes, installs, backups and clean-ups wait. */
+  get blocked() {
+    return !!this.job || jobs.busy || this.ejecting;
+  }
+
+  isDetached(lib: unknown) {
+    return !!lib && lib === this.ejected;
+  }
+
+  cancel() {
+    deviceCancel().catch((e) => toast.show(String(e), "bad", 8000));
+  }
 
   /** Reads everything for a volume. Health scans every file, so it runs apart from the quick reads. */
   async load(root: string) {
@@ -57,11 +76,18 @@ class DeviceStore {
   ejecting = $state(false);
 
   /** Windows shell eject. The library stays open in the app (it was read, not held), but the
-   *  drive is gone, so the volume list is refreshed. */
+   *  drive is gone: it is marked detached so every card is replaced by a notice, and the volume
+   *  list is refreshed. */
   async eject(root: string) {
+    const lib = session.library;
     this.ejecting = true;
     try {
       if (await deviceEject(root)) {
+        this.ejected = lib;
+        this.overview = null;
+        this.health = null;
+        this.settings = undefined;
+        this.results = {};
         toast.show("Ejected. It is safe to unplug the USB cable.", "ok", 8000);
         await session.refreshVolumes();
       } else {
@@ -88,14 +114,19 @@ class DeviceStore {
   async onDone(ev: DoneEvent) {
     if (!ev.job.startsWith("device-")) return;
     this.job = null;
-    if (ev.error) {
+    if (ev.error?.includes("Cancelled:")) {
+      // stopped by the user: not a failure, and the backend has already cleaned up
+      const msg = ev.error.slice(ev.error.indexOf("Cancelled:"));
+      toast.show(msg, "ok", 8000);
+      this.results[ev.job] = msg;
+    } else if (ev.error) {
       toast.show(ev.error, "bad", 8000);
       this.results[ev.job] = `Failed: ${ev.error}`;
     } else {
       this.results[ev.job] = ev.summary;
       toast.show(ev.summary, ev.failed > 0 ? "bad" : "ok", 8000);
     }
-    if (this.#root) await this.load(this.#root);
+    if (this.#root && !this.isDetached(session.library)) await this.load(this.#root);
   }
 }
 
