@@ -96,7 +96,16 @@ divides by the engine rate, and the demo's first track (302 s stored, tempo rati
 
 ### PositionedEvent [V order, types from `PositionedEvent::save`]
 `Start`, `Length`, `LOffset`, `ROffset` (doubles), `LimitSize` (bool), `SessionEventId` (string).
-`LOffset`/`ROffset` are trim offsets, 0 everywhere [I]. `LimitSize` is 1 on a track's own event
+`LOffset`/`ROffset` are trim offsets: 0 on tools, but the demo's second and third tracks have
+`LOffset` 9 925 797.47 and 9 589 191 (the cue: audio hidden at the left edge). **Geometry [I,
+fits all three demo tracks and both transitions]**: `Start` is the timeline position of the
+file's first sample, so a track is audible on `[Start + LOffset, Start + Length - ROffset]`; the
+two transitions start at the later tracks' `Start + LOffset` (10 913 614 and 15 206 987 vs the
+transitions' 10 913 614.4 and 15 210 616) and end near the earlier track's end. Everything inside
+a track (tools, loops, envelope nodes, `PitchEnvelope`/`KeyEnvelope` positions) is **track-local**:
+samples of the stretched audio counted from the file start, so tool positions are relative to
+`Start` (the third track's first tool starts exactly at its `LOffset`, 9 589 191). The tempo
+curve maps track-local to source time: see `mix::TempoMap`. `LimitSize` is 1 on a track's own event
 and 0 on tools, loops and the volume envelope. `SessionEventId` is a `juce::Uuid` (32 lowercase
 hex) on every event except the volume envelope, where it is empty; the Editor registers it for
 its clipboard/undo bookkeeping (`PositionedEventContainer::addPositionedEvent` when non-empty).
@@ -269,11 +278,12 @@ delete_mix}`, `MixInfo`, `MixTrackRow`.
    sample rate, truncated) gives 607 for the same document. Either the prefab
    import path writes a round value or the virtual it calls (slot 0x2c on `AudioClip`) is not
    `start + length`. We write the formula.
-3. **`mixtracks.cue_point`.** Demo rows hold 0, 10 166 523, 9 589 191 while the clip starts are
-   0, 987 817, 5 617 796. `getMixCuePoint` = a virtual (slot 0x44) applied to `Start + LOffset`
-   (clamped to >= 0). We write `round(Start + LOffset)`, which does not reproduce the demo rows.
-   The device reads this column (`getCuePositionFromMixTrackId`); not decompiled on the
-   pmplayer side yet.
+3. **`mixtracks.cue_point`.** Demo rows hold 0, 10 166 523, 9 589 191. Resolved for constant
+   tempo curves: the value is the **source position of the left trim**, `TempoMap::source_at(LOffset)`
+   (9 925 797.47 x 1.0242525 = 10 166 523; speed 1 for the third track), and `Library::save_mix`
+   writes that now. For a tempo curve that is not constant this is a hypothesis (the curve is
+   assumed piecewise linear). The device reads this column (`getCuePositionFromMixTrackId`); not
+   decompiled on the pmplayer side yet.
 4. Trans / Ignore / Reverse / Delay type 0: layout from the writer only; class versions and
    tracking assumed; automation key names for Trans, Ignore, Reverse and Delay are unknown.
 5. Units of each envelope value, `Channel` and `Offset` semantics, `CrossfadeType` values other

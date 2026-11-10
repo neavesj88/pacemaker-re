@@ -1539,6 +1539,153 @@ impl Mix {
     }
 }
 
+// ---------------------------------------------------------------------------------------------
+// Tempo curve
+// ---------------------------------------------------------------------------------------------
+
+/// A track's tempo curve (`PitchEnvelope`) as a mapping between two time axes, both in samples
+/// at [`SAMPLE_RATE`]:
+///
+/// - **local**: the stretched clip as it plays; the axis of `Position.start`/`length`/offsets,
+///   of tool and loop positions and of the nodes of the tempo and key envelopes. Local 0 is the
+///   start of the audio file, local `l_offset` is the cue (left trim).
+/// - **source**: the unstretched audio file, expressed at the engine rate (a file frame `f` of
+///   a file recorded at `sr` Hz is source `f * 44100 / sr`).
+///
+/// `speed` is the playback ratio (target tempo / analysed tempo), so `d source / d local =
+/// speed`. Nodes are joined **linearly** and the curve is flat before the first and after the
+/// last node (hypothesis: the Editor draws these as ordinary envelopes; constant curves, the
+/// only kind in the known documents, are unaffected). Check on the Editor's demo mix: the
+/// `mixtracks.cue_point` it stores for a track equals `source_at(l_offset)` (0, 10 166 523 =
+/// 9 925 797.47 x 1.0242525, 9 589 191).
+#[derive(Debug, Clone, PartialEq)]
+pub struct TempoMap {
+    pos: Vec<f64>,
+    speed: Vec<f64>,
+    /// `source_at(pos[i])`.
+    cum: Vec<f64>,
+}
+
+impl TempoMap {
+    /// Builds the map. Nodes are sorted by position; non-finite or non-positive speeds are
+    /// replaced by 1; an empty curve is the constant speed 1.
+    pub fn new(nodes: &[SpeedNode]) -> TempoMap {
+        let mut v: Vec<(f64, f64)> = nodes
+            .iter()
+            .map(|n| (f64::from(n.position), if n.speed.is_finite() && n.speed > 0.0 { f64::from(n.speed) } else { 1.0 }))
+            .collect();
+        if v.is_empty() {
+            v.push((0.0, 1.0));
+        }
+        v.sort_by(|a, b| a.0.total_cmp(&b.0));
+        let pos: Vec<f64> = v.iter().map(|n| n.0).collect();
+        let speed: Vec<f64> = v.iter().map(|n| n.1).collect();
+        let mut cum = Vec::with_capacity(pos.len());
+        cum.push(speed[0] * pos[0]);
+        for i in 1..pos.len() {
+            cum.push(cum[i - 1] + 0.5 * (speed[i - 1] + speed[i]) * (pos[i] - pos[i - 1]));
+        }
+        TempoMap { pos, speed, cum }
+    }
+
+    /// Playback ratio at a local position.
+    pub fn speed_at(&self, local: f64) -> f64 {
+        let n = self.pos.len();
+        if local <= self.pos[0] {
+            return self.speed[0];
+        }
+        let i = self.pos.partition_point(|&p| p <= local) - 1;
+        if i == n - 1 {
+            return self.speed[i];
+        }
+        let t = (local - self.pos[i]) / (self.pos[i + 1] - self.pos[i]);
+        self.speed[i] + (self.speed[i + 1] - self.speed[i]) * t
+    }
+
+    /// Source position (engine-rate samples of the unstretched audio) played at a local position.
+    pub fn source_at(&self, local: f64) -> f64 {
+        let n = self.pos.len();
+        if local <= self.pos[0] {
+            return self.speed[0] * local;
+        }
+        let i = self.pos.partition_point(|&p| p <= local) - 1;
+        let dx = local - self.pos[i];
+        if i == n - 1 {
+            return self.cum[i] + self.speed[i] * dx;
+        }
+        let l = self.pos[i + 1] - self.pos[i];
+        self.cum[i] + self.speed[i] * dx + (self.speed[i + 1] - self.speed[i]) / (2.0 * l) * dx * dx
+    }
+
+    /// Local position at which a source position is played (inverse of [`TempoMap::source_at`]).
+    pub fn local_at(&self, source: f64) -> f64 {
+        let n = self.pos.len();
+        if source <= self.cum[0] {
+            return source / self.speed[0];
+        }
+        let i = self.cum.partition_point(|&c| c <= source) - 1;
+        let d = source - self.cum[i];
+        if i == n - 1 {
+            return self.pos[i] + d / self.speed[i];
+        }
+        let l = self.pos[i + 1] - self.pos[i];
+        let (s0, s1) = (self.speed[i], self.speed[i + 1]);
+        let a = (s1 - s0) / (2.0 * l);
+        let disc = (s0 * s0 + 4.0 * a * d).max(0.0);
+        self.pos[i] + 2.0 * d / (s0 + disc.sqrt())
+    }
+}
+
+#[cfg(test)]
+mod tempo_tests {
+    use super::*;
+
+    fn sn(position: u32, speed: f32) -> SpeedNode {
+        SpeedNode { position, speed }
+    }
+
+    #[test]
+    fn constant_curve_is_a_plain_ratio() {
+        let m = TempoMap::new(&[sn(0, 1.25)]);
+        assert_eq!(m.source_at(1000.0), 1250.0);
+        assert_eq!(m.local_at(1250.0), 1000.0);
+        assert_eq!(m.speed_at(-5.0), 1.25);
+        // the Editor's demo mix: cue point = source position of the left trim
+        let m = TempoMap::new(&[sn(0, 1.0242525), sn(9925796, 1.0242525), sn(9925797, 1.0242525)]);
+        assert_eq!(m.source_at(9_925_797.474_441_8).round() as i64, 10_166_523);
+        assert_eq!(TempoMap::new(&[]).source_at(77.0), 77.0);
+    }
+
+    #[test]
+    fn ramp_integrates_and_inverts() {
+        // 1.0 -> 2.0 over 1000 samples: source = x + x^2 / 2000
+        let m = TempoMap::new(&[sn(0, 1.0), sn(1000, 2.0)]);
+        assert!((m.source_at(500.0) - (500.0 + 125.0)).abs() < 1e-9);
+        assert!((m.source_at(1000.0) - 1500.0).abs() < 1e-9);
+        assert!((m.source_at(1200.0) - (1500.0 + 400.0)).abs() < 1e-9, "flat after the last node");
+        assert!((m.speed_at(250.0) - 1.25).abs() < 1e-9);
+        for x in [-30.0, 0.0, 1.0, 333.3, 999.9, 1000.0, 5000.5] {
+            let back = m.local_at(m.source_at(x));
+            assert!((back - x).abs() < 1e-6, "{x} -> {back}");
+        }
+    }
+
+    #[test]
+    fn nodes_with_equal_positions_and_unsorted_input() {
+        let m = TempoMap::new(&[sn(2000, 2.0), sn(1000, 1.0), sn(1000, 0.5), sn(0, 1.0)]);
+        for x in [0.0, 999.0, 1000.0, 1500.0, 2000.0, 3000.0] {
+            let back = m.local_at(m.source_at(x));
+            assert!((back - x).abs() < 1e-6, "{x} -> {back}");
+        }
+        let mut prev = f64::MIN;
+        for k in 0..400 {
+            let v = m.source_at(f64::from(k) * 10.0);
+            assert!(v >= prev, "source must not run backwards");
+            prev = v;
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
