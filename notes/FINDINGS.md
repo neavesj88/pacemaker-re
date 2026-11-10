@@ -305,7 +305,7 @@ dfu-util should be the equivalent. That's untested. **Entering DFU mode** (Toniu
 hold **Play + Cue + Forward + Back** while powering on. The bootloader prints "Forced to DFU mode",
 sets the LEDs to the DFU idle pattern and starts the USB DFU slave with alt settings `Redboot`,
 `status`, `kernel` and `rootfs`. The patch is dated 2009 and the shipped bootloader is 12838, so it
-is assumed (not proven) to be this code. The kernel console is `ttymxc0` (serial), and RedBoot
+is this code (Tonium's patch in pmib `pace/redboot/patch`: `do_pmSetup` runs at every boot and reads the keypad once, mask 0x3C). **Verified on hardware (Nov 2026):** with USB unplugged and the device fully off, hold Play + Cue + Forward + Back, power on, keep holding ~5 s (no kernel logo appears, left LED lights), then plug USB in: Windows shows "DFU Gadget" 5e1d:a7a4. With usbipd-win (`usbipd bind --busid X` once as admin, then `usbipd attach --wsl --busid X`) dfu-util 0.11 in WSL lists alt 0 Redboot, 1 status, 2 kernel, 3 rootfs, 4 data, 5 test (listing only, nothing written). With USB plugged in first, the device powers up from the cable before the keys are held and boots normally. The kernel console is `ttymxc0` (serial), and RedBoot
 has a serial command line with `pmInit`/`pmSetup`/`pmBoot`/`pmTest`.
 
 **Editor-side update** (inferred from Mac Editor strings): download, copy the `.pfw` to the
