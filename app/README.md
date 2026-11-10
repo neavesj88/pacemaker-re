@@ -7,7 +7,7 @@ Svelte 5 + TypeScript UI (`src/`).
     npm run tauri dev                       # native app with hot reload
     npx tauri build --no-bundle             # release binary in src-tauri/target/release
 
-`npm run dev` alone serves the UI in a browser with a synthetic library (`src/lib/devmock.ts`),
+`npm run dev` alone serves the UI in a browser with a synthetic library (`src/lib/devmock/`),
 for UI work without the native shell.
 
 Current scope: find a docked Pacemaker (or open a folder holding `.Pacemaker`), check the
@@ -21,5 +21,5 @@ confirmation naming the destination:
 - **Analyse N…**: tracks whose `.str` is missing, empty or unreadable are marked "needs
   analysis"; this rewrites just their `.str` and BPM from the audio already on the volume.
 
-The shared logic is `pm_analysis::ingest`; `src/lib/devmock.ts` mirrors the commands for the
+The shared logic is `pm_analysis::ingest`; `src/lib/devmock/` mirrors the commands for the
 browser preview.

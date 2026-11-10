@@ -1,0 +1,224 @@
+# Pacemaker Revival: app architecture
+
+The app is split so that many feature agents can work at once, each inside its own files. This
+document is the contract. A file is **owned** by one area (only that area edits it) or **shared**
+(changed only in the integration step, never by a feature agent in parallel).
+
+Areas, each with its own folder / files in every layer: `tracks`, `mixes`, `cases`, `history`,
+`grid`, `device`, `import`, `playback`, and the feature-only areas `metadata` (tag and rating
+editor), `analysis` (key detection and other analysis jobs) and `export` (playlists and library
+listings out). `library` is the session plumbing (`commands/library.rs`, `api/library.ts`,
+`devmock/library.ts`, the `LibraryView` payload) and belongs to **integration**: it is not a
+feature area. "Integration" means the single step that merges feature work and may touch shared
+files.
+
+## File map
+
+### Frontend (`app/src`)
+
+| Path | Purpose | Owner |
+| --- | --- | --- |
+| `routes/+page.svelte` | Thin shell: header, banners, job strip, sidebar, active view, player slot, overlays | integration |
+| `routes/+layout.svelte`, `+layout.ts` | Global CSS; SPA mode; installs devmock outside Tauri | integration |
+| `lib/styles/tokens.css`, `base.css` | The device palette (do not change colours); element defaults, `.muted` / `.num` / `.empty` | integration |
+| `lib/format.ts` | `mmss`, `baseName`, `volumeName` | integration |
+| `lib/shell/Header`, `Sidebar`, `Banners`, `Welcome`, `JobStrip` (`.svelte`) | App chrome; `JobStrip` shows any job | integration |
+| `lib/shell/overlays.ts`, `startup.ts` | Auto-discover `views/*/Overlays.svelte` and `views/*/init.ts` (see below) | integration |
+| `lib/views/registry.ts`, `ids.ts` | Auto-discovers `views/*/view.ts`; `ViewDef` type; `ViewId` is a string | integration |
+| `lib/views/<area>/view.ts` | One row for the area's sidebar entry (id, label, section, order, component, count) | that area |
+| `lib/views/tracks/` (`TracksView`, `TrackTable`, `trackFilter.ts`, `NeedsAnalysis`) | Tracks view, the reusable track table, the sidebar "need analysis" block | tracks |
+| `lib/views/mixes/MixesView.svelte` | Mix editor (currently a read-only list from `mix_list`) | mixes |
+| `lib/views/cases/` (`CasesView`, `SmartCases`) | Cases; the sidebar "Smart cases" section | cases |
+| `lib/views/history/`, `grid/`, `device/` | History, beat grid editor, device views (placeholders) | that area |
+| `lib/views/import/` (`ImportView`, `ConfirmModal`, `DropOverlay`, `Overlays.svelte`, `init.ts`) | Import view; write confirmation and drop overlay; job-event and file-drop subscriptions | import |
+| `lib/views/<area>/Overlays.svelte`, `init.ts` | Optional: always-mounted overlays / startup subscriptions of that area | that area |
+| `lib/player/Player.svelte` (+ optional `Overlays.svelte`, `init.ts`) | Bottom player bar and engine | playback |
+| `lib/ui/*` | Generic primitives: `Button`, `Modal`, `Table`, `CollectionTable`, `Stars`, `Waveform`, `ContextMenu`, `Toast`, `Placeholder`, `RMark` | integration |
+| `lib/state/session.svelte.ts` | Detected volumes, the open library, load / reload, error banner text, `onReset` hooks | integration |
+| `lib/state/nav.svelte.ts` | Current view and the one-shot deep-link param bag | integration |
+| `lib/state/filters.svelte.ts`, `selection.svelte.ts`, `toast.svelte.ts` | Header search / needs filter / sort; highlighted track ids; toasts | integration |
+| `lib/state/jobs.svelte.ts` | Generic job runner: `jobs.ask(request)`, progress, completion; add / re-analyse adapters | import |
+| `lib/state/cases.svelte.ts` | The open case and its track ids | cases |
+| `lib/state/playback.svelte.ts` | The transport (loaded track, playing, position, mix preview). Others call its methods only | playback |
+| `lib/state/<area>.svelte.ts` | An area's own store, created by that area when needed | that area |
+| `lib/api/types.ts`, `events.ts` | Wire types shared across areas (Track, Collection, LibraryView, job events); event names, `subscribeAll` | integration |
+| `lib/api/<area>.ts` | One typed `invoke()` wrapper module per area (`library`, `tracks`, `cases`, `import`, `mixes`, `history`, `grid`, `device`, `playback`, `metadata`, `analysis`, `export`) | that area |
+| `lib/devmock/index.ts` | Merges every `devmock/<area>.ts` automatically | integration |
+| `lib/devmock/db.ts`, `jobs.ts`, `dialog.ts`, `types.ts` | Shared mock fixture (tracks, cases), job runner, dialog mock | integration |
+| `lib/devmock/<area>.ts` | That area's mock command handlers and its own fixtures (the mix fixture is in `devmock/mixes.ts`) | that area |
+
+### Backend (`app/src-tauri/src`)
+
+| Path | Purpose | Owner |
+| --- | --- | --- |
+| `lib.rs` | Registration only: plugins, `setup`, `register_handlers!()` | integration |
+| `commands/mod.rs` | Module list, `setup` chain, `register_handlers!` chain (all twelve areas are already in it) | integration |
+| `commands/library.rs` | `list_volumes`, `open_library`, `LibraryView` | integration |
+| `commands/<area>.rs` | Commands of that area: `tracks` (`reanalyse_tracks`), `mixes` (`mix_list`), `cases` (`case_tracks`), `import` (`expand_audio_paths`, `add_tracks`); `history`, `grid`, `device`, `playback`, `metadata`, `analysis`, `export` are empty | that area |
+| `state.rs` | State shared by several areas (`JobLock`); `setup` | integration |
+| `jobs.rs` | Generic `spawn_job`, `Progress`, `JobOutcome`, `JobDone` | integration |
+| `events.rs` | Shared event names (jobs) and `emit` | integration |
+| `error.rs` | `AppError` (serialises to a string), `AppResult`, `.app()` | integration |
+
+Crates in `crates/` are not part of the app layout; the app only calls them.
+
+## Rules of ownership
+
+1. Edit only files your area owns, plus new files you create inside your own folders.
+2. A shared file needs a change only when you cross an area boundary; write the request in your
+   hand-off note and let the integration step make it. Never edit a shared file in parallel.
+3. A view may import another view's *exported component* only where listed here (the Cases view
+   uses `views/tracks/TrackTable.svelte` and `trackFilter.ts`). Everything else goes through
+   `lib/state` and `lib/api`.
+4. Use the CSS variables in `tokens.css`; do not write raw colours. Keep the R mark and palette.
+5. Never put real track, artist, case or mix names, or serial numbers, in code, mocks or tests.
+6. **No dependencies mid-run.** `Cargo.lock` and `package-lock.json` are single files; parallel
+   `cargo add` / `npm install` conflict. If you need a crate, package, Tauri feature or
+   permission, write it in your hand-off note; the integration step adds it. Already decided:
+   audio is streamed to an `<audio>` element over the asset protocol (`protocol-asset` is on,
+   scope empty; playback adds the open library's files with
+   `app.asset_protocol_scope().allow_file(..)` at run time); waveform peaks come from
+   `pm-analysis` decode in Rust; tag and rating edits go through the `pm-formats` `Library` (no
+   tag-writing crate); exports are plain text formats (M3U, CSV) written with `std::fs`.
+7. **Public surfaces others depend on.** `TrackTable` props and `trackFilter.ts` exports are
+   frozen for existing callers: tracks may add props only with defaults that keep current
+   behaviour. `ui/Waveform.svelte` is integration-owned: an area that needs more (zoom, cues,
+   editable grid lines) wraps it or copies it into its own folder (e.g. `views/grid/`), it does
+   not edit it. The `Track` and `LibraryView` payloads are frozen: new per-track data comes from
+   an area command (`<area>_track_detail(root, id)`, or a list command of your own like
+   `mix_list`), never by widening `Track`. A field that truly must be added is an integration
+   request.
+
+## How to add things
+
+### A view's content (your area already has a folder)
+
+Edit the `<Area>View.svelte` in your folder. Split it into more components in the same folder as
+it grows. The registry already shows it in the sidebar.
+
+### A new top-level view
+
+Create `lib/views/<area>/` with `<Area>View.svelte` and a `view.ts` (copy `views/mixes/view.ts`:
+a default-exported `ViewDef` with `id`, `label`, `section`, `order`, `component`, optional
+`count`). `registry.ts` and `ids.ts` are not edited. Navigate with `nav.go("<id>")`.
+
+### A modal, drop zone or other always-mounted UI
+
+Add `lib/views/<area>/Overlays.svelte` (or `lib/player/Overlays.svelte`). The shell renders every
+such file once. Nothing shared is edited.
+
+### A startup subscription (events, OS listeners)
+
+Add `lib/views/<area>/init.ts` (or `lib/player/init.ts`) with
+`export default function init(): Unlisten` (use `subscribeAll` from `lib/api/events.ts`). The
+shell runs every such file when it mounts and calls the returned teardown on unmount.
+
+### Opening a view with a target
+
+`nav.go("grid", { "grid.trackId": 7 })`; the receiving view reads `nav.take<number>("grid.trackId")`
+(removes it so it is acted on once). Prefix keys with the area name.
+
+### A store
+
+Create `lib/state/<area>.svelte.ts`. Use a class with `$state` fields and export one instance. If
+it holds per-library state, register `session.onReset(() => store.clear())` at module level
+(see `cases.svelte.ts`); `session.svelte.ts` is never edited.
+
+```ts
+class Mixes {
+  openId = $state<number | null>(null);
+  open(id: number) { this.openId = id; }
+}
+export const mixes = new Mixes();
+```
+
+Read library data from `session.library`; do not copy it into your store. Stores must not import
+views. A store may import `lib/api/<area>.ts` and other stores, never a cycle.
+
+### An API call
+
+In `lib/api/<area>.ts`:
+
+```ts
+export const getHistory = (root: string) => invoke<Session[]>("history_sessions", { root });
+```
+
+Command names are the Rust function names; argument keys are camelCase (`track_ids` is `trackIds`).
+Types used by one area stay in its api file; types several areas need go in `api/types.ts`
+(integration step). Errors arrive as strings; `catch (e) { session.error = String(e) }`.
+
+### A Tauri command
+
+In `src-tauri/src/commands/<area>.rs`:
+
+1. Write `#[tauri::command] pub async fn name(...) -> AppResult<T>`. Do blocking work in
+   `tauri::async_runtime::spawn_blocking`. Open the library with `Library::open_read_only` to read,
+   `Library::open` only for a command that writes, and write only after an explicit user action.
+2. Add `$crate::commands::<area>::name,` to the list in that file's `<area>_commands!` macro.
+   **This step is required**: a command that is not listed compiles but fails at run time with
+   "command not found".
+3. Add the wrapper in `lib/api/<area>.ts` and the mock in `lib/devmock/<area>.ts`.
+
+`lib.rs` and `commands/mod.rs` are not touched. Errors: `?` works on `pm_formats::library::Error`,
+`std::io::Error` and `tauri::Error`; for any other `Display` error use `result.app()?`
+(`use crate::error::IntoApp`). Managed state used by only your area: `app.manage(MyState::default())`
+in your file's `setup`. State shared by several areas goes in `state.rs` (integration step).
+
+### A background job (any kind: key detection, export, sync, tag write)
+
+Backend: call `jobs::spawn_job(app, &lock, "my-kind", |app| { ...; Ok(JobOutcome { ok, failed, summary }) })`
+from a command that returns once the job has started. Emit per-item progress with
+`events::emit(app, events::JOB_PROGRESS, Progress::new("my-kind", label, done, total, "my-status"))`
+(set `.bpm`, `.detail` or `.error` as needed; status `"failed"` lists the item as failed). The
+`summary` string is shown as is when the job finishes. `spawn_job` holds the shared `JobLock`, so
+only one job runs at a time. Never reuse another area's kind string.
+
+Frontend: nothing shared is edited. From your store or view call
+`jobs.ask({ kind, root, count, names, title, description, confirmLabel, runningLabel, doneLabel, start })`
+where `start` invokes your command. The confirmation, progress strip, failure list, completion and
+library reload are handled by `state/jobs.svelte.ts`, `shell/JobStrip.svelte` and
+`views/import/ConfirmModal.svelte`. Call `jobs.guard()` first if you need to check that writing is
+possible before doing work. In devmock use `runJob(kind, labels, each)` from `devmock/jobs.ts`.
+
+### An event
+
+1. Backend: add `pub const MY_EVENT: &str = "my-event";` **to your own `commands/<area>.rs`** and
+   emit with `events::emit(&app, MY_EVENT, payload)` (payload: `Serialize + Clone`). Only events
+   that several areas listen to belong in `events.rs`.
+2. Frontend: in `lib/api/<area>.ts`, export a typed wrapper
+   `export const onMyEvent = (cb) => listen<Payload>("my-event", (e) => cb(e.payload))` (the event
+   name string is declared once, there), and register it in your `init.ts` with
+   `subscribeAll([...])` (it returns one teardown function and tolerates running in a plain browser).
+3. In devmock, emit it with `emit("my-event", payload)` from `@tauri-apps/api/event`.
+
+### A devmock entry
+
+In `lib/devmock/<area>.ts` add to the exported `handlers` object, keyed by command name:
+
+```ts
+export const handlers: Handlers = {
+  history_sessions: () => [],   // the same shape the Rust command returns; throw a string to fail
+};
+```
+
+The file is merged by `devmock/index.ts` automatically (a command name defined twice throws at
+start). Fixtures private to your area live in your file; `devmock/db.ts` holds only the shared
+track and case fixture. The mock is invented placeholder data only.
+
+## Shared and therefore integration-only
+
+`routes/*`, `lib/styles/*`, `lib/format.ts`, `lib/shell/*`, `lib/ui/*`, `lib/views/ids.ts`,
+`lib/views/registry.ts`, `lib/state/{session,nav,filters,selection,toast}.svelte.ts`,
+`lib/api/{types,events}.ts`, `lib/devmock/{index,db,jobs,dialog,types}.ts`, `src-tauri/src/lib.rs`,
+`commands/{mod,library}.rs`, `state.rs`, `jobs.rs`, `events.rs`, `error.rs`, `Cargo.toml`,
+`package.json`, `tauri.conf.json`, `capabilities/*`.
+
+Adding a dependency or a Tauri permission is also integration-only (rule 6).
+
+## Checks
+
+In `app/`: `npm run check` and `npm run build`. In `app/src-tauri/`: `cargo build` and
+`cargo clippy --all-targets`. From the repo root: `cargo test -p pm-formats -p pm-analysis`.
+`npm run dev` serves the UI in a browser against devmock (no Tauri needed). `svelte-check` covers
+every file, so a half-finished component in one area shows up in everyone's check: keep your area
+compiling, or stub the part you have not finished.

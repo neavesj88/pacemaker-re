@@ -1,0 +1,23 @@
+/* The device palette (branding/): black ground, matrix green, magenta accent.
+   Shared stylesheet, integration-owned: views use these variables, never raw colours. */
+:root {
+  --bg: #050605;
+  --panel: #0a0d0b;
+  --deep: #030403;
+  --row: #0b0f0c;
+  --row-alt: #0e130f;
+  --hover: #15211a;
+  --line: #1b2a1f;
+  --line-hi: #2f4a36;
+  --text: #c9f2d3;
+  --muted: #5f9a6f;
+  --green: #00ff46;
+  --accent: #ff00c8;
+  --accent-soft: rgba(255, 0, 200, 0.14);
+  --accent-ramp: linear-gradient(90deg, #c800ff, #ff00c8);
+  --ok: #00ff46;
+  --bad: #ff3b6b;
+  --bad-bg: #2a0716;
+  --bad-text: #ffc0d8;
+  color-scheme: dark;
+}

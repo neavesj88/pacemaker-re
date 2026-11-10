@@ -7,6 +7,6 @@ export const ssr = false;
 // Outside the Tauri shell (browser preview during UI work) answer commands with a synthetic
 // library; inside Tauri this branch never runs.
 if (typeof window !== "undefined" && !("__TAURI_INTERNALS__" in window)) {
-  const { installDevMock } = await import("$lib/devmock");
+  const { installDevMock } = await import("$lib/devmock/index");
   installDevMock();
 }
