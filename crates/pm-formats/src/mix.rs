@@ -1652,7 +1652,7 @@ mod tempo_tests {
         assert_eq!(m.speed_at(-5.0), 1.25);
         // the Editor's demo mix: cue point = source position of the left trim
         let m = TempoMap::new(&[sn(0, 1.0242525), sn(9925796, 1.0242525), sn(9925797, 1.0242525)]);
-        assert_eq!(m.source_at(9925797.4744418114).round() as i64, 10_166_523);
+        assert_eq!(m.source_at(9_925_797.474_441_8).round() as i64, 10_166_523);
         assert_eq!(TempoMap::new(&[]).source_at(77.0), 77.0);
     }
 

@@ -189,9 +189,20 @@ pub fn beatmatch(doc: &MixDoc, clip_id: &str) -> Result<BeatmatchSuggestion, Str
 pub struct ToolSuggestion {
     /// The clip to add `tool` to (a new process at the end of its list).
     pub clip_id: String,
-    pub tool: ToolDoc,
+    /// Always a `ProcessDoc::Tool`.
+    pub tool: ProcessDoc,
     /// Ids of existing EQ tools of that clip that overlap it (the Editor allows one per range).
     pub conflicts: Vec<String>,
+}
+
+#[cfg(test)]
+impl ToolSuggestion {
+    pub fn tool_doc(&self) -> &ToolDoc {
+        match &self.tool {
+            ProcessDoc::Tool(t) => t,
+            _ => unreachable!("a tool suggestion always holds a tool"),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -335,7 +346,7 @@ pub fn auto_transition(doc: &MixDoc, from_id: &str, to_id: &str) -> Result<Trans
             if !conflicts.is_empty() {
                 notes.push("an EQ tool already covers part of the overlap on one clip".into());
             }
-            tools.push(ToolSuggestion { clip_id: clip.id.clone(), tool, conflicts });
+            tools.push(ToolSuggestion { clip_id: clip.id.clone(), tool: ProcessDoc::Tool(tool), conflicts });
         }
     }
     Ok(TransitionSuggestion { transition, tools, bars, notes })
@@ -497,21 +508,21 @@ mod tests {
         assert_eq!(s.transition.between, Some(Between { from: "a".into(), to: "b".into() }));
         assert!(s.transition.beat_match);
         assert_eq!(s.tools.len(), 2);
-        let lo_a = &s.tools[0].tool.params["EQ-Lo"];
-        let lo_b = &s.tools[1].tool.params["EQ-Lo"];
+        let lo_a = &s.tools[0].tool_doc().params["EQ-Lo"];
+        let lo_b = &s.tools[1].tool_doc().params["EQ-Lo"];
         assert_eq!((lo_a.first().unwrap().value, lo_a.last().unwrap().value), (0.0, EQ_LO_KILL));
         assert_eq!((lo_b.first().unwrap().value, lo_b.last().unwrap().value), (EQ_LO_KILL, 0.0));
         assert!(lo_a.windows(2).all(|w| w[1].pos > w[0].pos) && lo_b.windows(2).all(|w| w[1].pos > w[0].pos));
         // tools sit in each clip's local axis over exactly the overlap
         let t = s.transition.span.start;
-        assert!((s.tools[0].tool.span.start - (t - 0.0)).abs() < 1e-6);
-        assert!((s.tools[1].tool.span.start - (t - 8_000_000.0)).abs() < 1e-6);
+        assert!((s.tools[0].tool_doc().span.start - (t - 0.0)).abs() < 1e-6);
+        assert!((s.tools[1].tool_doc().span.start - (t - 8_000_000.0)).abs() < 1e-6);
         // applying the suggestion yields a document that validates
         let mut d2 = d.clone();
         d2.transitions.push(s.transition.clone());
         for ts in &s.tools {
             let c = d2.clips.iter_mut().find(|c| c.id == ts.clip_id).unwrap();
-            c.processes.push(ProcessDoc::Tool(ts.tool.clone()));
+            c.processes.push(ts.tool.clone());
         }
         d2.refresh();
         assert_eq!(d2.validate(None), Vec::<String>::new());
