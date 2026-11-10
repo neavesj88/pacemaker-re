@@ -114,7 +114,7 @@
             </li>
           {/each}
           {#if plan.unmatched_total > plan.unmatched.length}
-            <li class="muted">…and {plan.unmatched_total - plan.unmatched.length} more</li>
+            <li class="muted">…and {plan.unmatched_total - plan.unmatched.length} more (only the first {plan.unmatched.length} are listed; the counts and the add button cover all of them)</li>
           {/if}
         </ul>
       </details>
@@ -128,7 +128,7 @@
       {/if}
       <span class="spacer"></span>
       {#if interop.loading}<span class="muted">Reading…</span>{/if}
-      <Button variant="primary" disabled={!jobs.canWrite || interop.changes === 0} onclick={() => interop.ask()}>
+      <Button variant="primary" disabled={!jobs.canWrite || interop.loading || interop.changes === 0} onclick={() => interop.ask()}>
         {interop.changes === 0 ? "Nothing to apply" : `Apply ${interop.changes} change${interop.changes === 1 ? "" : "s"}…`}
       </Button>
     </footer>

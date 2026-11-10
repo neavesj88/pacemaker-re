@@ -86,7 +86,9 @@ fn read_foreign(path: &str) -> AppResult<interop::ForeignLibrary> {
         return Err("That file is larger than 2 GB; it is not a library export.".into());
     }
     let bytes = std::fs::read(path)?;
-    Ok(interop::parse_library(&String::from_utf8_lossy(&bytes))?)
+    // no second copy of a big file when it is valid UTF-8 (the usual case)
+    let text = String::from_utf8(bytes).unwrap_or_else(|e| String::from_utf8_lossy(e.as_bytes()).into_owned());
+    Ok(interop::parse_library(&text)?)
 }
 
 /// Reads a rekordbox XML or iTunes `Library.xml` and lists exactly what importing it would
@@ -106,7 +108,7 @@ pub async fn interop_preview(root: String, path: String, options: Option<ImportO
 /// current library, so the two always agree). Ratings go in one transaction, each case in its
 /// own. Returns as soon as the job has started.
 #[tauri::command]
-pub fn interop_apply(
+pub async fn interop_apply(
     app: AppHandle,
     lock: State<'_, JobLock>,
     root: String,
@@ -114,8 +116,8 @@ pub fn interop_apply(
     options: Option<ImportOptions>,
 ) -> AppResult<()> {
     let opts = options.unwrap_or_default();
-    // fail before starting the job when the file is unreadable
-    let foreign = read_foreign(&path)?;
+    // fail before starting the job when the file is unreadable; read and parsed off the UI thread
+    let foreign = tauri::async_runtime::spawn_blocking(move || read_foreign(&path)).await.map_err(|e| e.to_string())??;
     spawn_job(app, &lock, JOB_INTEROP, move |app| {
         let mut lib = Library::open(Path::new(&root))?;
         let plan = interop::plan_import(&lib, &foreign, &opts)?;

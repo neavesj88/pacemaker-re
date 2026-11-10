@@ -48,10 +48,10 @@
 
   <section class="card">
     <h3>rekordbox</h3>
-    <p class="muted">rekordbox.xml: ratings and playlists become ratings and cases (previewed first). Export writes tracks with their tempo grids, ratings, keys and cases.</p>
+    <p class="muted">rekordbox.xml: ratings and playlists become ratings and cases (previewed first); cues and grids are not imported yet. Export writes tracks with their tempo grids, ratings, keys and cases.</p>
     <div class="row">
       <Button onclick={() => interop.pick("Choose a rekordbox XML export")} disabled={!lib || interop.loading}>Import XML…</Button>
-      <Button onclick={() => interop.export("rekordbox", { scope: "library" }, "rekordbox")} disabled={!lib}>Export XML…</Button>
+      <Button onclick={() => interop.export("rekordbox", { scope: "library" }, "rekordbox")} disabled={!lib || interop.exporting}>Export XML…</Button>
     </div>
   </section>
 
@@ -78,8 +78,8 @@
           </optgroup>
         {/if}
       </select>
-      <Button onclick={() => exportList("m3u8")} disabled={!lib}>M3U8…</Button>
-      <Button onclick={() => exportList("csv")} disabled={!lib}>CSV…</Button>
+      <Button onclick={() => exportList("m3u8")} disabled={!lib || interop.exporting}>M3U8…</Button>
+      <Button onclick={() => exportList("csv")} disabled={!lib || interop.exporting}>CSV…</Button>
     </div>
   </section>
 

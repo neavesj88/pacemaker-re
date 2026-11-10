@@ -844,14 +844,15 @@ fn match_tracks(lib_tracks: &[Track], foreign: &[ForeignTrack]) -> Vec<Matched> 
                 .map(|v| {
                     v.iter()
                         .filter(|t| match f.duration_secs {
+                            // a tag match without a length on both sides is too weak to write ratings on
                             Some(d) if t.play_time_secs > 0 => (d - t.play_time_secs as f64).abs() <= 2.5,
-                            _ => true,
+                            _ => false,
                         })
                         .collect()
                 })
                 .unwrap_or_default();
             match cands.len() {
-                0 => Matched::No("not on the device".into()),
+                0 => Matched::No("not on the device (or no length to confirm a title match)".into()),
                 1 => Matched::ByTags(cands[0].track_id),
                 n => Matched::No(format!("{n} device tracks share this title and artist")),
             }
@@ -897,6 +898,10 @@ pub fn plan_import(lib: &Library, foreign: &ForeignLibrary, opts: &ImportOptions
     }
 
     let existing_cases = lib.cases()?;
+    // The device allows several cases with one name: the Nth playlist of a name maps to the Nth
+    // case of that name (names compared trimmed), so importing the same file again finds the
+    // cases it made the first time.
+    let mut claimed: HashSet<i64> = HashSet::new();
     let mut cases = Vec::new();
     for (index, pl) in foreign.playlists.iter().enumerate() {
         let mut name: String = pl.name.trim().chars().take(crate::library::MAX_CASE_NAME_CHARS).collect();
@@ -915,7 +920,10 @@ pub fn plan_import(lib: &Library, foreign: &ForeignLibrary, opts: &ImportOptions
                 None => unmatched += 1,
             }
         }
-        let existing = existing_cases.iter().find(|c| c.name == name);
+        let existing = existing_cases.iter().find(|c| !claimed.contains(&c.id) && c.name.trim() == name);
+        if let Some(c) = existing {
+            claimed.insert(c.id);
+        }
         let (action, case_id, already_in, add): (CaseAction, Option<i64>, usize, Vec<i64>) = match existing {
             _ if ids.is_empty() => (CaseAction::Skip, None, 0, vec![]),
             Some(c) => {
@@ -1177,6 +1185,15 @@ pub fn export_m3u8(lib: &Library, tracks: &[Track]) -> String {
     s
 }
 
+fn csv_text(s: &str) -> String {
+    // spreadsheets evaluate cells starting with these as formulas; a leading quote makes it text
+    if s.starts_with(['=', '+', '-', '@', '\t', '\r']) {
+        csv_field(&format!("'{s}"))
+    } else {
+        csv_field(s)
+    }
+}
+
 fn csv_field(s: &str) -> String {
     if s.contains(['"', ',', '\n', '\r']) {
         format!("\"{}\"", s.replace('"', "\"\""))
@@ -1191,16 +1208,16 @@ pub fn export_csv(lib: &Library, tracks: &[Track]) -> String {
     let mut s = String::from("\u{feff}Title,Artist,Album,Genre,BPM,Key,Rating,Duration (s),Format,File\r\n");
     for t in tracks {
         let row = [
-            csv_field(&t.title),
-            csv_field(&t.artist),
-            csv_field(&t.album),
-            csv_field(&t.genre),
+            csv_text(&t.title),
+            csv_text(&t.artist),
+            csv_text(&t.album),
+            csv_text(&t.genre),
             format!("{:.2}", t.bpm),
-            csv_field(&t.key),
+            csv_text(&t.key),
             t.rating.to_string(),
             t.play_time_secs.to_string(),
-            csv_field(&t.format),
-            csv_field(&audio_path(lib, t)),
+            csv_text(&t.format),
+            csv_text(&audio_path(lib, t)),
         ];
         s.push_str(&row.join(","));
         s.push_str("\r\n");
@@ -1683,11 +1700,14 @@ mod tests {
         let (lib, dirs, _) = library("amb", 2);
         let f = ForeignLibrary {
             source: Source::Itunes,
-            tracks: vec![ForeignTrack { title: "synth title 0".into(), artist: "SYNTH ARTIST".into(), ..Default::default() }],
+            tracks: vec![ForeignTrack { title: "synth title 0".into(), artist: "SYNTH ARTIST".into(), duration_secs: Some(200.0), ..Default::default() }],
             playlists: vec![],
         };
         let plan = plan_import(&lib, &f, &ImportOptions::default()).unwrap();
         assert_eq!(plan.matched, 1);
+        let mut nolen = f.clone();
+        nolen.tracks[0].duration_secs = None;
+        assert_eq!(plan_import(&lib, &nolen, &ImportOptions::default()).unwrap().matched, 0, "a title match needs a length on both sides");
         let f2 = ForeignLibrary {
             tracks: vec![ForeignTrack { title: "Synth Title 0".into(), artist: "Synth Artist".into(), duration_secs: Some(900.0), ..Default::default() }],
             ..f
@@ -1791,5 +1811,37 @@ mod tests {
         assert_eq!(scope_tracks(&lib, Scope::Mix(mid)).unwrap().1.len(), 0);
         assert!(scope_tracks(&lib, Scope::Case(9999)).is_err());
         clean(lib, dirs);
+    }
+
+    #[test]
+    fn same_named_playlists_import_once_each_and_reimport_cleanly() {
+        let (mut lib, dirs, _) = library("dupes", 3);
+        let xml = r#"<?xml version="1.0"?><DJ_PLAYLISTS Version="1.0.0"><COLLECTION Entries="3">
+<TRACK TrackID="1" Name="a" Size="2000" Location="file://localhost/D:/x/synth%200.mp3"/>
+<TRACK TrackID="2" Name="b" Size="2001" Location="file://localhost/D:/x/synth%201.mp3"/>
+<TRACK TrackID="3" Name="c" Size="2002" Location="file://localhost/D:/x/synth%202.mp3"/>
+</COLLECTION><PLAYLISTS><NODE Type="0" Name="ROOT" Count="3">
+<NODE Name="Set" Type="1" KeyType="0" Entries="2"><TRACK Key="1"/><TRACK Key="2"/></NODE>
+<NODE Name="Set" Type="1" KeyType="0" Entries="1"><TRACK Key="3"/></NODE>
+<NODE Name="  Pad " Type="1" KeyType="0" Entries="1"><TRACK Key="1"/></NODE>
+</NODE></PLAYLISTS></DJ_PLAYLISTS>"#;
+        let foreign = parse_library(xml).unwrap();
+        let opts = ImportOptions::default();
+        let plan = plan_import(&lib, &foreign, &opts).unwrap();
+        assert!(plan.cases.iter().all(|c| c.action == CaseAction::Create));
+        let rep = apply_plan(&mut lib, &plan, &opts, |_| {}).unwrap();
+        assert_eq!((rep.cases_created, rep.failures.len()), (3, 0));
+        let again = plan_import(&lib, &foreign, &opts).unwrap();
+        assert!(again.cases.iter().all(|c| c.action == CaseAction::Unchanged), "{:?}", again.cases.iter().map(|c| c.action).collect::<Vec<_>>());
+        assert_ne!(again.cases[0].case_id, again.cases[1].case_id);
+        clean(lib, dirs);
+    }
+
+    #[test]
+    fn csv_text_fields_cannot_become_formulas() {
+        assert_eq!(csv_text("=SUM(1,2)"), "\"'=SUM(1,2)\"");
+        assert_eq!(csv_text("@x"), "'@x");
+        assert_eq!(csv_text("-1"), "'-1");
+        assert_eq!(csv_text("plain"), "plain");
     }
 }

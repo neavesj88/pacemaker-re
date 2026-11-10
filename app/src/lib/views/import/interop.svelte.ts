@@ -24,6 +24,7 @@ class Interop {
   path = $state("");
   plan = $state<ImportPlan | null>(null);
   loading = $state(false);
+  exporting = $state(false);
   error = $state("");
   ratings = $state(true);
   playlists = $state(true);
@@ -102,7 +103,7 @@ class Interop {
   ask() {
     const lib = session.library;
     const plan = this.plan;
-    if (!lib || !plan || this.changes === 0) return;
+    if (!lib || !plan || this.loading || this.changes === 0) return;
     const names: string[] = [];
     for (const r of this.ratingSteps) {
       names.push(`Rating of ${r.title || "(untitled)"}${r.artist ? " by " + r.artist : ""}: ${stars(r.from)} to ${stars(r.to)}`);
@@ -135,17 +136,21 @@ class Interop {
   /** Save a list (or the rekordbox library) for other software. */
   async export(format: ExportFormat, where: ExportScope, name: string) {
     const lib = session.library;
-    if (!lib) return;
+    if (!lib || this.exporting) return;
     const safe = name.replace(/[\\/:*?"<>|]+/g, "_").trim() || "export";
     const [ext, label] =
       format === "m3u8" ? ["m3u8", "M3U8 playlist"] : format === "csv" ? ["csv", "CSV list"] : ["xml", "rekordbox XML"];
+    this.exporting = true;
+    this.error = "";
     try {
       const dest = await pickSavePath(`${safe}.${ext}`, label, ext);
       if (!dest) return;
       const r = await interopExport(lib.root, format, where, dest);
       toast.show(`Saved ${plural(r.tracks, "track")} to ${baseName(r.path)}`, "ok");
     } catch (e) {
-      session.error = String(e);
+      this.error = String(e);
+    } finally {
+      this.exporting = false;
     }
   }
 }
