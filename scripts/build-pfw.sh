@@ -4,7 +4,12 @@
 # versions (so the device installs it without flashing kernel, rootfs or bootloader).
 # Runs on Linux (WSL: wsl -d Debian -u root -- scripts/build-pfw.sh ...); needs e2fsprogs, python3.
 #
-#   scripts/build-pfw.sh STOCK.pfw OUT.pfw [--diag] [/image/path=local/file ...]
+#   scripts/build-pfw.sh STOCK.pfw OUT.pfw [--diag] [--fwver=N] [/image/path=local/file ...]
+#
+# --fwver=N writes N as the trailer's fwver. A fwver different from FWVERSION in the device's
+# running /etc/system.xml makes the device FLASH the image's boot/zImage and boot/cramfs.little
+# (SWUpgrade::startFwUpgrade), so only use it together with a rootfs whose /etc/system.xml says N
+# (scripts/build-rootfs.sh), or the install ends in "FW Upgrade is NOT OK".
 #
 # --diag renames /bin/pmplayer to pmplayer.real and installs a shell wrapper that writes what the
 # kernel sees of the drive to .Pacemaker/revival-diag.txt on each start, then execs the player
@@ -13,6 +18,7 @@ set -euo pipefail
 here="$(cd "$(dirname "$0")/.." && pwd)"
 stock="$1"; out="$2"; shift 2
 diag=0
+fwver=""
 work="$(mktemp -d)"; trap 'rm -rf "$work"' EXIT
 img="$work/image.ext3"
 
@@ -46,6 +52,7 @@ EOF
 for arg in "$@"; do
   case "$arg" in
     --diag) diag=1 ;;
+    --fwver=*) fwver="${arg#--fwver=}"; [[ $fwver =~ ^[0-9]+$ ]] || { echo "bad --fwver" >&2; exit 2; } ;;
     /*=*) replace "${arg%%=*}" "${arg#*=}" ;;
     *) echo "bad argument: $arg" >&2; exit 2 ;;
   esac
@@ -84,7 +91,7 @@ dumpe2fs -h "$img" 2>/dev/null | grep -E '^Filesystem features' > "$work/feature
 cmp -s "$work/features.before" "$work/features.after" || { echo "filesystem features changed" >&2; exit 1; }
 echo "e2fsck clean: $(tail -1 "$work/fsck.log")"
 
-python3 - "$stock" "$img" "$out" "$here/scripts" <<'EOF'
+python3 - "$stock" "$img" "$out" "$here/scripts" "$fwver" <<'EOF'
 import importlib.util, sys
 spec = importlib.util.spec_from_file_location("pfw", sys.argv[4] + "/pfw-trailer.py")
 pfw = importlib.util.module_from_spec(spec); spec.loader.exec_module(pfw)
@@ -93,6 +100,7 @@ vals, o = {}, 0
 for name, n in pfw.FIELDS:
     vals[name] = pfw.field(tail[o:o + n]); o += n
 image = open(sys.argv[2], "rb").read()
-open(sys.argv[3], "wb").write(pfw.build(image, vals["swver"], vals["fwver"], vals["bootloaderver"]))
+fw = sys.argv[5] or vals["fwver"]
+open(sys.argv[3], "wb").write(pfw.build(image, vals["swver"], fw, vals["bootloaderver"]))
 EOF
 python3 "$here/scripts/pfw-trailer.py" "$out"
