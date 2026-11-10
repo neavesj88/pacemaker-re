@@ -39,6 +39,7 @@
   /** The one status line under the title, worst first. */
   const status = $derived.by((): { text: string; bad: boolean } | null => {
     if (playback.error) return { text: playback.error, bad: true };
+    if (track && engine.peaksProblem) return { text: `No waveform: ${engine.peaksProblem}`, bad: false };
     if (track && engine.beatsProblem) return { text: `No beat ticks: ${engine.beatsProblem}`, bad: false };
     if (loaded && engine.silent) return { text: "Browser preview: no audio, silent clock", bad: false };
     return null;
@@ -49,6 +50,19 @@
   function cueDown(e: PointerEvent) {
     if (e.shiftKey) engine.setCueHere();
     else engine.cuePress();
+  }
+
+  // Keyboard CUE on the focused button: Enter or Space, held like the pointer (Shift sets the cue)
+  function cueKeyDown(e: KeyboardEvent) {
+    if ((e.key !== "Enter" && e.key !== " ") || e.repeat) return;
+    e.preventDefault();
+    if (e.shiftKey) engine.setCueHere();
+    else engine.cuePress();
+  }
+  function cueKeyUp(e: KeyboardEvent) {
+    if (e.key !== "Enter" && e.key !== " ") return;
+    e.preventDefault();
+    engine.cueRelease();
   }
 </script>
 
@@ -62,7 +76,7 @@
       <div class="muted line">Mix preview</div>
     {:else}
       <b class="title muted">Nothing loaded</b>
-      <div class="muted line">Double-click a track, or press Space on a highlighted one</div>
+      <div class="muted line">Select a track and press Space</div>
     {/if}
     {#if status}<div class="line status" class:bad={status.bad} title={status.text}>{status.text}</div>{/if}
   </div>
@@ -73,7 +87,7 @@
     firstDownbeat={engine.firstDownbeat}
     duration={span}
     {progress}
-    cue={track && engine.beats.length ? playback.cue : null}
+    cue={track && engine.ready ? playback.cue : null}
     loop={playback.loop}
     busy={engine.loading}
     disabled={!loaded || !engine.ready}
@@ -95,6 +109,8 @@
       title="Cue: at the cue point, hold to preview; elsewhere, jump to the cue point. Shift-click sets the cue point here. Key: C"
       disabled={!track || !engine.ready}
       onpointerdown={cueDown}
+      onkeydown={cueKeyDown}
+      onkeyup={cueKeyUp}
       onpointerup={() => engine.cueRelease()}
       onpointerleave={() => engine.cueRelease()}
       onpointercancel={() => engine.cueRelease()}>CUE</Button

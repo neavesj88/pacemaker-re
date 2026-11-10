@@ -138,6 +138,8 @@ class Engine {
   firstDownbeat = $state<number | null>(null);
   /** Why there are no beat ticks ("no .str file", ...), or "". */
   beatsProblem = $state("");
+  /** Why there is no waveform ("analysis failed: ..."), or "". */
+  peaksProblem = $state("");
   /** True when nothing is audible: the browser preview, where a silent clock keeps time. */
   silent = $state(false);
   /** The source is resolved and the media can play. */
@@ -240,6 +242,7 @@ class Engine {
     this.beats = [];
     this.firstDownbeat = null;
     this.beatsProblem = "";
+    this.peaksProblem = "";
     this.#cuePreviewing = false;
     if (!root || (id === null && !mix)) {
       this.loading = false;
@@ -258,7 +261,9 @@ class Engine {
       // peaks and beats only decorate the bar; they must not hold up (or fail) playback
       void fetchPeaks(root, track.location, PEAK_COLUMNS)
         .then((p) => token === this.#token && (this.peaks = p))
-        .catch(() => {});
+        .catch((e) => {
+          if (token === this.#token) this.peaksProblem = e instanceof Error ? e.message : String(e);
+        });
       const beats = playbackBeats(root, track.location).then(
         (b) => {
           if (token !== this.#token) return;
@@ -296,9 +301,13 @@ class Engine {
   }
 
   #play() {
+    const token = this.#token;
     this.#media.play().then(
       () => this.#frame(),
       (e) => {
+        // a pause or a track change interrupts a pending play(): that is not a failure, and it
+        // must not cancel the autoplay of whatever was loaded since
+        if (token !== this.#token || (e instanceof Error && e.name === "AbortError")) return;
         // autoplay refusals and decode failures land here
         playback.playing = false;
         if (!playback.error) playback.error = `Cannot play: ${e instanceof Error ? e.message : String(e)}`;

@@ -46,6 +46,23 @@ pub struct Beats {
     pub problem: Option<String>,
 }
 
+/// Every component after `/pmdb_tracks/` must be a plain name. `Path::join` replaces its base
+/// for a rooted or drive-prefixed component (`/pmdb_tracks/C:/x`, `/pmdb_tracks//x`), so those
+/// would leave the Music folder. Colons and backslashes are refused on every platform so the
+/// check does not depend on where it runs.
+fn check_relative(location: &str) -> AppResult<()> {
+    let rel = location.strip_prefix(pm_formats::naming::LOCATION_PREFIX).unwrap_or(location);
+    let plain = !rel.is_empty()
+        && !rel.contains([':', '\\', '\0'])
+        && Path::new(rel).components().all(|c| matches!(c, Component::Normal(_)))
+        && rel.split('/').all(|part| !part.is_empty());
+    if plain { Ok(()) } else { Err(AppError::from(format!("{location} points outside the library"))) }
+}
+
+fn has_audio_ext(p: &Path) -> bool {
+    p.extension().and_then(|e| e.to_str()).is_some_and(|e| AUDIO_EXTS.contains(&e.to_ascii_lowercase().as_str()))
+}
+
 /// Audio file and `.str` for a `tracks.location`. Rejects locations that would leave the
 /// library's Music folder.
 fn resolve(root: &Path, location: &str) -> AppResult<(PathBuf, PathBuf)> {
@@ -53,10 +70,7 @@ fn resolve(root: &Path, location: &str) -> AppResult<(PathBuf, PathBuf)> {
     let (audio, sidecar) = lib
         .track_paths(location)
         .ok_or_else(|| AppError::from(format!("{location} is not a device-side track path")))?;
-    let escapes = Path::new(location).components().any(|c| matches!(c, Component::ParentDir));
-    if escapes {
-        return Err(AppError::from(format!("{location} points outside the library")));
-    }
+    check_relative(location)?;
     Ok((audio, sidecar))
 }
 
@@ -64,7 +78,11 @@ fn resolve(root: &Path, location: &str) -> AppResult<(PathBuf, PathBuf)> {
 /// into a URL with `convertFileSrc`.
 #[tauri::command]
 pub async fn playback_source(app: tauri::AppHandle, root: String, location: String) -> AppResult<Source> {
+    let shown = location.clone();
     let (audio, _) = tauri::async_runtime::spawn_blocking(move || resolve(Path::new(&root), &location)).await??;
+    if !has_audio_ext(&audio) {
+        return Err(AppError::from(format!("{shown} is not an audio file")));
+    }
     if !audio.is_file() {
         return Err(AppError::from(format!("audio file not found: {}", audio.display())));
     }
@@ -79,11 +97,7 @@ pub async fn playback_source(app: tauri::AppHandle, root: String, location: Stri
 pub async fn playback_allow_file(app: tauri::AppHandle, root: String, path: String) -> AppResult<Source> {
     let canonical = tauri::async_runtime::spawn_blocking(move || -> AppResult<PathBuf> {
         let p = std::fs::canonicalize(&path)?;
-        let ext_ok = p
-            .extension()
-            .and_then(|e| e.to_str())
-            .is_some_and(|e| AUDIO_EXTS.contains(&e.to_ascii_lowercase().as_str()));
-        if !ext_ok {
+        if !has_audio_ext(&p) {
             return Err(AppError::from(format!("{path} is not an audio file")));
         }
         let roots = [std::fs::canonicalize(std::env::temp_dir()).ok(), std::fs::canonicalize(&root).ok()];
@@ -330,6 +344,16 @@ mod tests {
         assert!(resolve(&d, "/pmdb_tracks/1/2/abc.mp3").is_ok());
         assert!(resolve(&d, "/pmdb_tracks/../../x.mp3").is_err());
         assert!(resolve(&d, "C:/music/x.mp3").is_err());
+        for bad in [
+            "/pmdb_tracks/C:/Windows/x.mp3",
+            "/pmdb_tracks//Windows/x.mp3",
+            "/pmdb_tracks/",
+            "/pmdb_tracks/a//b.mp3",
+            "/pmdb_tracks/a\\..\\b.mp3",
+            "/pmdb_tracks/C:x.mp3",
+        ] {
+            assert!(resolve(&d, bad).is_err(), "{bad} must be refused");
+        }
         let _ = std::fs::remove_dir_all(d);
     }
 }

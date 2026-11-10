@@ -2,6 +2,7 @@
 // area (the engine in lib/player reads and drives these fields); every other area, the mix
 // editor and the grid editor included, only calls the methods and reads the fields. This is
 // the one place the "now playing" state lives, so views never talk to the engine directly.
+import { visibleTracks } from "$lib/views/tracks/trackFilter";
 import { session } from "./session.svelte";
 
 /** A rendered mix being previewed instead of a single track. `path` is the rendered audio file
@@ -39,14 +40,18 @@ class Playback {
 
   load(trackId: number, autoplay = false, queue?: number[]) {
     if (queue) this.queue = queue;
+    // loading the track that is already loaded only restarts it: the engine does not reload it,
+    // so its cue point (the default first downbeat, or one the user set) and error stay as they are
+    const same = this.trackId === trackId && this.mixPreview === null;
     this.mixPreview = null;
     this.trackId = trackId;
     this.position = 0;
-    this.duration = 0;
-    this.cue = 0;
-    this.loop = null;
-    this.error = "";
-    // also restarts when the same track is loaded again (the engine does not reload it then)
+    if (!same) {
+      this.duration = 0;
+      this.cue = 0;
+      this.loop = null;
+      this.error = "";
+    }
     this.seekRequest = { secs: 0 };
     this.playing = autoplay;
   }
@@ -101,7 +106,9 @@ class Playback {
 
   /** The ids next/previous walk through. */
   #order(): number[] {
-    return this.queue.length ? this.queue : (session.library?.tracks.map((t) => t.track_id) ?? []);
+    if (this.queue.length) return this.queue;
+    // no list was given: the library as the tracks table shows it (search, filter and sort)
+    return session.library ? visibleTracks(session.library.tracks).map((t) => t.track_id) : [];
   }
 
   /** The track after the loaded one in the list, or null at the end / when nothing is loaded. */

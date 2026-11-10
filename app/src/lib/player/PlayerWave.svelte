@@ -133,6 +133,20 @@
   function up() {
     dragging = false;
   }
+  /** Left / Right move 5 seconds (30 with Shift), Home and End jump to the ends. */
+  function key(e: KeyboardEvent) {
+    if (disabled || duration <= 0 || e.ctrlKey || e.metaKey || e.altKey) return;
+    const jump = (e.shiftKey ? 30 : 5) / duration;
+    let f: number;
+    if (e.key === "ArrowLeft") f = progress - jump;
+    else if (e.key === "ArrowRight") f = progress + jump;
+    else if (e.key === "Home") f = 0;
+    else if (e.key === "End") f = 1;
+    else return;
+    e.preventDefault();
+    onseek?.(Math.min(1, Math.max(0, f)));
+  }
+  const clock = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
 </script>
 
 <div
@@ -140,11 +154,13 @@
   class:disabled
   bind:clientWidth={width}
   role="slider"
-  tabindex="-1"
+  tabindex={disabled ? -1 : 0}
   aria-label="Track position"
   aria-valuemin="0"
   aria-valuemax="100"
   aria-valuenow={Math.round(progress * 100)}
+  aria-valuetext="{clock(progress * duration)} of {clock(duration)}"
+  onkeydown={key}
   onpointerdown={down}
   onpointermove={move}
   onpointerup={up}
