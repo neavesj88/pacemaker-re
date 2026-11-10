@@ -98,7 +98,8 @@ export function filterTracks(list: Track[], f: TrackFilter, needs: ReadonlyMap<n
     if (f.genre && t.genre !== f.genre) return false;
     if (f.onlyAnalysed && needs.has(t.track_id)) return false;
     if (bpmBound) {
-      if (!(t.bpm > 0)) return false;
+      // the table shows no BPM for a track that needs analysis, so it has none to match
+      if (!(t.bpm > 0) || needs.has(t.track_id)) return false;
       if (f.bpmMin !== null && t.bpm < f.bpmMin) return false;
       if (f.bpmMax !== null && t.bpm > f.bpmMax) return false;
     }
@@ -148,13 +149,13 @@ export function sortTracks(rows: Track[], field: SortField, asc: boolean, isFavo
 
 /** Tracks that mix well with `focus`: compatible key (same, +-1 step, relative) and BPM within
  *  +-`bpmPct` percent. Closest BPM first. Needs a known key and BPM on `focus`. */
-export function matchingTracks(focus: Track, list: Track[], bpmPct = 4): Track[] {
+export function matchingTracks(focus: Track, list: Track[], bpmPct = 4, needs: ReadonlyMap<number, string> = new Map()): Track[] {
   const k = parseKey(focus.key);
   if (!k || !(focus.bpm > 0)) return [];
   const span = (focus.bpm * bpmPct) / 100;
   return list
     .filter((t) => {
-      if (t.track_id === focus.track_id || !(t.bpm > 0)) return false;
+      if (t.track_id === focus.track_id || !(t.bpm > 0) || needs.has(t.track_id)) return false;
       if (Math.abs(t.bpm - focus.bpm) > span) return false;
       const tk = parseKey(t.key);
       return !!tk && keysCompatible(k, tk);

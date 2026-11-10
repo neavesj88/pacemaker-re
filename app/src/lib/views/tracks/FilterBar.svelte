@@ -32,7 +32,7 @@
   });
 
   const anyFilter = $derived(
-    filterIsActive({ ...tracksState.filter }) || filters.onlyNeeds,
+    filterIsActive({ ...tracksState.filter }) || filters.onlyNeeds || !!filters.query,
   );
 
   // Analysed and Missing are opposites; pressing one releases the other, pressing it again clears it.
@@ -47,6 +47,7 @@
   function clearAll() {
     tracksState.clearFilters();
     filters.onlyNeeds = false;
+    filters.query = "";
   }
 
 </script>

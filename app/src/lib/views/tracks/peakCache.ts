@@ -6,11 +6,15 @@ import { peaks as fetchPeaks, type Peak } from "$lib/api/analysis";
 
 const MAX_CACHED = 1000;
 const MAX_ACTIVE = 3;
+const RETRY_AFTER_MS = 10_000;
 
 type Done = (peaks: Peak[] | null) => void;
 type Job = { key: string; root: string; location: string; width: number; waiters: Set<Done>; started: boolean };
 
 const cache = new Map<string, Peak[] | null>();
+// A failed fetch is not cached as "no waveform"; it is only not retried for a few seconds so a
+// broken backend is not hammered by every redraw.
+const failed = new Map<string, number>();
 const jobs = new Map<string, Job>();
 const queue: Job[] = [];
 let active = 0;
@@ -28,10 +32,16 @@ function pump() {
     job.started = true;
     active++;
     fetchPeaks(job.root, job.location, job.width)
-      .then((p) => (p.length ? p : null))
-      .catch(() => null) // a missing or undecodable file just gets no waveform
+      .then((p): Peak[] | null => {
+        failed.delete(job.key);
+        return p.length ? p : null;
+      })
+      .catch((): Peak[] | null => {
+        failed.set(job.key, Date.now());
+        return null;
+      })
       .then((p) => {
-        remember(job.key, p);
+        if (!failed.has(job.key)) remember(job.key, p);
         jobs.delete(job.key);
         active--;
         for (const done of job.waiters) done(p);
@@ -56,6 +66,14 @@ export function requestPeaks(root: string, location: string, width: number, done
     remember(key, hit);
     done(hit);
     return () => {};
+  }
+  const failedAt = failed.get(key);
+  if (failedAt !== undefined) {
+    if (Date.now() - failedAt < RETRY_AFTER_MS) {
+      done(null);
+      return () => {};
+    }
+    failed.delete(key);
   }
   let job = jobs.get(key);
   if (!job) {

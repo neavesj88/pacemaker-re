@@ -56,8 +56,8 @@ test("filters: genre, bpm range, key, analysed", () => {
   assert.deepEqual(ids({}), [1, 2, 3, 4, 5, 6]);
   assert.deepEqual(ids({ genre: "Techno" }), [2]);
   assert.deepEqual(ids({ bpmMin: 130 }), [2]);
-  assert.deepEqual(ids({ bpmMax: 130 }), [1, 3, 5, 6]);
-  assert.deepEqual(ids({ bpmMin: 120, bpmMax: 130 }), [1, 3, 5, 6]);
+  assert.deepEqual(ids({ bpmMax: 130 }), [1, 3, 6]); // 5 needs analysis: shown without a BPM
+  assert.deepEqual(ids({ bpmMin: 120, bpmMax: 130 }), [1, 3, 6]);
   assert.deepEqual(ids({ key: "compat:8A" }), [1, 2, 4, 5]);
   assert.deepEqual(ids({ key: "is:8A" }), [1, 2]);
   assert.deepEqual(ids({ onlyAnalysed: true }), [1, 2, 3, 4, 6]);
@@ -94,6 +94,7 @@ test("matching tracks: compatible key and bpm within 4 percent, nearest bpm firs
   assert.deepEqual(matchingTracks(focus, list).map((t) => t.track_id), [7, 2, 4]);
   assert.deepEqual(matchingTracks(T(9, { key: "" }), list), []);
   assert.deepEqual(matchingTracks(T(9, { bpm: 0 }), list), []);
+  assert.deepEqual(matchingTracks(focus, list, 4, new Map([[7, "no .str file"]])).map((t) => t.track_id), [2, 4], "tracks needing analysis show no BPM, so they are not matched");
 });
 
 test("unique genres are sorted and non-empty", () => {

@@ -47,14 +47,24 @@ pub fn reanalyse_tracks(app: AppHandle, lock: State<'_, JobLock>, root: String, 
     })
 }
 
+/// The audio file for a stored `location`, which must lie inside the volume's music folder. A
+/// location whose part after `/pmdb_tracks/` is absolute, has a drive prefix or climbs with `..`
+/// would make `join` leave the volume, so anything but plain names is refused.
+fn audio_in_volume(lib: &Library, location: &str) -> AppResult<PathBuf> {
+    let (audio, _) = lib.track_paths(location).ok_or("This track has no file on the device.")?;
+    let music = lib.root().join(pm_formats::naming::MUSIC_DIR);
+    let inside = audio.strip_prefix(&music).is_ok_and(|rel| rel.components().all(|c| matches!(c, Component::Normal(_))));
+    if !inside {
+        return Err("The track's location points outside the device.".into());
+    }
+    Ok(audio)
+}
+
 /// The audio file of a track on the volume. The path is rebuilt from the track's stored
 /// `location` (never taken from the caller) and must stay inside the volume.
 fn audio_file(lib: &Library, track_id: i64) -> AppResult<PathBuf> {
     let track = lib.tracks()?.into_iter().find(|t| t.track_id == track_id).ok_or("That track is not in the library.")?;
-    let (audio, _) = lib.track_paths(&track.location).ok_or("This track has no file on the device.")?;
-    if audio.components().any(|c| c == Component::ParentDir) {
-        return Err("The track's location points outside the device.".into());
-    }
+    let audio = audio_in_volume(lib, &track.location)?;
     if !audio.is_file() {
         return Err("The audio file is missing from the device.".into());
     }
@@ -144,6 +154,21 @@ mod tests {
         let audio = audio_file(&lib, id).unwrap();
         assert!(audio.starts_with(&vol));
         assert!(audio.is_file());
+    }
+
+    #[test]
+    fn audio_in_volume_refuses_locations_that_escape() {
+        let (vol, _) = library_with_one_track("escape");
+        let lib = Library::open_read_only(&vol).unwrap();
+        // an absolute remainder would replace the base path in `join`
+        assert!(audio_in_volume(&lib, "/pmdb_tracks//etc/x").is_err());
+        assert!(audio_in_volume(&lib, "/pmdb_tracks/../outside.mp3").is_err());
+        assert!(audio_in_volume(&lib, "/pmdb_tracks/a/../../outside.mp3").is_err());
+        assert!(audio_in_volume(&lib, "/elsewhere/x.mp3").is_err());
+        #[cfg(windows)]
+        assert!(audio_in_volume(&lib, "/pmdb_tracks/C:\\x\\y.mp3").is_err());
+        let ok = audio_in_volume(&lib, "/pmdb_tracks/a/b.mp3").unwrap();
+        assert!(ok.starts_with(&vol));
     }
 
     #[test]

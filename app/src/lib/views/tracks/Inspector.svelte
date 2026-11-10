@@ -56,7 +56,7 @@
 
   const camelot = $derived(track ? parseKey(track.key) : null);
   const needs = $derived(track ? session.needs.get(track.track_id) : undefined);
-  const matches = $derived(track && !needs && session.library ? matchingTracks(track, session.library.tracks) : []);
+  const matches = $derived(track && !needs && session.library ? matchingTracks(track, session.library.tracks, 4, session.needs) : []);
   const loaded = $derived(!!track && playback.trackId === track.track_id && playback.duration > 0);
   const many = $derived(selectedIds.length > 1);
   const fav = $derived(!!track && tracksState.favourites.has(track.track_id));
@@ -112,10 +112,6 @@
       <span class="label">Played</span>
       <span>{track.times_played === 0 ? "never" : track.times_played === 1 ? "1 time" : `${track.times_played} times`}</span>
     </div>
-    <div class="field">
-      <span class="label">Cue</span>
-      <span class="muted" title="Cue points are set in the grid editor">edit in the grid editor</span>
-    </div>
     <div class="field"><span class="label">Genre</span><span>{track.genre || "–"}</span></div>
     <div class="field"><span class="label">Length</span><span>{mmss(track.play_time_secs)}</span></div>
     <div class="field"><span class="label">File</span><span>{[track.format, track.file_size ? megabytes(track.file_size) : ""].filter(Boolean).join(" · ") || "–"}</span></div>
@@ -156,6 +152,11 @@
 </aside>
 
 <style>
+  @media (max-width: 1100px) {
+    .insp {
+      width: 220px;
+    }
+  }
   .insp {
     width: 300px;
     flex: none;

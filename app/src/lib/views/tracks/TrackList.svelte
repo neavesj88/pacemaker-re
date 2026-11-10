@@ -105,6 +105,8 @@
 
   function onKey(e: KeyboardEvent) {
     if (e.altKey) return;
+    // Keys pressed on the heart, the stars or a column header belong to that control.
+    if (e.target instanceof Element && e.target.closest("button, input, select, textarea, .hcell")) return;
     const cursor = indexOfId(tracksState.focusId);
     const page = Math.max(1, Math.floor(bodyH / ROW) - 1);
     const mod = e.ctrlKey || e.metaKey;
@@ -232,10 +234,16 @@
         class:num={c.num}
         class:sortable={!!c.sort}
         role="columnheader"
-        tabindex="-1"
+        tabindex={c.sort ? 0 : -1}
         aria-sort={c.sort && c.sort === tracksState.prefs.sortKey ? (tracksState.prefs.sortAsc ? "ascending" : "descending") : "none"}
         onclick={() => c.sort && tracksState.sortBy(c.sort)}
-        onkeydown={(e) => e.key === "Enter" && c.sort && tracksState.sortBy(c.sort)}
+        onkeydown={(e) => {
+          if (e.key !== "Enter" && e.key !== " ") return;
+          e.stopPropagation();
+          if (!c.sort) return;
+          e.preventDefault();
+          tracksState.sortBy(c.sort);
+        }}
       >
         {#if c.key === "fav"}<span class="heart-h" title="Favourites">♥</span>{:else}{c.label}{/if}
         {#if c.sort && c.sort === tracksState.prefs.sortKey}<span class="arrow">{tracksState.prefs.sortAsc ? "▲" : "▼"}</span>{/if}

@@ -59,7 +59,7 @@
           {#if all.length === 0}
             No tracks on this device yet. Use Add tracks… or drop audio files here.
           {:else if filters.query}
-            No tracks match the search.
+            No tracks match the search. Clear the search box (or use Clear filters above) to see them all.
           {:else if filtersActive}
             No tracks match the filters. Use Clear filters above to see them all.
           {/if}
@@ -90,5 +90,17 @@
     flex: 1;
     min-width: 0;
     min-height: 0;
+    position: relative;
+  }
+  /* sits just under the header row instead of at the bottom of the empty grid */
+  .empty {
+    position: absolute;
+    top: 40px;
+    left: 0;
+    right: 0;
+    margin: 0;
+    padding: 16px;
+    color: var(--muted);
+    pointer-events: none;
   }
 </style>
