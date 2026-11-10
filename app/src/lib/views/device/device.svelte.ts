@@ -1,0 +1,102 @@
+// The device view's state: what was read from the volume, and the one running device job.
+// Reads are plain commands; copying and deleting run as background jobs whose events arrive
+// through init.ts.
+import {
+  deviceEject,
+  deviceHealth,
+  deviceOverview,
+  deviceSettings,
+  type DeviceOverview,
+  type Health,
+  type SettingsView,
+} from "$lib/api/device";
+import type { DoneEvent, ProgressEvent } from "$lib/api/types";
+import { session } from "$lib/state/session.svelte";
+import { toast } from "$lib/state/toast.svelte";
+
+export type DeviceJob = { kind: string; label: string; done: number; total: number; detail: string | null };
+
+class DeviceStore {
+  overview = $state<DeviceOverview | null>(null);
+  health = $state<Health | null>(null);
+  /** undefined: not read yet; null: the device has no settings.dat yet. */
+  settings = $state<SettingsView | null | undefined>(undefined);
+  scanning = $state(false);
+  job = $state<DeviceJob | null>(null);
+  /** The finished line of the last job of each kind, kept on screen until the next one starts. */
+  results = $state<Record<string, string>>({});
+  cleanupOpen = $state(false);
+  #root = "";
+
+  /** Reads everything for a volume. Health scans every file, so it runs apart from the quick reads. */
+  async load(root: string) {
+    if (root !== this.#root) {
+      this.overview = null;
+      this.health = null;
+      this.settings = undefined;
+    }
+    this.#root = root;
+    const quick = Promise.all([
+      deviceOverview(root).then((o) => (this.overview = o)),
+      deviceSettings(root).then((s) => (this.settings = s)),
+    ]).catch((e) => (session.error = String(e)));
+    await Promise.all([quick, this.scan(root)]);
+  }
+
+  async scan(root: string) {
+    this.scanning = true;
+    try {
+      this.health = await deviceHealth(root);
+    } catch (e) {
+      session.error = String(e);
+    } finally {
+      this.scanning = false;
+    }
+  }
+
+  ejecting = $state(false);
+
+  /** Windows shell eject. The library stays open in the app (it was read, not held), but the
+   *  drive is gone, so the volume list is refreshed. */
+  async eject(root: string) {
+    this.ejecting = true;
+    try {
+      if (await deviceEject(root)) {
+        toast.show("Ejected. It is safe to unplug the USB cable.", "ok", 8000);
+        await session.refreshVolumes();
+      } else {
+        toast.show("Eject was requested but the drive is still there. Close anything using it and try again.", "bad", 8000);
+      }
+    } catch (e) {
+      toast.show(String(e), "bad", 8000);
+    } finally {
+      this.ejecting = false;
+    }
+  }
+
+  /** A job was accepted by the backend; show it as running until its done event. */
+  begin(kind: string, label: string) {
+    this.job = { kind, label, done: 0, total: 0, detail: null };
+    delete this.results[kind];
+  }
+
+  onProgress(ev: ProgressEvent) {
+    if (!ev.job.startsWith("device-")) return;
+    this.job = { kind: ev.job, label: ev.label, done: ev.done, total: ev.total, detail: ev.detail };
+  }
+
+  async onDone(ev: DoneEvent) {
+    if (!ev.job.startsWith("device-")) return;
+    this.job = null;
+    if (ev.error) {
+      toast.show(ev.error, "bad", 8000);
+      this.results[ev.job] = `Failed: ${ev.error}`;
+    } else {
+      this.results[ev.job] = ev.summary;
+      toast.show(ev.summary, ev.failed > 0 ? "bad" : "ok", 8000);
+    }
+    if (this.#root) await this.load(this.#root);
+  }
+}
+
+export const device = new DeviceStore();
