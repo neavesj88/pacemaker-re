@@ -24,13 +24,14 @@ def text_off(va): return va - 0x8000
 def data_off(va): return va - 0x10000
 
 # (pool word vaddr in render's literal pool, stock pointer, role, quadrant, colour R,G,B)
+# dim ring = the bright L2 colour at 55% (33% read murky purple on the washed-out panel)
 # draw order in render: 4 dim arcs (sweep pi/2) then 4 bright cursor ticks (sweep 0.001 rad),
 # each set at start angle +0, +pi/2, +pi, +3pi/2.
 SITES = [
-    (0x62220, 0x1f8d15, 'dim    Q0 (donutGainPassedColor)', (0x4a, 0x25, 0x54)),
-    (0x62230, 0x1f8d39, 'dim    Q1 (donut2pPassedColor)',   (0x55, 0x1a, 0x55)),
-    (0x62234, 0x1f8d2d, 'dim    Q2 (donut1pPassedColor)',   (0x55, 0x1a, 0x45)),
-    (0x62238, 0x1f8d21, 'dim    Q3 (donutEQPassedColor)',   (0x55, 0x18, 0x38)),
+    (0x62220, 0x1f8d15, 'dim    Q0 (donutGainPassedColor)', (0x7b, 0x3e, 0x8c)),
+    (0x62230, 0x1f8d39, 'dim    Q1 (donut2pPassedColor)',   (0x8c, 0x2c, 0x8c)),
+    (0x62234, 0x1f8d2d, 'dim    Q2 (donut1pPassedColor)',   (0x8c, 0x2c, 0x72)),
+    (0x62238, 0x1f8d21, 'dim    Q3 (donutEQPassedColor)',   (0x8c, 0x28, 0x5c)),
     (0x6223c, 0x1f8d19, 'bright Q0 (donutGainCursorColor)', (0xe0, 0x70, 0xff)),
     (0x62240, 0x1f8d3d, 'bright Q1 (donut2pCursorColor)',   (0xff, 0x50, 0xff)),
     (0x62244, 0x1f8d31, 'bright Q2 (donut1pCursorColor)',   (0xff, 0x50, 0xd0)),
