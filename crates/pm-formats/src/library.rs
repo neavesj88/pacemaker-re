@@ -19,12 +19,28 @@ pub const EDITOR_ID: &str = concat!("pacemaker-re/", env!("CARGO_PKG_VERSION"));
 /// device carry it; the computer-side library uses -1 instead. Written in the INSERT below.
 pub const NO_CUE: f64 = 18446744073709551615.0;
 
+/// Highest star rating. `tracks.rating` holds the star count itself (0 = unrated): the
+/// Editor's rating menu offers "0".."5" and stores menu id - 1, and its metadata field only
+/// accepts one of the digits 012345 (notes/FINDINGS.md section 4d).
+pub const MAX_RATING: u8 = 5;
+
+/// `cases.name` is declared VARCHAR(255); SQLite does not enforce it, so we do.
+pub const MAX_CASE_NAME_CHARS: usize = 255;
+
+/// What we write as `cases.creator_id`. Tonium's Editor writes `Tonium;Editor;<version>;<MAC
+/// address as a signed 64-bit integer>` and the device `Tonium;Device;<id>`; nothing in either
+/// binary parses the value, so ours keeps the four-part shape with our own name and no machine
+/// fingerprint (the last part is 0).
+pub const CASE_CREATOR_ID: &str = concat!("pacemaker-re;Editor;", env!("CARGO_PKG_VERSION"), ";0");
+
 #[derive(Debug)]
 pub enum Error {
     Db(rusqlite::Error),
     Io(std::io::Error),
     NotALibrary(PathBuf),
     Incompatible(Vec<String>),
+    /// A caller-supplied value the device could not use (rating out of range, unknown id, ...).
+    Invalid(String),
 }
 
 impl std::fmt::Display for Error {
@@ -34,6 +50,7 @@ impl std::fmt::Display for Error {
             Error::Io(e) => write!(f, "file: {e}"),
             Error::NotALibrary(p) => write!(f, "{} has no .Pacemaker/music.db", p.display()),
             Error::Incompatible(p) => write!(f, "music.db is not device-compatible: {}", p.join("; ")),
+            Error::Invalid(m) => write!(f, "invalid: {m}"),
         }
     }
 }
@@ -68,6 +85,8 @@ pub struct Track {
     pub format: String,
     pub analysed: bool,
     pub times_played: i64,
+    /// Unix milliseconds of the last play, or -1 for "never played" (the stored sentinel).
+    pub last_played: i64,
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -132,6 +151,18 @@ fn now_ms() -> i64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis() as i64).unwrap_or(0)
 }
 
+/// Calendar year (UTC) of a Unix-millisecond timestamp (Hinnant's civil-from-days).
+fn year_of_ms(ms: i64) -> i64 {
+    let z = ms.div_euclid(86_400_000) + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z.rem_euclid(146_097);
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let month = if mp < 10 { mp + 3 } else { mp - 9 };
+    yoe + era * 400 + i64::from(month <= 2)
+}
+
 impl Library {
     /// Opens an existing library read-only (for browsing; nothing on the volume changes).
     pub fn open_read_only(volume_root: &Path) -> Result<Library, Error> {
@@ -182,7 +213,7 @@ impl Library {
             "SELECT track_id, IFNULL(title,''), IFNULL(artist,''), IFNULL(album,''), IFNULL(genre,''),
                     IFNULL(bpm,0), IFNULL(key,''), IFNULL(play_time_secs,0), IFNULL(rating,0),
                     IFNULL(location,''), IFNULL(file_size,0), IFNULL(format,''),
-                    IFNULL(track_flags,0), IFNULL(times_played,0)
+                    IFNULL(track_flags,0), IFNULL(times_played,0), IFNULL(last_played,-1)
              FROM tracks WHERE track_id >= 0 ORDER BY track_id",
         )?;
         let rows = st.query_map([], |r| {
@@ -201,6 +232,7 @@ impl Library {
                 format: r.get(11)?,
                 analysed: r.get::<_, i64>(12)? & 2 != 0,
                 times_played: r.get(13)?,
+                last_played: r.get(14)?,
             })
         })?;
         Ok(rows.collect::<Result<_, _>>()?)
@@ -360,6 +392,99 @@ impl Library {
         Ok(())
     }
 
+    /// Sets a track's star rating (0 = unrated, up to [`MAX_RATING`]) the way the Editor's
+    /// rating menu does: `UPDATE tracks SET rating = N`, plus `date_modified` (Unix ms) and
+    /// `modified_by_ed`, but only when the value actually changes. Returns whether the row
+    /// changed. Errors on an out-of-range rating or an unknown (or negative) track id.
+    pub fn set_track_rating(&mut self, track_id: i64, stars: u8) -> Result<bool, Error> {
+        if stars > MAX_RATING {
+            return Err(Error::Invalid(format!("rating {stars} is above {MAX_RATING}")));
+        }
+        let current: Option<i64> = self
+            .con
+            .query_row("SELECT IFNULL(rating,0) FROM tracks WHERE track_id = ?1 AND track_id >= 0", [track_id], |r| r.get(0))
+            .optional()?;
+        let Some(current) = current else {
+            return Err(Error::Invalid(format!("no track {track_id}")));
+        };
+        if current == i64::from(stars) {
+            return Ok(false);
+        }
+        self.con.execute(
+            "UPDATE tracks SET rating = ?1, date_modified = ?2, modified_by_ed = ?3 WHERE track_id = ?4",
+            params![stars, now_ms(), EDITOR_ID, track_id],
+        )?;
+        Ok(true)
+    }
+
+    /// Creates an empty case and returns its `case_id`. The row matches what the Editor's
+    /// `CaseLibraryComponent::createCase` writes: `date_created` = `date_modified` = now (Unix
+    /// ms), `year` = the current year, `last_played` 0, `structured_ct` NULL, everything else
+    /// zero or empty. `case_id` is left to SQLite (the column is AUTOINCREMENT, as on the
+    /// device, so ids of deleted cases are never reused). Duplicate names are allowed, as on
+    /// the device; empty names and names over [`MAX_CASE_NAME_CHARS`] are rejected.
+    pub fn create_case(&mut self, name: &str) -> Result<i64, Error> {
+        if name.trim().is_empty() {
+            return Err(Error::Invalid("case name is empty".into()));
+        }
+        if name.chars().count() > MAX_CASE_NAME_CHARS {
+            return Err(Error::Invalid(format!("case name is longer than {MAX_CASE_NAME_CHARS} characters")));
+        }
+        let now = now_ms();
+        self.con.execute(
+            "INSERT INTO cases (case_id, name, date_created, times_played, structured_ct, image_id, genre, year,
+                rating, producer, remixer, play_time_secs, last_played, date_modified, comments, creator_id)
+             VALUES (NULL, ?1, ?2, 0, NULL, 0, '', ?3, 0, '', '', 0, 0, ?2, '', ?4)",
+            params![name, now, year_of_ms(now), CASE_CREATOR_ID],
+        )?;
+        Ok(self.con.last_insert_rowid())
+    }
+
+    /// Replaces a case's membership with `track_ids`, in that order (the device lists a case
+    /// in `casetracks` rowid order). Repeated ids are kept once, at their first position, and
+    /// every id must be a real track. Like the device's `insertCasetracks`/`deleteCasetracks`
+    /// it refreshes the derived fields in the same transaction: `date_modified` = now and
+    /// `play_time_secs` = the sum of the members' `play_time_secs` (0 for an empty case).
+    pub fn set_case_tracks(&mut self, case_id: i64, track_ids: &[i64]) -> Result<(), Error> {
+        let mut seen = std::collections::HashSet::new();
+        let ids: Vec<i64> = track_ids.iter().copied().filter(|id| seen.insert(*id)).collect();
+        let tx = self.con.transaction()?;
+        if tx.query_row("SELECT 1 FROM cases WHERE case_id = ?1 AND case_id >= 0", [case_id], |_| Ok(())).optional()?.is_none() {
+            return Err(Error::Invalid(format!("no case {case_id}")));
+        }
+        for id in &ids {
+            if tx.query_row("SELECT 1 FROM tracks WHERE track_id = ?1 AND track_id >= 0", [id], |_| Ok(())).optional()?.is_none() {
+                return Err(Error::Invalid(format!("no track {id}")));
+            }
+        }
+        tx.execute("DELETE FROM casetracks WHERE case_id = ?1", [case_id])?;
+        {
+            let mut ins = tx.prepare("INSERT INTO casetracks (case_id, track_id) VALUES (?1, ?2)")?;
+            for id in &ids {
+                ins.execute(params![case_id, id])?;
+            }
+        }
+        tx.execute(
+            "UPDATE cases SET date_modified = ?1,
+                    play_time_secs = (SELECT IFNULL(SUM(t.play_time_secs), 0) FROM casetracks c
+                                      JOIN tracks t ON t.track_id = c.track_id WHERE c.case_id = ?2)
+             WHERE case_id = ?2",
+            params![now_ms(), case_id],
+        )?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// Deletes a case and its membership rows (the device's `deleteCase` runs the same two
+    /// DELETEs, `casetracks` first). Returns whether the case existed.
+    pub fn delete_case(&mut self, case_id: i64) -> Result<bool, Error> {
+        let tx = self.con.transaction()?;
+        tx.execute("DELETE FROM casetracks WHERE case_id = ?1", [case_id])?;
+        let n = tx.execute("DELETE FROM cases WHERE case_id = ?1", [case_id])?;
+        tx.commit()?;
+        Ok(n > 0)
+    }
+
     /// Ids of the tracks in a case, in the order they were added.
     pub fn case_track_ids(&self, case_id: i64) -> Result<Vec<i64>, Error> {
         let mut st = self.con.prepare("SELECT track_id FROM casetracks WHERE case_id = ?1 ORDER BY rowid")?;
@@ -422,5 +547,141 @@ mod tests {
         drop(lib); // Windows won't delete a database file that is still open
         std::fs::remove_dir_all(&vol).unwrap();
         std::fs::remove_dir_all(&src_dir).unwrap();
+    }
+
+    /// A library in a temp dir holding one synthetic track per entry of `secs`, returning the
+    /// library, the temp dirs to clean up and the track ids.
+    fn library_with_tracks(tag: &str, secs: &[i64]) -> (Library, Vec<PathBuf>, Vec<i64>) {
+        let vol = temp_dir(&format!("{tag}-vol"));
+        let src_dir = temp_dir(&format!("{tag}-src"));
+        let analysis = strfile::Analysis {
+            normalize_factor: 1.0,
+            beat_start_offset: 0,
+            beats: (0..8).map(|i| strfile::Beat { pos: i * 20000, bpm: 128.0 }).collect(),
+            first_downbeat: Some(0),
+        };
+        let mut lib = Library::create(&vol).unwrap();
+        let mut ids = Vec::new();
+        for (i, s) in secs.iter().enumerate() {
+            let src = src_dir.join(format!("synthetic {i}.mp3"));
+            std::fs::write(&src, vec![0u8; 1000 + i]).unwrap();
+            let meta = TrackMeta { title: format!("t{i}"), format: "MP3".into(), play_time_secs: *s, ..Default::default() };
+            ids.push(lib.add_track(&src, &meta, &analysis).unwrap());
+        }
+        (lib, vec![vol, src_dir], ids)
+    }
+
+    #[test]
+    fn year_of_ms_matches_known_dates() {
+        assert_eq!(year_of_ms(0), 1970);
+        assert_eq!(year_of_ms(1_706_247_828_709), 2024); // late Jan 2024
+        assert_eq!(year_of_ms(1_735_689_599_999), 2024); // 2024-12-31T23:59:59.999Z
+        assert_eq!(year_of_ms(1_735_689_600_000), 2025);
+        assert_eq!(year_of_ms(-1), 1969);
+    }
+
+    #[test]
+    fn rating_round_trip_and_validation() {
+        let (mut lib, dirs, ids) = library_with_tracks("rate", &[100, 200]);
+        let before = lib.tracks().unwrap();
+        assert!(before.iter().all(|t| t.rating == 0 && t.last_played == -1 && t.times_played == 0));
+
+        assert!(lib.set_track_rating(ids[0], 4).unwrap());
+        assert!(!lib.set_track_rating(ids[0], 4).unwrap(), "same value is a no-op");
+        let t = lib.tracks().unwrap();
+        assert_eq!((t[0].rating, t[1].rating), (4, 0));
+        let (modified, by): (i64, String) = lib
+            .con
+            .query_row("SELECT date_modified, modified_by_ed FROM tracks WHERE track_id = ?1", [ids[0]], |r| Ok((r.get(0)?, r.get(1)?)))
+            .unwrap();
+        assert!(modified > 1_600_000_000_000, "date_modified is in milliseconds");
+        assert_eq!(by, EDITOR_ID);
+        let untouched: String = lib.con.query_row("SELECT modified_by_ed FROM tracks WHERE track_id = ?1", [ids[1]], |r| r.get(0)).unwrap();
+        assert_eq!(untouched, EDITOR_ID, "add_track wrote it; set_track_rating did not touch the other row");
+
+        assert!(lib.set_track_rating(ids[0], 0).unwrap());
+        assert_eq!(lib.tracks().unwrap()[0].rating, 0);
+        assert!(matches!(lib.set_track_rating(ids[0], 6), Err(Error::Invalid(_))));
+        assert!(matches!(lib.set_track_rating(999_999, 1), Err(Error::Invalid(_))));
+        assert!(matches!(lib.set_track_rating(-ids[0], 1), Err(Error::Invalid(_))));
+        assert!(lib.compatibility_problems().unwrap().is_empty());
+
+        drop(lib);
+        for d in dirs {
+            std::fs::remove_dir_all(d).unwrap();
+        }
+    }
+
+    #[test]
+    fn case_lifecycle_matches_editor_rows() {
+        let (mut lib, dirs, ids) = library_with_tracks("case", &[100, 250, 40]);
+
+        let a = lib.create_case("Synthetic A").unwrap();
+        let b = lib.create_case("Synthetic B").unwrap();
+        assert!(b > a);
+        use rusqlite::types::Value::{Integer as I, Null, Text as T};
+        let col = |c: &str| -> rusqlite::types::Value {
+            lib.con.query_row(&format!("SELECT {c} FROM cases WHERE case_id = {a}"), [], |r| r.get(0)).unwrap()
+        };
+        assert_eq!(col("name"), T("Synthetic A".into()));
+        let (I(created), I(modified), I(year)) = (col("date_created"), col("date_modified"), col("year")) else { panic!("integer columns") };
+        assert!(created > 1_600_000_000_000 && created == modified, "created == modified, in ms");
+        assert_eq!(year, year_of_ms(created));
+        for (c, want) in [("times_played", I(0)), ("structured_ct", Null), ("image_id", I(0)), ("genre", T(String::new())), ("rating", I(0)),
+                          ("play_time_secs", I(0)), ("last_played", I(0)), ("comments", T(String::new()))] {
+            assert_eq!(col(c), want, "{c}");
+        }
+        assert_eq!(col("creator_id"), T(CASE_CREATOR_ID.into()));
+        assert_eq!(CASE_CREATOR_ID.split(';').count(), 4);
+
+        // membership keeps the given order and drops repeats; play time is the member sum
+        lib.set_case_tracks(a, &[ids[2], ids[0], ids[2], ids[1]]).unwrap();
+        assert_eq!(lib.case_track_ids(a).unwrap(), vec![ids[2], ids[0], ids[1]]);
+        let listed = lib.cases().unwrap();
+        let ca = listed.iter().find(|c| c.id == a).unwrap();
+        assert_eq!((ca.track_count, ca.play_time_secs), (3, 390));
+
+        // replacing shrinks it and refreshes the sum; the other case is untouched
+        lib.set_case_tracks(b, &[ids[1]]).unwrap();
+        lib.set_case_tracks(a, &[ids[1], ids[0]]).unwrap();
+        assert_eq!(lib.case_track_ids(a).unwrap(), vec![ids[1], ids[0]]);
+        assert_eq!(lib.case_track_ids(b).unwrap(), vec![ids[1]]);
+        let listed = lib.cases().unwrap();
+        assert_eq!(listed.iter().find(|c| c.id == a).unwrap().play_time_secs, 350);
+        assert_eq!(listed.iter().find(|c| c.id == b).unwrap().play_time_secs, 250);
+
+        // emptying a case gives 0, not NULL
+        lib.set_case_tracks(a, &[]).unwrap();
+        let (n, secs): (i64, i64) = lib
+            .con
+            .query_row("SELECT (SELECT COUNT(*) FROM casetracks WHERE case_id = ?1), play_time_secs FROM cases WHERE case_id = ?1", [a], |r| Ok((r.get(0)?, r.get(1)?)))
+            .unwrap();
+        assert_eq!((n, secs), (0, 0));
+
+        // validation: bad ids change nothing
+        lib.set_case_tracks(a, &[ids[0]]).unwrap();
+        assert!(matches!(lib.set_case_tracks(a, &[ids[1], 999_999]), Err(Error::Invalid(_))));
+        assert!(matches!(lib.set_case_tracks(999_999, &[ids[0]]), Err(Error::Invalid(_))));
+        assert_eq!(lib.case_track_ids(a).unwrap(), vec![ids[0]], "failed replace rolled back");
+        assert!(matches!(lib.create_case("   "), Err(Error::Invalid(_))));
+        assert!(matches!(lib.create_case(&"x".repeat(MAX_CASE_NAME_CHARS + 1)), Err(Error::Invalid(_))));
+        lib.create_case(&"x".repeat(MAX_CASE_NAME_CHARS)).unwrap();
+        lib.create_case("Synthetic A").unwrap(); // duplicate names are allowed, as on the device
+
+        // delete removes the membership rows too, leaves the other case, and ids are not reused
+        assert!(lib.delete_case(a).unwrap());
+        assert!(!lib.delete_case(a).unwrap());
+        assert!(lib.case_track_ids(a).unwrap().is_empty());
+        assert_eq!(lib.case_track_ids(b).unwrap(), vec![ids[1]]);
+        let orphans: i64 = lib.con.query_row("SELECT COUNT(*) FROM casetracks WHERE case_id = ?1", [a], |r| r.get(0)).unwrap();
+        assert_eq!(orphans, 0);
+        let c = lib.create_case("Synthetic C").unwrap();
+        assert!(c > b, "AUTOINCREMENT: the next id is above every id ever used");
+        assert!(lib.compatibility_problems().unwrap().is_empty());
+
+        drop(lib);
+        for d in dirs {
+            std::fs::remove_dir_all(d).unwrap();
+        }
     }
 }

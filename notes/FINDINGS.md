@@ -197,6 +197,74 @@ backup of the drive; 240 tracks with a readable `.str`, all 44.1 kHz):
 `settings.dat` is decoded in notes/settings-dat.md (`scripts/settingsdat.py`, byte-exact).
 Replacing the hard drive is covered in notes/ssd-swap.md.
 
+## 4d. Ratings and cases (verified by decompilation, Nov 2026)
+
+Evidence: pmplayer 180096069 (ARM, addresses as in Ghidra) and the Mac Editor 2.0.2.14170 (i386
+slice). Writer: `Library::set_track_rating`, `create_case`, `set_case_tracks`, `delete_case`.
+
+**Rating (verified).** `tracks.rating` is the star count itself, an integer 0-5, 0 = unrated.
+The Editor's track context menu (`TrackTableComponent::mouseUp` 005ae7b0) has a "Rating" submenu
+with items labelled "0".."5" (menu ids 1-6); the handler sets `TrackMd.rating = id - 1` and calls
+`tl::Repo::modifyTrack` with field mask 0x8000, and `DirectAccessRepo::updateTrack` (pmplayer
+003ac51c, case 0xf) turns that into `UPDATE tracks SET rating = N WHERE track_id = X`, a plain
+decimal. The metadata dialog's rating box (`EditTrackMetaDataComponent` constructor 000949a4) is a
+one-character TextEditor limited to `012345`; the same restriction is on the case dialog. Not the
+0-100 iTunes scale. `modifyTrack` (Mac 0033777a) also sets `date_modified` = now (ms) when the
+value changed and, when the repo's editor-id flag is set, `modified_by_ed`; the writer does both
+and skips the write when the value is unchanged. No device-side code was found that sets a track
+rating (`updateTrack` is generic, but no UI path calls it for this field), and the only device-side reader is the browse filter
+`SELECT ... rating HAVING rating != ""` (UI string 251 "Rating" in `english.lang`), so how the
+device draws it (digit or stars) is **unverified**; no star artwork or format string was found.
+Because the `!= ""` test sees 0, whether unrated tracks appear as a "0" entry in that filter is
+also unverified. The dump's tracks all have rating 0, `times_played` 0, `last_played` -1.
+
+**Case rows (verified).** `DirectAccessRepo::createCase` (pmplayer 003ad5e8) is a literal
+`INSERT INTO cases VALUES (NULL, name, date_created, times_played, NULL, image_id, genre, year,
+rating, producer, remixer, play_time_secs, last_played, date_modified, comments, creator_id)`, so
+`case_id` is allocated by SQLite. The column is AUTOINCREMENT (`sqlite_sequence` in the dump
+reads cases 7 while only ids 5-7 exist), which is why ids are never reused or compacted.
+The Editor (`CaseLibraryComponent::createCase` 00138ab2) fills: `date_created` = `date_modified` =
+now in ms, `year` = current year, `last_played` 0 (not -1 as for tracks), `structured_ct` NULL,
+`times_played`/`image_id`/`rating`/`play_time_secs` 0, other text empty, name = localised start +
+" " + `%.2u` + " " + localised end (the number is last used + 1, from `getLastCaseNameId` scanning
+`name LIKE '<start>%'`). The device does the same via `CaseOperations::createCase` (00347dd0) with
+the English default "New Case NN D", `date_*` 0, and creator `Tonium;Device;...`. Names are not
+checked for uniqueness on creation: `checkIfCaseExists` and `getCaseIdFromName` exist, but the
+only Editor callers are the iTunes playlist importers, which merge by name. The writer therefore
+allows duplicates and rejects only empty names and names over 255 characters (the declared
+VARCHAR(255); SQLite does not enforce it, nothing was found that does).
+
+**`creator_id`.** Editor: `Utils::getCreatorId` (Mac 0011ad88) = `Tonium;Editor;<app version>;<first
+MAC address as a signed 64-bit int>`, which is the value in the dump's cases. Nothing parses it:
+the only references to `creator_id` are the generic field-name arrays and the INSERT/UPDATE
+builders, and the only callers of `getCreatorId` are the create-case/create-mix/transfer-mix code
+that stores it. (Inferred from that absence of readers, not from a negative test on hardware.)
+Ours is `pacemaker-re;Editor;<version>;0`: same four-part shape, our own name, no machine id.
+
+**Membership and order (verified).** `casetracks (case_id, track_id)` has no position column and
+no unique constraint. Order is the table's implicit rowid (`oid`): `moveCasetracks` (pmplayer
+003b8db4) reorders by `SELECT max(oid)`, re-`INSERT ... SELECT *` of the moved rows and `DELETE
+... WHERE oid ...`. Adding is a plain `INSERT INTO casetracks VALUES (case, track)`
+(`insertCasetracks` 003a9230); removing one track is `DELETE ... WHERE case_id = X AND track_id =
+Y`. `casetracks_idx` is on `track_id` only. Whether duplicates are prevented is UI-side and was not
+checked; the writer keeps each track once. `deleteCase` (003acfe4) is two statements: `DELETE FROM casetracks
+WHERE case_id = X` then the same on `cases`.
+
+**Derived fields (verified).** Every membership change (`Repo::insertCasetracks` 003b8abc,
+`moveCasetracks` 003b9728, the delete paths) runs `updateCaseDateModified` (003a9348:
+`UPDATE cases SET date_modified = <now> WHERE case_id IN (...)`) and `updateCasePlayTimeSecs`
+(003b0544: `SELECT MIN(tracks.play_time_secs), SUM(tracks.play_time_secs) FROM tracks, casetracks
+WHERE casetracks.case_id = X AND tracks.track_id = casetracks.track_id`, written to
+`cases.play_time_secs`; no rows gives 0). Checked on the dump: for all 3 cases `play_time_secs`
+equals that sum exactly (237 memberships). `times_played`/`last_played` are device-side counters
+(`increaseCaseTimesPlayed` 003ac07c: `times_played = times_played + 1, last_played = <ms>`).
+`structured_ct` stays NULL (a blob written only through `updateCaseContent`, unused by the
+Editor's case code that was read).
+
+**Not verified:** device rendering of ratings; whether an empty case, or a case whose name
+duplicates another, displays oddly on hardware (nothing in the code rejects either); whether the
+device tolerates `casetracks` rows pointing at a missing track (the writer never creates them).
+
 ## 5. Firmware: container, flash layout, update and restore (verified)
 
 The GPL drop `pmib.tar.bz2` is Tonium's image-build tree, and its scripts are the spec for
