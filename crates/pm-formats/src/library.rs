@@ -539,6 +539,35 @@ pub struct MixTrackRow {
     pub cue_point: i64,
 }
 
+/// The row columns of a mix that the metadata dialog edits (`EditMixMetaDataComponent`); the
+/// name has its own path ([`Library::rename_mix`]) and the document is never touched.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct MixMetaUpdate {
+    pub genre: String,
+    pub year: i64,
+    pub rating: i64,
+    pub producer: String,
+    pub remixer: String,
+    pub comments: String,
+}
+
+/// What the mix editor needs to know about a library track besides its mix-document entry.
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct MixTrackSource {
+    pub track_id: i64,
+    pub title: String,
+    pub artist: String,
+    pub album: String,
+    pub genre: String,
+    pub bpm: f64,
+    pub key: String,
+    pub play_time_secs: i64,
+    pub location: String,
+    /// `tracks.sample_rate` of the audio file (the `.str` beat positions are frames at this rate).
+    pub sample_rate: i64,
+    pub analysed: bool,
+}
+
 impl From<crate::mix::MixError> for Error {
     fn from(e: crate::mix::MixError) -> Self {
         Error::Invalid(e.to_string())
@@ -694,6 +723,68 @@ impl Library {
         Ok(n > 0)
     }
 
+    /// Renames a mix: the row and `DocumentName` change together (the Editor keeps them equal),
+    /// through [`Library::save_mix`], so `date_modified` moves and `mixtracks` are rewritten
+    /// exactly as for any save. Same name rules as [`Library::create_mix`].
+    pub fn rename_mix(&mut self, mix_id: i64, name: &str) -> Result<(), Error> {
+        let mut mix = self.read_mix(mix_id)?;
+        mix.name = name.to_string();
+        self.save_mix(mix_id, &mix)
+    }
+
+    /// Updates the metadata columns of a mix (genre, year, rating 0..=[`MAX_RATING`], producer,
+    /// remixer, comments) and `date_modified`; the document and `mixtracks` stay as they are.
+    pub fn set_mix_meta(&mut self, mix_id: i64, meta: &MixMetaUpdate) -> Result<(), Error> {
+        if !(0..=i64::from(MAX_RATING)).contains(&meta.rating) {
+            return Err(Error::Invalid(format!("mix rating {} is outside 0..={MAX_RATING}", meta.rating)));
+        }
+        if !(0..=9999).contains(&meta.year) {
+            return Err(Error::Invalid(format!("mix year {} is outside 0..=9999", meta.year)));
+        }
+        let n = self.con.execute(
+            "UPDATE mixes SET genre = ?1, year = ?2, rating = ?3, producer = ?4, remixer = ?5, comments = ?6,
+                    date_modified = ?7 WHERE mix_id = ?8 AND mix_id >= 0",
+            params![meta.genre, meta.year, meta.rating, meta.producer, meta.remixer, meta.comments, now_ms(), mix_id],
+        )?;
+        if n == 0 {
+            return Err(Error::Invalid(format!("no mix {mix_id}")));
+        }
+        Ok(())
+    }
+
+    /// Library rows for the given track ids, in the order asked; ids that are not tracks
+    /// (including the negative placeholders of removed tracks) are skipped.
+    pub fn mix_track_sources(&self, ids: &[i64]) -> Result<Vec<MixTrackSource>, Error> {
+        let mut st = self.con.prepare(
+            "SELECT track_id, IFNULL(title,''), IFNULL(artist,''), IFNULL(album,''), IFNULL(genre,''),
+                    IFNULL(bpm,0), IFNULL(key,''), IFNULL(play_time_secs,0), IFNULL(location,''),
+                    IFNULL(sample_rate,0), IFNULL(track_flags,0)
+             FROM tracks WHERE track_id = ?1 AND track_id >= 0",
+        )?;
+        let mut out = Vec::new();
+        for &id in ids {
+            let row = st
+                .query_row([id], |r| {
+                    Ok(MixTrackSource {
+                        track_id: r.get(0)?,
+                        title: r.get(1)?,
+                        artist: r.get(2)?,
+                        album: r.get(3)?,
+                        genre: r.get(4)?,
+                        bpm: r.get(5)?,
+                        key: r.get(6)?,
+                        play_time_secs: r.get(7)?,
+                        location: r.get(8)?,
+                        sample_rate: r.get(9)?,
+                        analysed: r.get::<_, i64>(10)? & 2 != 0,
+                    })
+                })
+                .optional()?;
+            out.extend(row);
+        }
+        Ok(out)
+    }
+
     fn mix_name_taken(&self, name: &str, except: Option<i64>) -> Result<bool, Error> {
         Ok(self
             .con
@@ -717,12 +808,13 @@ fn check_mix_name(name: &str) -> Result<(), Error> {
     Ok(())
 }
 
-/// `mixtracks.cue_point` for a track. The Editor writes `AudioClip::getMixCuePoint`: its
-/// position converted by a virtual method we did not identify, 0 when not positive. We write
-/// the track's start on the timeline, which is what that is for a track with no offset
-/// (unverified against the Editor's own rows, see notes/mix-format.md).
+/// `mixtracks.cue_point` for a track: the source position (unstretched audio, samples at the
+/// engine rate) of the track's left trim, i.e. the tempo curve applied to `LOffset`. This
+/// reproduces all three rows of the Editor's demo mix (0, 10 166 523 = 9 925 797.47 x 1.0242525,
+/// 9 589 191); 0 when the trim is not positive. For curves that are not constant the use of the
+/// tempo map is a hypothesis (see [`crate::mix::TempoMap`]).
 fn mix_cue_point(t: &crate::mix::Track) -> i64 {
-    let p = t.position.start + t.position.l_offset;
+    let p = crate::mix::TempoMap::new(&t.pitch).source_at(t.position.l_offset);
     if p > 0.0 { p.round() as i64 } else { 0 }
 }
 
@@ -1043,6 +1135,49 @@ mod tests {
         assert!(lib.mix_track_rows(a).unwrap().is_empty());
         assert!(lib.mix_info(other).unwrap().is_some());
         drop(lib); // Windows won't delete a database file that is still open
+        for d in dirs {
+            std::fs::remove_dir_all(d).unwrap();
+        }
+    }
+
+    #[test]
+    fn mix_meta_rename_and_sources() {
+        let (mut lib, dirs, ids) = library_with_tracks("mixmeta", &[100, 250]);
+        let a = lib.create_mix("Meta Mix").unwrap();
+        let other = lib.create_mix("Other Mix").unwrap();
+        let m = synthetic_mix("Meta Mix", &[ids[0], ids[1]]);
+        lib.save_mix(a, &m).unwrap();
+
+        let meta = MixMetaUpdate {
+            genre: "House".into(),
+            year: 2024,
+            rating: 4,
+            producer: "P".into(),
+            remixer: "R".into(),
+            comments: "c".into(),
+        };
+        lib.set_mix_meta(a, &meta).unwrap();
+        let info = lib.mix_info(a).unwrap().unwrap();
+        assert_eq!((info.genre.as_str(), info.year, info.rating, info.producer.as_str()), ("House", 2024, 4, "P"));
+        assert_eq!((info.remixer.as_str(), info.comments.as_str()), ("R", "c"));
+        assert_eq!(lib.read_mix(a).unwrap(), m, "metadata leaves the document alone");
+        assert_eq!(lib.mix_track_rows(a).unwrap().len(), 2);
+        assert!(lib.set_mix_meta(a, &MixMetaUpdate { rating: 6, ..meta.clone() }).is_err());
+        assert!(lib.set_mix_meta(a, &MixMetaUpdate { year: -1, ..meta.clone() }).is_err());
+        assert!(lib.set_mix_meta(9999, &meta).is_err());
+
+        lib.rename_mix(a, "Renamed Mix").unwrap();
+        assert_eq!(lib.mix_info(a).unwrap().unwrap().name, "Renamed Mix");
+        assert_eq!(lib.read_mix(a).unwrap().name, "Renamed Mix");
+        assert!(lib.rename_mix(a, "Other Mix").is_err());
+        assert!(lib.rename_mix(a, "  ").is_err());
+        assert!(lib.rename_mix(9999, "Nope").is_err());
+        let _ = other;
+
+        let src = lib.mix_track_sources(&[ids[1], -5, ids[0], 424242]).unwrap();
+        assert_eq!(src.iter().map(|s| s.track_id).collect::<Vec<_>>(), vec![ids[1], ids[0]]);
+        assert!(lib.compatibility_problems().unwrap().is_empty());
+        drop(lib);
         for d in dirs {
             std::fs::remove_dir_all(d).unwrap();
         }

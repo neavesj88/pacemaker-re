@@ -23,7 +23,7 @@ tauri-build = { version = "2", features = [] }
 # (scope is empty by default; playback allows the open library's files at run time).
 tauri = { version = "2", features = ["protocol-asset"] }
 serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+serde_json = { version = "1", features = ["float_roundtrip"] }
 tauri-plugin-dialog = "2"
 pm-formats = { version = "0.1.0", path = "../../crates/pm-formats" }
 pm-analysis = { version = "0.1.0", path = "../../crates/pm-analysis" }
