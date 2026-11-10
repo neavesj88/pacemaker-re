@@ -332,6 +332,13 @@ through the normal update path without touching kernel, rootfs or bootloader.
   unlit, column 1 = lit; rows 0-2 greys, rows 3-9 green → yellow → red). Per-segment `BlipSpec`
   tables pick the row, and `changeColors` swaps tables. Recolouring the meters = redrawing that PNG.
 - **Boot logo** inside the image: `bin/resources/symbols/boot.png` (see `branding/`).
+- **The spinning four-colour ring at power-on** is drawn in code by `pwrApplication` (rootfs), not
+  an image: `PwrComponent::render` (0x61dd0) draws eight arcs, centre (120,148), radius 109, width
+  22, quadrants starting at a rotating angle (+0, pi/2, pi, 3pi/2; the angle steps by pi/20 per
+  timer tick). Colours come from pwrApplication's own `du::` palette, set at run time by its
+  `_INIT_*` code (read with `scripts/ghidra/EmulateInitsAt.java`): dim ring = donut*Passed colours
+  (800000, 008000, 008080, 800080), bright arcs = donut*Cursor colours (ff0000, 00ff00, 00ffff,
+  ff00ff). Recolouring it means patching pwrApplication, i.e. a rootfs build.
 
 ## 5c. Boot images and the SD adapter on real hardware (verified on the device, Nov 2026)
 
