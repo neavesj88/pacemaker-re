@@ -3,12 +3,14 @@
 use std::path::{Path, PathBuf};
 
 use pm_analysis::ingest;
+use pm_formats::interop::{self, ImportOptions, ImportPlan};
 use pm_formats::library::Library;
+use serde::Serialize;
 use tauri::{AppHandle, State};
 
-use crate::error::AppResult;
+use crate::error::{AppError, AppResult};
 use crate::events::{self, JOB_PROGRESS};
-use crate::jobs::{progress_of, spawn_job};
+use crate::jobs::{progress_of, spawn_job, JobOutcome, Progress};
 use crate::state::JobLock;
 
 /// Extensions the analyser's decoder handles and the file picker offers.
@@ -72,6 +74,106 @@ pub fn add_tracks(app: AppHandle, lock: State<'_, JobLock>, root: String, files:
     })
 }
 
+// ---- other libraries: rekordbox XML, iTunes / Music Library.xml, M3U8 / CSV out ----
+
+const JOB_INTEROP: &str = "interop";
+/// Library files bigger than this are refused instead of read into memory.
+const MAX_LIBRARY_FILE: u64 = 2 << 30;
+
+fn read_foreign(path: &str) -> AppResult<interop::ForeignLibrary> {
+    let meta = std::fs::metadata(path)?;
+    if meta.len() > MAX_LIBRARY_FILE {
+        return Err("That file is larger than 2 GB; it is not a library export.".into());
+    }
+    let bytes = std::fs::read(path)?;
+    Ok(interop::parse_library(&String::from_utf8_lossy(&bytes))?)
+}
+
+/// Reads a rekordbox XML or iTunes `Library.xml` and lists exactly what importing it would
+/// change in the library on `root`. Writes nothing.
+#[tauri::command]
+pub async fn interop_preview(root: String, path: String, options: Option<ImportOptions>) -> AppResult<ImportPlan> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let foreign = read_foreign(&path)?;
+        let lib = Library::open_read_only(Path::new(&root))?;
+        Ok(interop::plan_import(&lib, &foreign, &options.unwrap_or_default())?)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Applies the plan [`interop_preview`] shows (it is computed again from the file and the
+/// current library, so the two always agree). Ratings go in one transaction, each case in its
+/// own. Returns as soon as the job has started.
+#[tauri::command]
+pub fn interop_apply(
+    app: AppHandle,
+    lock: State<'_, JobLock>,
+    root: String,
+    path: String,
+    options: Option<ImportOptions>,
+) -> AppResult<()> {
+    let opts = options.unwrap_or_default();
+    // fail before starting the job when the file is unreadable
+    let foreign = read_foreign(&path)?;
+    spawn_job(app, &lock, JOB_INTEROP, move |app| {
+        let mut lib = Library::open(Path::new(&root))?;
+        let plan = interop::plan_import(&lib, &foreign, &opts)?;
+        let rep = interop::apply_plan(&mut lib, &plan, &opts, |s| {
+            let mut p = Progress::new(JOB_INTEROP, s.label, s.done, s.total, if s.error.is_some() { "failed" } else { "done" });
+            p.error = s.error.map(str::to_string);
+            events::emit(app, JOB_PROGRESS, p);
+        })?;
+        Ok(JobOutcome {
+            ok: rep.ratings_set + rep.cases_created + rep.cases_extended,
+            failed: rep.failures.len(),
+            summary: rep.summary(),
+        })
+    })
+}
+
+#[derive(Serialize)]
+pub struct ExportDone {
+    pub path: String,
+    pub tracks: usize,
+}
+
+/// Writes a track list for other software. `format` is "m3u8", "csv" or "rekordbox" (the whole
+/// library with playlists; `scope` is ignored); `scope` is "library", "case" or "mix" with the
+/// id of the case or mix. The file goes to `dest`, a path the user chose; nothing on the
+/// volume is changed.
+#[tauri::command]
+pub async fn interop_export(root: String, format: String, scope: String, id: Option<i64>, dest: String) -> AppResult<ExportDone> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let lib = Library::open_read_only(Path::new(&root))?;
+        let (text, tracks) = if format == "rekordbox" {
+            (interop::export_rekordbox(&lib)?, lib.tracks()?.len())
+        } else {
+            let scope = match (scope.as_str(), id) {
+                ("library", _) => interop::Scope::Library,
+                ("case", Some(id)) => interop::Scope::Case(id),
+                ("mix", Some(id)) => interop::Scope::Mix(id),
+                _ => return Err(AppError::from(format!("unknown export scope {scope}"))),
+            };
+            let (_, tracks) = interop::scope_tracks(&lib, scope)?;
+            let text = match format.as_str() {
+                "m3u8" => interop::export_m3u8(&lib, &tracks),
+                "csv" => interop::export_csv(&lib, &tracks),
+                other => return Err(AppError::from(format!("unknown export format {other}"))),
+            };
+            (text, tracks.len())
+        };
+        // write beside the destination and rename, so a failed write never leaves half a file
+        let tmp = format!("{dest}.part");
+        std::fs::write(&tmp, text).and_then(|_| std::fs::rename(&tmp, &dest)).inspect_err(|_| {
+            let _ = std::fs::remove_file(&tmp);
+        })?;
+        Ok(ExportDone { path: dest, tracks })
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 /// This area's command paths, one per line.
 #[macro_export]
 macro_rules! import_commands {
@@ -81,6 +183,9 @@ macro_rules! import_commands {
                 $($acc)*
                 $crate::commands::import::expand_audio_paths,
                 $crate::commands::import::add_tracks,
+                $crate::commands::import::interop_preview,
+                $crate::commands::import::interop_apply,
+                $crate::commands::import::interop_export,
             ];
             $($rest),*
         }
