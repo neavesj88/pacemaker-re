@@ -121,8 +121,9 @@ pub struct TrackMeta {
 }
 
 pub struct Library {
-    root: PathBuf,
-    con: Connection,
+    pub(crate) root: PathBuf,
+    // crate-visible so per-area `impl Library` blocks (ops_*.rs) can add operations in their own files
+    pub(crate) con: Connection,
 }
 
 pub fn db_path(volume_root: &Path) -> PathBuf {

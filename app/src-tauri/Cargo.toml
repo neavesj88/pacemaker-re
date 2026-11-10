@@ -27,6 +27,7 @@ serde_json = "1"
 tauri-plugin-dialog = "2"
 pm-formats = { version = "0.1.0", path = "../../crates/pm-formats" }
 pm-analysis = { version = "0.1.0", path = "../../crates/pm-analysis" }
+pm-mixer = { version = "0.1.0", path = "../../crates/pm-mixer" }
 
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration

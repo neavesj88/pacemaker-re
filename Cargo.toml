@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/pm-formats", "crates/pm-analysis", "crates/pm-bench", "crates/pm-cli"]
+members = ["crates/pm-formats", "crates/pm-analysis", "crates/pm-mixer", "crates/pm-bench", "crates/pm-cli"]
 # the Tauri app is a separate project (own release profile with LTO; keeps bench builds fast)
 exclude = ["app/src-tauri"]
 

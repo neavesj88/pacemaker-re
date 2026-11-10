@@ -2195,6 +2195,7 @@ version = "0.1.0"
 dependencies = [
  "pm-analysis",
  "pm-formats",
+ "pm-mixer",
  "serde",
  "serde_json",
  "tauri",
@@ -2352,6 +2353,14 @@ dependencies = [
  "rusqlite",
  "serde",
  "uuid",
+]
+
+[[package]]
+name = "pm-mixer"
+version = "0.1.0"
+dependencies = [
+ "pm-analysis",
+ "pm-formats",
 ]
 
 [[package]]

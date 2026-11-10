@@ -9,7 +9,9 @@ pub mod beats;
 pub mod decode;
 pub mod grid;
 pub mod ingest;
+pub mod key;
 pub mod onset;
+pub mod peaks;
 pub mod tempo;
 
 use std::path::Path;
