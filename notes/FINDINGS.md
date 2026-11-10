@@ -333,6 +333,28 @@ through the normal update path without touching kernel, rootfs or bootloader.
   tables pick the row, and `changeColors` swaps tables. Recolouring the meters = redrawing that PNG.
 - **Boot logo** inside the image: `bin/resources/symbols/boot.png` (see `branding/`).
 
+## 5c. Boot images and the SD adapter on real hardware (verified on the device, Nov 2026)
+
+- **Power-on logo = kernel logo.** The "P" shown at power-on is a 240×320 CLUT224 `linux_logo`
+  (81 colours, Tonium's four-dot P + "Pacemaker") compiled into the kernel: in the decompressed
+  180096069 kernel at offset 99072 (va 0xc0020300; clut at +24, pixel data at 0xc002040b; pixel
+  values are palette index + 32). There is also an 80×80 one (187 colours). Changing it means
+  patching the kernel image (`boot/zImage` → mtd2).
+- **`/usr/local/share/images/startup.png` (the colour ring) is unused**: nothing in the rootfs
+  references it (`pwrLauncherApp` is a shell script whose only `dfbg` line is commented out). The
+  rootfs `boot.png` is identical to the image's `bin/resources/symbols/boot.png`.
+- **Rootfs flashing through the normal update path works** (fwver 180096070 installed; the device's
+  `.Pacemaker/system.xml` then reports FWVERSION 180096070). Booting with USB connected to a PC
+  hung after the kernel logo (Windows: "Device Descriptor Request Failed"); with USB unplugged the
+  update ran.
+- **SD adapter (Sintech microSD-to-ZIF, iFlash clone; IDENTIFY model "iFlash-Platform iPod
+  Adapters", firmware "iFlash85").** Its model string overflows into IDENTIFY words 48-53, so the
+  capabilities word 49 reads 0x6c61: LBA (bit 9) and DMA (bit 8) look unsupported. ide-disk 1.18
+  therefore uses CHS 16383/16/63 = 16,514,064 sectors (8.46 GB) and PIO (`using_dma 0`), although
+  words 60-61 report 125,042,688 LBA sectors (64.02 GB) and word 88 lists UDMA 0-5. A patched
+  `ide-disk.ko` (rootfs) that trusts words 60-61 would give the full capacity. Captured with the
+  `--diag` wrapper of `scripts/build-pfw.sh` (`.Pacemaker/revival-diag.txt`).
+
 ## 6. The Editor binaries
 
 - **Windows** `pacemaker.exe` 2.0.2.14170: native x86 PE32, VS2005 CRT, JUCE. rea's managed lane
