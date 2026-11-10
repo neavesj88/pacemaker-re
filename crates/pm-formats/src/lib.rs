@@ -11,6 +11,7 @@ pub mod library;
 pub mod mix;
 pub mod mixdoc;
 pub mod naming;
+pub mod ops_analysis;
 pub mod ops_device;
 pub mod ops_grid;
 pub mod ops_history;
