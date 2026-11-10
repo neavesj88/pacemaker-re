@@ -276,7 +276,8 @@ pub struct GridLoad {
     pub artist: String,
     pub sample_rate: u32,
     pub duration_secs: f64,
-    /// Length of the audio in source frames (`duration_secs * sample_rate`).
+    /// Upper bound of the audio length in source frames: `(duration_secs + 1) * sample_rate`,
+    /// because the stored duration is truncated to whole seconds.
     pub total_frames: i64,
     /// The device cue point in source frames, `None` when unset.
     pub cue_frames: Option<i64>,
@@ -363,7 +364,9 @@ impl Library {
             artist,
             sample_rate,
             duration_secs: secs as f64,
-            total_frames: secs * i64::from(sample_rate),
+            // play_time_secs is truncated, so the audio can run up to a second longer: allow one
+            // second of slack so no real beat in the last partial second is dropped or missing
+            total_frames: (secs + 1) * i64::from(sample_rate),
             cue_frames: cue_from_stored(cue),
             doc,
             problem,
@@ -629,7 +632,7 @@ mod tests {
     fn load_edit_save_round_trip_leaves_no_backups() {
         let (mut lib, vol, src, id) = one_track("save");
         let loaded = lib.load_grid(id).unwrap();
-        assert_eq!((loaded.sample_rate, loaded.total_frames, loaded.cue_frames), (44_100, 60 * 44_100, None));
+        assert_eq!((loaded.sample_rate, loaded.total_frames, loaded.cue_frames), (44_100, 61 * 44_100, None));
         assert_eq!(loaded.title, "Synthetic Track");
         let doc = loaded.doc.clone().expect("grid readable");
         assert_eq!(doc.beats.len(), 32);
@@ -655,6 +658,19 @@ mod tests {
         let bpm: f64 = lib.con.query_row("SELECT bpm FROM tracks", [], |r| r.get(0)).unwrap();
         assert_eq!(bpm, 128.0);
         assert!(lib.save_grid(id, &GridDoc { beats: vec![], ..edited }).is_err(), "invalid grids are refused");
+        cleanup(lib, &[&vol, &src]);
+    }
+
+    #[test]
+    fn loaded_length_leaves_a_second_of_slack_for_the_truncated_duration() {
+        let (lib, vol, src, id) = one_track("slack");
+        let l = lib.load_grid(id).unwrap();
+        // a beat 0.6 s past the stored 60 s is real audio, not past the end
+        let mut doc = l.doc.clone().unwrap();
+        let last = 60 * 44_100 + 26_000;
+        doc.beats.push(GridBeat { pos: last, bpm: 128.0 });
+        let n = apply(&doc, GridEdit::Nudge { frames: 100 }, EditCtx { sample_rate: 44_100, total_frames: Some(l.total_frames) }).unwrap();
+        assert_eq!(n.beats.last().unwrap().pos, last + 100);
         cleanup(lib, &[&vol, &src]);
     }
 

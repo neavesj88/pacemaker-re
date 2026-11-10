@@ -142,7 +142,7 @@ export const handlers: Handlers = {
       artist: t.artist,
       sample_rate: SR,
       duration_secs: t.play_time_secs,
-      total_frames: t.play_time_secs * SR,
+      total_frames: (t.play_time_secs + 1) * SR, // the stored length is truncated: one second of slack
       cue_frames: cue,
       doc: broken ? null : (saved.get(a.trackId) ?? demoGrid(a.trackId)),
       problem: broken ? reason : null,

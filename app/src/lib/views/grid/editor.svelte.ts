@@ -36,6 +36,9 @@ class GridEditor {
   peaks = $state.raw<Peak[] | null>(null);
   busy = $state(false);
   error = $state("");
+  /** Waveform state, kept apart from `error` so a later edit does not wipe it. */
+  peaksLoading = $state(false);
+  peaksError = $state("");
 
   #past = $state.raw<Snap[]>([]);
   #future = $state.raw<Snap[]>([]);
@@ -76,6 +79,8 @@ class GridEditor {
     this.doc = null;
     this.cue = null;
     this.peaks = null;
+    this.peaksLoading = false;
+    this.peaksError = "";
     this.error = "";
     this.#past = [];
     this.#future = [];
@@ -100,13 +105,7 @@ class GridEditor {
       this.#past = [];
       this.#future = [];
       this.peaks = null;
-      fetchPeaks(lib.root, l.location, PEAK_COLUMNS)
-        .then((p) => {
-          if (epoch === this.#epoch) this.peaks = p;
-        })
-        .catch((e) => {
-          if (epoch === this.#epoch) this.error = `Waveform: ${String(e)}`;
-        });
+      void this.loadPeaks();
     } catch (e) {
       if (epoch === this.#epoch) {
         this.loaded = null;
@@ -115,6 +114,24 @@ class GridEditor {
       }
     } finally {
       if (epoch === this.#epoch) this.busy = false;
+    }
+  }
+
+  /** Fetches the waveform of the open track; failures land in `peaksError` until retried. */
+  async loadPeaks() {
+    const lib = session.library;
+    const l = this.loaded;
+    if (!lib || !l) return;
+    const epoch = this.#epoch;
+    this.peaksLoading = true;
+    this.peaksError = "";
+    try {
+      const p = await fetchPeaks(lib.root, l.location, PEAK_COLUMNS);
+      if (epoch === this.#epoch) this.peaks = p;
+    } catch (e) {
+      if (epoch === this.#epoch) this.peaksError = String(e);
+    } finally {
+      if (epoch === this.#epoch) this.peaksLoading = false;
     }
   }
 
@@ -225,26 +242,50 @@ class GridEditor {
     if (!jobs.guard()) return false;
     this.busy = true;
     try {
+      // the .str may have changed since this track was opened (a re-analysis or add job):
+      // refuse to overwrite a grid the user has not seen
+      if (this.gridDirty) {
+        const now = await gridLoad(lib.root, l.track_id);
+        if (JSON.stringify(now.doc) !== JSON.stringify(this.#baseDocState)) {
+          this.error =
+            "The beat grid on the device changed since this track was opened. Re-open the track to see the current grid; nothing was saved.";
+          toast.show("Grid changed on the device: nothing saved", "bad");
+          return false;
+        }
+      }
       const out = await gridSave(
         lib.root,
         l.track_id,
         this.gridDirty ? this.doc : null,
         this.cueDirty ? { frames: this.cue } : null,
       );
-      this.#baseDocState = this.doc;
+      // take the grid back as the file now holds it, so the next save compares like with like
+      try {
+        const back = await gridLoad(lib.root, l.track_id);
+        if (this.loaded === l && back.doc) {
+          this.doc = back.doc;
+          this.#baseDocState = back.doc;
+        } else this.#baseDocState = this.doc;
+      } catch {
+        this.#baseDocState = this.doc;
+      }
       this.#baseCueState = this.cue;
       this.#past = [];
       this.#future = [];
       this.error = "";
       toast.show(out.wrote_grid ? "Grid saved to the .str" : "Cue saved", "ok");
-      await session.load(lib.root, true);
-      return true;
     } catch (err) {
       session.error = `Saving the grid failed: ${String(err)}`;
       return false;
     } finally {
       this.busy = false;
     }
+    try {
+      await session.load(lib.root, true);
+    } catch (err) {
+      session.error = `Saved, but the library list could not be reloaded: ${String(err)}`;
+    }
+    return true;
   }
 }
 

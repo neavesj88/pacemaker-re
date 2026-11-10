@@ -17,6 +17,8 @@
     width = $bindable(0),
     height = 280,
     onseek,
+    onuser,
+    status = "",
   }: {
     peaks: Peak[] | null;
     beatSecs: ArrayLike<number>;
@@ -30,6 +32,10 @@
     width?: number;
     height?: number;
     onseek?: (secs: number) => void;
+    /** The user scrolled or zoomed by hand: the parent should stop following the playhead. */
+    onuser?: () => void;
+    /** Shown over the waveform, for example while the peaks load. */
+    status?: string;
   } = $props();
 
   const MAX_PX_PER_SEC = 4000;
@@ -185,6 +191,7 @@
     if (!c) return;
     const onwheel = (e: WheelEvent) => {
       e.preventDefault();
+      onuser?.();
       if (e.shiftKey || Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
         const d = (e.shiftKey && e.deltaX === 0 ? e.deltaY : e.deltaX) / pxPerSec;
         viewStart = clampView(viewStart + d, pxPerSec);
@@ -195,6 +202,32 @@
     c.addEventListener("wheel", onwheel, { passive: false });
     return () => c.removeEventListener("wheel", onwheel);
   });
+
+  /** Left / Right: previous / next beat (Shift: a bar); Up / Down or + / -: zoom; Home / End. */
+  function key(e: KeyboardEvent) {
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    const k = e.key;
+    const back = k === "ArrowLeft";
+    if (back || k === "ArrowRight") {
+      e.preventDefault();
+      const n = e.shiftKey ? 4 : 1;
+      // the beat strictly before / after the playhead, n beats along
+      const i = back ? lowerBound(beatSecs, playhead - 0.0005) - n : lowerBound(beatSecs, playhead + 0.0005) + n - 1;
+      const t = beatSecs.length ? beatSecs[clamp(i, 0, beatSecs.length - 1)] : playhead + (back ? -1 : 1);
+      onseek?.(clamp(t, 0, duration));
+    } else if (k === "Home" || k === "End") {
+      e.preventDefault();
+      onseek?.(k === "Home" ? 0 : duration);
+    } else if (k === "+" || k === "=" || k === "ArrowUp") {
+      e.preventDefault();
+      onuser?.();
+      zoom(1.6);
+    } else if (k === "-" || k === "_" || k === "ArrowDown") {
+      e.preventDefault();
+      onuser?.();
+      zoom(1 / 1.6);
+    }
+  }
 
   let drag: { x: number; start: number; moved: boolean } | null = null;
 
@@ -207,6 +240,7 @@
     if (!drag) return;
     const dx = e.clientX - drag.x;
     if (Math.abs(dx) > 3) drag.moved = true;
+    if (drag.moved) onuser?.();
     if (drag.moved) viewStart = clampView(drag.start - dx / pxPerSec, pxPerSec);
   }
 
@@ -221,21 +255,35 @@
 </script>
 
 <div class="wave" bind:this={host} bind:clientWidth={width} style:height="{height}px">
-  <!-- svelte-ignore a11y_no_noninteractive_element_interactions, a11y_no_noninteractive_tabindex -->
+  <!-- svelte-ignore a11y_no_interactive_element_to_noninteractive_role -->
   <canvas
     bind:this={canvas}
     style:width="{width}px"
     style:height="{height}px"
-    aria-label="Waveform with beat grid. Click to place the playhead, drag to pan, scroll to zoom."
+    tabindex="0"
+    role="application"
+    aria-label="Waveform with beat grid. Click to place the playhead, drag to pan, scroll to zoom. Left and Right move the playhead by a beat, Shift by a bar, Up and Down zoom, Home and End jump to the ends."
+    onkeydown={key}
     onpointerdown={down}
     onpointermove={move}
     onpointerup={up}
     onpointercancel={() => (drag = null)}
   ></canvas>
+  {#if status}<div class="status" role="status">{status}</div>{/if}
 </div>
 
 <style>
+  .status {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--muted);
+    pointer-events: none;
+  }
   .wave {
+    position: relative;
     width: 100%;
     background: var(--deep);
     border: 1px solid var(--line);
