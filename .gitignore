@@ -4,3 +4,5 @@ work/
 tools/
 __pycache__/
 target/
+# Claude Code local permissions can capture secrets from approved commands
+**/.claude/settings.local.json
