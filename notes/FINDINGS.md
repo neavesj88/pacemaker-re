@@ -245,6 +245,26 @@ device volume, unmount, then the device applies it on reboot. The URLs in `paceS
 (`www.pacemaker.net/Default.aspx?documentID=158/159/172`) are dead. The copy destination is not
 pinned yet.
 
+## 5b. Device UI colours (verified by decompilation and emulation, Nov 2026, firmware 180096069)
+
+All of this is in the `.pfw` system image (`/pmds`), not in flash, so a changed copy installs
+through the normal update path without touching kernel, rootfs or bootloader.
+
+- **Theme palette.** `pmplayer` keeps 31 named colours in namespace `du` (`du::greenColor`,
+  `du::channelColor`, `du::donutGainColor`, ...) at 0xad2168..0xad2200, all set by the static
+  initialiser `_INIT_14` (0x36fc98) with byte stores. Running `_INIT_14` in Ghidra's emulator
+  (`scripts/ghidra/EmulateInit.java`) gives the values. Memory order is **R, G, B, A**. Green,
+  magenta, cyan, red, channel and warningChannel are 8-byte dim/bright pairs (for example green
+  005400 / 00ff00, channel 545454 / ffffff). The donuts are dark / passed / cursor triples (gain red,
+  EQ magenta, 1p teal, 2p green, key yellow, volume grey). `yellowColor` is 00ffff (cyan), as
+  emulated. `scripts/ghidra/XrefSymbols.java` lists the users: status areas, track list, settings,
+  `TrackArea`.
+- **VU meters** (`PeakArea`, two per `TrackArea`, 24 segments each) are not drawn from the palette.
+  `BlipArray::paint` cuts 22×4 px tiles out of `bin/resources/symbols/blips.png` (44×40: column 0 =
+  unlit, column 1 = lit; rows 0-2 greys, rows 3-9 green → yellow → red). Per-segment `BlipSpec`
+  tables pick the row, and `changeColors` swaps tables. Recolouring the meters = redrawing that PNG.
+- **Boot logo** inside the image: `bin/resources/symbols/boot.png` (see `branding/`).
+
 ## 6. The Editor binaries
 
 - **Windows** `pacemaker.exe` 2.0.2.14170: native x86 PE32, VS2005 CRT, JUCE. rea's managed lane
