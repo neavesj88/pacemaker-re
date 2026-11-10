@@ -549,16 +549,25 @@
 
 <style>
   :global(:root) {
-    --bg: #161616;
-    --panel: #1e1e1e;
-    --row: #222;
-    --row-alt: #262626;
-    --line: #333;
-    --text: #d8d8d8;
-    --muted: #8a8a8a;
-    --accent: #e8b23a;
-    --ok: #4caf72;
-    --bad: #d9534f;
+    /* the device palette (branding/): black ground, matrix green, magenta accent */
+    --bg: #050605;
+    --panel: #0a0d0b;
+    --deep: #030403;
+    --row: #0b0f0c;
+    --row-alt: #0e130f;
+    --hover: #15211a;
+    --line: #1b2a1f;
+    --line-hi: #2f4a36;
+    --text: #c9f2d3;
+    --muted: #5f9a6f;
+    --green: #00ff46;
+    --accent: #ff00c8;
+    --accent-soft: rgba(255, 0, 200, 0.14);
+    --accent-ramp: linear-gradient(90deg, #c800ff, #ff00c8);
+    --ok: #00ff46;
+    --bad: #ff3b6b;
+    --bad-bg: #2a0716;
+    --bad-text: #ffc0d8;
     color-scheme: dark;
   }
   :global(html, body) {
@@ -578,7 +587,7 @@
     align-items: center;
     gap: 16px;
     padding: 8px 14px;
-    background: #101010;
+    background: var(--deep);
     border-bottom: 1px solid var(--line);
   }
   .brand {
@@ -611,15 +620,16 @@
     cursor: pointer;
   }
   button:hover {
-    border-color: #555;
+    border-color: var(--line-hi);
   }
   button:disabled {
     opacity: 0.45;
     cursor: default;
   }
   button.primary {
-    background: var(--accent);
-    color: #111;
+    background: var(--accent-ramp);
+    color: #000;
+    font-weight: 600;
     border-color: var(--accent);
   }
   button.small {
@@ -646,15 +656,15 @@
     color: var(--ok);
   }
   .banner.bad {
-    background: #3a1d1c;
-    color: #f0c2c0;
+    background: var(--bad-bg);
+    color: var(--bad-text);
   }
   .banner ul {
     margin: 4px 0 0;
   }
   .strip {
     padding: 6px 14px 8px;
-    background: #1b1b14;
+    background: var(--panel);
     border-bottom: 1px solid var(--line);
     font-size: 12px;
   }
@@ -672,7 +682,7 @@
     color: var(--muted);
   }
   .strip .bpm {
-    color: var(--accent);
+    color: var(--green);
     font-variant-numeric: tabular-nums;
   }
   progress {
@@ -684,7 +694,7 @@
   .fails {
     margin: 6px 0 0;
     padding-left: 18px;
-    color: #f0c2c0;
+    color: var(--bad-text);
     max-height: 90px;
     overflow: auto;
   }
@@ -713,7 +723,7 @@
     color: var(--muted);
   }
   nav button.active {
-    background: #2c2c2c;
+    background: var(--accent-soft);
     color: var(--accent);
   }
   nav button.small {
@@ -743,7 +753,7 @@
   th {
     position: sticky;
     top: 0;
-    background: #1a1a1a;
+    background: var(--deep);
     text-align: left;
     font-weight: 600;
     color: var(--muted);
@@ -767,7 +777,7 @@
     background: var(--row-alt);
   }
   tbody tr:hover {
-    background: #303030;
+    background: var(--hover);
   }
   tr.dim {
     color: var(--muted);
@@ -780,7 +790,7 @@
     padding: 0 6px;
     border-radius: 8px;
     font-size: 11px;
-    background: #4a3a14;
+    background: var(--accent-soft);
     color: var(--accent);
   }
   .crumb {
@@ -826,7 +836,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    background: rgba(22, 22, 22, 0.85);
+    background: rgba(5, 6, 5, 0.88);
     border: 3px dashed var(--accent);
     color: var(--accent);
     font-size: 20px;
@@ -846,7 +856,7 @@
     max-width: 90vw;
     padding: 18px 20px;
     background: var(--panel);
-    border: 1px solid #444;
+    border: 1px solid var(--line-hi);
     border-radius: 8px;
   }
   .modal h2 {
