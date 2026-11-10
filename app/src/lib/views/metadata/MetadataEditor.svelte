@@ -3,7 +3,7 @@
   // move through the library (edits to each visited track are kept and saved together). Several
   // ids ("Multiple Item Information"): a field is written to every track only if it was touched;
   // fields where the tracks differ show "Multiple values". Enter saves, Escape cancels.
-  import { untrack } from "svelte";
+  import { onDestroy, untrack } from "svelte";
   import { saveMetadata, trackDetails, NUMBER_FIELDS, TEXT_FIELDS, type TrackDetail } from "$lib/api/metadata";
   import { session } from "$lib/state/session.svelte";
   import { nav } from "$lib/state/nav.svelte";
@@ -15,9 +15,10 @@
     FIELD_LABELS,
     commonDraft,
     diffSingle,
+    changedErrors,
     draftErrors,
     editFromTouched,
-    fieldError,
+    fieldBad,
     isEmptyEdit,
     toDraft,
     type Draft,
@@ -46,6 +47,13 @@
   let busy = $state(false);
   let error = $state("");
   let dialog = $state<HTMLDivElement | null>(null);
+  let confirmDiscard = $state(false);
+  // focus goes back to whatever opened the dialog
+  const opener = typeof document !== "undefined" ? (document.activeElement as HTMLElement | null) : null;
+  onDestroy(() => {
+    if (opener && opener.isConnected) opener.focus();
+  });
+  let downOnScrim = false;
 
   const draft = $derived(multi ? multiDraft : (drafts[current] ?? null));
   const detail = $derived(details[current]);
@@ -122,11 +130,21 @@
       return multiDraft ? draftErrors(multiDraft, Object.keys(touched).filter((k) => touched[k] && k !== "rating") as FieldKey[]) : [];
     }
     return Object.entries(drafts).flatMap(([id, d]) => {
-      const msgs = draftErrors(d);
+      const detailRow = details[Number(id)];
+      const msgs = detailRow ? changedErrors(detailRow, d) : [];
       const label = details[Number(id)]?.title || `Track ${id}`;
       return msgs.map((m) => (Object.keys(drafts).length > 1 ? `${label}: ${m}` : m));
     });
   });
+
+  const editedTitles = $derived(edits.map((e) => details[e.track_id]?.title || `Track ${e.track_id}`));
+
+  // Cancel, Esc and the scrim never throw edits away silently
+  function requestClose() {
+    if (busy) return;
+    if (edits.length > 0) confirmDiscard = true;
+    else metadataEditor.close();
+  }
 
   const canSave = $derived(!loading && !busy && problems.length === 0 && edits.length > 0);
 
@@ -158,12 +176,38 @@
     void save(() => nav.go("grid", { "grid.trackId": id }));
   }
 
+  function focusables(): HTMLElement[] {
+    return [...(dialog?.querySelectorAll<HTMLElement>("input, button, a[href]") ?? [])].filter(
+      (el) => !(el as HTMLButtonElement).disabled && el.offsetParent !== null,
+    );
+  }
+
   function onkey(e: KeyboardEvent) {
+    // only act while focus is inside the dialog (or nowhere in particular)
+    const t = e.target as HTMLElement | null;
+    const inside = !!t && !!dialog && dialog.contains(t);
+    if (!inside && t && t !== document.body) return;
+    if (e.key === "Tab" && dialog) {
+      const f = focusables();
+      if (f.length === 0) return;
+      const a = document.activeElement;
+      if (!dialog.contains(a) || a === dialog || (e.shiftKey && a === f[0]) || (!e.shiftKey && a === f[f.length - 1])) {
+        e.preventDefault();
+        (e.shiftKey ? f[f.length - 1] : f[0]).focus();
+      }
+      return;
+    }
+    if (confirmDiscard) {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        confirmDiscard = false;
+      }
+      return;
+    }
     if (e.key === "Escape") {
       e.preventDefault();
-      metadataEditor.close();
+      requestClose();
     } else if (e.key === "Enter" && !e.isComposing) {
-      const t = e.target as HTMLElement | null;
       if (t && (t.tagName === "BUTTON" || t.tagName === "A")) return; // Enter activates the focused button
       e.preventDefault();
       void save();
@@ -176,7 +220,15 @@
 <svelte:window onkeydown={onkey} />
 
 <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-<div class="scrim" onclick={() => metadataEditor.close()}>
+<div
+  class="scrim"
+  onmousedown={(e) => (downOnScrim = e.target === e.currentTarget)}
+  onclick={(e) => {
+    // a drag that began inside the dialog (text selection) must not close it; with edits pending the scrim does nothing
+    if (downOnScrim && e.target === e.currentTarget && edits.length === 0 && !busy) metadataEditor.close();
+    downOnScrim = false;
+  }}
+>
   <div
     class="dialog"
     role="dialog"
@@ -205,7 +257,9 @@
           <label class="f">
             <span>{FIELD_LABELS[k]}</span>
             <input
-              class:bad={fieldError(k, val(k)) !== ""}
+              class:bad={fieldBad(k, val(k), multi ? undefined : detail)}
+              aria-invalid={fieldBad(k, val(k), multi ? undefined : detail)}
+              aria-describedby={fieldBad(k, val(k), multi ? undefined : detail) ? "md-problems" : undefined}
               type="text"
               inputmode={NUMBER_FIELDS.includes(k as never) ? "numeric" : "text"}
               autocomplete="off"
@@ -219,7 +273,9 @@
         <label class="f wide">
           <span>{FIELD_LABELS.comments}</span>
           <input
-            class:bad={fieldError("comments", val("comments")) !== ""}
+            class:bad={fieldBad("comments", val("comments"), multi ? undefined : detail)}
+            aria-invalid={fieldBad("comments", val("comments"), multi ? undefined : detail)}
+            aria-describedby={fieldBad("comments", val("comments"), multi ? undefined : detail) ? "md-problems" : undefined}
             type="text"
             autocomplete="off"
             value={val("comments")}
@@ -246,9 +302,20 @@
     {/if}
 
     {#if problems.length}
-      <p class="err" role="alert">{problems.slice(0, 3).join(". ")}{problems.length > 3 ? ` (and ${problems.length - 3} more)` : ""}</p>
+      <p class="err" id="md-problems" role="alert">{problems.slice(0, 3).join(". ")}{problems.length > 3 ? ` (and ${problems.length - 3} more)` : ""}</p>
     {/if}
     {#if error}<p class="err" role="alert">{error}</p>{/if}
+
+    {#if confirmDiscard}
+      <div class="err" role="alertdialog" aria-label="Discard changes">
+        <p class="dq">
+          Discard unsaved changes to {edits.length === 1 ? "1 track" : `${edits.length} tracks`}?
+          {editedTitles.slice(0, 8).join("; ")}{editedTitles.length > 8 ? `; and ${editedTitles.length - 8} more` : ""}
+        </p>
+        <Button onclick={() => (confirmDiscard = false)}>Keep editing</Button>
+        <Button onclick={() => metadataEditor.close()}>Discard changes</Button>
+      </div>
+    {/if}
 
     <div class="actions">
       {#if !multi}
@@ -256,7 +323,7 @@
         <Button onclick={() => step(1)} disabled={busy || loading || position < 0 || position >= order.length - 1}>Next</Button>
       {/if}
       <span class="spacer"></span>
-      <Button onclick={() => metadataEditor.close()} disabled={busy}>Cancel</Button>
+      <Button onclick={requestClose} disabled={busy}>Cancel</Button>
       <Button variant="primary" onclick={() => save()} disabled={!canSave}>
         {busy ? "Saving…" : edits.length > 1 && !multi ? `Save ${edits.length} tracks` : "Save"}
       </Button>
@@ -358,6 +425,9 @@
     background: var(--bad-bg);
     color: var(--bad-text);
     border-radius: 4px;
+  }
+  .dq {
+    margin: 0 0 8px;
   }
   .actions {
     display: flex;

@@ -82,6 +82,14 @@ export const draftErrors = (d: Draft, only?: Iterable<FieldKey>): string[] => {
   return keys.map((k) => fieldError(k, d[k])).filter(Boolean);
 };
 
+/** Single track: problems only in the fields the user changed (stored values may already break the limits). */
+export const changedErrors = (d: TrackDetail, draft: Draft): string[] =>
+  draftErrors(draft, Object.keys(diffSingle(d, draft)).filter((k) => k !== "rating") as FieldKey[]);
+
+/** True when this field's box has an error the user introduced (differs from the stored text). */
+export const fieldBad = (k: FieldKey, v: string, d: TrackDetail | undefined): boolean =>
+  fieldError(k, v) !== "" && (!d || v !== toDraft(d)[k]);
+
 /** The typed value of a field box (empty number = 0, unset). Call only when fieldError is "". */
 const parse = (k: FieldKey, v: string): string | number => (isNumberField(k) ? (v === "" ? 0 : Number(v)) : v);
 
