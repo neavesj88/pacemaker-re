@@ -1,7 +1,7 @@
 //! Tracks: operations on tracks already in the library (beat-grid re-analysis now; tags,
 //! ratings and removal later).
 
-use std::path::Path;
+use std::path::{Component, Path, PathBuf};
 
 use pm_analysis::ingest::{self, Existing};
 use pm_formats::library::Library;
@@ -47,6 +47,52 @@ pub fn reanalyse_tracks(app: AppHandle, lock: State<'_, JobLock>, root: String, 
     })
 }
 
+/// The audio file of a track on the volume. The path is rebuilt from the track's stored
+/// `location` (never taken from the caller) and must stay inside the volume.
+fn audio_file(lib: &Library, track_id: i64) -> AppResult<PathBuf> {
+    let track = lib.tracks()?.into_iter().find(|t| t.track_id == track_id).ok_or("That track is not in the library.")?;
+    let (audio, _) = lib.track_paths(&track.location).ok_or("This track has no file on the device.")?;
+    if audio.components().any(|c| c == Component::ParentDir) {
+        return Err("The track's location points outside the device.".into());
+    }
+    if !audio.is_file() {
+        return Err("The audio file is missing from the device.".into());
+    }
+    Ok(audio)
+}
+
+#[cfg(windows)]
+fn reveal(path: &Path) -> std::io::Result<()> {
+    use std::os::windows::process::CommandExt;
+    // explorer needs backslashes and the quotes inside the argument; it exits 1 even on success,
+    // so the status is not looked at.
+    let native = path.to_string_lossy().replace('/', "\\");
+    std::process::Command::new("explorer").raw_arg(format!("/select,\"{native}\"")).spawn().map(|_| ())
+}
+
+#[cfg(target_os = "macos")]
+fn reveal(path: &Path) -> std::io::Result<()> {
+    std::process::Command::new("open").arg("-R").arg(path).spawn().map(|_| ())
+}
+
+#[cfg(all(not(windows), not(target_os = "macos")))]
+fn reveal(path: &Path) -> std::io::Result<()> {
+    let dir = path.parent().unwrap_or(path);
+    std::process::Command::new("xdg-open").arg(dir).spawn().map(|_| ())
+}
+
+/// Shows the track's audio file in the system file manager (Explorer with the file selected on
+/// Windows). Read-only: nothing on the volume changes.
+#[tauri::command]
+pub async fn tracks_reveal(root: String, track_id: i64) -> AppResult<()> {
+    tauri::async_runtime::spawn_blocking(move || -> AppResult<()> {
+        let lib = Library::open_read_only(Path::new(&root))?;
+        reveal(&audio_file(&lib, track_id)?)?;
+        Ok(())
+    })
+    .await?
+}
+
 /// This area's command paths, one per line.
 #[macro_export]
 macro_rules! tracks_commands {
@@ -55,8 +101,57 @@ macro_rules! tracks_commands {
             [
                 $($acc)*
                 $crate::commands::tracks::reanalyse_tracks,
+                $crate::commands::tracks::tracks_reveal,
             ];
             $($rest),*
         }
     };
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use pm_formats::library::TrackMeta;
+    use pm_formats::strfile::{Analysis, Beat};
+
+    fn temp_dir(tag: &str) -> PathBuf {
+        let d = std::env::temp_dir().join(format!("pm-app-tracks-{tag}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        d
+    }
+
+    fn library_with_one_track(tag: &str) -> (PathBuf, i64) {
+        let vol = temp_dir(tag);
+        let src = temp_dir(&format!("{tag}-src")).join("Demo Track.mp3");
+        std::fs::write(&src, vec![0u8; 4096]).unwrap();
+        let analysis = Analysis {
+            normalize_factor: 1.0,
+            beat_start_offset: 0,
+            beats: (0..8).map(|i| Beat { pos: i * 20000, bpm: 128.0 }).collect(),
+            first_downbeat: Some(0),
+        };
+        let meta = TrackMeta { title: "Demo Track".into(), format: "MP3".into(), ..Default::default() };
+        let mut lib = Library::create(&vol).unwrap();
+        let id = lib.add_track(&src, &meta, &analysis).unwrap();
+        (vol, id)
+    }
+
+    #[test]
+    fn audio_file_resolves_inside_the_volume() {
+        let (vol, id) = library_with_one_track("ok");
+        let lib = Library::open_read_only(&vol).unwrap();
+        let audio = audio_file(&lib, id).unwrap();
+        assert!(audio.starts_with(&vol));
+        assert!(audio.is_file());
+    }
+
+    #[test]
+    fn audio_file_rejects_unknown_ids_and_missing_files() {
+        let (vol, id) = library_with_one_track("missing");
+        let lib = Library::open_read_only(&vol).unwrap();
+        assert!(audio_file(&lib, id + 100).unwrap_err().to_string().contains("not in the library"));
+        std::fs::remove_file(audio_file(&lib, id).unwrap()).unwrap();
+        assert!(audio_file(&lib, id).unwrap_err().to_string().contains("missing"));
+    }
 }
