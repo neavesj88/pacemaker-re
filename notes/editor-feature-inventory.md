@@ -9,7 +9,9 @@ not decompiled. No personal data is included. Sections marked TODO are not yet i
 Revival status basis: `app/src-tauri/src/lib.rs` exposes only list_volumes, open_library, case_tracks,
 expand_audio_paths, add_tracks, reanalyse_tracks. `crates/pm-formats/src/library.rs` additionally has
 `set_track_rating`, `create_case`, `set_case_tracks`, `delete_case` (not yet exposed by the app).
-`crates/pm-formats/src/mixdoc.rs` only handles the zlib+XOR container, there is no MixDocument model.
+`crates/pm-formats/src/mixdoc.rs` handles the zlib+XOR container; `mix.rs` is the MixDocument model
+(parse/write, byte-exact on the demo mix; envelope node format decoded, see notes/mix-format.md) and
+`library.rs` has `read_mix`, `create_mix`, `save_mix`, `delete_mix`.
 
 ## 1. Application structure
 

@@ -7,6 +7,7 @@
 pub mod db;
 pub mod juce_b64;
 pub mod library;
+pub mod mix;
 pub mod mixdoc;
 pub mod naming;
 pub mod pfw;

@@ -493,6 +493,268 @@ impl Library {
     }
 }
 
+/// `mixes.name` is declared VARCHAR(255); SQLite does not enforce it, so we do.
+pub const MAX_MIX_NAME_CHARS: usize = 255;
+
+/// What we write as `mixes.creator_id`; same shape and reasoning as [`CASE_CREATOR_ID`]
+/// (the Editor's `Utils::getCreatorId` feeds both).
+pub const MIX_CREATOR_ID: &str = CASE_CREATOR_ID;
+
+/// A row of `mixes` without the document blob.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct MixInfo {
+    pub id: i64,
+    pub name: String,
+    pub genre: String,
+    pub year: i64,
+    pub rating: i64,
+    pub producer: String,
+    pub remixer: String,
+    pub comments: String,
+    /// Unix milliseconds.
+    pub date_created: i64,
+    pub date_modified: i64,
+    pub times_played: i64,
+    pub last_played: i64,
+    pub play_time_secs: i64,
+    pub creator_id: String,
+    /// `miximages.id` of the sleeve, 0 for none.
+    pub image_id: i64,
+    pub preview_markers: String,
+    pub track_count: i64,
+}
+
+/// A row of `mixtracks`. A negative `track_id` is the placeholder the Editor leaves when a
+/// track is removed from the library (notes/FINDINGS.md section 3); the `dup_*` fields then
+/// hold what the track was called.
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct MixTrackRow {
+    pub track_id: i64,
+    pub dup_title: Option<String>,
+    pub dup_artist: Option<String>,
+    pub dup_album: Option<String>,
+    pub dup_play_time_secs: Option<i64>,
+    pub track_index: i64,
+    pub cue_point: i64,
+}
+
+impl From<crate::mix::MixError> for Error {
+    fn from(e: crate::mix::MixError) -> Self {
+        Error::Invalid(e.to_string())
+    }
+}
+
+impl Library {
+    /// Every mix row, ordered by name.
+    pub fn mix_infos(&self) -> Result<Vec<MixInfo>, Error> {
+        let mut st = self.con.prepare(&format!("{MIX_INFO_SQL} WHERE m.mix_id >= 0 ORDER BY m.name"))?;
+        let rows = st.query_map([], mix_info_row)?;
+        Ok(rows.collect::<Result<_, _>>()?)
+    }
+
+    pub fn mix_info(&self, mix_id: i64) -> Result<Option<MixInfo>, Error> {
+        Ok(self
+            .con
+            .query_row(&format!("{MIX_INFO_SQL} WHERE m.mix_id = ?1 AND m.mix_id >= 0"), [mix_id], mix_info_row)
+            .optional()?)
+    }
+
+    /// The `mixtracks` rows of a mix in `track_index` order.
+    pub fn mix_track_rows(&self, mix_id: i64) -> Result<Vec<MixTrackRow>, Error> {
+        let mut st = self.con.prepare(
+            "SELECT track_id, dup_title, dup_artist, dup_album, dup_play_time_secs, IFNULL(track_index,-1),
+                    IFNULL(cue_point,-1)
+             FROM mixtracks WHERE mix_id = ?1 ORDER BY track_index, rowid",
+        )?;
+        let rows = st.query_map([mix_id], |r| {
+            Ok(MixTrackRow {
+                track_id: r.get(0)?,
+                dup_title: r.get(1)?,
+                dup_artist: r.get(2)?,
+                dup_album: r.get(3)?,
+                dup_play_time_secs: r.get(4)?,
+                track_index: r.get(5)?,
+                cue_point: r.get::<_, f64>(6)? as i64,
+            })
+        })?;
+        Ok(rows.collect::<Result<_, _>>()?)
+    }
+
+    /// Reads and parses the document of a mix. Errors if the mix does not exist or has no
+    /// document (`structured_ct` NULL or empty).
+    pub fn read_mix(&self, mix_id: i64) -> Result<crate::mix::Mix, Error> {
+        let blob: Option<Option<Vec<u8>>> = self
+            .con
+            .query_row("SELECT structured_ct FROM mixes WHERE mix_id = ?1 AND mix_id >= 0", [mix_id], |r| r.get(0))
+            .optional()?;
+        match blob {
+            None => Err(Error::Invalid(format!("no mix {mix_id}"))),
+            Some(None) => Err(Error::Invalid(format!("mix {mix_id} has no document"))),
+            Some(Some(b)) if b.is_empty() => Err(Error::Invalid(format!("mix {mix_id} has no document"))),
+            Some(Some(b)) => Ok(crate::mix::Mix::from_blob(&b)?),
+        }
+    }
+
+    /// Creates a mix with an empty document and returns its `mix_id`, the way the Editor's
+    /// `MixLibraryComponent::createMix` does: a row with `date_created` = now, `year` = the
+    /// current year, zero counters, then a first save of an empty document (which sets
+    /// `date_modified`, the blob and `preview_markers`). Names must be non-empty, at most
+    /// [`MAX_MIX_NAME_CHARS`] characters and unused (the Editor's Save As refuses a name that
+    /// exists).
+    pub fn create_mix(&mut self, name: &str) -> Result<i64, Error> {
+        check_mix_name(name)?;
+        if self.mix_name_taken(name, None)? {
+            return Err(Error::Invalid(format!("a mix called {name:?} already exists")));
+        }
+        let now = now_ms();
+        self.con.execute(
+            "INSERT INTO mixes (mix_id, name, date_created, times_played, structured_ct, mix_image, genre, year,
+                rating, producer, remixer, play_time_secs, last_played, date_modified, comments, creator_id,
+                preview_markers)
+             VALUES (NULL, ?1, ?2, 0, NULL, 0, '', ?3, 0, '', '', 0, 0, 0, '', ?4, NULL)",
+            params![name, now, year_of_ms(now), MIX_CREATOR_ID],
+        )?;
+        let id = self.con.last_insert_rowid();
+        self.save_mix(id, &crate::mix::Mix::new(name))?;
+        Ok(id)
+    }
+
+    /// Saves `mix` as the document of `mix_id`, with everything the Editor's `saveMixWithId`
+    /// updates in one transaction: the row's `name` (taken from `mix.name`), `play_time_secs`,
+    /// `preview_markers`, `date_modified` (now, Unix ms) and the blob, then `mixtracks`
+    /// rebuilt from the document's tracks in order (`track_index` = position in the list).
+    /// Every `library_id` must be a real track, or a negative placeholder id that the mix
+    /// already had a row for (its `dup_*` fields are kept). Genre/year/rating/... stay as they
+    /// are (the Editor edits those in its metadata dialog, not on save).
+    pub fn save_mix(&mut self, mix_id: i64, mix: &crate::mix::Mix) -> Result<(), Error> {
+        check_mix_name(&mix.name)?;
+        let old_rows = self.mix_track_rows(mix_id)?;
+        if self.mix_info(mix_id)?.is_none() {
+            return Err(Error::Invalid(format!("no mix {mix_id}")));
+        }
+        if self.mix_name_taken(&mix.name, Some(mix_id))? {
+            return Err(Error::Invalid(format!("a mix called {:?} already exists", mix.name)));
+        }
+        for t in &mix.tracks {
+            let id = t.library_id;
+            let known = if id >= 0 {
+                self.con.query_row("SELECT 1 FROM tracks WHERE track_id = ?1", [id], |_| Ok(())).optional()?.is_some()
+            } else {
+                old_rows.iter().any(|r| r.track_id == id)
+            };
+            if !known {
+                return Err(Error::Invalid(format!("mix track refers to library id {id}, which is not a track")));
+            }
+        }
+        let blob = mix.to_blob()?;
+        let now = now_ms();
+        let tx = self.con.transaction()?;
+        tx.execute(
+            "UPDATE mixes SET name = ?1, play_time_secs = ?2, preview_markers = ?3, date_modified = ?4,
+                    structured_ct = ?5 WHERE mix_id = ?6",
+            params![mix.name, mix.play_time_secs(), mix.preview_markers_xml(), now, blob, mix_id],
+        )?;
+        tx.execute("DELETE FROM mixtracks WHERE mix_id = ?1", [mix_id])?;
+        {
+            let mut ins = tx.prepare(
+                "INSERT INTO mixtracks (mix_id, track_id, dup_title, dup_artist, dup_album, dup_play_time_secs,
+                    track_index, cue_point) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            )?;
+            for (i, t) in mix.tracks.iter().enumerate() {
+                let kept = old_rows.iter().find(|r| r.track_id == t.library_id && t.library_id < 0);
+                ins.execute(params![
+                    mix_id,
+                    t.library_id,
+                    kept.and_then(|r| r.dup_title.clone()),
+                    kept.and_then(|r| r.dup_artist.clone()),
+                    kept.and_then(|r| r.dup_album.clone()),
+                    kept.and_then(|r| r.dup_play_time_secs),
+                    i as i64,
+                    mix_cue_point(t)
+                ])?;
+            }
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// Deletes a mix: its sleeve image (when it has one), `mixtracks` rows and the row itself,
+    /// the three statements the Editor's `deleteMix` path runs. Returns whether it existed.
+    pub fn delete_mix(&mut self, mix_id: i64) -> Result<bool, Error> {
+        let tx = self.con.transaction()?;
+        tx.execute(
+            "DELETE FROM miximages WHERE EXISTS (SELECT mixes.mix_image FROM mixes
+                    WHERE mixes.mix_image = miximages.id AND mixes.mix_id = ?1)",
+            [mix_id],
+        )?;
+        tx.execute("DELETE FROM mixtracks WHERE mix_id = ?1", [mix_id])?;
+        let n = tx.execute("DELETE FROM mixes WHERE mix_id = ?1", [mix_id])?;
+        tx.commit()?;
+        Ok(n > 0)
+    }
+
+    fn mix_name_taken(&self, name: &str, except: Option<i64>) -> Result<bool, Error> {
+        Ok(self
+            .con
+            .query_row(
+                "SELECT 1 FROM mixes WHERE name = ?1 AND mix_id >= 0 AND mix_id != ?2",
+                params![name, except.unwrap_or(-1)],
+                |_| Ok(()),
+            )
+            .optional()?
+            .is_some())
+    }
+}
+
+fn check_mix_name(name: &str) -> Result<(), Error> {
+    if name.trim().is_empty() {
+        return Err(Error::Invalid("mix name is empty".into()));
+    }
+    if name.chars().count() > MAX_MIX_NAME_CHARS {
+        return Err(Error::Invalid(format!("mix name is longer than {MAX_MIX_NAME_CHARS} characters")));
+    }
+    Ok(())
+}
+
+/// `mixtracks.cue_point` for a track. The Editor writes `AudioClip::getMixCuePoint`: its
+/// position converted by a virtual method we did not identify, 0 when not positive. We write
+/// the track's start on the timeline, which is what that is for a track with no offset
+/// (unverified against the Editor's own rows, see notes/mix-format.md).
+fn mix_cue_point(t: &crate::mix::Track) -> i64 {
+    let p = t.position.start + t.position.l_offset;
+    if p > 0.0 { p.round() as i64 } else { 0 }
+}
+
+const MIX_INFO_SQL: &str = "SELECT m.mix_id, IFNULL(m.name,''), IFNULL(m.genre,''), IFNULL(m.year,0),
+        IFNULL(m.rating,0), IFNULL(m.producer,''), IFNULL(m.remixer,''), IFNULL(m.comments,''),
+        IFNULL(m.date_created,0), IFNULL(m.date_modified,0), IFNULL(m.times_played,0),
+        IFNULL(m.last_played,0), IFNULL(m.play_time_secs,0), IFNULL(m.creator_id,''),
+        IFNULL(m.mix_image,0), IFNULL(m.preview_markers,''),
+        (SELECT COUNT(*) FROM mixtracks t WHERE t.mix_id = m.mix_id)
+     FROM mixes m";
+
+fn mix_info_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<MixInfo> {
+    Ok(MixInfo {
+        id: r.get(0)?,
+        name: r.get(1)?,
+        genre: r.get(2)?,
+        year: r.get(3)?,
+        rating: r.get(4)?,
+        producer: r.get(5)?,
+        remixer: r.get(6)?,
+        comments: r.get(7)?,
+        date_created: r.get(8)?,
+        date_modified: r.get(9)?,
+        times_played: r.get(10)?,
+        last_played: r.get(11)?,
+        play_time_secs: r.get(12)?,
+        creator_id: r.get(13)?,
+        image_id: r.get(14)?,
+        preview_markers: r.get(15)?,
+        track_count: r.get(16)?,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -680,6 +942,106 @@ mod tests {
         assert!(lib.compatibility_problems().unwrap().is_empty());
 
         drop(lib);
+        for d in dirs {
+            std::fs::remove_dir_all(d).unwrap();
+        }
+    }
+
+    fn synthetic_mix(name: &str, ids: &[i64]) -> crate::mix::Mix {
+        use crate::mix::*;
+        let mut m = Mix::new(name);
+        let mut start = 0.0;
+        for (i, id) in ids.iter().enumerate() {
+            let pos = Position {
+                start,
+                length: 4_410_000.0,
+                limit_size: true,
+                session_event_id: format!("{:032x}", i + 1),
+                ..Position::default()
+            };
+            let mut t = Track::new(*id, &format!("synthetic{i}.mp3"), 128.0, 1.0, pos);
+            t.channel = (i % 2) as u32;
+            t.processes.push(Process::Tool(Tool::flat(Effect::reverb(), start + 1000.0, 88_200.0, 0.5, format!("{:032x}", 100 + i))));
+            m.tracks.push(t);
+            start += 3_000_000.0;
+        }
+        for i in 1..ids.len() {
+            let overlap = Position { start: 3_000_000.0 * i as f64, length: 1_410_000.0, ..Position::default() };
+            m.transitions.push(Transition::new(overlap));
+        }
+        m
+    }
+
+    #[test]
+    fn mix_lifecycle_matches_editor_rows() {
+        let (mut lib, dirs, ids) = library_with_tracks("mix", &[100, 250, 40]);
+
+        let a = lib.create_mix("Synthetic Mix A").unwrap();
+        let info = lib.mix_info(a).unwrap().unwrap();
+        assert_eq!(info.name, "Synthetic Mix A");
+        assert!(info.date_created > 1_600_000_000_000 && info.date_modified >= info.date_created);
+        assert_eq!((info.times_played, info.rating, info.last_played, info.play_time_secs, info.track_count), (0, 0, 0, 0, 0));
+        assert_eq!(info.year, year_of_ms(info.date_created));
+        assert_eq!(info.preview_markers, "<tracks/>");
+        assert_eq!(info.creator_id, MIX_CREATOR_ID);
+        assert_eq!(lib.read_mix(a).unwrap(), crate::mix::Mix::new("Synthetic Mix A"));
+        assert!(lib.create_mix("Synthetic Mix A").is_err(), "duplicate names are refused");
+        assert!(lib.create_mix("  ").is_err());
+
+        // add three tracks and two transitions
+        let m = synthetic_mix("Synthetic Mix A", &[ids[0], ids[2], ids[1]]);
+        lib.save_mix(a, &m).unwrap();
+        assert_eq!(lib.read_mix(a).unwrap(), m);
+        let info = lib.mix_info(a).unwrap().unwrap();
+        assert_eq!(info.track_count, 3);
+        assert_eq!(info.play_time_secs, i64::from(m.play_time_secs()));
+        assert_eq!(info.preview_markers, "<tracks><previewmarkers position=\"-1\"/><previewmarkers position=\"-1\"/></tracks>");
+        let rows = lib.mix_track_rows(a).unwrap();
+        assert_eq!(rows.iter().map(|r| r.track_id).collect::<Vec<_>>(), vec![ids[0], ids[2], ids[1]]);
+        assert_eq!(rows.iter().map(|r| r.track_index).collect::<Vec<_>>(), vec![0, 1, 2]);
+        assert!(rows.iter().all(|r| r.dup_title.is_none() && r.dup_play_time_secs.is_none()));
+
+        // edit: drop a track, rename
+        let mut m2 = lib.read_mix(a).unwrap();
+        m2.tracks.remove(1);
+        m2.transitions.pop();
+        m2.name = "Synthetic Mix B".into();
+        lib.save_mix(a, &m2).unwrap();
+        assert_eq!(lib.mix_info(a).unwrap().unwrap().name, "Synthetic Mix B");
+        assert_eq!(lib.mix_track_rows(a).unwrap().len(), 2);
+        assert_eq!(lib.mix_infos().unwrap().len(), 1);
+
+        // unknown library id and clashing name are refused, and nothing changes
+        let mut bad = m2.clone();
+        bad.tracks[0].library_id = 9999;
+        assert!(lib.save_mix(a, &bad).is_err());
+        let other = lib.create_mix("Other").unwrap();
+        let mut clash = m2.clone();
+        clash.name = "Other".into();
+        assert!(lib.save_mix(a, &clash).is_err());
+        assert_eq!(lib.read_mix(a).unwrap(), m2);
+
+        // removed-from-library placeholder keeps its dup_* fields across a save
+        lib.con
+            .execute(
+                "UPDATE mixtracks SET track_id = -track_id, dup_title = 'gone', dup_artist = 'x', dup_album = 'y',
+                        dup_play_time_secs = 7 WHERE mix_id = ?1 AND track_index = 1",
+                [a],
+            )
+            .unwrap();
+        let mut m3 = lib.read_mix(a).unwrap();
+        m3.tracks[1].library_id = -m3.tracks[1].library_id;
+        lib.save_mix(a, &m3).unwrap();
+        let rows = lib.mix_track_rows(a).unwrap();
+        assert!(rows[1].track_id < 0);
+        assert_eq!((rows[1].dup_title.as_deref(), rows[1].dup_play_time_secs), (Some("gone"), Some(7)));
+
+        assert!(lib.delete_mix(a).unwrap());
+        assert!(!lib.delete_mix(a).unwrap());
+        assert!(lib.read_mix(a).is_err());
+        assert!(lib.mix_track_rows(a).unwrap().is_empty());
+        assert!(lib.mix_info(other).unwrap().is_some());
+        drop(lib); // Windows won't delete a database file that is still open
         for d in dirs {
             std::fs::remove_dir_all(d).unwrap();
         }
