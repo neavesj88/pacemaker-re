@@ -12,8 +12,17 @@ const plays: [number, number, number][] = [
   [16, 170, 1], [21, 170.4, 3], [8, 170.8, 2],
 ];
 
+// Add ?noplays to the dev URL (or set localStorage.mockNoPlays = "1") to see the zero-plays state.
+const noPlays = (() => {
+  try {
+    return new URLSearchParams(location.search).has("noplays") || localStorage.getItem("mockNoPlays") === "1";
+  } catch {
+    return false;
+  }
+})();
+
 const counters = new Map<number, { times_played: number; last_played: number }>();
-for (const [id, ago, n] of plays) counters.set(id, { times_played: n, last_played: Math.round(NOW - ago * H) });
+if (!noPlays) for (const [id, ago, n] of plays) counters.set(id, { times_played: n, last_played: Math.round(NOW - ago * H) });
 
 const entries = () => tracks.map((t) => ({ track_id: t.track_id, ...(counters.get(t.track_id) ?? { times_played: 0, last_played: -1 }) }));
 
@@ -53,11 +62,11 @@ export const handlers: Handlers = {
       cases: cases.map((c, i) => ({
         id: c.id,
         name: c.name,
-        times_played: [8, 3, 0][i] ?? 0,
-        last_played: i < 2 ? Math.round(NOW - (6 + i * 60) * H) : 0,
+        times_played: noPlays ? 0 : ([8, 3, 0][i] ?? 0),
+        last_played: noPlays || i >= 2 ? 0 : Math.round(NOW - (6 + i * 60) * H),
         track_count: c.track_count,
       })),
-      mixes: [{ id: 1, name: "Demo Mix 1", times_played: 2, last_played: Math.round(NOW - 30 * H), track_count: 5 }],
+      mixes: [{ id: 1, name: "Demo Mix 1", times_played: noPlays ? 0 : 2, last_played: noPlays ? 0 : Math.round(NOW - 30 * H), track_count: 5 }],
     };
   },
   history_save_as_case: (a) => {

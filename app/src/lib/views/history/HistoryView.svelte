@@ -2,6 +2,10 @@
   import { historyOverview, historySaveAsCase, type HistoryOverview, type PlayedCollection } from "$lib/api/history";
   import type { Track } from "$lib/api/types";
   import { mmss } from "$lib/format";
+  import { metadataEditor } from "$lib/state/metadata.svelte";
+  import { nav } from "$lib/state/nav.svelte";
+  import { playback } from "$lib/state/playback.svelte";
+  import { selection } from "$lib/state/selection.svelte";
   import { jobs } from "$lib/state/jobs.svelte";
   import { session } from "$lib/state/session.svelte";
   import { toast } from "$lib/state/toast.svelte";
@@ -29,6 +33,10 @@
   let loading = $state(false);
   let pending = $state<Pending | null>(null);
   let saving = $state(false);
+  let saveError = $state("");
+  // The Never played list can be the whole library; render it in pages.
+  const PAGE = 300;
+  let neverShown = $state(PAGE);
 
   let byId = $derived(new Map((session.library?.tracks ?? []).map((t) => [t.track_id, t])));
 
@@ -73,9 +81,13 @@
     return rowsOf([...m.keys()], (id) => ({ plays: m.get(id)!.times_played, last: m.get(id)!.last_played }));
   });
   let neverRows = $derived(rowsOf(data?.never_played ?? []));
+  let neverVisible = $derived(neverRows.slice(0, neverShown));
   let missing = $derived((data?.most_played.length ?? 0) - mostRows.length);
 
-  const trackCols: Column[] = [
+  let mostIndex = $derived(new Map(mostRows.map((r, i) => [r.track.track_id, i + 1])));
+  let neverIndex = $derived(new Map(neverRows.map((r, i) => [r.track.track_id, i + 1])));
+
+  const baseCols: Column[] = [
     { key: "n", label: "#", num: true },
     { key: "title", label: "Title" },
     { key: "artist", label: "Artist" },
@@ -83,8 +95,10 @@
     { key: "key", label: "Key" },
     { key: "time", label: "Length", num: true },
   ];
+  const actCol: Column = { key: "act", label: "" };
+  const trackCols: Column[] = [...baseCols, actCol];
   const sessionCols: Column[] = trackCols.map((c) => (c.key === "n" ? { ...c, label: "Played at" } : c));
-  const mostCols: Column[] = [...trackCols, { key: "plays", label: "Plays", num: true }, { key: "last", label: "Last played", num: true }];
+  const mostCols: Column[] = [...baseCols, { key: "plays", label: "Plays", num: true }, { key: "last", label: "Last played", num: true }, actCol];
   const collCols: Column[] = [
     { key: "name", label: "Name" },
     { key: "track_count", label: "Tracks", num: true },
@@ -92,27 +106,65 @@
     { key: "last_played", label: "Last played", num: true },
   ];
 
+  // Rows act on the track: click selects it and loads it in the player; the buttons play it,
+  // open the metadata editor, or jump to it in the Tracks view.
+  function pick(r: Row) {
+    selection.trackIds = [r.track.track_id];
+    playback.load(r.track.track_id);
+  }
+  function playNow(r: Row) {
+    selection.trackIds = [r.track.track_id];
+    playback.load(r.track.track_id, true);
+  }
+  const showInTracks = (r: Row) => nav.go("tracks", { "tracks.trackId": r.track.track_id });
+  const openColl = (view: "cases" | "mixes", c: PlayedCollection) =>
+    nav.go(view, { [view === "cases" ? "cases.caseId" : "mixes.mixId"]: c.id });
+
+  const TABS: { id: Tab; label: string }[] = [
+    { id: "sessions", label: "Recently played" },
+    { id: "most", label: "Most played" },
+    { id: "never", label: "Never played" },
+    { id: "collections", label: "Cases and mixes" },
+  ];
+  function tabKey(e: KeyboardEvent) {
+    const d = e.key === "ArrowRight" ? 1 : e.key === "ArrowLeft" ? -1 : 0;
+    const home = e.key === "Home" ? 0 : e.key === "End" ? TABS.length - 1 : -1;
+    if (!d && home < 0) return;
+    e.preventDefault();
+    const i = home >= 0 ? home : (TABS.findIndex((t) => t.id === tab) + d + TABS.length) % TABS.length;
+    tab = TABS[i].id;
+    document.getElementById(`hist-tab-${tab}`)?.focus();
+  }
+
   function ask(name: string, ids: number[], source: string) {
     if (!jobs.guard()) return;
     const known = ids.filter((id) => byId.has(id));
     if (known.length === 0) return;
+    saveError = "";
     pending = { name, ids: known, source };
   }
 
   async function save(name: string) {
     const lib = session.library;
-    if (!lib || !pending) return;
+    if (!lib || !pending || saving) return;
     saving = true;
+    saveError = "";
+    const count = pending.ids.length;
     try {
       await historySaveAsCase(lib.root, name, pending.ids);
-      toast.show(`Case "${name.trim()}" created with ${pending.ids.length} tracks`, "ok");
-      pending = null;
+    } catch (e) {
+      // Keep the dialog open with the typed name so the user can retry or cancel.
+      saveError = String(e);
+      saving = false;
+      return;
+    }
+    toast.show(`Case "${name.trim()}" created with ${count} tracks`, "ok");
+    pending = null;
+    saving = false;
+    try {
       await session.load(lib.root, true);
     } catch (e) {
-      session.error = String(e);
-      pending = null;
-    } finally {
-      saving = false;
+      session.error = `The case was created, but reloading the library failed: ${String(e)}`;
     }
   }
 
@@ -120,6 +172,14 @@
   const dateStamp = (ms: number) => dayLabel(ms).replace(/,/g, "");
   const tip = (c: PlayedCollection) => (c.last_played > 0 ? when(c.last_played) : "never");
 </script>
+
+{#snippet acts(r: Row)}
+  <span class="acts">
+    <Button small onclick={(e: MouseEvent) => { e.stopPropagation(); playNow(r); }}>Play</Button>
+    <Button small onclick={(e: MouseEvent) => { e.stopPropagation(); metadataEditor.edit([r.track.track_id]); }}>Edit</Button>
+    <Button small onclick={(e: MouseEvent) => { e.stopPropagation(); showInTracks(r); }}>Find</Button>
+  </span>
+{/snippet}
 
 <div class="bar">
   <h2>History</h2>
@@ -145,22 +205,27 @@
     </div>
   {/if}
 
-  <div class="tabs" role="tablist">
-    <button role="tab" aria-selected={tab === "sessions"} class:on={tab === "sessions"} onclick={() => (tab = "sessions")}>
-      Recently played
-    </button>
-    <button role="tab" aria-selected={tab === "most"} class:on={tab === "most"} onclick={() => (tab = "most")}>
-      Most played <span class="n">{data.most_played.length}</span>
-    </button>
-    <button role="tab" aria-selected={tab === "never"} class:on={tab === "never"} onclick={() => (tab = "never")}>
-      Never played <span class="n">{data.never_played.length}</span>
-    </button>
-    <button role="tab" aria-selected={tab === "collections"} class:on={tab === "collections"} onclick={() => (tab = "collections")}>
-      Cases and mixes
-    </button>
+  <div class="tabs" role="tablist" aria-label="History views">
+    {#each TABS as t (t.id)}
+      <button
+        id="hist-tab-{t.id}"
+        role="tab"
+        aria-selected={tab === t.id}
+        aria-controls="hist-panel"
+        tabindex={tab === t.id ? 0 : -1}
+        class:on={tab === t.id}
+        onclick={() => (tab = t.id)}
+        onkeydown={tabKey}
+      >
+        {t.label}
+        {#if t.id === "most"}<span class="n">{data.most_played.length}</span>
+        {:else if t.id === "never"}<span class="n">{data.never_played.length}</span>{/if}
+      </button>
+    {/each}
   </div>
 
-  <div class="body">
+  <div class="body" class:stale={loading} id="hist-panel" role="tabpanel" aria-labelledby="hist-tab-{tab}" aria-busy={loading}>
+    {#if loading}<div class="updating" role="status">Updating...</div>{/if}
     {#if tab === "sessions"}
       <div class="note">
         The device stores only each track's most recent play, not a log. Sessions are rebuilt from those times: a pause longer than
@@ -179,14 +244,15 @@
               Save session as case
             </Button>
           </div>
-          <Table columns={sessionCols} rows={s.rows} rowKey={(r) => r.track.track_id}>
+          <Table columns={sessionCols} rows={s.rows} rowKey={(r) => r.track.track_id} onrowclick={pick}>
             {#snippet cell(r, c)}
               {#if c.key === "n"}<span title={when(r.at ?? 0)}>{timeLabel(r.at ?? 0)}</span>
               {:else if c.key === "title"}{r.track.title}
               {:else if c.key === "artist"}{r.track.artist}
               {:else if c.key === "bpm"}{r.track.bpm ? r.track.bpm.toFixed(1) : ""}
               {:else if c.key === "key"}{r.track.key}
-              {:else}{mmss(r.track.play_time_secs)}{/if}
+              {:else if c.key === "time"}{mmss(r.track.play_time_secs)}
+              {:else}{@render acts(r)}{/if}
             {/snippet}
           </Table>
         </section>
@@ -203,16 +269,17 @@
           Save list as case
         </Button>
       </div>
-      <Table columns={mostCols} rows={mostRows} rowKey={(r) => r.track.track_id}>
+      <Table columns={mostCols} rows={mostRows} rowKey={(r) => r.track.track_id} onrowclick={pick}>
         {#snippet cell(r, c)}
-          {#if c.key === "n"}{mostRows.indexOf(r) + 1}
+          {#if c.key === "n"}{mostIndex.get(r.track.track_id)}
           {:else if c.key === "title"}{r.track.title}
           {:else if c.key === "artist"}{r.track.artist}
           {:else if c.key === "bpm"}{r.track.bpm ? r.track.bpm.toFixed(1) : ""}
           {:else if c.key === "key"}{r.track.key}
           {:else if c.key === "time"}{mmss(r.track.play_time_secs)}
           {:else if c.key === "plays"}{r.plays}
-          {:else}<span title={r.last && r.last > 0 ? when(r.last) : "never"}>{ago(r.last ?? -1)}</span>{/if}
+          {:else if c.key === "last"}<span title={r.last && r.last > 0 ? when(r.last) : "never"}>{ago(r.last ?? -1)}</span>
+          {:else}{@render acts(r)}{/if}
         {/snippet}
       </Table>
       {#if mostRows.length === 0}<p class="empty">No track has a play count above zero.</p>{/if}
@@ -224,21 +291,34 @@
           Save list as case
         </Button>
       </div>
-      <Table columns={trackCols} rows={neverRows} rowKey={(r) => r.track.track_id}>
+      <Table columns={trackCols} rows={neverVisible} rowKey={(r) => r.track.track_id} onrowclick={pick}>
         {#snippet cell(r, c)}
-          {#if c.key === "n"}{neverRows.indexOf(r) + 1}
+          {#if c.key === "n"}{neverIndex.get(r.track.track_id)}
           {:else if c.key === "title"}{r.track.title}
           {:else if c.key === "artist"}{r.track.artist}
           {:else if c.key === "bpm"}{r.track.bpm ? r.track.bpm.toFixed(1) : ""}
           {:else if c.key === "key"}{r.track.key}
-          {:else}{mmss(r.track.play_time_secs)}{/if}
+          {:else if c.key === "time"}{mmss(r.track.play_time_secs)}
+          {:else}{@render acts(r)}{/if}
         {/snippet}
       </Table>
+      {#if neverRows.length > neverVisible.length}
+        <div class="head pad">
+          <span class="muted">Showing {neverVisible.length} of {neverRows.length}.</span>
+          <Button small onclick={() => (neverShown += PAGE)}>Show {Math.min(PAGE, neverRows.length - neverVisible.length)} more</Button>
+          <Button small onclick={() => (neverShown = neverRows.length)}>Show all</Button>
+        </div>
+      {/if}
       {#if neverRows.length === 0}<p class="empty">Every track has been played at least once.</p>{/if}
     {:else}
-      {#each [{ title: "Cases", rows: data.cases, noun: "cases" }, { title: "Mixes", rows: data.mixes, noun: "mixes" }] as g (g.title)}
+      {#each [{ title: "Cases", rows: data.cases, noun: "cases", view: "cases" as const }, { title: "Mixes", rows: data.mixes, noun: "mixes", view: "mixes" as const }] as g (g.title)}
         <h4 class="sub">{g.title}</h4>
-        <Table columns={collCols} rows={[...g.rows].sort((a, b) => b.times_played - a.times_played || b.last_played - a.last_played)} rowKey={(c) => c.id}>
+        <Table
+          columns={collCols}
+          rows={[...g.rows].sort((a, b) => b.times_played - a.times_played || b.last_played - a.last_played)}
+          rowKey={(c) => c.id}
+          onrowclick={(c) => openColl(g.view, c)}
+        >
           {#snippet cell(c, col)}
             {#if col.key === "name"}{c.name}
             {:else if col.key === "track_count"}{c.track_count}
@@ -258,6 +338,7 @@
     count={pending.ids.length}
     source={pending.source}
     busy={saving}
+    error={saveError}
     onsave={save}
     oncancel={() => (pending = null)}
   />
@@ -298,6 +379,7 @@
   }
   .tabs {
     display: flex;
+    flex-wrap: wrap;
     gap: 2px;
     padding: 0 12px;
     border-bottom: 1px solid var(--line);
@@ -342,13 +424,10 @@
     overflow: hidden;
   }
   .head {
+    flex-wrap: wrap;
     display: flex;
     align-items: center;
     gap: 12px;
-  }
-  /* the same column widths in every session card, so the cards read as one list */
-  .card :global(table) {
-    table-layout: fixed;
   }
   .card .head {
     padding: 8px 10px;
@@ -361,6 +440,21 @@
   }
   h4.sub {
     margin: 14px 12px 6px;
+  }
+  .stale > :global(*:not(.updating)) {
+    opacity: 0.55;
+  }
+  .updating {
+    margin: 6px 12px 0;
+    font-size: 12px;
+    color: var(--accent);
+  }
+  .acts {
+    display: inline-flex;
+    gap: 4px;
+  }
+  .body {
+    overflow-x: auto;
   }
   .grow {
     flex: 1;
