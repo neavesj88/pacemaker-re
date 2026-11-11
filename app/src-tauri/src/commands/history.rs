@@ -68,6 +68,9 @@ pub async fn history_overview(root: String, gap_minutes: Option<i64>) -> AppResu
 #[tauri::command]
 pub async fn history_save_as_case(root: String, name: String, track_ids: Vec<i64>) -> AppResult<i64> {
     tauri::async_runtime::spawn_blocking(move || -> AppResult<i64> {
+        if track_ids.is_empty() {
+            return Err(pm_formats::library::Error::Invalid("no tracks to put in the case".into()).into());
+        }
         let mut lib = Library::open(&PathBuf::from(root))?;
         Ok(lib.create_case_with_tracks(name.trim(), &track_ids)?)
     })

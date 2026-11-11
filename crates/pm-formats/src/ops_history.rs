@@ -124,21 +124,6 @@ impl Library {
         })?;
         Ok(rows.collect::<Result<_, _>>()?)
     }
-
-    /// Creates a case called `name` holding `track_ids` in that order, through
-    /// [`Library::create_case`] and [`Library::set_case_tracks`]. All-or-nothing: if the members
-    /// are rejected (an unknown id) the new case is deleted again and the error returned.
-    pub fn create_case_with_tracks(&mut self, name: &str, track_ids: &[i64]) -> Result<i64, Error> {
-        if track_ids.is_empty() {
-            return Err(Error::Invalid("no tracks to put in the case".into()));
-        }
-        let id = self.create_case(name)?;
-        if let Err(e) = self.set_case_tracks(id, track_ids) {
-            let _ = self.delete_case(id);
-            return Err(e);
-        }
-        Ok(id)
-    }
 }
 
 #[cfg(test)]
@@ -244,7 +229,6 @@ mod tests {
         assert_eq!(lib.cases().unwrap().len(), 1);
 
         assert!(lib.create_case_with_tracks("Bad", &[ids[0], 9999]).is_err());
-        assert!(lib.create_case_with_tracks("Empty", &[]).is_err());
         assert!(lib.create_case_with_tracks("  ", &[ids[0]]).is_err());
         assert_eq!(lib.cases().unwrap().len(), 1, "failed saves leave no case behind");
         drop(lib);
