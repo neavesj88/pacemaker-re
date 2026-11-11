@@ -263,6 +263,71 @@ int main(void)
         CHECK(maxout <= 1.0, "output exceeds 1.0: %.4f", maxout);
     }
 
+    printf("\n[8c] hot-mastered material at a near-neutral setting (Wah +2, 1 kHz + 3 kHz centre, worst of 12 phase offsets): distortion vs a linear path\n");
+    {
+        static const double peaks[] = { 0.80, 0.95, 0.989 };
+        int pi, ph;
+        for (pi = 0; pi < 3; pi++) {
+            double worst = -1000, worst_opk = 0; int worst_ph = 0;
+            for (ph = 0; ph < 12; ph++) {
+                long total = (long)(FS * 1.2), settle = (long)(FS * 0.5), i; float *H = malloc(total * 4), *Hr = malloc(total * 4), *Q = malloc(total * 4), *Qr = malloc(total * 4);
+                vfx_state sh, sq; double err = 0, sig = 0, opk = 0, db;
+                for (i = 0; i < total; i++) {
+                    double t = (double)i / FS, x = sin(2 * M_PI * 1000.0 * t) + 0.8 * sin(2 * M_PI * 3000.0 * t + ph * M_PI / 6);
+                    H[i] = Hr[i] = (float)(x * peaks[pi] / 1.8); Q[i] = Qr[i] = 0.5f * H[i];   /* Q: same signal at half level (far below the knee) */
+                }
+                vfx_reset(&sh); vfx_reset(&sq);
+                for (i = 0; i < total; i += BLK) {
+                    unsigned n = (unsigned)(i + BLK <= total ? BLK : total - i);
+                    proc(&c, &sh, H + i, Hr + i, n, 0.02f);        /* L and R carry the same samples: a centre signal */
+                    proc(&c, &sq, Q + i, Qr + i, n, 0.02f);
+                }
+                for (i = settle; i < total; i++) { double d = H[i] - 2.0 * Q[i]; err += d * d; sig += (double)H[i] * H[i]; if (fabs(H[i]) > opk) opk = fabs(H[i]); }
+                db = 10 * log10(err / sig + 1e-30);
+                if (db > worst) { worst = db; worst_opk = opk; worst_ph = ph; }
+                free(H); free(Hr); free(Q); free(Qr);
+            }
+            printf("  input peak %.3f: worst phase %d: output peak %.3f, nonlinear residue %.1f dB re output RMS\n", peaks[pi], worst_ph, worst_opk, worst);
+            if (peaks[pi] < 0.9) CHECK(worst < -100, "nonlinearity at peak %.2f: %.1f dB", peaks[pi], worst);
+            else CHECK(worst < -30, "nonlinearity at peak %.3f: %.1f dB (> -30)", peaks[pi], worst);
+        }
+    }
+
+
+    printf("\n[8d] a bad input sample stays one sample: NaN, +Inf, -Inf, 1e30 in one stream (0.3 sine, Wah +50), compared with a clean run\n");
+    {
+        long total = 40 * BLK, i; float *A = malloc(total * 4), *B = malloc(total * 4), *Ar = malloc(total * 4), *Br = malloc(total * 4);
+        vfx_state sa, sb; long nonfinite = 0, far = 0; double peak = 0;
+        for (i = 0; i < total; i++) { A[i] = Ar[i] = B[i] = Br[i] = (float)(0.3 * sin(2 * M_PI * 1000.0 * i / FS)); }
+        A[20 * BLK + 100] = NAN; Ar[20 * BLK + 300] = INFINITY; A[21 * BLK + 5] = -INFINITY; Ar[22 * BLK + 7] = 1e30f;
+        vfx_reset(&sa); vfx_reset(&sb);
+        for (i = 0; i < total; i += BLK) { proc(&c, &sa, A + i, Ar + i, BLK, 0.5f); proc(&c, &sb, B + i, Br + i, BLK, 0.5f); }
+        for (i = 0; i < total; i++) {
+            if (!finite_f(A[i]) || !finite_f(Ar[i])) nonfinite++;
+            if (fabs(A[i]) > peak) peak = fabs(A[i]);
+            if (i > 20 * BLK + 100 + 4096 && fabs(A[i] - B[i]) > 1e-3) far++;     /* the damage must have decayed 4096 samples after the last bad sample */
+        }
+        printf("  non-finite output samples: %ld; peak |out| %.3f; samples still differing from the clean run >1e-3 after 4096 samples: %ld\n", nonfinite, peak, far);
+        CHECK(nonfinite == 0, "%ld non-finite output samples", nonfinite);
+        CHECK(peak < 1.0, "peak %.3f", peak);
+        CHECK(far == 0, "%ld samples still disturbed long after the bad ones", far);
+        free(A); free(B); free(Ar); free(Br);
+    }
+
+    printf("\n[8e] engage hysteresis (vfx_engage): on at |v| >= %.1f, off below %.1f\n", VFX_ENGAGE_ON, VFX_ENGAGE_OFF);
+    {
+        int e = 0, toggles = 0, i, prev;
+        static const float hover[] = { 0.9f, 1.1f, 0.95f, -1.05f, -0.9f, 1.0f, 0.99f, 0.6f, -0.7f };
+        for (i = 0; i < 400; i++) { prev = e; e = vfx_engage(hover[i % 9], e); if (e != prev) toggles++; }
+        printf("  hovering around +-1 for 400 blocks: %d toggle(s) (the old fixed dead zone toggled %d times)\n", toggles, 4 * 44);
+        CHECK(toggles == 1 && e == 1, "hovering value toggled %d times / ended %d", toggles, e);
+        prev = e; e = vfx_engage(0.4f, e); CHECK(prev == 1 && e == 0, "0.4 did not release");
+        e = vfx_engage(0.99f, e); CHECK(e == 0, "0.99 engaged from idle");
+        e = vfx_engage(-1.0f, e); CHECK(e == 1, "-1.0 did not engage");
+        e = vfx_engage(-100.0f, 0); CHECK(e == 1, "-100 did not engage");
+        e = vfx_engage(0.0f, 0); CHECK(e == 0, "0 engaged");
+    }
+
     printf("\n[9] speed on this PC (not the device): 512-frame block, engaged\n");
     {
         static float L0[BLK], R0[BLK], L[BLK], R[BLK]; vfx_state s; int it, N = 20000; double best_ns = 1e18, tot_ns = 0; uint64_t best_cyc = ~0ull;

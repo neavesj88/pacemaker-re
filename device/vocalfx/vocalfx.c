@@ -28,6 +28,7 @@
 #define VFX_DIR "/mnt/public/.Pacemaker"
 #endif
 #define FLAG_PATH VFX_DIR "/revival-vocal"
+#define TIMING_PATH VFX_DIR "/revival-vocal-timing"
 #define LOG_PATH  VFX_DIR "/revival-vocal.log"
 
 /* ---- firmware 180096069 constants (all checked at load time) ---- */
@@ -54,8 +55,9 @@
 
 #define MAXFRAMES 4096u
 #define MAXINST   8
-/* Timing is the only syscall in the audio path (gettimeofday, 2-3 per timed call): every call for the first
- * TIMED_FIRST calls, then 1 in 64. Build with -DVFX_TIMING=0 to remove it entirely. */
+/* The audio path makes NO syscall by default. Timing (gettimeofday: a real syscall on glibc 2.4 / kernel 2.6.19, no
+ * vDSO) is a measurement aid that is OFF unless the file revival-vocal-timing exists at player start; then it times
+ * every call for the first TIMED_FIRST calls, then 1 in 64. Build with -DVFX_TIMING=0 to compile it out entirely. */
 #ifndef VFX_TIMING
 #define VFX_TIMING 1
 #endif
@@ -70,6 +72,7 @@ static process_fn g_orig;
 static int g_status = ST_NOTLOADED;
 static int g_dsp;                   /* flag file present at load time */
 static int g_invert;                /* flag file starts with 'i' ("invert"): negative = focus */
+static int g_timing;                /* revival-vocal-timing present at load (and compiled in) */
 static const char *g_why = "";
 static uint32_t g_slot_before, g_slot_after;
 static char g_exe[512];
@@ -77,7 +80,7 @@ static char g_exe[512];
 static vfx_coefs g_coef;
 static int g_coef_ready;
 static const double *g_rate_p;      /* AudioProcess::m_sampleRate, resolved at load (no dlsym in the audio thread) */
-static struct { void *self; uint32_t last; vfx_state st; } g_inst[MAXINST];
+static struct inst { void *self; uint32_t last; int eng; vfx_state st; } g_inst[MAXINST];   /* eng: engage decision (hysteresis) */
 
 /* ---- stats: single writer (audio thread), read racily by the log thread; benign ---- */
 static struct {
@@ -108,19 +111,20 @@ static inline void fpscr_set(uint32_t r) { (void)r; }
 /* One DSP state per PeqAudioProcess instance (two live decks, plus whatever mix playback creates). A table of
  * MAXINST slots keyed by the object address; when it is full the least recently used slot is recycled (a
  * destroyed instance is never called again, so it is the oldest). Allocation-free. */
-static vfx_state *find_inst(void *self, uint32_t now)
+static struct inst *find_inst(void *self, uint32_t now)
 {
     unsigned i, victim = 0;
-    for (i = 0; i < MAXINST; i++) if (g_inst[i].self == self) { g_inst[i].last = now; return &g_inst[i].st; }
+    for (i = 0; i < MAXINST; i++) if (g_inst[i].self == self) { g_inst[i].last = now; return &g_inst[i]; }
     for (i = 0; i < MAXINST; i++) {
         if (!g_inst[i].self) { victim = i; break; }
         if ((int32_t)(g_inst[i].last - g_inst[victim].last) < 0) victim = i;
     }
     vfx_reset(&g_inst[victim].st);
+    g_inst[victim].eng = 0;
     g_inst[victim].self = self;
     g_inst[victim].last = now;
     if (st.ninst < MAXINST) st.ninst++; else st.recycled++;
-    return &g_inst[victim].st;
+    return &g_inst[victim];
 }
 
 static void __attribute__((noinline)) run_dsp(vfx_state *s, float *L, float *R, unsigned n, float target, int engaged, int *processed)
@@ -132,8 +136,8 @@ static void vocal_process(void *self, void *in, void *out, void *midi, void *eve
 {
     uint8_t *ib = (uint8_t *)in, *ob = (uint8_t *)out, *sp = (uint8_t *)self;
     uint32_t n = ++st.calls, t0 = 0, t1 = 0, t2 = 0;
-    int timed = VFX_TIMING && ((n <= TIMED_FIRST) || ((n & TIMED_MASK) == 0));
-    vfx_state *inst;
+    int timed = VFX_TIMING && g_timing && ((n <= TIMED_FIRST) || ((n & TIMED_MASK) == 0));
+    struct inst *inst;
     uint8_t was;
     float v, target;
     uint32_t frames, nch, fpscr;
@@ -169,7 +173,8 @@ static void vocal_process(void *self, void *in, void *out, void *midi, void *eve
 
     if (was || sp[P_BYPASS]) {          /* no audio (stopped deck) or the stock FX is switched off: drop our state too */
         st.silent++;
-        vfx_reset(inst);
+        vfx_reset(&inst->st);
+        inst->eng = 0;
         goto done;
     }
 
@@ -177,7 +182,7 @@ static void vocal_process(void *self, void *in, void *out, void *midi, void *eve
     if (!(v >= -100.0f && v <= 100.0f)) v = 0.0f;           /* NaN / out of range */
     st.last_v = v;
     { float a = v < 0 ? -v : v; if (a > st.max_abs_v) st.max_abs_v = a; }
-    engaged = !(v > -1.0f && v < 1.0f);                    /* +-1 dead zone around the neutral position */
+    engaged = inst->eng = vfx_engage(v, inst->eng);        /* engage at |v| >= 1, release below 0.5: no toggling around the dead zone edge */
     target = engaged ? v * 0.01f : 0.0f;
     if (g_invert) target = -target;
 
@@ -193,7 +198,7 @@ static void vocal_process(void *self, void *in, void *out, void *midi, void *eve
 
     fpscr = fpscr_get();
     fpscr_set(fpscr | FPSCR_FZ);
-    run_dsp(inst, L, R, frames, target, engaged, &processed);
+    run_dsp(&inst->st, L, R, frames, target, engaged, &processed);
     fpscr_set(fpscr);
     if (processed) st.dsp_blocks++; else st.bypass_blocks++;
     if (timed) t2 = now_us();
@@ -227,29 +232,43 @@ static void log_write(const char *tag, unsigned secs)
         "slot 0x%08x: %08x -> %08x  dsp=%s invert=%d\n"
         "calls=%u dsp_blocks=%u bypass_blocks=%u stock_passthru=%u nonalias=%u silent=%u bad_buf=%u inst=%u recycled=%u\n"
         "param last=%.2f max_abs=%.2f frames=%u\n"
-        "timing (sampled, %u calls timed; us per call incl. the stock process): total avg=%u max=%u | dsp avg=%u max=%u | stock avg=%u max=%u\n"
+        "timing %s (sampled, %u calls timed; us per call incl. the stock process): total avg=%u max=%u | dsp avg=%u max=%u | stock avg=%u max=%u\n"
         "last timed totals(us):",
         VFX_VERSION, tag, secs, g_exe, g_status, g_why[0] ? " why=" : "", g_why,
         SLOT_ADDR, g_slot_before, g_slot_after, g_dsp ? "ON" : "off(flag absent)", g_invert,
         st.calls, st.dsp_blocks, st.bypass_blocks, st.passthru_stock, st.nonalias, st.silent, st.bad_buf, st.ninst, st.recycled,
         (double)st.last_v, (double)st.max_abs_v, st.last_frames,
-        st.timed, avg(st.tot_us_sum, t), st.tot_us_max, avg(st.dsp_us_sum, t), st.dsp_us_max, avg(st.orig_us_sum, t), st.orig_us_max);
+        g_timing ? "ON" : "off(file revival-vocal-timing absent; the audio path makes no syscall)", st.timed, avg(st.tot_us_sum, t), st.tot_us_max, avg(st.dsp_us_sum, t), st.dsp_us_max, avg(st.orig_us_sum, t), st.orig_us_max);
     for (i = 0; i < (int)last && n < (int)sizeof buf - 12; i++) n += snprintf(buf + n, sizeof buf - n, " %u", st.ring_tot[i]);
     if (n < (int)sizeof buf - 2) n += snprintf(buf + n, sizeof buf - n, "\n");
     fd = open(LOG_PATH, O_WRONLY | O_CREAT | O_TRUNC, 0644);
     if (fd >= 0) { ssize_t w = write(fd, buf, (size_t)n); (void)w; close(fd); }
 }
 
+/* Log traffic goes to the FAT32 partition the PC mounts over USB, so it is bounded: every 5 s while the audio
+ * callback runs during the first five minutes (the first-boot checks), then NO periodic rewrite at all. After that
+ * the file is rewritten only when something that matters changes (see sig), at most once per 30 s. */
+static unsigned log_sig(void)
+{
+    return (st.nonalias != 0) | (st.bad_buf != 0) << 1 | (st.recycled != 0) << 2 | (st.dsp_blocks != 0) << 3 |
+           (st.passthru_stock != 0) << 4 | (st.ninst < 15 ? st.ninst : 15) << 5;
+}
+
 static void *log_thread(void *arg)
 {
-    unsigned secs = 0, last_calls = 0, period = 5;
+    unsigned secs = 0, last_calls = 0, period = 5, last_sig = ~0u;
     (void)arg;
     for (;;) {
         struct timespec ts = { period, 0 };
         nanosleep(&ts, 0);
         secs += period;
-        if (secs >= 300) period = 60;               /* settle to once a minute after five minutes */
-        if (st.calls != last_calls) { last_calls = st.calls; log_write("run", secs); }
+        if (secs < 300) {
+            if (st.calls != last_calls) { last_calls = st.calls; last_sig = log_sig(); log_write("run", secs); }
+        } else {
+            unsigned sg = log_sig();
+            period = 30;
+            if (st.calls != last_calls && sg != last_sig) { last_calls = st.calls; last_sig = sg; log_write("change", secs); }
+        }
     }
     return 0;
 }
@@ -295,15 +314,22 @@ __attribute__((constructor)) static void vfx_init(void)
         int fd = open(FLAG_PATH, O_RDONLY);
         if (fd >= 0) { char c = 0; g_dsp = 1; if (read(fd, &c, 1) == 1 && (c == 'i' || c == 'I')) g_invert = 1; close(fd); }
     }
+    if (VFX_TIMING) {                  /* opt-in measurement: the only thing in the audio path that makes a syscall */
+        int fd = open(TIMING_PATH, O_RDONLY);
+        if (fd >= 0) { g_timing = 1; close(fd); }
+    }
 
+    /* The vtable sits in .rodata (0x846508..0xa60e40), inside the executable's single R E LOAD segment (readelf -lW:
+     * 0x8000..0xac66e4), so the page is mapped R E and holds data only. Make it writable for one store, then give
+     * back exactly R E. No code runs from this page, so dropping EXEC while it is writable is harmless. */
     g_orig = (process_fn)(uintptr_t)*slot;
     page = (uintptr_t)slot & ~(uintptr_t)(pg - 1);
-    if (mprotect((void *)page, (size_t)pg, PROT_READ | PROT_WRITE | PROT_EXEC) != 0) {   /* page also holds code: keep EXEC */
+    if (mprotect((void *)page, (size_t)pg, PROT_READ | PROT_WRITE) != 0) {
         g_status = ST_MPROTECT; g_why = "mprotect rw failed"; goto report;
     }
     *slot = (uint32_t)(uintptr_t)&vocal_process;
     g_slot_after = *slot;
-    mprotect((void *)page, (size_t)pg, PROT_READ | PROT_EXEC);
+    mprotect((void *)page, (size_t)pg, PROT_READ | PROT_EXEC);   /* back to exactly what the segment had */
     g_status = ST_INSTALLED;
     unsetenv("LD_PRELOAD");                          /* children of the player start clean */
 

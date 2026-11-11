@@ -42,14 +42,14 @@ command -v qemu-arm-static >/dev/null || { echo "qemu-arm-static missing (apt-ge
 mkdir -p "$sys/pmds/bin"
 cp "$OUT/libvocalfx.so" "$sys/pmds/bin/libvocalfx.so"
 CFLAGS=(-std=gnu11 -O2 -Wall -Wextra -march=armv6 -mfpu=vfp -mfloat-abi=softfp -marm -fno-pie
-        -fno-stack-protector -U_FORTIFY_SOURCE -U_TIME_BITS -U_FILE_OFFSET_BITS -fno-unwind-tables -fno-asynchronous-unwind-tables)
+        -fno-stack-protector -U_FORTIFY_SOURCE -U_TIME_BITS -U_FILE_OFFSET_BITS -funwind-tables)
 LINK=(-no-pie -nostartfiles -nostdlib -Wl,--hash-style=sysv -Wl,--dynamic-linker=/lib/ld-linux.so.3 -Wl,-rpath-link,"$sys/lib")
 # the stub's fake firmware symbols go to the firmware's real addresses
 "$CROSS-gcc" "${CFLAGS[@]}" "${LINK[@]}" -Wl,--export-dynamic \
   -Wl,--section-start=.peq_proc=0x4f524c -Wl,--section-start=.peq_d1=0x4f5730 -Wl,--section-start=.peq_d0=0x4f58d8 \
   -Wl,--section-start=.peq_vt=0x877e48 -o "$sys/pmds/bin/pmplayer.real" "$here/test/stub_pmplayer.c" \
-  "$sys/lib/libm.so.6" "$sys/lib/libc.so.6"
-"$CROSS-gcc" "${CFLAGS[@]}" "${LINK[@]}" -o "$sys/pmds/bin/dlopen_test" "$here/test/dlopen_test.c" "$sys/lib/libdl.so.2" "$sys/lib/libc.so.6"
+  "$sys/lib/libm.so.6" "$sys/lib/libdl.so.2" "$sys/lib/libgcc_s.so.1" "$sys/lib/libc.so.6"
+"$CROSS-gcc" "${CFLAGS[@]}" "${LINK[@]}" -o "$sys/pmds/bin/dlopen_test" "$here/test/dlopen_test.c" "$sys/lib/libdl.so.2" "$sys/lib/libgcc_s.so.1" "$sys/lib/libc.so.6"
 "$CROSS-readelf" -l -W "$sys/pmds/bin/pmplayer.real" | grep -E 'LOAD|INTERP'
 "$CROSS-nm" -D "$sys/pmds/bin/pmplayer.real" | grep -E 'PeqAudio|m_sampleRate'
 
@@ -96,11 +96,19 @@ echo "-- log thread: 300 blocks, then the player lives on for 7 s so the periodi
 echo > "$FLAG"
 run tone 100 300 7 | expect "periodic log run" 'v["ratio"]>1.38 && v["ratio"]<1.42'
 grep -q '\[run\]' "$LOG" && grep -q "calls=300 dsp_blocks=300" "$LOG" && echo "  ok   periodic log written" || { echo "  FAIL periodic log"; cat "$LOG"; fails=1; }
+grep -q "timing off" "$LOG" && grep -q "sampled, 0 calls timed" "$LOG" && echo "  ok   timing is OFF by default (no revival-vocal-timing): 0 calls timed, so no syscall in the audio path" || { echo "  FAIL default timing state"; cat "$LOG"; fails=1; }
+echo "-- opt-in timing: revival-vocal-timing present"
+TFLAG="$sys/mnt/public/.Pacemaker/revival-vocal-timing"; echo > "$TFLAG"
+run tone 100 200 7 | expect "timed run" 'v["ratio"]>1.38 && v["ratio"]<1.42'
+grep -q "timing ON" "$LOG" && grep -q "sampled, 66 calls timed" "$LOG" && echo "  ok   timing ON: first 64 calls + calls 128 and 192 timed (66)" || { echo "  FAIL opt-in timing"; cat "$LOG"; fails=1; }
+rm -f "$TFLAG"
+echo "-- engage hysteresis lives in the header and is covered natively; here: a unwinding pass through the hook"
+run throw 0 | expect "forced unwind from inside the stock process passes through libvocalfx up to the caller" 'v["unwound"]==1 && v["via_lib"]>=1'
 echo "-- sample log:"; cat "$LOG"
 
 echo "-- fail-safe: a stub whose vtable sits at another address (as in a different firmware) must NOT be patched"
 mkdir -p "$sys/tmp/bad"
-"$CROSS-gcc" "${CFLAGS[@]}" "${LINK[@]}" -Wl,--export-dynamic   -Wl,--section-start=.peq_proc=0x4f524c -Wl,--section-start=.peq_d1=0x4f5730 -Wl,--section-start=.peq_d0=0x4f58d8   -Wl,--section-start=.peq_vt=0x877e58 -o "$sys/tmp/bad/pmplayer.real" "$here/test/stub_pmplayer.c" "$sys/lib/libm.so.6" "$sys/lib/libc.so.6"
+"$CROSS-gcc" "${CFLAGS[@]}" "${LINK[@]}" -Wl,--export-dynamic   -Wl,--section-start=.peq_proc=0x4f524c -Wl,--section-start=.peq_d1=0x4f5730 -Wl,--section-start=.peq_d0=0x4f58d8   -Wl,--section-start=.peq_vt=0x877e58 -o "$sys/tmp/bad/pmplayer.real" "$here/test/stub_pmplayer.c" "$sys/lib/libm.so.6" "$sys/lib/libdl.so.2" "$sys/lib/libgcc_s.so.1" "$sys/lib/libc.so.6"
 echo > "$FLAG"; : > "$LOG"
 Q -E LD_PRELOAD=/pmds/bin/libvocalfx.so "$sys/tmp/bad/pmplayer.real" tone 100 60 | grep RESULT | expect "mismatch -> untouched stock" 'v["stock_hits"]==60 && v["ratio"]>0.499 && v["ratio"]<0.501'
 grep -q "status=-3" "$LOG" && echo "  ok   log says status=-3 (stock bytes differ, nothing patched)" || { echo "  FAIL mismatch log"; cat "$LOG"; fails=1; }

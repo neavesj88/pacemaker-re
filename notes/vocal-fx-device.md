@@ -29,7 +29,13 @@ stereo-widened or reverb-heavy EDM vocals (section 7). CPU cost of the time-doma
   this order: **Crush** (`+0x338`), **Peq = "Wah"** (`+0x344`), **Filter** (`+0x328`), **Trans** (`+0x33c`), **Echo**
   (DelayAudioProcess, `+0x32c`), **Roll** (`+0x330`), **Delay** (`+0x340`), **Reverb** (FxAudioProcess, `+0x334`), **EQ**
   (`+0x2ac`). `StreamedAudioProcess::process` (0x4afab8) calls them front to back through vptr slot `+0x14`, first
-  in->out, then out->out in place. (Whether `AudioProcessFilterSorter` at 0x498dc4 reorders them was not checked [U].)
+  in->out, then out->out in place. `AudioProcessContainer::addBack` (0x497258) re-sorts the container after every add with `AudioProcessFilterSorter`
+  (operator() 0x498dc4 compares ranks looked up by lower-cased `getName()`), and the rank table built in its ctor (0x499974;
+  strings read from the ELF) is transitioncomponent 0, reverse 1, loop 2, crush 3, **peq 4**, filter 5, trans 6, echo 7,
+  roll 8, delay 9, reverb 10, eq 11 [V, 11 Nov 2026]. The names given to the Crush and Peq constructors in
+  `MixChannel::MixChannel` (0x493538) are the literals `crush` and `peq` (0x86de80 / 0x86de88), so the sort reproduces the
+  constructor order. An unlisted name would get rank 0 from `operator[]` and sort first, but Crush (rank 3) is always in
+  the container and sorts before Peq, so Peq is never at index 0.
   Wah therefore sits after Crush and before Filter.
 - `MixChannel::processExt` (0x49176c): position/time-stretch process writes the deck signal to a "cue" buffer (`param_3`),
   then the FX chain runs `param_3 -> param_2` (or only EQ when `param_6` is true). The FX output goes on to the crossfader.
@@ -235,7 +241,7 @@ Six coordinated instruction patches versus one data word. Reusing the Wah slot i
 Code, build, tests and install text are in `device/vocalfx/` (README there). Changes to the plan above, all from a
 second reading of the decompile (`work/vfx/dc1/004f524c.c`, `004afab8.c`, `004ae168.c`) and from measurement:
 
-- **Peq is the second FX in the chain, so it is always called with `in == out`** (`StreamedAudioProcess::process`
+- **Peq is the second FX in the chain, so it is always called with `in == out`** (sorter ranks checked, section 1.1) (`StreamedAudioProcess::process`
   passes `(param_2, param_2)` from the second process on). `copyFrom(x, x)` is a no-op, and the silent-flag event pump of
   section 4 is safe: set `in[4]`, call the original, restore `in[4]`. For `in != out` (not the live chain) the library
   calls the original untouched, because with a silent input `copyFrom` does not copy audio into `out` and does not set
@@ -252,5 +258,8 @@ second reading of the decompile (`work/vfx/dc1/004f524c.c`, `004afab8.c`, `004ae
   ELF: `[2] = 0x4f5730`, `[3] = 0x4f58d8`, `[7] (+0x1c) = 0x4f524c`. The library checks all of them before it writes.
 - The preload library must be linked against the device's own libs: the compiler's default `_TIME_BITS=64` makes
   references glibc 2.4 does not have; `build.sh` removes it and audits every undefined symbol version (all `GLIBC_2.4`).
+- Review round (11 Nov 2026): hook page is mapped read/write only for the store (the vtable is in `.rodata`, no code on the
+  page); audio path has no syscall unless `revival-vocal-timing` exists; library carries `.ARM.exidx`; log traffic after
+  five minutes only on milestone changes; engage with hysteresis (on at 1.0, off below 0.5); input sanitising; knee 0.97.
 - Not yet done: any run on the device. The first boot is observer-only (flag file absent) so the hook, the 512-frame
   call size and the stock Wah cost can be read from `revival-vocal.log` before the DSP is enabled.

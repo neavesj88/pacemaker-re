@@ -31,7 +31,7 @@ CFLAGS=(-std=gnu11 -O2 -Wall -Wextra -D_GNU_SOURCE
         -march=armv6 -mtune=arm1136jf-s -mfpu=vfp -mfloat-abi=softfp -marm   # ARM mode: the player is ARM, not Thumb
         -fPIC -fvisibility=hidden -fno-stack-protector -U_FORTIFY_SOURCE
         -U_TIME_BITS -U_FILE_OFFSET_BITS                                     # Debian defines both = 64; the device libc 2.4 has no *64time symbols
-        -fno-unwind-tables -fno-asynchronous-unwind-tables                   # no __aeabi_unwind_cpp_pr0 reference
+        -funwind-tables                                                      # .ARM.exidx: a C++ exception thrown inside the stock process() can unwind through vocal_process
         "-ffile-prefix-map=$repo=." ${EXTRA_CFLAGS:-})
 for s in vocal_dsp vocalfx; do "$CROSS-gcc" "${CFLAGS[@]}" -I"$here" -c "$here/$s.c" -o "$OUT/obj/$s.o"; done
 
@@ -40,7 +40,7 @@ for s in vocal_dsp vocalfx; do "$CROSS-gcc" "${CFLAGS[@]}" -I"$here" -c "$here/$
 "$CROSS-gcc" -shared -nostdlib -o "$OUT/libvocalfx.so" "$OUT/obj/vocal_dsp.o" "$OUT/obj/vocalfx.o" \
   -Wl,--as-needed -Wl,--hash-style=sysv -Wl,-z,now -Wl,-z,noexecstack -Wl,-z,max-page-size=4096 -Wl,-z,common-page-size=4096 -Wl,--build-id=none -Wl,--no-undefined \
   -Wl,-soname,libvocalfx.so -Wl,-rpath-link,"$sys/lib" \
-  "$sys/lib/libpthread.so.0" "$sys/lib/libdl.so.2" "$sys/lib/libm.so.6" "$sys/lib/libc.so.6"
+  "$sys/lib/libpthread.so.0" "$sys/lib/libdl.so.2" "$sys/lib/libm.so.6" "$sys/lib/libgcc_s.so.1" "$sys/lib/libc.so.6"
 "$CROSS-strip" --strip-unneeded "$OUT/libvocalfx.so"
 
 # e_flags: the device libs carry 0x04000002 (EABI v4). ld.so 2.4 ignores e_flags; match them anyway.
@@ -85,7 +85,8 @@ for n in sorted(need):
 vers = sorted({n.split('@')[1] for n in need})
 print('symbol versions used:', ', '.join(vers))
 print('undefined symbols checked against device libs:', len(need))
-if any(v != 'GLIBC_2.4' for v in vers): bad.append('version other than GLIBC_2.4: %s' % vers)
+if any(v not in ("GLIBC_2.4", "GCC_3.5") for v in vers): bad.append("version other than GLIBC_2.4 / GCC_3.5: %s" % vers)
+if any(v == "GCC_3.5" and not n.startswith("__aeabi_unwind_cpp_pr") for n in need for v in [n.split("@")[1]]): bad.append("GCC_3.5 symbol other than the unwind personality routines")
 if bad: print('AUDIT FAILED:\n  ' + '\n  '.join(bad)); sys.exit(1)
 print('AUDIT OK: every needed symbol@version is defined by the device libs')
 PY

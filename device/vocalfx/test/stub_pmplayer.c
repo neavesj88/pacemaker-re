@@ -15,12 +15,34 @@
 #include <string.h>
 #include <math.h>
 #include <unistd.h>
+#include <setjmp.h>
+/* dladdr by hand: _GNU_SOURCE would pull in the C23 strtol redirects the device libc 2.4 does not have */
+typedef struct { const char *dli_fname; void *dli_fbase; const char *dli_sname; void *dli_saddr; } dlinfo_t;
+extern int dladdr(const void *, dlinfo_t *);
+#include <unwind.h>
 #include "armstart.h"
 
 #define VIS __attribute__((visibility("default"), used, noinline))
 #define BLK 512
 
 static volatile int g_orig_calls, g_stock_hits;
+
+/* "throw" mode: the stand-in stock process starts a forced unwind (what a C++ throw does, minus the handler search),
+ * which must be able to walk up through the preload library's frame (needs its .ARM.exidx) to the test_main frame. */
+static int g_throw, g_unwind_result, g_via_lib;
+static uintptr_t g_stop_cfa;
+static jmp_buf g_jb;
+static _Unwind_Exception g_exc;
+static _Unwind_Reason_Code stop_fn(int ver, _Unwind_Action act, _Unwind_Exception_Class cls, struct _Unwind_Exception *e,
+                                   struct _Unwind_Context *ctx, void *arg)
+{
+    dlinfo_t di;
+    (void)ver; (void)cls; (void)e; (void)arg;
+    if (act & _UA_END_OF_STACK) { g_unwind_result = -1; longjmp(g_jb, 1); }
+    if (dladdr((void *)_Unwind_GetIP(ctx), &di) && di.dli_fname && strstr(di.dli_fname, "libvocalfx")) g_via_lib++;
+    if (_Unwind_GetCFA(ctx) > g_stop_cfa) { g_unwind_result = 1; longjmp(g_jb, 1); }
+    return _URC_NO_REASON;
+}
 
 /* the vtable, same 80 bytes as the firmware's (read from work/fw-180096069/bin/pmplayer) */
 __asm__(".section .peq_vt,\"ax\",%progbits\n.align 2\n"
@@ -47,6 +69,7 @@ void stub_process(void *self, void *in, void *out, void *midi, void *ev)
     float pending;
     (void)midi; (void)ev;
     g_orig_calls++;
+    if (g_throw) { memset(&g_exc, 0, sizeof g_exc); _Unwind_ForcedUnwind(&g_exc, stop_fn, 0); g_unwind_result = -2; longjmp(g_jb, 1); }
     if (ib != ob) {                                       /* AudioProcessBuffer::copyFrom(out, in) */
         if (!ib[4]) {
             uint32_t n = *(uint32_t *)(ib + 0x38), c;
@@ -81,7 +104,7 @@ int test_main(int argc, char **argv)
     float val = argc > 2 ? (float)atof(argv[2]) : 0.0f;
     int blocks = argc > 3 ? atoi(argv[3]) : 200, b, i, aliased = strcmp(mode, "nonalias") != 0;
     double sin_in = 0, sin_out = 0;
-    uint32_t slot_now = vtable[7];
+    volatile uint32_t slot_now = vtable[7];
     char line[400];
 
     *(uint32_t *)obj = (uint32_t)(uintptr_t)&vtable[2];   /* vptr */
@@ -91,6 +114,18 @@ int test_main(int argc, char **argv)
     *(float **)(ib + 8) = inL; *(float **)(ib + 12) = inR;
     *(float **)(ob + 8) = oL; *(float **)(ob + 12) = oR;
 
+    if (strcmp(mode, "throw") == 0) {                    /* a forced unwind from inside the stock process, through the hook, up to here */
+        volatile int marker = 0;
+        g_stop_cfa = (uintptr_t)&marker;
+        ib[4] = 0;
+        *(float **)(ib + 8) = oL; *(float **)(ib + 12) = oR;
+        memcpy(oL, inL, sizeof oL); memcpy(oR, inR, sizeof oR);
+        if (setjmp(g_jb) == 0) { g_throw = 1; call_slot(obj, ib, ib); g_throw = 0; put("FAIL throw mode: call returned\n"); return 2; }
+        g_throw = 0;
+        snprintf(line, sizeof line, "RESULT mode=throw unwound=%d via_lib=%d silent_flag=%d slot=%08x\n", g_unwind_result, g_via_lib, ib[4], slot_now);
+        put(line);
+        return 0;
+    }
     for (b = 0; b < blocks; b++) {
         for (i = 0; i < BLK; i++) {
             double t = (double)(b * BLK + i) / 44100.0;

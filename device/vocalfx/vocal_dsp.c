@@ -120,7 +120,11 @@ int vfx_process(const vfx_coefs *c, vfx_state *s, vfx_real *L, vfx_real *R, unsi
         vfx_real xm[VFX_SUB], xs[VFX_SUB], lo[VFX_SUB], t1[VFX_SUB], mid[VFX_SUB], hi[VFX_SUB], side[VFX_SUB];
 
         for (i = 0; i < cnt; i++) {
-            vfx_real m = 0.5f * (Lp[i] + Rp[i]), sd = 0.5f * (Lp[i] - Rp[i]);
+            vfx_real li = Lp[i], ri = Rp[i], m, sd;
+            if (!(VFX_ABS(li) < VFX_SANE)) li = 0.0f;         /* NaN / Inf / absurd: contained to this one sample */
+            if (!(VFX_ABS(ri) < VFX_SANE)) ri = 0.0f;
+            Lp[i] = li; Rp[i] = ri;
+            m = 0.5f * (li + ri); sd = 0.5f * (li - ri);
             xm[i] = m + dn; xs[i] = sd - dn;                  /* alternating Nyquist offset, see VFX_DENORM_OFF */
             dn = -dn;
         }
