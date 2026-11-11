@@ -7,4 +7,8 @@ repository.workspace = true
 
 [dependencies]
 pm-formats = { version = "0.1.0", path = "../pm-formats" }
-pm-analysis = { version = "0.1.0", path = "../pm-analysis" }
+# symphonia: same version as pm-analysis, but decoded here with the channels kept (pm-analysis
+# only returns a mono mix-down). vorbis_rs: Ogg Vorbis encoder (BSD-3, vendored libvorbis C
+# sources built by the cc crate, no system libraries).
+symphonia = { version = "0.6.1", features = ["all"] }
+vorbis_rs = "0.5.6"
