@@ -29,9 +29,12 @@ export type MatchOptions = {
   versionMode: VersionMode;
   /** Candidates kept per request for the user to choose from. */
   maxCandidates: number;
+  /** A best candidate whose artist is less alike than this (0-100) is asked about even when its
+   * score reaches `acceptAt`, so a near-identical artist name cannot pass on an exact title. */
+  artistMin: number;
 };
 
-export const DEFAULT_OPTIONS: MatchOptions = { acceptAt: 85, reviewAt: 60, margin: 3, versionMode: "strict", maxCandidates: 5 };
+export const DEFAULT_OPTIONS: MatchOptions = { acceptAt: 85, reviewAt: 60, margin: 3, versionMode: "strict", maxCandidates: 5, artistMin: 80 };
 
 /** Score cap when the artist is missing on either side. */
 export const TITLE_ONLY_CAP = 80;
@@ -56,6 +59,7 @@ export function cleanOptions(raw: unknown): MatchOptions {
     margin: clampInt(r.margin, 0, 50, DEFAULT_OPTIONS.margin),
     versionMode: mode,
     maxCandidates: clampInt(r.maxCandidates, 1, 20, DEFAULT_OPTIONS.maxCandidates),
+    artistMin: clampInt(r.artistMin, 0, 100, DEFAULT_OPTIONS.artistMin),
   };
 }
 
@@ -257,7 +261,9 @@ function artistScore(a: Prepared, b: Prepared): number {
   return Math.max(whole, coverage);
 }
 
-const ONE_SIDED: Record<VersionMode, number> = { strict: 0.9, lenient: 0.97, ignore: 1 };
+// strict is set so that a one-sided mix name (a perfect match otherwise) lands just under the
+// default accept score of 85: the wrong edit is asked about, not taken
+const ONE_SIDED: Record<VersionMode, number> = { strict: 0.84, lenient: 0.97, ignore: 1 };
 const DIFFERENT: Record<VersionMode, number> = { strict: 0.75, lenient: 0.9, ignore: 1 };
 
 function versionFactor(a: string, b: string, mode: VersionMode): number {
@@ -434,6 +440,9 @@ export function matchItem(index: Index, item: Pick<RequestItem, "id" | "artist" 
     return { itemId: item.id, candidates, status: "missing", reason: top ? `closest is ${top.score}, below ${opts.reviewAt}` : "nothing similar in the library" };
   }
   if (top.score >= opts.acceptAt) {
+    if (top.artist !== null && top.artist * 100 < opts.artistMin) {
+      return { itemId: item.id, candidates, status: "review", reason: `artist differs (${Math.round(top.artist * 100)}% alike)` };
+    }
     const second = candidates[1];
     if (second && second.score >= opts.acceptAt && top.score - second.score < opts.margin) {
       return { itemId: item.id, candidates, status: "review", reason: "two library tracks match about equally" };

@@ -174,6 +174,8 @@ class Matcher {
     this.parsedText = this.text;
     if (this.parsed.error) {
       this.error = this.parsed.error;
+      // an older run was aborted by the token bump above and will not reset this itself
+      this.running = false;
       return;
     }
     await this.run();
@@ -185,7 +187,9 @@ class Matcher {
     const lib = session.library;
     const items = this.parsed?.items ?? [];
     if (!lib || !items.length) {
+      this.#token++;
       this.rows = [];
+      this.running = false;
       return;
     }
     const token = ++this.#token;

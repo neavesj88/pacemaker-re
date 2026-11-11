@@ -31,7 +31,7 @@
 
   const STATUS: Record<Exclude<Filter, "all">, string> = { owned: "Owned", review: "Check", missing: "Missing" };
   const VERSION_HELP: Record<VersionMode, string> = {
-    strict: "A different or missing mix name (Extended Mix, Radio Edit...) costs score, so those matches are asked about.",
+    strict: "A different or missing mix name (Extended Mix, Radio Edit...) costs enough score that, with the default accept score, those matches are asked about.",
     lenient: "A different mix name costs a little score.",
     ignore: "Mix names are not compared.",
   };
@@ -133,6 +133,10 @@
               <option value="lenient">Count a little</option>
               <option value="ignore">Ignore</option>
             </select>
+          </label>
+          <label>
+            Ask when the artist is less alike than (%)
+            <input type="number" min="0" max="100" value={matcher.options.artistMin} onchange={(e) => matcher.setOptions({ artistMin: number(e) })} />
           </label>
           <label>
             Suggestions per line

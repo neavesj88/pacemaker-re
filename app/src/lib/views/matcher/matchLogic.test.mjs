@@ -81,7 +81,7 @@ test("scores: a typo in the title or artist stays an accepted match, a wrong art
 
 test("scores: mix names. Original mix equals none; one-sided and differing mix names cost score by mode", () => {
   assert.equal(score("A Act", "Tune (Original Mix)", "A Act", "Tune"), 100);
-  assert.equal(score("A Act", "Tune", "A Act", "Tune (Extended Mix)"), 90);
+  assert.equal(score("A Act", "Tune", "A Act", "Tune (Extended Mix)"), 84);
   assert.equal(score("A Act", "Tune", "A Act", "Tune (Extended Mix)", "lenient"), 97);
   assert.equal(score("A Act", "Tune", "A Act", "Tune (Extended Mix)", "ignore"), 100);
   const differ = score("A Act", "Tune (Radio Edit)", "A Act", "Tune (Extended Mix)");
@@ -128,8 +128,9 @@ test("matchItem: statuses against a small library", () => {
   const none = row("Nobody Known", "Not In The Library");
   assert.deepEqual([none.status, none.candidates.length], ["missing", 0]);
 
-  const lowBar = row("Other Band", "Second Tune", { ...O, acceptAt: 70, reviewAt: 50 });
+  const lowBar = row("Other Band", "Second Tune", { ...O, acceptAt: 70, reviewAt: 50, artistMin: 0 });
   assert.equal(lowBar.status, "owned", "thresholds are settings");
+  assert.equal(row("Other Band", "Second Tune", { ...O, acceptAt: 70, reviewAt: 50 }).status, "review", "a different artist is still asked about unless the artist setting is off");
 });
 
 test("a track with no artist tag is also found by the artist and title in its file name", () => {
@@ -207,11 +208,28 @@ test("searchTracks needs every typed word, ignoring case and accents, and stops 
 
 test("options are clamped and always consistent", () => {
   assert.deepEqual(cleanOptions(undefined), DEFAULT_OPTIONS);
-  assert.deepEqual(cleanOptions({ acceptAt: 500, reviewAt: -3, margin: "7", versionMode: "lenient", maxCandidates: 99 }), { acceptAt: 100, reviewAt: 1, margin: 7, versionMode: "lenient", maxCandidates: 20 });
+  assert.deepEqual(cleanOptions({ acceptAt: 500, reviewAt: -3, margin: "7", versionMode: "lenient", maxCandidates: 99 }), { acceptAt: 100, reviewAt: 1, margin: 7, versionMode: "lenient", maxCandidates: 20, artistMin: 80 });
   assert.equal(cleanOptions({ acceptAt: 70, reviewAt: 90 }).reviewAt, 70, "review never above accept");
   assert.equal(cleanOptions({ versionMode: "wild" }).versionMode, "strict");
   assert.equal(cleanOptions({ acceptAt: "x" }).acceptAt, 85);
   assert.equal(cleanOptions(null).margin, 3);
+  assert.equal(cleanOptions({ artistMin: 500 }).artistMin, 100);
+  assert.equal(cleanOptions({ artistMin: "x" }).artistMin, 80);
+});
+
+test("one-sided mix name and a near-identical artist are asked about with the default settings", () => {
+  const ix = buildIndex([track(1, "Alpha Band", "Moon Song"), track(2, "Chris Brown", "Intro"), track(3, "Beta Crew", "River Run")]);
+  const row = (a, t, opts = O) => matchItem(ix, { id: 0, artist: a, title: t }, opts);
+  const radio = row("Alpha Band", "Moon Song (Radio Edit)");
+  assert.deepEqual([radio.status, radio.candidates[0].track_id], ["review", 1], "request names a mix, library has none");
+  assert.equal(row("Beta Crew", "River Run - Extended Mix").status, "review");
+  assert.equal(row("Alpha Band", "Moon Song (Radio Edit)", { ...O, versionMode: "lenient" }).status, "owned", "lenient accepts it");
+  const brooks = row("Chris Brooks", "Intro");
+  assert.equal(brooks.status, "review");
+  assert.match(brooks.reason, /artist differs/);
+  assert.equal(row("Chris Brooks", "Intro", { ...O, artistMin: 0 }).status, "owned", "artistMin 0 turns the check off");
+  assert.equal(row("Chris Brown", "Intro").status, "owned");
+  assert.equal(row("chris brown", "INTRO").status, "owned");
 });
 
 // ---- the indexed lookup must find what a full scan finds ----------------------------------
