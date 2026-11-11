@@ -4,8 +4,11 @@
   import type { Peak } from "$lib/api/analysis";
   import type { Track } from "$lib/api/types";
   import { mmss } from "$lib/format";
+  import { analysis } from "$lib/state/analysis.svelte";
+  import { jobs } from "$lib/state/jobs.svelte";
   import { playback } from "$lib/state/playback.svelte";
   import { session } from "$lib/state/session.svelte";
+  import { tempo } from "$lib/state/tempo.svelte";
   import Button from "$lib/ui/Button.svelte";
   import Stars from "$lib/ui/Stars.svelte";
   import { cachedPeaks, requestPeaks } from "./peakCache";
@@ -91,6 +94,13 @@
       <span>
         {track.bpm && !needs ? track.bpm.toFixed(2) : "–"}
         {#if needs}<span class="chip warn" title={needs}>needs analysis</span>{:else if track.analysed}<span class="chip ok">grid checked</span>{/if}
+        <Button
+          variant="ghost"
+          small
+          disabled={many || !!needs}
+          onclick={() => tempo.askSet(track.track_id)}
+          title={needs ? "Re-analyse this track first: it has no readable beat grid" : many ? "Select one track to type its BPM" : "Type the BPM; the beat grid is rewritten with it"}
+        >Edit</Button>
       </span>
     </div>
     <div class="field">
@@ -103,6 +113,7 @@
         {:else}
           <span class="muted">unknown</span>
         {/if}
+        <Button variant="ghost" small onclick={() => analysis.askSetKey(selectedIds)} title="Set the key by hand{many ? ` of all ${selectedIds.length} selected tracks` : ''}">Edit</Button>
       </span>
     </div>
     <div class="field">
@@ -127,6 +138,12 @@
       <Button small onclick={() => addToCase.ask(selectedIds)}>{many ? `Add ${selectedIds.length} to case…` : "Add to case…"}</Button>
       <Button small onclick={() => addToMix(selectedIds)}>{many ? `Add ${selectedIds.length} to mix` : "Add to mix"}</Button>
       <Button small onclick={() => revealInExplorer(track.track_id)}>Show in Explorer</Button>
+      <Button
+        small
+        disabled={!jobs.canWrite}
+        onclick={() => jobs.askReanalyse(selectedIds)}
+        title="Work out the beat grid and BPM again from the audio"
+      >{many ? `Re-analyse ${selectedIds.length}…` : "Re-analyse…"}</Button>
     </div>
 
     <div class="note">

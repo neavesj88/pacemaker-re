@@ -65,7 +65,7 @@ pub fn setup(app: &mut tauri::App) {
 
 /// The audio file for a `tracks.location` on the volume at `root`. Refuses anything that is not
 /// a plain relative path below `/pmdb_tracks/`.
-fn audio_path(root: &Path, location: &str) -> AppResult<PathBuf> {
+pub(crate) fn audio_path(root: &Path, location: &str) -> AppResult<PathBuf> {
     let rel = location.strip_prefix(naming::LOCATION_PREFIX).ok_or("That track is not stored on the device library.")?;
     let rel = Path::new(rel);
     if rel.as_os_str().is_empty() || !rel.components().all(|c| matches!(c, Component::Normal(_))) {
@@ -124,7 +124,7 @@ pub async fn analysis_peaks(
         .map_err(|e| AppError::from(e.to_string()))?
 }
 
-fn label_of(t: &pm_formats::library::Track) -> String {
+pub(crate) fn label_of(t: &pm_formats::library::Track) -> String {
     match (t.artist.is_empty(), t.title.is_empty()) {
         (false, false) => format!("{} - {}", t.artist, t.title),
         (_, false) => t.title.clone(),
@@ -153,6 +153,50 @@ pub fn analysis_detect_keys(
             events::emit(app, JOB_PROGRESS, p)
         })?)
     })
+}
+
+/// One manual key edit as the UI sends it. `key` is any musical key `Key::parse` reads ("Am",
+/// "F#m", "Bb", "A minor"); a Camelot code ("8A") is refused, because the device and the
+/// detector both store the musical name.
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct KeyEdit {
+    pub track_id: i64,
+    pub key: String,
+}
+
+/// The text stored in `tracks.key` for a typed or picked key: the detector's own spelling
+/// (sharps only, "Am", "F#m", "C"), so a manual key and a detected one compare equal and sort
+/// together. Flats and long forms are accepted on the way in.
+pub(crate) fn canonical_key(text: &str) -> Result<String, String> {
+    let t = text.trim();
+    if t.is_empty() {
+        return Err("The key is empty.".into());
+    }
+    // "CM" is C major in some books and C minor in others, and `Key::parse` lower-cases the suffix,
+    // so it would silently read as minor: ask for "C" or "Cm" instead
+    if t.ends_with('M') {
+        return Err(format!("\"{t}\" is ambiguous: write C for major or Cm for minor."));
+    }
+    key::Key::parse(t).map(|k| k.name()).ok_or_else(|| format!("\"{t}\" is not a musical key (for example Am, F#m, Bb or C)."))
+}
+
+/// Sets the key of tracks by hand, in one transaction: either every entry is valid and written,
+/// or nothing is. Returns how many rows actually changed (a track that already has that key is
+/// not touched). A quick write: it never waits for a running job.
+#[tauri::command]
+pub async fn analysis_set_keys(app: AppHandle, root: String, entries: Vec<KeyEdit>) -> AppResult<usize> {
+    if entries.is_empty() {
+        return Err("No tracks to change.".into());
+    }
+    let mut pending = Vec::with_capacity(entries.len());
+    for e in &entries {
+        pending.push((e.track_id, canonical_key(&e.key)?));
+    }
+    crate::state::quick_write(app, root.clone(), move || -> AppResult<usize> {
+        let mut lib = Library::open(Path::new(&root))?;
+        Ok(lib.set_track_keys(&pending)?)
+    })
+    .await
 }
 
 fn check_key_args(track_ids: Option<&[i64]>, overwrite: bool) -> AppResult<()> {
@@ -206,9 +250,11 @@ fn detect_keys(
     for (i, t) in targets.iter().enumerate() {
         let label = label_of(t);
         let done = i + 1;
-        let outcome = match lib.track_paths(&t.location) {
-            None => Err("not stored under /pmdb_tracks/".to_string()),
-            Some((audio, _)) => decode::decode(&audio).map_err(|e| e.to_string()).map(|d| key::detect(&d.mono, d.sample_rate)),
+        // the validated resolver, never `Library::track_paths`: a stored location with `..` or an
+        // absolute remainder must not lead the decoder outside the music folder
+        let outcome = match audio_path(lib.root(), &t.location) {
+            Err(e) => Err(e.to_string()),
+            Ok(audio) => decode::decode(&audio).map_err(|e| e.to_string()).map(|d| key::detect(&d.mono, d.sample_rate)),
         };
         let mut p = Progress::new(KEYS_JOB, label, done, total, "");
         match outcome {
@@ -275,6 +321,7 @@ macro_rules! analysis_commands {
                 $($acc)*
                 $crate::commands::analysis::analysis_peaks,
                 $crate::commands::analysis::analysis_detect_keys,
+                $crate::commands::analysis::analysis_set_keys,
             ];
             $($rest),*
         }
@@ -413,6 +460,31 @@ mod tests {
         drop((lib, lib2));
         std::fs::remove_dir_all(base).unwrap();
         std::fs::remove_dir_all(base2).unwrap();
+    }
+
+    #[test]
+    fn manual_keys_are_stored_in_the_detectors_spelling() {
+        assert_eq!(canonical_key("Am").unwrap(), "Am");
+        assert_eq!(canonical_key(" bb ").unwrap(), "A#");
+        assert_eq!(canonical_key("Ebm").unwrap(), "D#m");
+        assert_eq!(canonical_key("A minor").unwrap(), "Am");
+        assert_eq!(canonical_key("c major").unwrap(), "C");
+        for bad in ["", "  ", "8A", "H", "C#maj7", "Am7", "key", "CM", "F#M", "A M"] {
+            assert!(canonical_key(bad).is_err(), "{bad:?} must be refused");
+        }
+        // every spelling fits the device's 4-character key column
+        for tonic in ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"] {
+            for suffix in ["", "m"] {
+                let k = canonical_key(&format!("{tonic}{suffix}")).unwrap();
+                assert!(k.chars().count() <= pm_formats::ops_analysis::MAX_KEY_CHARS);
+            }
+        }
+    }
+
+    #[test]
+    fn key_edit_payload_parses() {
+        let e: Vec<KeyEdit> = serde_json::from_str(r#"[{"track_id":3,"key":"F#m"}]"#).unwrap();
+        assert_eq!((e[0].track_id, e[0].key.as_str()), (3, "F#m"));
     }
 
     #[test]

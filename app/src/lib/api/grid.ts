@@ -36,6 +36,19 @@ export type GridEdit =
   | { kind: "set_bpm"; bpm: number }
   | { kind: "shift_beats"; beats: number };
 
+/** A tempo edit applied to many tracks; the same three edits the grid editor offers. */
+export type TempoOp = { kind: "halve" } | { kind: "double" } | { kind: "set"; bpm: number };
+
+/** What a tempo edit will do to one track: `after` is null and `skip` says why when it is left alone. */
+export type TempoRow = {
+  track_id: number;
+  label: string;
+  /** The tempo stored now (median of the grid); null when the track has no readable grid. */
+  before: number | null;
+  after: number | null;
+  skip: string | null;
+};
+
 export type GridSaved = { wrote_grid: boolean; wrote_cue: boolean };
 
 export const gridLoad = (root: string, trackId: number) => invoke<GridLoad>("grid_load", { root, trackId });
@@ -49,6 +62,17 @@ export const gridAnalyse = (root: string, trackId: number) => invoke<GridDoc>("g
 /** Writes the grid (`doc`) and/or the cue (`cue.frames`, null clears it); a null part is left alone. */
 export const gridSave = (root: string, trackId: number, doc: GridDoc | null, cue: { frames: number | null } | null) =>
   invoke<GridSaved>("grid_save", { root, trackId, doc, cue });
+
+/** What `op` would do to each track, without writing anything. The same code as the job below, so
+ * the confirmation lists exactly what then happens. */
+export const gridTempoPlan = (root: string, trackIds: number[], op: TempoOp) =>
+  invoke<TempoRow[]>("grid_tempo_plan", { root, trackIds, op });
+
+/** Starts the "tempo-edit" write job: each changed track's .str and BPM are rewritten together.
+ * Returns once the job has started; progress arrives as job events with `job === "tempo-edit"`.
+ * Normally started through `tempo.askHalve/askDouble/askSet` (views/grid/tempo.svelte.ts). */
+export const gridTempoApply = (root: string, trackIds: number[], op: TempoOp) =>
+  invoke<void>("grid_tempo_apply", { root, trackIds, op });
 
 /** Names of the mixes that contain the track. A mix clip keeps the tempo the track had when the
  * mix was made, so saving a new grid leaves these mixes out of step until they are beatmatched

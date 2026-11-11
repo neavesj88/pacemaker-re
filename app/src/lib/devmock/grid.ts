@@ -1,7 +1,9 @@
 // Mock of src-tauri/src/commands/grid.rs. Synthetic constant grids per demo track; edits mirror
 // the Rust math in crates/pm-formats/src/ops_grid.rs closely enough to review the UI, and saves
 // are kept in memory only. Picked up automatically by devmock/index.ts.
+import { emit } from "@tauri-apps/api/event";
 import { needs, tracks } from "./db";
+import { jobLock } from "./jobs";
 import { mixNamesUsing } from "./mixes";
 import type { Handlers } from "./types";
 
@@ -27,7 +29,7 @@ const trackOf = (id: number) => {
 
 function demoGrid(id: number): Doc {
   const t = trackOf(id);
-  return constantGrid(Math.round(t.bpm), 3000 + ((id * 7919) % 20000), t.play_time_secs * SR, id % 4);
+  return constantGrid(t.bpm, 3000 + ((id * 7919) % 20000), t.play_time_secs * SR, id % 4);
 }
 
 const mod4 = (n: number) => ((n % 4) + 4) % 4;
@@ -130,7 +132,88 @@ function applyEdit(doc: Doc, edit: any, sr: number, total: number | null): Doc {
   throw "invalid: unknown edit";
 }
 
+type PlanRow = { track_id: number; label: string; before: number | null; after: number | null; skip: string | null };
+
+/** Median local tempo of a grid: what the real backend stores in `tracks.bpm`. */
+function medianBpm(doc: Doc): number {
+  const v = doc.beats.map((b) => b.bpm).sort((a, b) => a - b);
+  return v[Math.floor(v.length / 2)] ?? 0;
+}
+
+/** Mirror of commands/grid/tempo.rs `plan`: the preview and the job share it here too. */
+function tempoPlan(ids: number[], op: any): (PlanRow & { doc: Doc | null })[] {
+  if (op.kind === "set" && !(Number.isFinite(op.bpm) && op.bpm >= 20 && op.bpm <= 400)) throw "The tempo must be between 20 and 400 BPM.";
+  const out: (PlanRow & { doc: Doc | null })[] = [];
+  for (const id of new Set(ids)) {
+    const t = tracks.find((x) => x.track_id === id);
+    const skip = (label: string, before: number | null, why: string) => out.push({ track_id: id, label, before, after: null, skip: why, doc: null });
+    if (!t) {
+      skip(`track ${id}`, null, "not in the library");
+      continue;
+    }
+    const label = `${t.artist} - ${t.title}`;
+    const reason = needs.get(id);
+    if (reason === "no .str file" || reason?.startsWith("empty")) {
+      skip(label, null, `${reason}; re-analyse it first`);
+      continue;
+    }
+    const doc = saved.get(id) ?? demoGrid(id);
+    const before = medianBpm(doc);
+    let next: Doc;
+    try {
+      next = applyEdit(doc, op.kind === "set" ? { kind: "set_bpm", bpm: op.bpm } : { kind: op.kind }, SR, (t.play_time_secs + 1) * SR);
+    } catch (e) {
+      skip(label, before, String(e).replace(/^invalid: /, ""));
+      continue;
+    }
+    if (JSON.stringify(next) === JSON.stringify(doc)) skip(label, before, "the grid is already like that");
+    else out.push({ track_id: id, label, before, after: medianBpm(next), skip: null, doc: next });
+  }
+  return out;
+}
+
 export const handlers: Handlers = {
+  grid_tempo_plan: (a) => tempoPlan(a.trackIds, a.op).map(({ doc: _doc, ...row }) => row),
+  // like the real write job: re-plans with the same code, one progress event per track, rows and
+  // grids change together (the row's bpm is the new grid's median), skipped tracks are reported
+  grid_tempo_apply: (a) => {
+    if (jobLock.running) throw "Another job is still running.";
+    if (a.trackIds.length === 0) throw "No tracks to change.";
+    const planned = tempoPlan(a.trackIds, a.op);
+    jobLock.running = true;
+    let ok = 0;
+    let skipped = 0;
+    planned.forEach((p, i) =>
+      setTimeout(async () => {
+        let detail: string | null = null;
+        if (p.doc) {
+          saved.set(p.track_id, p.doc);
+          const t = trackOf(p.track_id);
+          t.bpm = p.after!;
+          ok++;
+        } else {
+          detail = p.skip;
+          skipped++;
+        }
+        await emit("job-progress", {
+          job: "tempo-edit",
+          label: p.label,
+          done: i + 1,
+          total: planned.length,
+          status: p.doc ? "retimed" : "skipped",
+          bpm: p.after,
+          detail,
+          error: null,
+        });
+        if (i === planned.length - 1) {
+          jobLock.running = false;
+          const parts = [ok && `${ok} track${ok === 1 ? "" : "s"} retimed`, skipped && `${skipped} skipped`].filter(Boolean);
+          await emit("job-done", { job: "tempo-edit", ok, failed: 0, summary: parts.join(", ") || "nothing to do", error: null });
+        }
+      }, 500 * (i + 1)),
+    );
+    return null;
+  },
   grid_load: (a) => {
     const t = trackOf(a.trackId);
     const reason = needs.get(a.trackId);

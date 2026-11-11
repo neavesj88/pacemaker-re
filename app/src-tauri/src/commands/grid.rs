@@ -6,6 +6,8 @@
 
 use std::path::Path;
 
+pub mod tempo;
+
 use pm_formats::library::Library;
 use pm_formats::ops_grid::{self, EditCtx, GridDoc, GridEdit, GridLoad};
 use serde::{Deserialize, Serialize};
@@ -124,6 +126,8 @@ macro_rules! grid_commands {
                 $crate::commands::grid::grid_analyse,
                 $crate::commands::grid::grid_mixes_using,
                 $crate::commands::grid::grid_save,
+                $crate::commands::grid::tempo::grid_tempo_plan,
+                $crate::commands::grid::tempo::grid_tempo_apply,
             ];
             $($rest),*
         }

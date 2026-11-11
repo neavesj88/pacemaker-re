@@ -5,9 +5,11 @@
   import { onMount, tick } from "svelte";
   import type { Track } from "$lib/api/types";
   import { mmss } from "$lib/format";
+  import { jobs } from "$lib/state/jobs.svelte";
   import { playback } from "$lib/state/playback.svelte";
   import { selection } from "$lib/state/selection.svelte";
   import { session } from "$lib/state/session.svelte";
+  import { tempo } from "$lib/state/tempo.svelte";
   import ContextMenu from "$lib/ui/ContextMenu.svelte";
   import Stars from "$lib/ui/Stars.svelte";
   import type { ColDef } from "./columns";
@@ -191,7 +193,7 @@
       anchorId = t.track_id;
       select([t.track_id], t.track_id);
     }
-    menu = { x: Math.max(0, Math.min(e.clientX, innerWidth - 230)), y: Math.max(0, Math.min(e.clientY, innerHeight - 250)), ids: [...selection.trackIds] };
+    menu = { x: Math.max(0, Math.min(e.clientX, innerWidth - 230)), y: Math.max(0, Math.min(e.clientY, innerHeight - 400)), ids: [...selection.trackIds] };
   }
 
   const menuItems = $derived.by(() => {
@@ -209,7 +211,13 @@
         label: allFav ? (one ? "Remove from favourites" : `Remove ${n} from favourites`) : one ? "Favourite" : `Favourite ${n} tracks`,
         onclick: () => tracksState.setFavourite(ids, !allFav),
       },
-      { label: one ? "Detect key" : `Detect keys of ${n} tracks`, onclick: () => analysis.askDetectKeys(ids), disabled: !ids.some((id) => analysis.keyless.some((t) => t.track_id === id)) },
+      // key and tempo tools: each opens its own dialog or confirmation naming every track it touches
+      { label: one ? "Key: detect…" : `Key: detect for ${n} tracks…`, onclick: () => analysis.askDetectKeys(ids) },
+      { label: one ? "Key: set…" : `Key: set for ${n} tracks…`, onclick: () => analysis.askSetKey(ids) },
+      { label: "BPM: set…", onclick: () => tempo.askSet(ids[0]), disabled: !one },
+      { label: one ? "BPM: halve…" : `BPM: halve ${n} tracks…`, onclick: () => tempo.askHalve(ids) },
+      { label: one ? "BPM: double…" : `BPM: double ${n} tracks…`, onclick: () => tempo.askDouble(ids) },
+      { label: one ? "Re-analyse beat grid…" : `Re-analyse ${n} tracks…`, onclick: () => jobs.askReanalyse(ids) },
       { label: "Edit grid", onclick: () => editGrid(ids[0]), disabled: !one },
       { label: "Show in Explorer", onclick: () => revealInExplorer(ids[0]), disabled: !one },
     ];
