@@ -4,7 +4,8 @@
 //! document to a temporary WAV for the player; `export_mix_audio` renders the whole mix to an
 //! Ogg Vorbis (like the original Editor) or WAV file as a background job. The engine is the
 //! `pm-mixer` crate (`notes/mix-audio.md`); the library lookup, caching and destination checks
-//! are in [`render`].
+//! are in [`render`]. FLAC and MP3 are written too, with tags (title, artist, album, year, comment,
+//! cover, the track list as chapters); the format settings and the tags are in [`encoding`].
 //!
 //! Track list (`export_tracklist`, `export_tracklist_save`): the start times of the tracks of a mix
 //! as plain text, CSV, YouTube chapters, a Mixcloud-style list and a CUE sheet, computed from the
@@ -15,6 +16,7 @@
 //! path to the list in `export_commands!` below, then mirror it in `src/lib/api/export.ts` and
 //! `src/lib/devmock/export.ts`.
 
+pub mod encoding;
 pub mod loudness;
 pub mod range;
 mod render;
@@ -28,6 +30,7 @@ use serde::Serialize;
 use tauri::{AppHandle, Manager, State};
 
 use crate::commands::mixes::doc::MixDoc;
+use encoding::{EncodingSpec, TagSpec};
 use loudness::{LevelSettings, PreviewGains, Reading};
 use range::{RangeInfo, RangePrefs, RangeSpec};
 use tracklist::{Format as ListFormat, TracklistOptions, TracklistOut};
@@ -110,8 +113,8 @@ pub struct ExportStarted {
     pub cue_replaces: bool,
 }
 
-/// Starts rendering the mix (the whole mix, or the `range`) to `dest` as `format` ("ogg" or "wav")
-/// and returns at once; the job reports `job-progress` (`done` / `total` in seconds of audio) and `job-done` with the
+/// Starts rendering the mix (the whole mix, or the `range`) to `dest` as `format` ("ogg", "wav",
+/// "flac" or "mp3") and returns at once; the job reports `job-progress` (`done` / `total` in seconds of audio) and `job-done` with the
 /// result. The file appears under its final name only when the render finished. `dest` must not
 /// be inside the device volume. A whole-mix render starts at the first audible frame of the mix.
 ///
@@ -122,6 +125,13 @@ pub struct ExportStarted {
 /// `export_loudness_analyse` reports and `export_render_preview` can play. When the render has
 /// finished the loudness of the file is sent as a `mix-loudness-report` event and put in the
 /// summary.
+///
+/// `encoding` (default: 192 kbit/s MP3, 16-bit FLAC): `{ mp3: { kind: "cbr", kbps } | { kind: "vbr",
+/// quality }, flacBits: 16 | 24, flacLevel }`, used by the format it belongs to. `tags` (default:
+/// none; Ogg then gets the mix name as its title): the texts, an optional cover image file (JPEG or
+/// PNG, up to 8 MB) and, when `chapters` carries track list options, the tracks of the mix as
+/// chapters of the file, from the same list the CUE sheet uses. All of it is checked before the job
+/// starts. A format that cannot hold part of it (a cover in a WAV) says so in the summary.
 ///
 /// `cue`: when given, a CUE sheet of the mix is written next to the audio file (same name, `.cue`,
 /// replacing one that is there only when `replace_cue` is true, else the call is refused) once the
@@ -142,8 +152,16 @@ pub fn export_mix_audio(
     range: Option<RangeSpec>,
     range_prefs: Option<RangePrefs>,
     levels: Option<LevelSettings>,
+    encoding: Option<EncodingSpec>,
+    tags: Option<TagSpec>,
 ) -> AppResult<ExportStarted> {
-    let request = render::ExportRequest { range: range.unwrap_or_default(), range_prefs: range_prefs.unwrap_or_default(), levels: levels.unwrap_or_default() };
+    let request = render::ExportRequest {
+        range: range.unwrap_or_default(),
+        range_prefs: range_prefs.unwrap_or_default(),
+        levels: levels.unwrap_or_default(),
+        encoding: encoding.unwrap_or_default(),
+        tags,
+    };
     let plan = render::plan_export_with(Path::new(&root), &mix, &dest, &format, &request)?;
     let cue_sheet = match &cue {
         Some(opts) => Some(plan_cue(&plan, &mix, opts, replace_cue.unwrap_or(false))?),
@@ -191,6 +209,14 @@ pub fn export_mix_audio(
         };
         if let Some(r) = &loudness_report.result {
             summary.push_str(&format!(", {}", reading_text(r)));
+        }
+        if let Some(t) = &plan.encoding.tags {
+            if !t.chapters.is_empty() {
+                summary.push_str(&format!(", {} chapter(s)", t.chapters.len()));
+            }
+            for n in encoding::format_notes(plan.format, t) {
+                summary.push_str(&format!(". {n}"));
+            }
         }
         if let Some((path, bytes)) = &cue_sheet {
             match tracklist::write_atomic(path, bytes) {

@@ -13,9 +13,10 @@ use pm_formats::mix::{Mix, Track};
 use pm_formats::ops_device::{self, VocalMode};
 use pm_mixer::audio::Source;
 use pm_mixer::engine::Resolver;
-use pm_mixer::{Format, Options, PeqMode};
+use pm_mixer::{Encoding, Format, Options, PeqMode};
 use serde::Serialize;
 
+use super::encoding::{self, EncodingSpec, TagSpec};
 use super::loudness::{self, LevelSettings, LoudnessReport, PreviewGains, Reading, Subject};
 use super::range::{self, RangePrefs, RangeSpec, Resolved};
 use crate::commands::mixes::doc::MixDoc;
@@ -205,7 +206,9 @@ pub fn parse_format(s: &str) -> AppResult<Format> {
     match s.to_ascii_lowercase().as_str() {
         "ogg" => Ok(Format::Ogg),
         "wav" => Ok(Format::Wav),
-        other => Err(format!("Unknown audio format '{other}' (use ogg or wav).").into()),
+        "flac" => Ok(Format::Flac),
+        "mp3" => Ok(Format::Mp3),
+        other => Err(format!("Unknown audio format '{other}' (use ogg, wav, flac or mp3).").into()),
     }
 }
 
@@ -233,14 +236,17 @@ pub fn check_dest_ext(root: &Path, dest: &Path, want: &str) -> AppResult<()> {
     Ok(())
 }
 
-/// What the user asked of an export beyond the file name and format: which part of the mix, and
-/// the loudness settings. Every field has a default (the whole mix, no loudness processing).
+/// What the user asked of an export beyond the file name and format: which part of the mix, the
+/// loudness settings, the format's own settings and the tags. Every field has a default (the whole
+/// mix, no loudness processing, 192 kbit/s MP3 / 16-bit FLAC, no tags).
 #[derive(Debug, Clone, Default, serde::Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct ExportRequest {
     pub range: RangeSpec,
     pub range_prefs: RangePrefs,
     pub levels: LevelSettings,
+    pub encoding: EncodingSpec,
+    pub tags: Option<TagSpec>,
 }
 
 /// Everything about an export that can fail fast, checked before the job starts.
@@ -250,6 +256,8 @@ pub struct ExportPlan {
     pub doc: MixDoc,
     pub res: LibResolver,
     pub format: Format,
+    /// The format with its settings and the tags to write (cover read, chapters built).
+    pub encoding: Encoding,
     pub dest: PathBuf,
     /// What `Wah` tools render as, read from the card when the export was planned.
     pub peq: PeqMode,
@@ -291,7 +299,15 @@ pub fn plan_export_with(root: &Path, doc: &MixDoc, dest: &str, format: &str, req
     let mix = doc.to_mix()?;
     let range = range::resolve_mix(doc, &mix, &req.range, &req.range_prefs)?;
     let res = LibResolver::open(root, &mix)?;
-    Ok(ExportPlan { mix, doc: doc.clone(), res, format, dest, peq: peq_mode(root), range, levels: req.levels.clone() })
+    // the tags are made now, before any audio is rendered: an unreadable cover or a track list
+    // that cannot be made stops the export here instead of after minutes of rendering
+    let span = range.as_ref().map(|r| (r.from, r.to));
+    let tags = match &req.tags {
+        Some(spec) => Some(encoding::build_tags(spec, &doc.name, doc, &|id| res.has(id), span)?),
+        None => None,
+    };
+    let encoding = encoding::build_encoding(format, &req.encoding, tags)?;
+    Ok(ExportPlan { mix, doc: doc.clone(), res, format, encoding, dest, peq: peq_mode(root), range, levels: req.levels.clone() })
 }
 
 /// An export that has finished: the file and what it measured.
@@ -321,7 +337,7 @@ pub fn run_export_full(plan: &ExportPlan, progress: &mut dyn FnMut(f64) -> bool)
     } else {
         LoudnessReport { source: "export".into(), ..LoudnessReport::default() }
     };
-    let out = pm_mixer::render_to_file(&plan.mix, &plan.res, &opts, plan.format, &plan.dest, &mut |p| progress(share + (1.0 - share) * p)).map_err(mixer_err)?;
+    let out = pm_mixer::render_to_file_with(&plan.mix, &plan.res, &opts, &plan.encoding, &plan.dest, &mut |p| progress(share + (1.0 - share) * p)).map_err(mixer_err)?;
     let done = out.loudness.map(|l| Reading::from(l.output));
     if report.from_secs == 0.0 && report.to_secs == 0.0 {
         report.from_secs = plan.range.as_ref().map(|r| r.from_secs).or_else(|| pm_mixer::engine::export_span(&plan.mix).map(|(f, _)| f as f64 / f64::from(pm_mixer::RATE))).unwrap_or(0.0);
@@ -570,8 +586,9 @@ mod tests {
         assert!(render_preview(&vol, &doc, 0.0, 5000.0, &dest).is_err());
         assert!(render_preview(&vol, &doc, f64::NAN, 5.0, &dest).is_err());
         assert!(!dest.exists());
-        assert!(parse_format("mp3").is_err());
+        assert!(parse_format("m4a").is_err());
         assert_eq!(parse_format("OGG").unwrap(), Format::Ogg);
+        assert_eq!((parse_format("Flac").unwrap(), parse_format("MP3").unwrap()), (Format::Flac, Format::Mp3));
         // never inside the device volume, never over a folder, folder must exist
         let inside = vol.join("Music").join("x.ogg");
         assert!(plan_export(&vol, &doc, inside.to_str().unwrap(), "ogg").is_err());
@@ -911,5 +928,99 @@ mod tests {
         assert!(r.source(&t(4)).is_err());
         assert!(r.source(&t(-1)).unwrap_err().to_string().contains("removed"));
         std::fs::remove_dir_all(d).unwrap();
+    }
+
+    /// 1x1 PNG.
+    fn tiny_png() -> Vec<u8> {
+        vec![
+            0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0x0d, 0x49, 0x48, 0x44, 0x52, 0, 0, 0, 1, 0, 0, 0, 1, 8, 2, 0, 0, 0, 0x90, 0x77, 0x53, 0xde, 0, 0, 0, 0x0c, 0x49, 0x44, 0x41, 0x54, 0x08,
+            0xd7, 0x63, 0xf8, 0xcf, 0xc0, 0, 0, 0x03, 0x01, 0x01, 0, 0x18, 0xdd, 0x8d, 0xb0, 0, 0, 0, 0, 0x49, 0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82,
+        ]
+    }
+
+    fn has(hay: &[u8], needle: &str) -> bool {
+        hay.windows(needle.len()).any(|w| w == needle.as_bytes())
+    }
+
+    /// FLAC and MP3 (and Ogg, WAV) exports through the command's own plan: the file decodes, the
+    /// tags are in it, and the chapters are the track list of the exported part: the same times a
+    /// CUE sheet of that export has.
+    #[test]
+    fn every_format_exports_with_tags_and_the_track_list_as_chapters() {
+        use crate::commands::export::encoding::{EncodingSpec, FlacLevelSpec, Mp3Spec, TagSpec};
+        use crate::commands::export::tracklist::TracklistOptions;
+        let (vol, scratch, ids) = library_two("tagged");
+        let mut doc = two_clip_doc(ids);
+        doc.clips[0].fuzzy_id.title = "First".into();
+        doc.clips[0].fuzzy_id.artist = "Artist One".into();
+        doc.clips[1].fuzzy_id.title = "Second".into();
+        let cover = scratch.join("cover.png");
+        std::fs::write(&cover, tiny_png()).unwrap();
+        let tags = TagSpec {
+            title: String::new(),
+            artist: "DJ Example".into(),
+            album: "Fixture Sessions".into(),
+            year: "2026".into(),
+            comment: "tagged by a test".into(),
+            cover_path: Some(cover.to_string_lossy().into_owned()),
+            chapters: Some(TracklistOptions::default()),
+        };
+        let encoding = EncodingSpec { mp3: Mp3Spec::Vbr { quality: 4 }, flac_bits: 24, flac_level: FlacLevelSpec::Fast };
+        // the whole mix (First at 0:00, Second 24 s in) as FLAC, and a time range of 15 s .. 30 s of
+        // it (First 5 s, Second 6 s) in the other formats; debug builds are slow, so not every
+        // format is rendered twice
+        let whole = (RangeSpec::Whole, 24_000u32, "00:00:24.000", 44.0);
+        let part = (RangeSpec::Time { from_sec: 15.0, to_sec: 30.0 }, 9_000u32, "00:00:09.000", 15.0);
+        for (fmt, (range, second_at_ms, second_stamp, total_secs)) in [("flac", whole), ("mp3", part.clone()), ("ogg", part.clone()), ("wav", part)] {
+            {
+                let out = scratch.join(format!("tagged-{}.{fmt}", second_at_ms));
+                let req = ExportRequest { range: range.clone(), encoding: encoding.clone(), tags: Some(tags.clone()), ..ExportRequest::default() };
+                let plan = plan_export_with(&vol, &doc, out.to_str().unwrap(), fmt, &req).unwrap();
+                let done = run_export_full(&plan, &mut |_| true).unwrap();
+                assert!((done.audio.duration_secs - total_secs).abs() < 0.01, "{fmt}: {}", done.audio.duration_secs);
+                let bytes = std::fs::read(&out).unwrap();
+                // decodes to the length of the part
+                let back = pm_mixer::audio::load(&out).unwrap();
+                assert!((back.len() as f64 / 44100.0 - total_secs).abs() < 0.1, "{fmt}: {}", back.len());
+                // tags: every format carries the artist and the first track name as chapter
+                assert!(has(&bytes, "DJ Example") && has(&bytes, "Artist One - First") && has(&bytes, "Second"), "{fmt}");
+                match fmt {
+                    "flac" | "ogg" => {
+                        assert!(has(&bytes, "CHAPTER001=00:00:00.000") && has(&bytes, &format!("CHAPTER002={second_stamp}")), "{fmt}");
+                        assert!(has(&bytes, "TITLE=Level Test"), "the title defaults to the mix name");
+                    }
+                    "mp3" => {
+                        assert!(has(&bytes, "chp2\0"), "CHAP frames");
+                        // the CHAP frame of chapter 2 (the table of contents lists the id too)
+                        let frame = bytes.windows(4).enumerate().find(|(i, w)| *w == b"CHAP" && bytes[i + 10..].starts_with(b"chp2\0")).unwrap().0;
+                        let at = frame + 15;
+                        assert_eq!(u32::from_be_bytes(bytes[at..at + 4].try_into().unwrap()), second_at_ms);
+                        assert_eq!(u32::from_be_bytes(bytes[at + 4..at + 8].try_into().unwrap()), (total_secs * 1000.0) as u32, "the last chapter ends with the audio");
+                        assert!(has(&bytes, "Level Test"));
+                    }
+                    _ => assert!(has(&bytes, "cue ") && has(&bytes, "Level Test")),
+                }
+            }
+        }
+        // a WAV cannot hold the cover; that is reported, not silently dropped
+        let plan = plan_export_with(&vol, &doc, scratch.join("n.wav").to_str().unwrap(), "wav", &ExportRequest { tags: Some(tags.clone()), ..ExportRequest::default() }).unwrap();
+        assert_eq!(crate::commands::export::encoding::format_notes(plan.format, plan.encoding.tags.as_ref().unwrap()).len(), 1);
+
+        // a cover that cannot be used stops the export before anything is written
+        let bad = TagSpec { cover_path: Some(scratch.join("missing.png").to_string_lossy().into_owned()), ..tags.clone() };
+        let out = scratch.join("never.flac");
+        let err = plan_export_with(&vol, &doc, out.to_str().unwrap(), "flac", &ExportRequest { tags: Some(bad), ..ExportRequest::default() }).err().unwrap().to_string();
+        assert!(err.contains("missing.png"), "{err}");
+        assert!(!out.exists() && !scratch.join("never.flac.partial").exists());
+        // bad settings too
+        let req = ExportRequest { encoding: EncodingSpec { flac_bits: 12, ..EncodingSpec::default() }, ..ExportRequest::default() };
+        assert!(plan_export_with(&vol, &doc, out.to_str().unwrap(), "flac", &req).is_err());
+        // and no tags at all is the plain export: no chapters, Ogg keeps the old mix-name title
+        let plain = scratch.join("plain.ogg");
+        run_export(&plan_export(&vol, &doc, plain.to_str().unwrap(), "ogg").unwrap(), &mut |_| true).unwrap();
+        let pb = std::fs::read(&plain).unwrap();
+        assert!(has(&pb, "TITLE=Level Test") && !has(&pb, "CHAPTER001"));
+        std::fs::remove_dir_all(vol).unwrap();
+        std::fs::remove_dir_all(scratch).unwrap();
     }
 }

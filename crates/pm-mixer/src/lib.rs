@@ -8,7 +8,7 @@
 //! ```
 //!
 //! Entry points: [`engine::render`] (streaming), [`engine::render_to_vecs`] (memory),
-//! [`output::render_to_file`] (WAV or Ogg Vorbis). The caller supplies a [`engine::Resolver`] that
+//! [`output::render_to_file`] (WAV, Ogg Vorbis, FLAC or MP3, with tags). The caller supplies a [`engine::Resolver`] that
 //! turns a mix track into decoded audio.
 
 pub mod audio;
@@ -21,11 +21,12 @@ pub mod master;
 pub mod output;
 pub mod sinc;
 pub mod stretch;
+pub mod tags;
 pub mod vocal;
 
 pub use engine::{render, render_to_vecs, DirResolver, Options, RenderLoudness, Rendered, Resolver};
 pub use fx::PeqMode;
-pub use output::{render_to_file, Format};
+pub use output::{render_to_file, render_to_file_with, Encoding, FlacLevel, Format, Mp3Rate};
 
 /// The engine's sample rate; every position in a mix is a sample count at this rate.
 pub const RATE: u32 = 44_100;

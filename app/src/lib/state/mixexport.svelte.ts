@@ -21,6 +21,7 @@ import type { MixDoc } from "$lib/api/mixes";
 import {
   analysisKey,
   defaultPrefs,
+  encodingOf,
   levelsActive,
   levelsOf,
   mergePrefs,
@@ -29,6 +30,7 @@ import {
   problemWith,
   rangePrefsOf,
   rangeSpecOf,
+  tagsOf,
   type ExportPrefs,
   type RangeMode,
 } from "./exportprefs";
@@ -36,6 +38,7 @@ import { mixes } from "./mixes.svelte";
 import { sameAudio } from "./sameaudio";
 import { session } from "./session.svelte";
 import { toast } from "./toast.svelte";
+import { tracklist } from "./tracklist.svelte";
 
 const STORAGE_KEY = "pacemaker-revival.mixexport";
 
@@ -65,6 +68,8 @@ class MixExport {
   /** What the range covers, as the backend resolves it; `infoError` says why it cannot. */
   info = $state.raw<RangeInfo | null>(null);
   infoError = $state("");
+  /** The title tag as typed for this mix; empty = the mix name. */
+  titleText = $state("");
 
   /** The last analysis of this mix, and whether it is still about the current mix and settings. */
   report = $state.raw<LoudnessReport | null>(null);
@@ -104,6 +109,7 @@ class MixExport {
     this.toText = "";
     this.clipA = "";
     this.clipB = "";
+    this.titleText = "";
     this.info = null;
     this.infoError = "";
     this.report = null;
@@ -142,7 +148,15 @@ class MixExport {
   extras(): ExportExtras | null {
     const range = this.spec();
     if (!range) return null;
-    return { range, rangePrefs: this.rangePrefs(), levels: this.levels() };
+    tracklist.ensureLoaded();
+    return {
+      range,
+      rangePrefs: this.rangePrefs(),
+      levels: this.levels(),
+      encoding: encodingOf(this.prefs),
+      // the chapters are the track list as the user has set it up for the track list dialog
+      tags: tagsOf(this.prefs, this.titleText, tracklist.snapshot()),
+    };
   }
 
   /** Is the export a part of the mix rather than all of it? */

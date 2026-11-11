@@ -132,4 +132,88 @@ test("readings are worded for people", () => {
   assert.equal(P.gainText(0.01), "0.0 dB");
 });
 
+// ---- formats and tags ----------------------------------------------------------------------
+
+test("the formats are the four the backend writes, each with the extension it requires", () => {
+  assert.deepEqual(P.AUDIO_FORMATS.map((f) => [f.id, f.ext]), [["ogg", "ogg"], ["mp3", "mp3"], ["flac", "flac"], ["wav", "wav"]]);
+  assert.equal(P.defaultPrefs().format, "ogg", "Ogg stays the default, as the original Editor wrote");
+  assert.deepEqual(P.MP3_CBR_KBPS, [96, 112, 128, 160, 192, 224, 256, 320], "the list render.rs / output.rs accept");
+  assert.equal(P.MP3_VBR_LEVELS.length, 10);
+  assert.ok(P.MP3_VBR_LEVELS.every((l, i) => l.quality === i && (i === 0 || l.kbps < P.MP3_VBR_LEVELS[i - 1].kbps)), "better quality, higher bitrate");
+});
+
+test("the format of a file name comes from its extension, and a name without one gets the chosen format's", () => {
+  assert.equal(P.formatOfPath("C:/Mixes/Set.FLAC"), "flac");
+  assert.equal(P.formatOfPath("/home/a/set.v2.mp3"), "mp3");
+  assert.equal(P.formatOfPath("C:/Mixes/set"), null);
+  assert.equal(P.formatOfPath("C:/Mixes/set.m4a"), null);
+  assert.deepEqual(P.resolveDest("C:/x/set.wav", "mp3"), { path: "C:/x/set.wav", format: "wav" });
+  assert.deepEqual(P.resolveDest("C:/x/set", "flac"), { path: "C:/x/set.flac", format: "flac" });
+  assert.deepEqual(P.resolveDest("C:/x/set.v2", "mp3"), { path: "C:/x/set.v2.mp3", format: "mp3" });
+  assert.deepEqual(P.resolveDest("C:/x/set.", "ogg"), { path: "C:/x/set.ogg", format: "ogg" }, "a trailing dot is not an extension");
+  assert.deepEqual(P.saveFilters("flac").map((f) => f.extensions[0]), ["flac", "ogg", "mp3", "wav"], "the chosen format is offered first");
+  assert.equal(P.extOf("mp3"), "mp3");
+  const win = ["C:", "Mixes", "set.flac"].join(String.fromCharCode(92));
+  assert.equal(P.formatOfPath(win), "flac", "Windows paths work as well");
+});
+
+test("the encoding settings become the backend's EncodingSpec", () => {
+  assert.deepEqual(P.encodingOf(P.defaultPrefs()), { mp3: { kind: "cbr", kbps: 192 }, flacBits: 16, flacLevel: "standard" });
+  const p = { ...P.defaultPrefs(), mp3Mode: "vbr", mp3Quality: 0, flacBits: 24, flacLevel: "best" };
+  assert.deepEqual(P.encodingOf(p), { mp3: { kind: "vbr", quality: 0 }, flacBits: 24, flacLevel: "best" });
+});
+
+test("tags are off when asked, default the year, and carry the track list only when chaptered", () => {
+  const opts = { stampAt: "enters", rounding: "floor", closeEntries: "merge", includeUnavailable: false, numbered: true, csvBom: true };
+  const now = new Date(2031, 5, 1);
+  assert.equal(P.tagsOf({ ...P.defaultPrefs(), writeTags: false }, "", opts, now), null);
+  const t = P.tagsOf({ ...P.defaultPrefs(), djName: "  DJ Example ", album: "Fixture", comment: " hi " }, "  ", opts, now);
+  assert.deepEqual(t, { title: "", artist: "DJ Example", album: "Fixture", year: "2031", comment: "hi", coverPath: null, chapters: opts });
+  const u = P.tagsOf({ ...P.defaultPrefs(), year: "2026", chapters: false, coverPath: " C:/a/c.png " }, "My Title", opts, now);
+  assert.equal(u.year, "2026");
+  assert.equal(u.title, "My Title");
+  assert.equal(u.chapters, null);
+  assert.equal(u.coverPath, "C:/a/c.png");
+  assert.equal(P.yearOf({ ...P.defaultPrefs(), year: "" }, now), "2031");
+});
+
+test("file and tag settings read back from storage keep valid values and drop the rest", () => {
+  const p = P.mergePrefs({ format: "flac", mp3Mode: "vbr", mp3Kbps: 320, mp3Quality: 4, flacBits: 24, flacLevel: "best", writeTags: false, chapters: false, djName: "DJ Example", album: "A", year: "2026", comment: "c", coverPath: "C:/c.png" });
+  assert.deepEqual([p.format, p.mp3Mode, p.mp3Kbps, p.mp3Quality, p.flacBits, p.flacLevel, p.writeTags, p.chapters], ["flac", "vbr", 320, 4, 24, "best", false, false]);
+  assert.deepEqual([p.djName, p.album, p.year, p.comment, p.coverPath], ["DJ Example", "A", "2026", "c", "C:/c.png"]);
+  const bad = P.mergePrefs({ format: "m4a", mp3Mode: "abr", mp3Kbps: 100, mp3Quality: 10, flacBits: 20, flacLevel: "x", writeTags: "yes", djName: 5, year: 2026 });
+  assert.deepEqual(bad, P.defaultPrefs());
+  assert.equal(P.mergePrefs({ mp3Quality: 2.5 }).mp3Quality, 2, "a fractional quality is not a quality");
+  assert.equal(P.mergePrefs({ djName: "x".repeat(900) }).djName.length, 250, "text is cut to the length the tag takes");
+});
+
+test("a year that is not four digits is a problem only while tags are written", () => {
+  const base = P.defaultPrefs();
+  assert.equal(P.problemWith(base), null);
+  assert.equal(P.problemWith({ ...base, year: "2026" }), null);
+  assert.match(P.problemWith({ ...base, year: "26" }), /four digits/);
+  assert.match(P.problemWith({ ...base, year: "abcd" }), /four digits/);
+  assert.equal(P.problemWith({ ...base, year: "26", writeTags: false }), null);
+});
+
+test("sizes are given only where the format fixes them", () => {
+  const p = P.defaultPrefs();
+  assert.equal(P.estimateBytes({ ...p, format: "wav" }, 60), 60 * 44100 * 4 + 44);
+  assert.equal(P.estimateBytes({ ...p, format: "mp3", mp3Mode: "cbr", mp3Kbps: 320 }, 60), 2_400_000);
+  assert.equal(P.estimateBytes({ ...p, format: "mp3", mp3Mode: "vbr", mp3Quality: 0 }, 60), 1_837_500);
+  assert.equal(P.estimateBytes({ ...p, format: "flac" }, 60), null, "FLAC depends on the music");
+  assert.equal(P.estimateBytes({ ...p, format: "ogg" }, 60), null);
+  assert.equal(P.estimateBytes({ ...p, format: "wav" }, 0), null);
+  assert.equal(P.sizeText(2_400_000), "2.4 MB");
+  assert.equal(P.sizeText(840_000), "840 KB");
+  assert.equal(P.sizeText(150_000_000), "150 MB");
+  assert.equal(P.sizeText(10), "1 KB");
+});
+
+test("every format has a note on what its tags hold, and only WAV lacks a cover", () => {
+  for (const f of P.AUDIO_FORMATS) assert.ok(P.tagNote(f.id).length > 20);
+  assert.match(P.tagNote("wav"), /not a cover/);
+  for (const f of ["mp3", "flac", "ogg"]) assert.doesNotMatch(P.tagNote(f), /not a cover/);
+});
+
 console.log(`${n} tests passed`);

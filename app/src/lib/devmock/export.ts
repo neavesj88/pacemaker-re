@@ -5,7 +5,7 @@
 // beat of the mix tempo, in a Blob) and an export is a timed fake job that reports progress and
 // finishes. Nothing is written anywhere.
 import { emit } from "@tauri-apps/api/event";
-import type { LevelSettings, LoudnessReport, RangeInfo, RangePrefs, RangeSpec, TracklistEntry, TracklistFormat, TracklistOptions, TracklistOut } from "$lib/api/export";
+import type { EncodingSpec, LevelSettings, LoudnessReport, RangeInfo, RangePrefs, RangeSpec, TagSpec, TracklistEntry, TracklistFormat, TracklistOptions, TracklistOut } from "$lib/api/export";
 import type { MixDoc } from "$lib/api/mixes";
 import { DEFAULT_OPTIONS } from "$lib/state/tracklistprefs";
 import { jobLock } from "./jobs";
@@ -328,8 +328,21 @@ export const handlers: Handlers = {
   },
   export_mix_audio: (a) => {
     const doc = a.mix as MixDoc;
-    if (a.format !== "ogg" && a.format !== "wav") throw `Unknown audio format '${a.format}' (use ogg or wav).`;
+    if (!["ogg", "wav", "flac", "mp3"].includes(String(a.format))) throw `Unknown audio format '${a.format}' (use ogg, wav, flac or mp3).`;
     checkDest(String(a.dest), String(a.format));
+    // the real command checks the settings and the tags before the job starts (encoding.rs): the
+    // same sentences for the cases a fixture can show (a cover whose name contains "missing" or
+    // "huge", a bad bitrate)
+    const enc = (a.encoding as Partial<EncodingSpec> | null) ?? {};
+    if (enc.mp3?.kind === "cbr" && ![96, 112, 128, 160, 192, 224, 256, 320].includes(enc.mp3.kbps)) throw `${enc.mp3.kbps} kbit/s is not an MP3 bitrate here (use one of [96, 112, 128, 160, 192, 224, 256, 320]).`;
+    if (enc.mp3?.kind === "vbr" && !(enc.mp3.quality >= 0 && enc.mp3.quality <= 9)) throw `MP3 variable-bitrate quality ${enc.mp3.quality} is out of range (0 is best, 9 smallest).`;
+    if (enc.flacBits !== undefined && enc.flacBits !== 16 && enc.flacBits !== 24) throw `${enc.flacBits} bits is not a FLAC sample size here (use 16 or 24).`;
+    const tags = a.tags as TagSpec | null;
+    const coverName = tags?.coverPath?.split(/[\\/]/).pop();
+    if (coverName && /missing/i.test(coverName)) throw `The cover image ${coverName} cannot be read: file not found. Choose another image or remove the cover.`;
+    if (coverName && /huge/i.test(coverName)) throw `The cover image ${coverName} is 12 MB; the most a tag takes is 8 MB. Use a smaller image.`;
+    const chapterCount = tags?.chapters ? mockTracklist(doc, withDefaults(tags.chapters), String(a.dest)).entries.length : 0;
+    const noCover = a.format === "wav" && !!coverName;
     const cueSheet = a.cue ? mockTracklist(doc, withDefaults(a.cue), String(a.dest)) : null;
     if (cueSheet?.cueIssue) throw `Cannot write a CUE sheet: ${cueSheet.cueIssue}. Turn the CUE sheet off to export the audio.`;
     const cuePath = cueSheet ? cueFor(String(a.dest)) : null;
@@ -376,7 +389,7 @@ export const handlers: Handlers = {
         job: "mix-export",
         ok: 1,
         failed: skipped,
-        summary: `Exported ${doc.name} (${m}:${s}) to ${String(a.dest).split(/[\\/]/).pop()}${skipped ? ` with ${skipped} clip(s) left out, so it is not the complete mix` : ""}${level}${cueSheet ? " and the CUE sheet" : ""}`,
+        summary: `Exported ${doc.name} (${m}:${s}) to ${String(a.dest).split(/[\\/]/).pop()}${skipped ? ` with ${skipped} clip(s) left out, so it is not the complete mix` : ""}${level}${chapterCount ? `, ${chapterCount} chapter(s)` : ""}${cueSheet ? " and the CUE sheet" : ""}${noCover ? ". A WAV file cannot hold a cover image, so it was left out." : ""}`,
         error: null,
       });
     })();

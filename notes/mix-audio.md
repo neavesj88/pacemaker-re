@@ -19,7 +19,7 @@ file -> decode (stereo, 44.1 kHz)
      -> clip gain envelope (dB)
      -> audible window [LOffset, Length - ROffset] with 32-sample edges
      -> crossfader gain from the transitions
-     -> sum of all clips -> look-ahead limiter -> WAV (16-bit) | Ogg Vorbis
+     -> sum of all clips -> look-ahead limiter -> WAV (16-bit) | Ogg Vorbis | FLAC | MP3
 ```
 
 The timeline is processed in blocks of 4096 frames. A clip is decoded when its first block is
@@ -147,7 +147,27 @@ are replaced by zero before the limiter. The output is therefore never above 0.9
   which builds the vendored aoTuV/Lancer libvorbis and libogg C sources with the `cc` crate: **no
   system libraries**, it compiled on Windows/MSVC next to the bundled SQLite. Quality VBR 0.6
   (about 160 kbit/s for music), fixed stream serial (so the same mix gives the same file),
-  `TITLE` = mix name, `ENCODER` = Pacemaker Revival. FLAC is not offered.
+  `TITLE` = mix name, `ENCODER` = Pacemaker Revival when no tags are given.
+- **FLAC** (16 or 24 bit, three effort levels): `flac-codec` 1.3.3 (MIT/Apache-2.0, pure Rust). 16-bit uses
+  the same TPDF dither as the WAV; 24-bit is rounded. Streaming writer: STREAMINFO (length, MD5) is
+  rewritten at the end, so a 3-hour mix never sits in memory. The audio is identical at every
+  effort level (tested); only the size changes.
+- **MP3** (CBR 96-320 kbit/s or VBR V0-V9): `mp3lame-encoder` 0.3.0 (wrapper LGPL-3.0) which builds the
+  vendored LAME 4.0 (LGPL) C sources with the `cc` crate: no system libraries, builds on Windows/MSVC.
+  Joint stereo, algorithm quality 2. LAME's Xing/Info frame (length and encoder delay, so players
+  seek and play gaplessly) is reserved at the start of the stream and filled in once the stream is
+  complete; the ID3v2 tag in front of it is written by this crate, not by LAME. The engine's limiter
+  ceiling is -0.2 dBFS, but MP3 coding can overshoot it by a little: a decoder may clip those peaks.
+- **Tags** (`pm-mixer/src/tags.rs`, all hand-written byte building, tested without an encoder):
+  MP3 ID3v2.3 (`TIT2 TPE1 TALB TYER COMM TSSE`, `APIC` front cover, `CTOC` + `CHAP` chapters), FLAC
+  Vorbis comment + `PICTURE` block, Ogg Vorbis comment header + `METADATA_BLOCK_PICTURE`, WAV
+  `LIST`/`INFO` text + `cue ` / `LIST adtl` chapter marks (no cover: a WAV cannot hold one). FLAC and
+  Ogg chapters are `CHAPTERnnn=hh:mm:ss.mmm` / `CHAPTERnnnNAME` comments, a convention rather than a
+  standard (ffmpeg reads them; plain players ignore them). The chapters are the entries of the same
+  track list the dialog and the CUE sheet use (`tracklist::build_in`), so the three agree; each runs
+  to the start of the next, the last to the end of the audio. Checked with ffprobe: it lists the
+  tags, the cover and every chapter of the MP3, FLAC, Ogg and WAV test files, and decodes the FLAC
+  and MP3. The cover is a JPEG or PNG file up to 8 MB, checked before the export starts.
 - Previews are 16-bit WAV in the temp dir (`pacemaker-revival-preview/mix-preview-0..3.wav`,
   rotating so the file the player is streaming is never overwritten).
 - Exports start at the **first audible frame** (leading silence is cut); previews keep timeline
@@ -176,7 +196,9 @@ pitch kept by the stretcher and moved by vinyl mode; key shifts; crossfade energ
 NaN with three loud clips; bit-identical repeat renders; preview window equals the full render;
 EQ/FILTER response; every tool kind renders and changes only its own range; reverb and echo tails
 decay; crush levels; reverse, ignore and loop edits; gain envelope in dB; WAV and Ogg round trip
-(decoded again and measured); cancellation leaves no file; missing file is a warning. Unit tests:
+(decoded again and measured); (`tests/formats.rs`) FLAC lossless at 16/24 bit with a correct STREAMINFO,
+MP3 CBR/VBR bitrate, patched Info frame and ID3 tag, tags/chapters/cover in every format, WAV header
+sizes with appended chunks, cancel leaves no file and keeps an existing one; cancellation leaves no file; missing file is a warning. Unit tests:
 limiter, envelopes, sinc interpolation and resampling, EQ gain law. App side
 (`export/render.rs`): library lookup against a temp volume, preview and Ogg export end to end,
 destination checks, removed-track warning, preview file rotation.

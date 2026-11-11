@@ -48,12 +48,42 @@ export const exportCueTarget = (dest: string) => invoke<CueTarget>("export_cue_t
 /** The `job` name of mix exports in the `job-progress` / `job-done` events. */
 export const MIX_EXPORT_JOB = "mix-export";
 
-/** Render a whole mix to an audio file (format "ogg" like the original Editor, or "wav").
+/** The audio formats an export can write. */
+export type AudioFormat = "ogg" | "wav" | "flac" | "mp3";
+
+/** How an MP3 is encoded: a constant bitrate (kbit/s, one of 96 112 128 160 192 224 256 320) or
+ * LAME's variable bitrate at a quality from 0 (best) to 9 (smallest). */
+export type Mp3Spec = { kind: "cbr"; kbps: number } | { kind: "vbr"; quality: number };
+
+/** How hard the FLAC encoder works for a smaller file; the audio is identical at every level. */
+export type FlacLevel = "fast" | "standard" | "best";
+
+/** The settings of the formats that have any; the ones of the format not being written are
+ * ignored. `flacBits` is 16 (dithered, like the WAV) or 24. */
+export type EncodingSpec = { mp3: Mp3Spec; flacBits: 16 | 24; flacLevel: FlacLevel };
+
+/** The tags to write into the exported file (never into the device). Empty text is not written;
+ * an empty `title` becomes the mix name. `coverPath` is a JPEG or PNG file up to 8 MB (read and
+ * checked before the export starts). `chapters`: the track list settings to make the tracks of the
+ * mix chapters of the file (from the same list the CUE sheet uses); null = no chapters. What each
+ * format can hold: MP3 everything (ID3v2.3, CHAP frames), FLAC and Ogg text, cover and CHAPTERnnn
+ * fields, WAV text and cue points but no cover. */
+export type TagSpec = {
+  title: string;
+  artist: string;
+  album: string;
+  year: string;
+  comment: string;
+  coverPath: string | null;
+  chapters: TracklistOptions | null;
+};
+
+/** Render a whole mix to an audio file (format "ogg" like the original Editor, "wav", "flac" or "mp3").
  * This starts a background job and resolves AT ONCE with the destination; progress arrives as
  * `job-progress` events (job "mix-export", `done` / `total` in seconds of audio) and the end as
  * `job-done` (its `summary` is the finished line, `failed` counts clips left out). The file
  * exists under `path` only after `job-done`. Rejects when another job is running, the format is
- * unknown, `dest` does not end in the format's extension (.ogg / .wav), or `dest` is inside the device volume or in a folder that does not exist. Rendering
+ * unknown, `dest` does not end in the format's extension (.ogg / .wav / .flac / .mp3), or `dest` is inside the device volume or in a folder that does not exist. Rendering
  * starts at the mix's first audible frame.
  *
  * `cue`: pass the track list options to also write a CUE sheet beside the audio (same name,
@@ -67,8 +97,13 @@ export const MIX_EXPORT_JOB = "mix-export";
  * job measures first (progress status "measuring", the first half of the bar), then renders with
  * the gains found. A CUE sheet of a partial export counts from the start of the range. When the
  * file is written, a `mix-loudness-report` event carries what it measures (`onLoudnessReport`),
- * and the `job-done` summary ends with that loudness. */
-export const exportMixAudio = (root: string, mix: MixDoc, dest: string, format: "ogg" | "wav", cue?: TracklistOptions, replaceCue = false, extras: ExportExtras = {}) =>
+ * and the `job-done` summary ends with that loudness.
+ *
+ * `extras.encoding` is the format's settings (MP3 bitrate, FLAC sample size) and `extras.tags` the
+ * tags, cover and chapters (see `TagSpec`); without tags Ogg gets the mix name as its title and the
+ * other formats none. A cover that cannot be read, or a setting out of range, rejects the call
+ * before anything starts. */
+export const exportMixAudio = (root: string, mix: MixDoc, dest: string, format: AudioFormat, cue?: TracklistOptions, replaceCue = false, extras: ExportExtras = {}) =>
   invoke<MixExportStarted>("export_mix_audio", {
     root,
     mix,
@@ -79,6 +114,8 @@ export const exportMixAudio = (root: string, mix: MixDoc, dest: string, format: 
     range: extras.range ?? null,
     rangePrefs: extras.rangePrefs ?? null,
     levels: extras.levels ?? null,
+    encoding: extras.encoding ?? null,
+    tags: extras.tags ?? null,
   });
 
 /** Asks the running mix export to stop. The render ends at its next block, no file is left, and
@@ -281,7 +318,7 @@ export type LoudnessReport = {
 };
 
 /** Optional parts of `exportMixAudio`. */
-export type ExportExtras = { range?: RangeSpec; rangePrefs?: RangePrefs; levels?: LevelSettings };
+export type ExportExtras = { range?: RangeSpec; rangePrefs?: RangePrefs; levels?: LevelSettings; encoding?: EncodingSpec; tags?: TagSpec | null };
 
 /** The `job` name of loudness analyses in `job-progress` / `job-done`. */
 export const MIX_LOUDNESS_JOB = "mix-loudness";

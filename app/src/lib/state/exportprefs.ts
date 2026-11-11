@@ -2,7 +2,7 @@
 // defaults and limits, clock parsing, and the text for readings. No Svelte, no Tauri (type imports
 // only), so they run under plain node (exportprefs.test.mjs). The store that holds the settings is
 // state/mixexport.svelte.ts.
-import type { ClipLevel, EndAt, LevelSettings, LoudnessReport, PreviewGains, RangePrefs, RangeSpec } from "$lib/api/export";
+import type { AudioFormat, ClipLevel, EncodingSpec, EndAt, FlacLevel, LevelSettings, LoudnessReport, PreviewGains, RangePrefs, RangeSpec, TagSpec, TracklistOptions } from "$lib/api/export";
 
 export type TargetPreset = "off" | "streaming" | "club" | "custom";
 
@@ -17,6 +17,70 @@ export const TARGET_PRESETS: { id: TargetPreset; label: string; lufs: number | n
 ];
 
 export type RangeMode = "whole" | "time" | "clips";
+
+// ---------------------------------------------------------------------------------------------
+// formats and tags
+// ---------------------------------------------------------------------------------------------
+
+/** The formats, in the order the dialog lists them. `ext` is the file extension the backend
+ * requires for the format. */
+export const AUDIO_FORMATS: { id: AudioFormat; label: string; ext: string; hint: string }[] = [
+  { id: "ogg", label: "Ogg Vorbis", ext: "ogg", hint: "Small lossy files, what the original Editor wrote" },
+  { id: "mp3", label: "MP3", ext: "mp3", hint: "Lossy, plays everywhere" },
+  { id: "flac", label: "FLAC", ext: "flac", hint: "Lossless, usually half to two thirds the size of a WAV" },
+  { id: "wav", label: "WAV (16-bit)", ext: "wav", hint: "Uncompressed" },
+];
+
+export const MP3_CBR_KBPS = [96, 112, 128, 160, 192, 224, 256, 320] as const;
+
+/** LAME's variable-bitrate qualities with the average bitrate its documentation gives for music
+ * (approximate: the real rate follows the audio). */
+export const MP3_VBR_LEVELS: { quality: number; kbps: number }[] = [245, 225, 190, 175, 165, 130, 115, 100, 85, 65].map((kbps, quality) => ({ quality, kbps }));
+
+export const FLAC_LEVELS: { id: FlacLevel; label: string }[] = [
+  { id: "fast", label: "Fast (larger file)" },
+  { id: "standard", label: "Standard" },
+  { id: "best", label: "Smallest file (slower)" },
+];
+
+export const TAG_LIMITS = { text: 250, comment: 2000 } as const;
+
+const FORMAT_EXT = new Map(AUDIO_FORMATS.map((f) => [f.ext, f.id] as const));
+
+/** The format a file name's extension names, or null (case does not matter). */
+export function formatOfPath(path: string): AudioFormat | null {
+  const m = /\.([A-Za-z0-9]+)$/.exec(path);
+  return m ? (FORMAT_EXT.get(m[1].toLowerCase()) ?? null) : null;
+}
+
+export const extOf = (f: AudioFormat): string => AUDIO_FORMATS.find((x) => x.id === f)?.ext ?? f;
+
+/** The file the save dialog gave back, and the format it is: a name that ends in a known extension
+ * is that format (the user typed or picked it); any other name gets the chosen format's extension. */
+export function resolveDest(path: string, chosen: AudioFormat): { path: string; format: AudioFormat } {
+  const f = formatOfPath(path);
+  return f ? { path, format: f } : { path: `${path.replace(/\.+$/, "")}.${extOf(chosen)}`, format: chosen };
+}
+
+/** The save dialog's file type list with `selected` first (dialogs preselect the first). */
+export function saveFilters(selected: AudioFormat): { name: string; extensions: string[] }[] {
+  const order = [...AUDIO_FORMATS].sort((a, b) => Number(b.id === selected) - Number(a.id === selected));
+  return order.map((f) => ({ name: f.label, extensions: [f.ext] }));
+}
+
+/** What the chosen format does with the tags, for the dialog. */
+export function tagNote(f: AudioFormat): string {
+  switch (f) {
+    case "mp3":
+      return "MP3 holds all of it: ID3 tags, the cover and the chapters (players without chapter support ignore those).";
+    case "flac":
+      return "FLAC holds the text and the cover. Chapters are written as CHAPTERnnn fields, which chapter-aware players read.";
+    case "ogg":
+      return "Ogg Vorbis holds the text and the cover. Chapters are written as CHAPTERnnn fields, which chapter-aware players read.";
+    case "wav":
+      return "WAV holds the text and chapter marks (cue points), but not a cover image, and many players ignore WAV tags.";
+  }
+}
 
 /** Limits the backend enforces (LevelSettings::validate, RangePrefs); the dialog checks the same. */
 export const LIMITS = {
@@ -46,6 +110,25 @@ export type ExportPrefs = {
   /** Play the editor's preview at the level an export with these settings would have (needs a
    * current analysis). */
   previewAtExportLevel: boolean;
+  // ---- the file ----
+  format: AudioFormat;
+  mp3Mode: "cbr" | "vbr";
+  mp3Kbps: number;
+  mp3Quality: number;
+  flacBits: 16 | 24;
+  flacLevel: FlacLevel;
+  // ---- the tags ----
+  writeTags: boolean;
+  /** Written as the artist of the mix. */
+  djName: string;
+  album: string;
+  /** Empty = the current year. */
+  year: string;
+  comment: string;
+  /** A JPEG or PNG file, or empty for no cover. */
+  coverPath: string;
+  /** Put the tracks of the mix in the file as chapters. */
+  chapters: boolean;
 };
 
 /** The defaults. They match the backend's (LevelSettings::default, RangePrefs::default). */
@@ -62,6 +145,19 @@ export const DEFAULT_PREFS: ExportPrefs = {
   endAt: "clipEnd",
   edgeFadeMs: 20,
   previewAtExportLevel: true,
+  format: "ogg",
+  mp3Mode: "cbr",
+  mp3Kbps: 192,
+  mp3Quality: 2,
+  flacBits: 16,
+  flacLevel: "standard",
+  writeTags: true,
+  djName: "",
+  album: "",
+  year: "",
+  comment: "",
+  coverPath: "",
+  chapters: true,
 };
 
 export const defaultPrefs = (): ExportPrefs => ({ ...DEFAULT_PREFS });
@@ -86,6 +182,20 @@ export function mergePrefs(saved: unknown): ExportPrefs {
   if (s.endAt === "clipEnd" || s.endAt === "nextEnters") p.endAt = s.endAt;
   if (inRange(s.edgeFadeMs, LIMITS.edgeFadeMs)) p.edgeFadeMs = s.edgeFadeMs;
   if (typeof s.previewAtExportLevel === "boolean") p.previewAtExportLevel = s.previewAtExportLevel;
+  if (AUDIO_FORMATS.some((f) => f.id === s.format)) p.format = s.format as AudioFormat;
+  if (s.mp3Mode === "cbr" || s.mp3Mode === "vbr") p.mp3Mode = s.mp3Mode;
+  if ((MP3_CBR_KBPS as readonly unknown[]).includes(s.mp3Kbps)) p.mp3Kbps = s.mp3Kbps as number;
+  if (Number.isInteger(s.mp3Quality) && inRange(s.mp3Quality, [0, 9])) p.mp3Quality = s.mp3Quality as number;
+  if (s.flacBits === 16 || s.flacBits === 24) p.flacBits = s.flacBits;
+  if (FLAC_LEVELS.some((l) => l.id === s.flacLevel)) p.flacLevel = s.flacLevel as FlacLevel;
+  if (typeof s.writeTags === "boolean") p.writeTags = s.writeTags;
+  if (typeof s.chapters === "boolean") p.chapters = s.chapters;
+  const text = (v: unknown, max: number) => (typeof v === "string" ? v.slice(0, max) : null);
+  p.djName = text(s.djName, TAG_LIMITS.text) ?? p.djName;
+  p.album = text(s.album, TAG_LIMITS.text) ?? p.album;
+  p.year = text(s.year, 4) ?? p.year;
+  p.comment = text(s.comment, TAG_LIMITS.comment) ?? p.comment;
+  p.coverPath = text(s.coverPath, 1024) ?? p.coverPath;
   return p;
 }
 
@@ -111,6 +221,50 @@ export function levelsOf(p: ExportPrefs): LevelSettings {
 
 export const rangePrefsOf = (p: ExportPrefs): RangePrefs => ({ endAt: p.endAt, edgeFadeMs: p.edgeFadeMs });
 
+/** The backend's `EncodingSpec` for these preferences. */
+export function encodingOf(p: ExportPrefs): EncodingSpec {
+  return {
+    mp3: p.mp3Mode === "vbr" ? { kind: "vbr", quality: p.mp3Quality } : { kind: "cbr", kbps: p.mp3Kbps },
+    flacBits: p.flacBits,
+    flacLevel: p.flacLevel,
+  };
+}
+
+/** The year the tags carry: the one typed, else the current one. */
+export const yearOf = (p: ExportPrefs, now: Date = new Date()): string => p.year.trim() || String(now.getFullYear());
+
+/** The backend's `TagSpec`, or null when tags are off. `title` empty means the mix name (the
+ * backend fills it). `chapterOptions` are the track list settings, used when chapters are on. */
+export function tagsOf(p: ExportPrefs, title: string, chapterOptions: TracklistOptions, now: Date = new Date()): TagSpec | null {
+  if (!p.writeTags) return null;
+  return {
+    title: title.trim(),
+    artist: p.djName.trim(),
+    album: p.album.trim(),
+    year: yearOf(p, now),
+    comment: p.comment.trim(),
+    coverPath: p.coverPath.trim() || null,
+    chapters: p.chapters ? chapterOptions : null,
+  };
+}
+
+/** About how big the file will be, or null where it depends too much on the music to say: WAV is
+ * exact, MP3 follows its bitrate (the average LAME gives for a variable-bitrate quality). */
+export function estimateBytes(p: ExportPrefs, durationSecs: number): number | null {
+  if (!(durationSecs > 0)) return null;
+  if (p.format === "wav") return Math.round(durationSecs * 44100 * 4) + 44;
+  if (p.format === "mp3") {
+    const kbps = p.mp3Mode === "cbr" ? p.mp3Kbps : (MP3_VBR_LEVELS[p.mp3Quality]?.kbps ?? 0);
+    return kbps ? Math.round((kbps * 1000 * durationSecs) / 8) : null;
+  }
+  return null;
+}
+
+/** "12.3 MB" / "840 KB" for a byte count. */
+export function sizeText(bytes: number): string {
+  return bytes >= 1e6 ? `${(bytes / 1e6).toFixed(bytes >= 1e8 ? 0 : 1)} MB` : `${Math.max(1, Math.round(bytes / 1e3))} KB`;
+}
+
 /** Does the setting change the audio at all (a target or clip levelling)? */
 export const levelsActive = (l: LevelSettings): boolean => l.targetLufs !== null || l.clipLevel !== "off";
 
@@ -127,7 +281,8 @@ export function problemWith(p: ExportPrefs): string | null {
     (p.capAtPeak ? check("The true-peak ceiling", p.peakCeilingDb, LIMITS.peakCeiling, "dBTP") : null) ??
     (p.clipLevel === "fixed" ? check("The clip level", p.clipFixedLufs, LIMITS.clipFixed, "LUFS") : null) ??
     (p.clipLevel !== "off" ? check("The maximum clip gain", p.clipMaxDb, LIMITS.clipMax, "dB") : null) ??
-    check("The fade at the cuts", p.edgeFadeMs, LIMITS.edgeFadeMs, "ms")
+    check("The fade at the cuts", p.edgeFadeMs, LIMITS.edgeFadeMs, "ms") ??
+    (p.writeTags && p.year.trim() !== "" && !/^\d{4}$/.test(p.year.trim()) ? "The year must be four digits, like 2026, or empty for the current year." : null)
   );
 }
 

@@ -4,8 +4,26 @@
   // `export_loudness_analyse`), and the editor's preview plays with the analysed gains, so what is
   // measured and heard is what is written. The settings are kept on this computer; nothing here is
   // written to the device.
+  import { open as openFile } from "@tauri-apps/plugin-dialog";
   import { exportCancel } from "$lib/api/export";
-  import { clockText, durationText, gainText, lufsText, peakText, TARGET_PRESETS } from "$lib/state/exportprefs";
+  import {
+    AUDIO_FORMATS,
+    clockText,
+    durationText,
+    estimateBytes,
+    FLAC_LEVELS,
+    gainText,
+    lufsText,
+    MP3_CBR_KBPS,
+    MP3_VBR_LEVELS,
+    peakText,
+    sizeText,
+    TAG_LIMITS,
+    tagNote,
+    TARGET_PRESETS,
+    yearOf,
+  } from "$lib/state/exportprefs";
+  import { baseName } from "$lib/state/tracklistprefs";
   import { mixExport as X } from "$lib/state/mixexport.svelte";
   import { mixes } from "$lib/state/mixes.svelte";
   import { toast } from "$lib/state/toast.svelte";
@@ -89,6 +107,26 @@
     preview.pause();
     X.open = false;
   }
+
+  async function pickCover() {
+    try {
+      const f = await openFile({ title: "Choose the cover image", multiple: false, directory: false, filters: [{ name: "JPEG or PNG image", extensions: ["jpg", "jpeg", "png"] }] });
+      if (typeof f === "string" && f) {
+        X.prefs.coverPath = f;
+        changed();
+      }
+    } catch (e) {
+      toast.show(`Could not open the file dialog: ${errText(e)}`, "bad", 7000);
+    }
+  }
+
+  function removeCover() {
+    X.prefs.coverPath = "";
+    changed();
+  }
+
+  const fmt = $derived(AUDIO_FORMATS.find((f) => f.id === X.prefs.format));
+  const sizeGuess = $derived(X.info ? estimateBytes(X.prefs, X.info.durationSecs) : null);
 
   async function exportNow() {
     close();
@@ -261,6 +299,83 @@
         {#if X.lastExport?.result}
           <div class="muted small">Last export measured {lufsText(X.lastExport.result.lufs)}, {peakText(X.lastExport.result.truePeakDb)} (before encoding).</div>
         {/if}
+      </fieldset>
+
+      <fieldset>
+        <legend>File</legend>
+        <div class="row">
+          <label for="xf-format">Format</label>
+          <select id="xf-format" bind:value={X.prefs.format} onchange={changed}>
+            {#each AUDIO_FORMATS as f (f.id)}<option value={f.id}>{f.label}</option>{/each}
+          </select>
+          <span class="muted small">{fmt?.hint ?? ""}</span>
+        </div>
+        {#if X.prefs.format === "mp3"}
+          <div class="row">
+            <label for="xf-mode">Bitrate</label>
+            <select id="xf-mode" bind:value={X.prefs.mp3Mode} onchange={changed}>
+              <option value="cbr">Constant (the same every second)</option>
+              <option value="vbr">Variable (by quality)</option>
+            </select>
+            {#if X.prefs.mp3Mode === "cbr"}
+              <select aria-label="Constant bitrate" bind:value={X.prefs.mp3Kbps} onchange={changed}>
+                {#each MP3_CBR_KBPS as k (k)}<option value={k}>{k} kbit/s</option>{/each}
+              </select>
+            {:else}
+              <select aria-label="Variable bitrate quality" bind:value={X.prefs.mp3Quality} onchange={changed}>
+                {#each MP3_VBR_LEVELS as l (l.quality)}<option value={l.quality}>V{l.quality}: about {l.kbps} kbit/s{l.quality === 0 ? " (best)" : l.quality === 9 ? " (smallest)" : ""}</option>{/each}
+              </select>
+            {/if}
+          </div>
+        {:else if X.prefs.format === "flac"}
+          <div class="row">
+            <label for="xf-bits">Sample size</label>
+            <select id="xf-bits" bind:value={X.prefs.flacBits} onchange={changed}>
+              <option value={16}>16-bit (dithered, like a WAV)</option>
+              <option value={24}>24-bit</option>
+            </select>
+            <label for="xf-level">Compression</label>
+            <select id="xf-level" bind:value={X.prefs.flacLevel} onchange={changed}>
+              {#each FLAC_LEVELS as l (l.id)}<option value={l.id}>{l.label}</option>{/each}
+            </select>
+          </div>
+        {/if}
+        <div class="muted small">
+          {#if sizeGuess !== null}About {sizeText(sizeGuess)} for {durationText(X.info?.durationSecs ?? 0)} of audio. {/if}
+          The format is chosen again in the save window; a file name ending in another format's extension uses that format.
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>Tags</legend>
+        <label class="check"><input type="checkbox" bind:checked={X.prefs.writeTags} onchange={changed} /> Write tags into the file</label>
+        {#if X.prefs.writeTags}
+          <div class="grid">
+            <label for="xt-title">Title</label>
+            <input id="xt-title" type="text" maxlength={TAG_LIMITS.text} placeholder={doc.name} bind:value={X.titleText} autocomplete="off" />
+            <label for="xt-artist">Artist (your DJ name)</label>
+            <input id="xt-artist" type="text" maxlength={TAG_LIMITS.text} bind:value={X.prefs.djName} onchange={changed} autocomplete="off" />
+            <label for="xt-album">Album</label>
+            <input id="xt-album" type="text" maxlength={TAG_LIMITS.text} bind:value={X.prefs.album} onchange={changed} autocomplete="off" />
+            <label for="xt-year">Year</label>
+            <input id="xt-year" class="num-in" type="text" inputmode="numeric" maxlength="4" placeholder={yearOf(X.prefs)} bind:value={X.prefs.year} onchange={changed} autocomplete="off" />
+            <label for="xt-comment">Comment</label>
+            <input id="xt-comment" type="text" maxlength={TAG_LIMITS.comment} bind:value={X.prefs.comment} onchange={changed} autocomplete="off" />
+            <span class="lbl">Cover image</span>
+            <span class="cover">
+              <Button small onclick={() => void pickCover()}>{X.prefs.coverPath ? "Change…" : "Choose image…"}</Button>
+              {#if X.prefs.coverPath}
+                <span class="name" title={X.prefs.coverPath}>{baseName(X.prefs.coverPath)}</span>
+                <Button small onclick={removeCover}>Remove</Button>
+              {:else}
+                <span class="muted small">JPEG or PNG, up to 8 MB</span>
+              {/if}
+            </span>
+          </div>
+          <label class="check"><input type="checkbox" bind:checked={X.prefs.chapters} onchange={changed} /> Put the track list in the file as chapters (the same list and times as the CUE sheet)</label>
+          <div class="muted small">{tagNote(X.prefs.format)}</div>
+        {/if}
+        <div class="muted small">Tags are written into the exported file only; nothing is added to the device. These settings are kept on this computer.</div>
       </fieldset>
 
       <label class="check">
@@ -452,7 +567,27 @@
     align-items: center;
     margin: 8px 0;
   }
-  .grid label {
+  .grid label,
+  .grid .lbl {
     color: var(--muted);
+  }
+  .grid input[type="text"] {
+    width: 100%;
+    min-width: 0;
+  }
+  .grid input.num-in[type="text"] {
+    width: 78px;
+  }
+  .cover {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+  }
+  .cover .name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 320px;
   }
 </style>

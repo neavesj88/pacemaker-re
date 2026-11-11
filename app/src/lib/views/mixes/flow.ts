@@ -2,7 +2,8 @@
 // export audio. Each asks the user the way it must (unsaved changes, naming what is deleted,
 // file dialogs) and reports the outcome with a toast.
 import { open, save } from "@tauri-apps/plugin-dialog";
-import { exportCancel, exportCueTarget, exportMixAudio, type ExportExtras } from "$lib/api/export";
+import { exportCancel, exportCueTarget, exportMixAudio, type AudioFormat, type ExportExtras } from "$lib/api/export";
+import { extOf, resolveDest, saveFilters } from "$lib/state/exportprefs";
 import { mixDelete, mixExportPmk, mixImportPmk, mixRename, type MixSummary } from "$lib/api/mixes";
 import { mixExport } from "$lib/state/mixexport.svelte";
 import { mixes } from "$lib/state/mixes.svelte";
@@ -160,22 +161,22 @@ export async function exportAudio() {
     toast.show(mixExport.problem, "bad", 8000);
     return;
   }
-  let dest: string | null = null;
+  const wanted = mixExport.prefs.format;
+  let picked: string | null = null;
   try {
-    dest = await save({
+    picked = await save({
       title: mixExport.partial ? "Export part of the mix as audio" : "Export the mix as audio",
-      defaultPath: mixExport.partial ? `${doc.name} (part).ogg` : `${doc.name}.ogg`,
-      filters: [
-        { name: "Ogg Vorbis", extensions: ["ogg"] },
-        { name: "WAV", extensions: ["wav"] },
-      ],
+      defaultPath: `${doc.name}${mixExport.partial ? " (part)" : ""}.${extOf(wanted)}`,
+      filters: saveFilters(wanted),
     });
   } catch (e) {
     toast.show(`Could not open the save dialog: ${errText(e)}`, "bad", 7000);
     return;
   }
-  if (!dest) return;
-  const format = dest.toLowerCase().endsWith(".wav") ? "wav" : "ogg";
+  if (!picked) return;
+  // a name with a known extension is that format (typed or picked in the dialog); any other name
+  // gets the chosen format's extension, so the file is never a different format than its name says
+  const { path: dest, format } = resolveDest(picked, wanted);
   tracklist.ensureLoaded();
   let replaceCue = false;
   if (tracklist.writeCue) {
@@ -205,7 +206,7 @@ export async function exportAudio() {
   await startExport(root, doc, dest, format, replaceCue, extras);
 }
 
-async function startExport(root: string, doc: NonNullable<typeof mixes.doc>, dest: string, format: "ogg" | "wav", replaceCue: boolean, extras: ExportExtras) {
+async function startExport(root: string, doc: NonNullable<typeof mixes.doc>, dest: string, format: AudioFormat, replaceCue: boolean, extras: ExportExtras) {
   if (mv.exporting) return;
   mv.exporting = true;
   mv.exportPct = 0;
