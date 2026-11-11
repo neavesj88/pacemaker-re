@@ -19,6 +19,7 @@ pub mod library;
 pub mod metadata;
 pub mod mixes;
 pub mod playback;
+pub mod stems;
 pub mod tracks;
 
 pub fn setup(app: &mut tauri::App) {
@@ -34,6 +35,7 @@ pub fn setup(app: &mut tauri::App) {
     metadata::setup(app);
     analysis::setup(app);
     export::setup(app);
+    stems::setup(app);
 }
 
 /// The chain terminator: turns the accumulated paths into the Tauri handler.
@@ -61,6 +63,7 @@ macro_rules! register_handlers {
             metadata_commands,
             analysis_commands,
             export_commands,
+            stems_commands,
             end_commands
         }
     };
