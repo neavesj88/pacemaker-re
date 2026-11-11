@@ -73,7 +73,9 @@ Output: `libvocalfx.so`, 13,388 bytes; `build-info.txt` has the readelf summary.
    Delete it afterwards; without it the audio path makes no syscall at all.
 
 With the flag file absent the library is a pure observer: the stock Wah runs unchanged and only the log is written.
-That is the intended first boot.
+That is the intended first boot. The pad label is baked into the image (lang files), so it reads "Vocal" even then, and
+even with `revival-no-preload` (which only unloads the library); only a stock `.lang` file (or an image without them) shows "Wah" again.
+The log is not written while `g_file_storage` is loaded (the PC owns the FAT volume then; checked in `/proc/modules`).
 
 ## What the library does at load (all checked, otherwise it does nothing)
 

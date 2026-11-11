@@ -221,10 +221,27 @@ done:
 /* no integer divide on ARMv6 (would need libgcc): use the VFP */
 static uint32_t avg(uint32_t sum, uint32_t n) { return (uint32_t)((double)sum / (double)n); }
 
+/* The log lives on the FAT volume that pwrApplication exports with `modprobe g_file_storage file=/dev/hda1`. While
+ * that module is loaded the PC owns the volume, so the log is not touched (the player is expected to be killed
+ * before that, this is the belt to those braces). Unreadable /proc/modules counts as "not exported". */
+static int usb_storage_active(void)
+{
+    char m[4096];
+    ssize_t r;
+    int fd = open("/proc/modules", O_RDONLY);
+    if (fd < 0) return 0;
+    r = read(fd, m, sizeof m - 1);
+    close(fd);
+    if (r <= 0) return 0;
+    m[r] = 0;
+    return strstr(m, "g_file_storage") != 0;
+}
+
 static void log_write(const char *tag, unsigned secs)
 {
     char buf[2400];
     int n, fd, i;
+    if (usb_storage_active()) return;
     uint32_t t = st.timed ? st.timed : 1, last = st.timed < 16 ? st.timed : 16;
     n = snprintf(buf, sizeof buf,
         "libvocalfx %s [%s] t=+%us\n"

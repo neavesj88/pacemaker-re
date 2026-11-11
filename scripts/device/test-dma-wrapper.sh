@@ -186,7 +186,7 @@ PATH="$S:$SPATH" $RUN "$B" > "$F/out" 2>&1
 ck "drive reporting DMA: stock hdparm -d 1 /dev/hda" "grep -q -- 'hdparm -d 1 /dev/hda' $F/calls"
 setup a; export REVIVAL_IDENTIFY="$F/none"
 PATH="$S:$SPATH" $RUN "$B" > "$F/out" 2>&1
-ck "unreadable IDENTIFY: stock command" "grep -q -- 'hdparm -d 1 /dev/hda' $F/calls"
+ck "unreadable IDENTIFY: no hdparm call, stays in PIO" "[ \$(calls hdparm) = 0 ] && grep -q 'unreadable' $F/out"
 unset REVIVAL_IDENTIFY; done_
 
 echo "14. LD_PRELOAD block (device/vocalfx/wrapper-snippet.sh, kept verbatim in the wrapper); /pmds and /mnt/public redirected into the fake tree"

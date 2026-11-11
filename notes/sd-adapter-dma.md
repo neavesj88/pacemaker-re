@@ -129,7 +129,7 @@ becomes `/sbin/hdpboot` (NUL padded, same 21 bytes). Checks: the segment layout,
 adapter and put it in UDMA3 before the first mount, with no way to condition it on the flag file (the FAT volume is
 not mounted yet) and with a mount failure leading, after five tries, to the "Restore hard drive?" prompt.
 `hdpboot` (`scripts/device/hdparm-boot.sh`, in the rootfs) reads `/proc/ide/hda/identify` and runs exactly the stock
-`hdparm -d 1 /dev/hda` when word 49 bit 8 is set (also when IDENTIFY cannot be read), and does nothing otherwise.
+`hdparm -d 1 /dev/hda` when word 49 bit 8 is set, and does nothing otherwise (also when IDENTIFY cannot be read: fail closed, 073 review).
 So a drive that reports DMA boots as stock whatever image is installed (this replaced an earlier unconditional
 `-d 0`, which turned DMA off for every drive and relied on the wrapper to restore it), and the adapter boots in PIO
 as today; `-X udma5` (kept) is as harmless as it is now.
