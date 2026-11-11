@@ -246,13 +246,20 @@ pub async fn mix_beatmatch(root: String, doc: MixDoc, clip_id: String) -> AppRes
     .await?
 }
 
-/// Suggests a transition between two clips: a 16-bar (or the largest that fits) linear
-/// crossfade starting on the incoming clip's first beat, plus a bass-swap EQ tool for each clip.
-/// Changes nothing.
+/// Suggests a transition between two clips: a linear crossfade of `bars` bars (default 16; the
+/// largest that fits when the clips share less audio) starting on the incoming clip's first
+/// beat, plus a bass-swap EQ tool for each clip. The frontend's recipes reshape it. Changes
+/// nothing.
 #[tauri::command]
-pub async fn mix_auto_transition(root: String, doc: MixDoc, from_clip_id: String, to_clip_id: String) -> AppResult<TransitionSuggestion> {
+pub async fn mix_auto_transition(
+    root: String,
+    doc: MixDoc,
+    from_clip_id: String,
+    to_clip_id: String,
+    bars: Option<f64>,
+) -> AppResult<TransitionSuggestion> {
     tauri::async_runtime::spawn_blocking(move || -> AppResult<TransitionSuggestion> {
-        Ok(timing::auto_transition(&with_grids(&root, doc)?, &from_clip_id, &to_clip_id)?)
+        Ok(timing::auto_transition(&with_grids(&root, doc)?, &from_clip_id, &to_clip_id, bars)?)
     })
     .await?
 }

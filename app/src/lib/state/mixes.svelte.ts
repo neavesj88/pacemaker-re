@@ -472,18 +472,26 @@ class Mixes {
     return s;
   }
 
-  /** Asks for a transition between two clips. Returns it without applying when
-   * `apply` is false (to preview or let the user choose); apply later with `applyTransition`. */
-  async autoTransition(fromClipId: string, toClipId: string, apply = true): Promise<TransitionSuggestion> {
+  /** Asks for a transition between two clips, `bars` long (null = the backend's default of 16).
+   * Returns it without applying when `apply` is false (to reshape it with a recipe or let the
+   * user choose); apply later with `applyTransition`. */
+  async autoTransition(fromClipId: string, toClipId: string, apply = true, bars: number | null = null): Promise<TransitionSuggestion> {
     const root = this.root;
     if (!root || !this.doc) throw new Error("no mix is open");
-    const s = await mixAutoTransition(root, this.doc, fromClipId, toClipId);
+    const s = await mixAutoTransition(root, this.doc, fromClipId, toClipId, bars);
     if (apply) this.applyTransition(s);
     return s;
   }
 
-  applyTransition(s: TransitionSuggestion, replaceConflicts = false) {
-    this.edit("Auto transition", (d) => E.applyTransition(d, s, replaceConflicts));
+  /** Adds a suggestion as one undo step. `replaceConflicts` removes the tools it overlaps (else
+   * the new tool is skipped); `replacing` deletes that transition first (rebuilding it) and
+   * `remove` the tools with those ids. */
+  applyTransition(s: TransitionSuggestion, replaceConflicts = false, opts: { label?: string; replacing?: string; remove?: string[] } = {}) {
+    this.edit(opts.label ?? "Auto transition", (d) => {
+      let x = opts.replacing ? E.deleteTransitions(d, [opts.replacing]) : d;
+      if (opts.remove?.length) x = E.deleteProcesses(x, opts.remove);
+      return E.applyTransition(x, s, replaceConflicts);
+    });
     this.selected = [s.transition.id];
   }
 

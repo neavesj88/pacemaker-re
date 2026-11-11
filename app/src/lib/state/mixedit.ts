@@ -23,6 +23,7 @@ import type {
   TransitionSuggestion,
 } from "../api/mixes";
 import type { VocalMode } from "../api/device";
+import type { Kit } from "./transitionRecipes";
 
 /** Engine sample rate (same as SAMPLE_RATE in api/mixes.ts; duplicated so this file imports no value). */
 export const SR = 44100;
@@ -701,6 +702,9 @@ export function applyTransition(doc: MixDoc, s: TransitionSuggestion, replaceCon
   }
   return d;
 }
+
+/** What `buildRecipe` (state/transitionRecipes.ts) needs from this file. */
+export const recipeKit: Kit = { newTool, conflicts: toolConflicts };
 
 // ---------------------------------------------------------------------------------------------
 // Clipboard

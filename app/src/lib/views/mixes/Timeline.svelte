@@ -353,7 +353,7 @@
                   title="Add a crossfade over the overlap of “{clipTitle(g.from)}” and “{clipTitle(g.to)}”"
                   onclick={() => mixes.addTransition(g.from.id, g.to.id, g.start, g.end - g.start)}>+ X-fade</button
                 >
-                <button title="Crossfade with a bass swap, as suggested from the beat grids" onclick={() => void autoTransition(g.from.id, g.to.id)}>Auto</button>
+                <button title="Build a transition here with the recipe and length set in the Auto transition settings (select a crossfade or a clip to change them)" onclick={() => void autoTransition(g.from.id, g.to.id)}>Auto</button>
               </div>
             {/if}
           {/each}

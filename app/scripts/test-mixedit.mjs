@@ -11,6 +11,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import * as E from "../src/lib/state/mixedit.ts";
+import * as R from "../src/lib/state/transitionRecipes.ts";
 import * as L from "../src/lib/views/mixes/layout.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -368,6 +369,322 @@ test("find, ids", () => {
   const id = E.newId();
   assert.match(id, /^[0-9a-f]{32}$/);
   assert.notEqual(id, E.newId());
+});
+
+// ---- transition recipes -----------------------------------------------------------------------
+
+/** A base suggestion like the backend's: `bars` long from timeline `t0`. */
+function baseSuggestion(d, bars, t0 = 16 * BAR, beat = BEAT) {
+  const t = E.newTransition("a", "b", t0, bars * 4 * beat, "tr1");
+  return { transition: t, tools: [], bars, beat, barsAvailable: bars, notes: [] };
+}
+
+function recipeDoc() {
+  const a = clip("a", 0, 80 * BAR, 120, 1, grid(120, 0, 800, 0));
+  const b = clip("b", 16 * BAR, 80 * BAR, 120, 1, grid(120, 0, 800, 0), { channel: 1 });
+  return doc([a, b]);
+}
+
+const keysOf = (type) => E.TOOL_TYPES.find((x) => x.name === type).params;
+
+/** Everything a saved document needs of a built suggestion (the Rust validator's rules for these parts). */
+function checkBuilt(d, s, label) {
+  const t = s.transition;
+  assert.equal(t.between.from, "a", label);
+  // curve: x strictly increasing from 0 to 1, values 0..1
+  assert.equal(t.curve[0].x, 0, label);
+  assert.equal(t.curve.at(-1).x, 1, label);
+  for (let i = 0; i < t.curve.length; i++) {
+    assert.ok(t.curve[i].value >= 0 && t.curve[i].value <= 1, `${label} curve value`);
+    if (i) assert.ok(t.curve[i].x > t.curve[i - 1].x, `${label} curve x increases`);
+  }
+  assert.equal(t.curve[0].value, 0, `${label}: starts on the outgoing clip`);
+  assert.equal(t.curve.at(-1).value, 1, `${label}: ends on the incoming clip`);
+  const placed = new Map();
+  for (const ts of s.tools) {
+    const c = d.clips.find((x) => x.id === ts.clipId);
+    const p = ts.tool;
+    assert.equal(p.kind, "tool");
+    // inside its clip and inside the transition window, on the clip's local axis
+    assert.ok(p.start >= 0 && p.start + p.length <= c.length + 1e-6, `${label}: ${p.toolType} inside the clip`);
+    assert.ok(c.start + p.start >= t.start - 1e-6 && c.start + p.start + p.length <= t.start + t.length + 1e-6, `${label}: ${p.toolType} inside the window`);
+    // every parameter has an envelope, nothing extra, in the catalogue's range, integer strictly increasing positions over the tool
+    const want = keysOf(p.toolType);
+    assert.deepEqual(Object.keys(p.params).sort(), want.map((k) => k.key).sort(), `${label}: ${p.toolType} keys`);
+    for (const k of want) {
+      const nodes = p.params[k.key];
+      assert.ok(nodes.length >= 2, `${label} ${k.key}`);
+      assert.equal(nodes[0].pos, 0, `${label} ${k.key} first`);
+      assert.equal(nodes.at(-1).pos, Math.round(p.length) - 1, `${label} ${k.key} last`);
+      nodes.forEach((n, i) => {
+        assert.ok(Number.isInteger(n.pos), `${label} ${k.key} integer`);
+        assert.ok(n.value >= k.min && n.value <= k.max, `${label} ${k.key} ${n.value} in ${k.min}..${k.max}`);
+        if (i) assert.ok(n.pos > nodes[i - 1].pos, `${label} ${k.key} increasing`);
+      });
+    }
+    // no two tools of one kind overlap on a clip
+    const key = `${ts.clipId}/${p.toolType}`;
+    for (const o of placed.get(key) ?? []) assert.ok(p.start >= o.start + o.length - 1 || o.start >= p.start + p.length - 1, `${label}: two ${p.toolType} overlap`);
+    placed.set(key, [...(placed.get(key) ?? []), p]);
+  }
+  // applying it gives a document with the transition and all its tools
+  const applied = E.applyTransition(d, s);
+  assert.equal(applied.transitions.length, 1);
+  assert.equal(applied.clips.flatMap((c) => c.processes).length, s.tools.length, `${label}: all tools applied`);
+}
+
+test("recipe table: ids, lengths and defaults are consistent", () => {
+  assert.deepEqual(R.RECIPE_IDS, ["bassSwap", "longBlend", "echoOut", "filterSweep", "dropSwap", "hardCut"]);
+  assert.equal(new Set(R.RECIPE_IDS).size, R.RECIPES.length);
+  for (const r of R.RECIPES) {
+    assert.ok(r.lengths.includes(r.bars), `${r.id} default length is offered`);
+    assert.deepEqual([...r.lengths].sort((x, y) => x - y), r.lengths, `${r.id} lengths ascend`);
+    assert.ok(r.makes.length >= 1 && r.summary.length > 10 && r.label.length > 2);
+    for (const l of r.lengths) assert.ok(Number.isInteger(l * 4), `${r.id}: ${l} bars is whole beats`);
+  }
+  // every tool a recipe can add is in the device catalogue
+  const cat = new Set(E.TOOL_TYPES.map((x) => x.name));
+  const used = new Set();
+  for (const r of R.RECIPES) {
+    const d = recipeDoc();
+    for (const l of r.lengths) {
+      for (const ts of R.buildRecipe(d, baseSuggestion(d, l), r.id, { cutAt: "end" }, E.recipeKit).tools) used.add(ts.tool.toolType);
+    }
+  }
+  for (const u of used) assert.ok(cat.has(u), `${u} is a device tool`);
+  assert.deepEqual([...used].sort(), ["EQ", "Echo", "FILTER", "Roll"]);
+});
+
+test("recipe lengths: labels, nearest, requested", () => {
+  assert.equal(R.lengthLabel(16), "16 bars");
+  assert.equal(R.lengthLabel(1), "1 bar");
+  assert.equal(R.lengthLabel(0.25), "1 beat");
+  assert.equal(R.lengthLabel(0.5), "2 beats");
+  assert.equal(R.lengthLabel(1.5), "1.5 bars");
+  assert.equal(R.nearestLength("echoOut", 16), 8);
+  assert.equal(R.nearestLength("echoOut", 3), 4);
+  assert.equal(R.nearestLength("echoOut", 2.5), 2);
+  assert.equal(R.nearestLength("longBlend", 1), 8);
+  assert.equal(R.nearestLength("hardCut", 0.3), 0.25);
+  assert.equal(R.nearestLength("hardCut", NaN), 8);
+  assert.equal(R.requestedBars("longBlend", { bars: null }), 32);
+  assert.equal(R.requestedBars("longBlend", { bars: 4 }), 8);
+  assert.equal(R.requestedBars("bassSwap", { bars: 16 }), 16);
+  assert.throws(() => R.recipeDef("nope"));
+});
+
+test("recipe settings: defaults, merge ignores junk", () => {
+  assert.deepEqual(R.mergeRecipePrefs(undefined), R.DEFAULT_RECIPE_PREFS);
+  assert.deepEqual(R.mergeRecipePrefs("x"), R.DEFAULT_RECIPE_PREFS);
+  assert.deepEqual(R.DEFAULT_RECIPE_PREFS, { recipe: "bassSwap", bars: null, cutAt: "end", onConflict: "ask" });
+  assert.deepEqual(R.mergeRecipePrefs({ recipe: "echoOut", bars: 4, cutAt: "start", onConflict: "replace" }), { recipe: "echoOut", bars: 4, cutAt: "start", onConflict: "replace" });
+  assert.deepEqual(R.mergeRecipePrefs({ recipe: "nope", bars: -3, cutAt: "middle", onConflict: 7 }), R.DEFAULT_RECIPE_PREFS);
+  assert.equal(R.mergeRecipePrefs({ bars: 1000 }).bars, null);
+  assert.equal(R.mergeRecipePrefs({ bars: "8" }).bars, null);
+  assert.equal(R.mergeRecipePrefs({ bars: 0.25 }).bars, 0.25);
+});
+
+test("envelope() and curveOf() build valid nodes", () => {
+  assert.deepEqual(R.envelope(1000, [[0, 1], [999, 2]]), [{ pos: 0, value: 1 }, { pos: 999, value: 2 }]);
+  // missing ends are added with the neighbouring value; same position: the later wins; unsorted input is sorted
+  assert.deepEqual(R.envelope(1000, [[500, 5], [250, 3], [500.4, 6]]), [{ pos: 0, value: 3 }, { pos: 250, value: 3 }, { pos: 500, value: 6 }, { pos: 999, value: 6 }]);
+  // out of range positions are clamped
+  assert.deepEqual(R.envelope(100, [[-5, 1], [5000, 2]]), [{ pos: 0, value: 1 }, { pos: 99, value: 2 }]);
+  assert.deepEqual(R.envelope(10, []), []);
+  assert.deepEqual(R.curveOf([[0.5, 0.5]]), [{ x: 0, value: 0.5 }, { x: 0.5, value: 0.5 }, { x: 1, value: 0.5 }]);
+  assert.deepEqual(R.curveOf([[0, 0], [1, 1], [1, 0.7], [-1, 0]]).map((n) => n.x), [0, 1]);
+  assert.deepEqual(R.curveOf([[0, -4], [1, 9]]), [{ x: 0, value: 0 }, { x: 1, value: 1 }]);
+});
+
+test("every recipe at every length builds a valid transition", () => {
+  for (const r of R.RECIPES) {
+    for (const l of r.lengths) {
+      for (const cutAt of ["start", "end"]) {
+        const d = recipeDoc();
+        const s = R.buildRecipe(d, baseSuggestion(d, l), r.id, { cutAt }, E.recipeKit);
+        checkBuilt(d, s, `${r.id}/${l}/${cutAt}`);
+        assert.equal(s.transition.length, l * BAR, "the geometry is the backend's");
+        assert.equal(s.transition.start, 16 * BAR);
+      }
+    }
+  }
+});
+
+test("recipes keep to the backend's geometry and do not mutate it", () => {
+  const d = recipeDoc();
+  const base = baseSuggestion(d, 8);
+  base.notes = ["kept"];
+  const before = JSON.stringify(base);
+  const s = R.buildRecipe(d, base, "echoOut", { cutAt: "end" }, E.recipeKit);
+  assert.equal(JSON.stringify(base), before);
+  assert.deepEqual(s.notes, ["kept"]);
+  assert.equal(s.transition.id, "tr1");
+  assert.equal(s.bars, 8);
+  assert.notEqual(s.transition.curve, base.transition.curve);
+});
+
+test("bass swap keeps the backend's tools", () => {
+  const d = recipeDoc();
+  const base = baseSuggestion(d, 16);
+  base.tools = [{ clipId: "a", tool: E.newTool("EQ", 16 * BAR, 16 * BAR, "ea"), conflicts: [] }];
+  const s = R.buildRecipe(d, base, "bassSwap", { cutAt: "end" }, E.recipeKit);
+  assert.deepEqual(s.tools, base.tools);
+  assert.deepEqual(s.transition.curve, [{ x: 0, value: 0 }, { x: 1, value: 1 }]);
+});
+
+test("echo out: echo takes over the outgoing clip by the middle, the incoming bass comes in there", () => {
+  const d = recipeDoc();
+  const s = R.buildRecipe(d, baseSuggestion(d, 4), "echoOut", { cutAt: "end" }, E.recipeKit);
+  const L = 4 * BAR;
+  assert.deepEqual(s.tools.map((x) => [x.clipId, x.tool.toolType]), [["a", "Echo"], ["b", "EQ"]]);
+  const wet = s.tools[0].tool.params["Echo-Wet/Dry"];
+  assert.equal(wet[0].value, 0);
+  assert.equal(E.envelopeAt(wet, L / 2), 100);
+  assert.equal(E.envelopeAt(wet, L / 4), 0);
+  assert.equal(wet.at(-1).value, 100);
+  // the outgoing clip is held until the middle, then the fader goes to the incoming one
+  assert.deepEqual(s.transition.curve, [{ x: 0, value: 0 }, { x: 0.5, value: 0 }, { x: 1, value: 1 }]);
+  const lo = s.tools[1].tool.params["EQ-Lo"];
+  assert.equal(lo[0].value, -100);
+  assert.equal(lo.at(-1).value, 0);
+  assert.equal(E.envelopeAt(lo, L / 2), -100);
+  // tools start at the transition, on each clip's own local axis (b starts at 16 bars, a at 0)
+  assert.equal(s.tools[1].tool.start, 0);
+  assert.equal(s.tools[0].tool.start, 16 * BAR);
+  // nodes sit on beats
+  for (const n of wet.slice(0, -1)) assert.equal(n.pos % BEAT, 0);
+});
+
+test("filter sweep: outgoing high-pass up, incoming low-pass opening", () => {
+  const d = recipeDoc();
+  const s = R.buildRecipe(d, baseSuggestion(d, 8), "filterSweep", { cutAt: "end" }, E.recipeKit);
+  const [out, inc] = s.tools.map((x) => x.tool.params["FILTER-CutOff"]);
+  assert.deepEqual(s.tools.map((x) => x.clipId), ["a", "b"]);
+  assert.equal(out[0].value, 0);
+  assert.equal(out.at(-1).value, 100);
+  assert.ok(out.every((n, i) => i === 0 || n.value >= out[i - 1].value), "the high-pass only rises");
+  assert.equal(inc[0].value, -100);
+  assert.equal(inc.at(-1).value, 0);
+  assert.ok(inc.every((n, i) => i === 0 || n.value >= inc[i - 1].value), "the low-pass only opens");
+  assert.deepEqual(s.transition.curve, [{ x: 0, value: 0 }, { x: 1, value: 1 }]);
+});
+
+test("long blend: S-shaped fader and an overlapping bass trade", () => {
+  const d = recipeDoc();
+  const s = R.buildRecipe(d, baseSuggestion(d, 32), "longBlend", { cutAt: "end" }, E.recipeKit);
+  const L = 32 * BAR;
+  const [outLo, inLo] = s.tools.map((x) => x.tool.params["EQ-Lo"]);
+  assert.equal(s.tools[0].clipId, "a");
+  assert.equal(outLo[0].value, 0);
+  assert.equal(outLo.at(-1).value, -100);
+  assert.equal(inLo[0].value, -100);
+  assert.equal(inLo.at(-1).value, 0);
+  // at the middle neither bass is killed: the incoming one is on its way in before the outgoing one is gone
+  assert.ok(E.envelopeAt(inLo, L * 0.5) > -50 && E.envelopeAt(outLo, L * 0.5) > -50);
+  assert.ok(E.envelopeAt(inLo, L * 0.3) === -100 && E.envelopeAt(outLo, L * 0.3) === 0);
+  assert.ok(E.envelopeAt(inLo, L * 0.6) === 0 && E.envelopeAt(outLo, L * 0.7) === -100);
+  const q = s.transition.curve.find((n) => n.x === 0.25);
+  assert.ok(q && q.value < 0.25, "slow start");
+});
+
+test("hard cut: a step at the end or the start, no tools", () => {
+  const d = recipeDoc();
+  const end = R.buildRecipe(d, baseSuggestion(d, 8), "hardCut", { cutAt: "end" }, E.recipeKit);
+  assert.equal(end.tools.length, 0);
+  const L = 8 * BAR;
+  const [c0, c1, c2] = end.transition.curve;
+  assert.deepEqual([c0, c2], [{ x: 0, value: 0 }, { x: 1, value: 1 }]);
+  assert.equal(c1.value, 0);
+  close((1 - c1.x) * L, R.CUT_RAMP, 2, "the step lasts about ten milliseconds");
+  const start = R.buildRecipe(d, baseSuggestion(d, 8), "hardCut", { cutAt: "start" }, E.recipeKit);
+  assert.deepEqual(start.transition.curve.map((n) => n.value), [0, 1, 1]);
+  close(start.transition.curve[1].x * L, R.CUT_RAMP, 2);
+  // a one-beat window: the step takes at most half of it
+  const tiny = R.buildRecipe(d, baseSuggestion(d, 0.25), "hardCut", { cutAt: "end" }, E.recipeKit);
+  assert.ok(tiny.transition.curve.every((n, i, a) => i === 0 || n.x > a[i - 1].x));
+  assert.ok(tiny.transition.curve[1].x >= 0.5);
+});
+
+test("drop swap: build on the outgoing clip, step to the incoming one at the end", () => {
+  const d = recipeDoc();
+  const s = R.buildRecipe(d, baseSuggestion(d, 8), "dropSwap", { cutAt: "start" }, E.recipeKit);
+  const L = 8 * BAR;
+  assert.deepEqual(s.tools.map((x) => [x.clipId, x.tool.toolType]), [["a", "EQ"], ["a", "FILTER"], ["a", "Roll"]]);
+  // the hard-cut option does not move this one
+  assert.deepEqual(s.transition.curve.map((n) => n.value), [0, 0, 1]);
+  assert.ok(s.transition.curve[1].x > 0.99);
+  const [eq, filter, roll] = s.tools.map((x) => x.tool);
+  assert.equal(E.envelopeAt(eq.params["EQ-Lo"], L / 2 - BEAT), 0, "bass present before the middle");
+  assert.equal(E.envelopeAt(eq.params["EQ-Lo"], L - 1), -100, "bass gone for the build");
+  assert.equal(filter.start, 16 * BAR + L / 2, "the rising filter starts at the middle");
+  assert.equal(filter.start + filter.length, 16 * BAR + L);
+  assert.equal(filter.params["FILTER-CutOff"].at(-1).value, 80);
+  // the beat-repeat is the last bar, in whole beats, and tightens from an eighth to a sixteenth
+  assert.equal(roll.length, BAR);
+  assert.equal(roll.start + roll.length, 16 * BAR + L);
+  assert.deepEqual([...new Set(roll.params["Roll-Time "].map((n) => n.value))], [-1, -2]);
+  assert.ok(roll.params["Roll-Wet/Dry"].at(-1).value > roll.params["Roll-Wet/Dry"][0].value);
+});
+
+test("drop swap on a two-bar window keeps the repeat inside the window", () => {
+  const d = recipeDoc();
+  const s = R.buildRecipe(d, baseSuggestion(d, 2), "dropSwap", { cutAt: "end" }, E.recipeKit);
+  checkBuilt(d, s, "drop swap 2 bars");
+  const roll = s.tools.find((x) => x.tool.toolType === "Roll").tool;
+  assert.equal(roll.length, BAR);
+});
+
+test("a recipe that needs more overlap than the clips share says so and changes nothing", () => {
+  const d = recipeDoc();
+  assert.throws(() => R.buildRecipe(d, baseSuggestion(d, 3), "longBlend", { cutAt: "end" }, E.recipeKit), /Only 3 bars .* long blend needs at least 8 bars/);
+  assert.throws(() => R.buildRecipe(d, baseSuggestion(d, 1), "filterSweep", { cutAt: "end" }, E.recipeKit), /filter sweep needs at least 2 bars/);
+  assert.throws(() => R.buildRecipe(d, baseSuggestion(d, 0.25), "echoOut", { cutAt: "end" }, E.recipeKit), /1 beat/);
+  // the ones with a low minimum still work on short overlaps
+  assert.doesNotThrow(() => R.buildRecipe(d, baseSuggestion(d, 0.25), "hardCut", { cutAt: "end" }, E.recipeKit));
+  assert.doesNotThrow(() => R.buildRecipe(d, baseSuggestion(d, 1), "bassSwap", { cutAt: "end" }, E.recipeKit));
+  assert.deepEqual(R.buildRecipe(d, baseSuggestion(d, 0.5), "bassSwap", { cutAt: "end" }, E.recipeKit).tools, []);
+  const noLink = baseSuggestion(d, 8);
+  noLink.transition = { ...noLink.transition, between: null };
+  assert.throws(() => R.buildRecipe(d, noLink, "hardCut", { cutAt: "end" }, E.recipeKit), /which clips/);
+  const wrong = baseSuggestion(d, 8);
+  wrong.transition = { ...wrong.transition, between: { from: "zz", to: "b" } };
+  assert.throws(() => R.buildRecipe(d, wrong, "echoOut", { cutAt: "end" }, E.recipeKit), /no clip zz/);
+});
+
+test("tools of the user's that are in the way are found and named", () => {
+  const mine = E.newTool("Echo", 17 * BAR, 2 * BAR, "mine");
+  const inside = E.newTool("Reverb", 18 * BAR, BAR, "rev");
+  const outside = E.newTool("FILTER", 40 * BAR, BAR, "far");
+  const a = clip("a", 0, 80 * BAR, 120, 1, grid(120, 0, 800, 0), { processes: [mine, inside, outside, E.newRegion("loop", 18 * BAR, BAR, "lp")] });
+  const b = clip("b", 16 * BAR, 80 * BAR, 120, 1, grid(120, 0, 800, 0), { channel: 1 });
+  const d = doc([a, b]);
+  const s = R.buildRecipe(d, baseSuggestion(d, 4), "echoOut", { cutAt: "end" }, E.recipeKit);
+  // the new Echo overlaps mine
+  assert.deepEqual(s.tools[0].conflicts, ["mine"]);
+  let way = R.toolsInTheWay(d, s, null);
+  assert.deepEqual(way, [{ id: "mine", clipId: "a", toolType: "Echo", why: "overlaps" }]);
+  // rebuilding a transition also takes in the tools inside its window, never loops or tools outside it
+  way = R.toolsInTheWay(d, s, { start: 16 * BAR, length: 4 * BAR, between: { from: "a", to: "b" } });
+  assert.deepEqual(way.map((w) => [w.id, w.why]), [["mine", "overlaps"], ["rev", "inside"]]);
+  assert.deepEqual(R.toolsInTheWay(d, s, { start: 16 * BAR, length: 4 * BAR, between: null }).map((w) => w.id), ["mine"]);
+  // applying: the new Echo is skipped without replacing, and replaces mine with it
+  const kept = E.applyTransition(d, s, false);
+  assert.equal(kept.clips[0].processes.some((p) => p.id === "mine"), true);
+  assert.equal(kept.clips[0].processes.filter((p) => p.toolType === "Echo").length, 1, "the new Echo was skipped");
+  const swapped = E.applyTransition(d, s, true);
+  assert.equal(swapped.clips[0].processes.some((p) => p.id === "mine"), false);
+  assert.equal(swapped.clips[0].processes.filter((p) => p.toolType === "Echo").length, 1);
+  // nothing in the way on a clean mix
+  const clean = recipeDoc();
+  assert.deepEqual(R.toolsInTheWay(clean, R.buildRecipe(clean, baseSuggestion(clean, 8), "filterSweep", { cutAt: "end" }, E.recipeKit), null), []);
+});
+
+test("describeTools names every tool added", () => {
+  const d = recipeDoc();
+  const s = R.buildRecipe(d, baseSuggestion(d, 8), "dropSwap", { cutAt: "end" }, E.recipeKit);
+  const lines = R.describeTools(s, (id) => `Track ${id}`);
+  assert.deepEqual(lines, ['EQ on "Track a"', 'FILTER on "Track a"', 'Roll on "Track a"']);
+  assert.equal(R.describeTools(s, (id) => id, (t) => t.toLowerCase())[0], 'eq on "a"');
 });
 
 console.log(`\n${n} tests passed`);

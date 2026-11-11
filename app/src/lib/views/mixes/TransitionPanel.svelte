@@ -1,12 +1,15 @@
 <script lang="ts">
   // Inspector for one crossfade: which clips it joins, its fader curve, type, beat-match.
+  import { untrack } from "svelte";
   import type { EnvNode, TransitionDoc } from "$lib/api/mixes";
   import * as E from "$lib/state/mixedit";
   import { mixes } from "$lib/state/mixes.svelte";
   import EnvelopeSvg from "./EnvelopeSvg.svelte";
-  import { beatmatch, clipTitle, errText } from "./actions";
+  import RecipeSettings from "./RecipeSettings.svelte";
+  import { autoTransition, beatmatch, clipTitle } from "./actions";
   import { CURVE_PRESETS, CURVE_SCALE, SR, barBeat, clock, curveName, curveToEnv, envToCurve } from "./layout";
-  import { toast } from "$lib/state/toast.svelte";
+  import { recipePrefs } from "./recipePrefs.svelte";
+  import { RECIPES, lengthLabel, nearestLength, recipeDef, requestedBars, type RecipeId } from "$lib/state/transitionRecipes";
 
   let { t, ondelete }: { t: TransitionDoc; ondelete: () => void } = $props();
 
@@ -26,16 +29,20 @@
     mixes.setCurve(t.id, envToCurve(nodes), { live: true });
   }
 
-  async function redo() {
-    if (!from || !to) return;
-    try {
-      const s = await mixes.autoTransition(from.id, to.id, false);
-      mixes.edit("Auto transition", (d) => E.applyTransition(E.deleteTransitions(d, [t.id]), s, false));
-      mixes.select([s.transition.id]);
-      toast.show(`Transition rebuilt (${s.bars % 1 === 0 ? s.bars : s.bars.toFixed(1)} bars).${s.notes.length ? " " + s.notes.join("; ") : ""}`, "ok", 6000);
-    } catch (e) {
-      toast.show(`Auto transition: ${errText(e)}`, "bad", 7000);
-    }
+  // The recipe to rebuild this crossfade with; starts from the one it was built with in this session, else the defaults.
+  // (the panel is keyed by the transition, so reading its id once is right)
+  const made = untrack(() => recipePrefs.built.get(t.id));
+  let recipe = $state<RecipeId>(made?.recipe ?? recipePrefs.value.recipe);
+  let recipeBars = $state<number>(made ? nearestLength(made.recipe, made.bars) : requestedBars(recipePrefs.value.recipe, recipePrefs.value));
+  const def = $derived(recipeDef(recipe));
+
+  function pickRecipe(id: RecipeId) {
+    recipe = id;
+    const want = recipePrefs.value.bars;
+    recipeBars = want == null ? recipeDef(id).bars : nearestLength(id, want);
+  }
+  function rebuild() {
+    if (from && to) void autoTransition(from.id, to.id, { recipe, bars: recipeBars, replacing: t.id });
   }
 </script>
 
@@ -93,9 +100,33 @@
   <label class="check"><input type="checkbox" checked={t.beatMatch} onchange={(e) => patch("Beat-match flag", (x) => ({ ...x, beatMatch: e.currentTarget.checked }))} /> flag the crossfade</label>
 </div>
 
+<h4>Recipe</h4>
+<div class="field">
+  <label for="tp-recipe">Recipe</label>
+  <select id="tp-recipe" value={recipe} onchange={(e) => pickRecipe(e.currentTarget.value as RecipeId)}>
+    {#each RECIPES as r (r.id)}<option value={r.id}>{r.label}</option>{/each}
+  </select>
+</div>
+<div class="field">
+  <label for="tp-bars">Length</label>
+  <select id="tp-bars" value={String(recipeBars)} onchange={(e) => (recipeBars = Number(e.currentTarget.value))}>
+    {#each def.lengths as n (n)}<option value={String(n)}>{lengthLabel(n)}</option>{/each}
+  </select>
+</div>
+<div class="muted small">{def.summary}</div>
+<ul class="makes">
+  {#each def.makes as m (m)}<li>{m}</li>{/each}
+</ul>
+<div class="buttons">
+  <button disabled={!from || !to} onclick={rebuild} title="Replaces this crossfade with the recipe. Tools of yours that are in the way are handled as the settings below say.">Rebuild as {def.label.toLowerCase()}</button>
+</div>
+<details class="defaults">
+  <summary>Auto transition settings</summary>
+  <RecipeSettings />
+</details>
+
 <div class="buttons">
   <button disabled={!to} onclick={() => to && void beatmatch(to.id)} title="Match the later clip's tempo and beats to the clip before it">Beat-match clips</button>
-  <button disabled={!from || !to} onclick={redo} title="Replace with the suggested crossfade and bass swap">Auto transition</button>
   <button class="danger" onclick={ondelete}>Delete…</button>
 </div>
 
@@ -114,6 +145,20 @@
     align-items: center;
     color: var(--text);
     font-size: 13px;
+  }
+  .makes {
+    margin: 4px 0 0;
+    padding-left: 18px;
+    font-size: 12px;
+    color: var(--muted);
+  }
+  .defaults {
+    margin-top: 10px;
+    font-size: 12px;
+  }
+  .defaults summary {
+    cursor: pointer;
+    color: var(--muted);
   }
   .presets {
     display: flex;

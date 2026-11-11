@@ -6,6 +6,9 @@
   import { mixes } from "$lib/state/mixes.svelte";
   import { autoTransition, beatmatch, clipTitle, duplicateSelection, neighbours } from "./actions";
   import { barBeat, clock, fmtSemis, keyToEnv, SR } from "./layout";
+  import RecipeSettings from "./RecipeSettings.svelte";
+  import { recipePrefs } from "./recipePrefs.svelte";
+  import { lengthLabel, recipeDef, requestedBars } from "$lib/state/transitionRecipes";
   import { mv, type EnvLaneId } from "./view.svelte";
 
   let { clip, ondelete }: { clip: Clip; ondelete: () => void } = $props();
@@ -121,8 +124,12 @@
 <h4>Actions</h4>
 <div class="buttons">
   <button disabled={!nb.prev} onclick={() => void beatmatch(clip.id)} title={nb.prev ? "Match tempo and beats to the previous clip" : "There is no earlier clip"}>Beat-match</button>
-  <button disabled={!nb.next} onclick={() => nb.next && void autoTransition(clip.id, nb.next.id)} title="Crossfade into the next clip, with a bass swap">Auto transition</button>
+  <button disabled={!nb.next} onclick={() => nb.next && void autoTransition(clip.id, nb.next.id)} title="Transition into the next clip with the recipe set below">Auto transition</button>
 </div>
+<details class="defaults">
+  <summary>{recipeDef(recipePrefs.value.recipe).label}, {lengthLabel(requestedBars(recipePrefs.value.recipe, recipePrefs.value))}</summary>
+  <RecipeSettings />
+</details>
 <div class="buttons">
   <button onclick={duplicateSelection}>Duplicate</button>
   <button onclick={() => mixes.copy()}>Copy</button>
@@ -138,6 +145,14 @@
 <p class="note">Beat-match moves this clip so its beats sit on the previous clip's; it changes the clip's tempo and start. Edit gain and key in their lanes: click to add a node, drag to move, right-click to remove.</p>
 
 <style>
+  .defaults {
+    margin-top: 6px;
+    font-size: 12px;
+  }
+  .defaults summary {
+    cursor: pointer;
+    color: var(--muted);
+  }
   .small {
     font-size: 12px;
   }

@@ -361,6 +361,11 @@ export type TransitionSuggestion = {
   tools: ToolSuggestion[];
   /** Overlap length in bars (4 beats) at the incoming clip's tempo. */
   bars: number;
+  /** Samples in one beat of the incoming clip at the transition start. */
+  beat: number;
+  /** How many bars both clips are audible together from the transition start: the longest the
+   * transition could be. */
+  barsAvailable: number;
   notes: string[];
 };
 
@@ -415,9 +420,11 @@ export const mixMakeClip = (root: string, trackId: number, tempoBpm: number | nu
 export const mixBeatmatch = (root: string, doc: MixDoc, clipId: string) =>
   invoke<BeatmatchSuggestion>("mix_beatmatch", { root, doc, clipId });
 
-/** Suggests the transition between two clips (16 bars or what fits, bass swap). Changes nothing. */
-export const mixAutoTransition = (root: string, doc: MixDoc, fromClipId: string, toClipId: string) =>
-  invoke<TransitionSuggestion>("mix_auto_transition", { root, doc, fromClipId, toClipId });
+/** Suggests the transition between two clips: `bars` long (default 16; the largest that fits
+ * when the clips share less audio), a linear crossfade and a bass swap. `state/transitionRecipes.ts`
+ * reshapes that into the other recipes. Changes nothing. */
+export const mixAutoTransition = (root: string, doc: MixDoc, fromClipId: string, toClipId: string, bars: number | null = null) =>
+  invoke<TransitionSuggestion>("mix_auto_transition", { root, doc, fromClipId, toClipId, bars });
 
 // ---------------------------------------------------------------------------------------------
 // Tool catalogue types (the catalogue itself, TOOL_TYPES, is in state/mixedit.ts)

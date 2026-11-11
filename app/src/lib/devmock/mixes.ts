@@ -211,17 +211,27 @@ function mockBeatmatch(doc: MixDoc, clipId: string): BeatmatchSuggestion {
   };
 }
 
-function mockTransition(doc: MixDoc, fromId: string, toId: string): TransitionSuggestion {
+/** Same rule as `pick_length` in commands/mixes/timing.rs. */
+function pickLength(avail: number, beat: number, requested: number): number {
+  const bar = beat * 4;
+  const beats = Math.max(1, Math.round(requested * 4));
+  if (beats * beat <= avail + 1) return beats * beat;
+  const n = [64, 32, 16, 8, 4, 2, 1].find((x) => x <= requested && x * bar <= avail + 1);
+  return n !== undefined ? n * bar : Math.max(1, Math.floor(avail / beat)) * beat;
+}
+
+function mockTransition(doc: MixDoc, fromId: string, toId: string, requested: number | null): TransitionSuggestion {
   const a = E.clipOf(doc, fromId);
   const b = E.clipOf(doc, toId);
   if (!a || !b || a.id === b.id) throw "a transition needs two different clips";
   const bpm = E.effectiveBpm(b, b.trimStart);
   const bar = ((60 / bpm) * 4) * SR;
   const t0 = E.clipBeats(b).find((t) => t >= b.visibleStart - 1) ?? b.visibleStart;
-  const avail = a.visibleEnd - t0;
+  const avail = Math.min(a.visibleEnd, b.visibleEnd) - t0;
   if (avail < bar / 8) throw "the clips do not overlap (move the later clip earlier)";
-  const bars = [16, 8, 4, 2, 1].find((n) => n * bar <= avail + 1) ?? 1;
-  const length = Math.min(bars * bar, avail);
+  const want = requested ?? 16;
+  if (!(want >= 0.25 && want <= 128)) throw `a transition length of ${want} bars is not usable (a beat to 128 bars)`;
+  const length = pickLength(avail, bar / 4, want);
   const t = E.newTransition(a.id, b.id, t0, length);
   const mk = (clip: Clip, after: boolean) => {
     const tool = E.newTool("EQ", t0 - clip.start, length);
@@ -233,7 +243,7 @@ function mockTransition(doc: MixDoc, fromId: string, toId: string): TransitionSu
     tool.params["EQ-Lo"] = lo;
     return { clipId: clip.id, tool, conflicts: [] as string[] };
   };
-  return { transition: t, tools: [mk(a, true), mk(b, false)], bars: length / bar, notes: ["Browser preview"] };
+  return { transition: t, tools: length >= bar ? [mk(a, true), mk(b, false)] : [], bars: length / bar, beat: bar / 4, barsAvailable: avail / bar, notes: ["Browser preview"] };
 }
 
 export const handlers: Handlers = {
@@ -299,5 +309,5 @@ export const handlers: Handlers = {
   mix_track_info: (a) => (a.trackIds as number[]).map(trackInfo),
   mix_make_clip: (a) => makeClip(a.trackId, a.tempoBpm ?? null),
   mix_beatmatch: (a) => mockBeatmatch(a.doc as MixDoc, a.clipId),
-  mix_auto_transition: (a) => mockTransition(a.doc as MixDoc, a.fromClipId, a.toClipId),
+  mix_auto_transition: (a) => mockTransition(a.doc as MixDoc, a.fromClipId, a.toClipId, a.bars ?? null),
 };
