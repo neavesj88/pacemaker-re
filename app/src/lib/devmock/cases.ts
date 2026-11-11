@@ -1,6 +1,7 @@
 // Mock of src-tauri/src/commands/cases.rs. Mutates the shared `cases` fixture so the Cases view,
 // the sidebar counts and the library reload all agree. Invented placeholder data only.
 import type { CaseInfo, CaseMeta, Rule, SmartCase } from "../api/cases";
+import { planMerge, planTransfer } from "../state/casePlan";
 import { cases, tracks } from "./db";
 import type { Handlers } from "./types";
 
@@ -52,6 +53,29 @@ function create(name: string, ids: number[]): MockCase {
 
 function favouriteCase(): MockCase | undefined {
   return cases.filter((c) => c.name === FAVOURITES).sort((a, b) => a.id - b.id)[0];
+}
+
+// ---- organising: the same plans the Rust side makes (state/casePlan.ts is their twin) ---------------
+
+function mergePlan(sourceIds: number[], target: number | null) {
+  const ids = [...new Set<number>(sourceIds)];
+  if (ids.length === 0) throw "invalid: pick at least one case to merge";
+  if (target != null) {
+    find(target);
+    if (ids.includes(target)) throw "invalid: a case cannot be merged into itself";
+  }
+  const lists = ids.map((id) => [...new Set(find(id).ids.filter(known))]);
+  const plan = planMerge(lists, target != null ? find(target).ids : []);
+  plan.stale = ids.reduce((n, id) => n + new Set(find(id).ids).size, 0) - lists.reduce((n, l) => n + l.length, 0);
+  return plan;
+}
+
+function transferPlan(from: number | null, to: number, trackIds: number[], remove: boolean) {
+  const dest = find(to);
+  if (remove && from == null) throw "invalid: a move needs the case the tracks come from";
+  if (from === to) throw "invalid: the tracks are already in that case";
+  const src = from != null ? find(from).ids.filter(known) : null;
+  return planTransfer(trackIds, src, dest.ids, remove, known);
 }
 
 // ---- smart cases ---------------------------------------------------------------------------------
@@ -209,6 +233,61 @@ export const handlers: Handlers = {
     return now;
   },
   cases_favourite_ids: () => [...(favouriteCase()?.ids ?? [])],
+
+  // ---- organising ----
+  cases_duplicate: (a) => {
+    checkName(a.name);
+    const src = find(a.caseId);
+    const copy = create(a.name, src.ids.filter(known)); // like the real one, a row for a deleted track is not copied
+    const m = metaById.get(src.id);
+    if (m) metaById.set(copy.id, { ...m, times_played: 0, last_played: 0 });
+    return copy.id;
+  },
+  cases_merge_preview: (a) => mergePlan(a.sourceIds, a.target),
+  cases_merge: (a) => {
+    const plan = mergePlan(a.sourceIds, a.target);
+    let dest: MockCase;
+    if (a.target != null) dest = find(a.target);
+    else if (a.newName != null) dest = create(a.newName, []);
+    else throw "Pick either an existing case or a name for a new one.";
+    dest.ids.push(...plan.added);
+    refresh(dest);
+    let deleted = 0;
+    if (a.deleteSources) {
+      for (const id of new Set<number>(a.sourceIds)) {
+        const i = cases.findIndex((c) => c.id === id);
+        if (i >= 0) (cases.splice(i, 1), deleted++);
+      }
+    }
+    return { case_id: dest.id, added: plan.added.length, deleted_sources: deleted };
+  },
+  cases_transfer_preview: (a) => transferPlan(a.from, a.to, a.trackIds, a.removeFromSource),
+  cases_transfer: (a) => {
+    const plan = transferPlan(a.from, a.to, a.trackIds, a.removeFromSource);
+    const dest = find(a.to);
+    dest.ids.push(...plan.to_add);
+    refresh(dest);
+    if (a.from != null && plan.to_remove.length > 0) {
+      const src = find(a.from);
+      const gone = new Set(plan.to_remove);
+      src.ids = src.ids.filter((id) => !gone.has(id));
+      refresh(src);
+    }
+    return { added: plan.to_add.length, removed: plan.to_remove.length };
+  },
+  cases_delete_many: (a) => {
+    let n = 0;
+    for (const id of new Set<number>(a.caseIds)) {
+      const i = cases.findIndex((c) => c.id === id);
+      if (i >= 0) (cases.splice(i, 1), n++);
+    }
+    return n;
+  },
+  cases_export: (a) => {
+    const c = find(a.caseId);
+    if (c.ids.length === 0) throw "This case has no tracks to export.";
+    return { path: String(a.dest), tracks: c.ids.length };
+  },
 
   smart_cases_list: () => structuredClone(smartCases),
   smart_cases_counts: () => smartCases.map((s) => ({ id: s.id, count: matches(s.rules).length })),

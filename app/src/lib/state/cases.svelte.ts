@@ -3,17 +3,28 @@
 // a light refresh (the case list only, not the whole library) that also patches the case
 // counts the sidebar reads from `session.library.cases`.
 import {
+  type CaseExportFormat,
   type CaseInfo,
   type CaseMeta,
+  type MergeDone,
+  type MergePlan,
+  type MergeTarget,
   type SmartCase,
+  type TransferDone,
+  type TransferPlan,
   addTracksToCase,
   caseTracks,
   createCase,
   deleteCase,
+  deleteCases,
   deleteSmartCase,
+  duplicateCase,
+  exportCase,
   favouriteIds,
   listCases,
   listSmartCases,
+  mergeCases,
+  mergePreview,
   refreshSmartDeviceCases,
   removeTracksFromCase,
   renameCase,
@@ -23,8 +34,12 @@ import {
   setSmartCaseOnDevice,
   smartCaseCounts,
   toggleFavourite,
+  transferPreview,
+  transferTracks,
 } from "$lib/api/cases";
+import { pickSavePath } from "$lib/api/import";
 import type { Collection } from "$lib/api/types";
+import { baseName } from "$lib/format";
 import { jobs } from "./jobs.svelte";
 import { session } from "./session.svelte";
 import { toast } from "./toast.svelte";
@@ -177,6 +192,81 @@ class Cases {
       this.trackIds = await caseTracks(root, this.open.id);
     } catch (e) {
       session.error = String(e);
+    }
+  }
+
+  // ---- organising ---------------------------------------------------------------------------
+
+  /** A copy of a case under a new name (same tracks, order and metadata); returns its id. */
+  duplicate(caseId: number, name: string) {
+    return this.#write((root) => duplicateCase(root, caseId, name.trim()));
+  }
+
+  /** What a merge would add, computed by the same code the merge runs. */
+  async previewMerge(sourceIds: number[], target: number | null): Promise<MergePlan | undefined> {
+    const root = this.#root();
+    if (!root) return undefined;
+    try {
+      return await mergePreview(root, sourceIds, target);
+    } catch (e) {
+      session.error = String(e);
+      return undefined;
+    }
+  }
+
+  /** Merges cases without repeats into a new or an existing case; optionally deletes the sources.
+   *  The open case follows: reloaded if it received tracks, closed if it was deleted. */
+  async merge(sourceIds: number[], to: MergeTarget, deleteSources: boolean): Promise<MergeDone | undefined> {
+    const done = await this.#write((root) => mergeCases(root, sourceIds, to, deleteSources));
+    if (done && this.open) await this.#reloadOpen();
+    return done;
+  }
+
+  /** What copying / moving tracks between cases would do. */
+  async previewTransfer(from: number | null, to: number, ids: number[], move: boolean): Promise<TransferPlan | undefined> {
+    const root = this.#root();
+    if (!root) return undefined;
+    try {
+      return await transferPreview(root, from, to, ids, move);
+    } catch (e) {
+      session.error = String(e);
+      return undefined;
+    }
+  }
+
+  /** Copies (or moves, taking them out of `from`) tracks into case `to`. */
+  async transfer(from: number | null, to: number, ids: number[], move: boolean): Promise<TransferDone | undefined> {
+    const done = await this.#write((root) => transferTracks(root, from, to, ids, move));
+    if (done && this.open && (this.open.id === from || this.open.id === to)) await this.#reloadOpen();
+    return done;
+  }
+
+  /** Deletes several cases in one transaction; returns how many went. */
+  async removeMany(caseIds: number[]) {
+    return this.#write((root) => deleteCases(root, caseIds));
+  }
+
+  /** Tracks dropped on a case (from a table): appended, repeats skipped; says what happened. */
+  async dropTracks(caseId: number, name: string, ids: number[]) {
+    const n = await this.addTracks(caseId, ids);
+    if (n === undefined) return;
+    const noun = (k: number) => `${k} track${k === 1 ? "" : "s"}`;
+    toast.show(n === 0 ? `Already in “${name}”` : n < ids.length ? `Added ${noun(n)} to “${name}” (${ids.length - n} already there)` : `Added ${noun(n)} to “${name}”`, "ok");
+  }
+
+  /** Asks where to save, then writes the case as M3U8, CSV or rekordbox XML. */
+  async exportOne(c: { id: number; name: string }, format: CaseExportFormat) {
+    const root = this.#root();
+    if (!root) return;
+    const safe = c.name.replace(/[\\/:*?"<>|]+/g, "_").trim() || "case";
+    const [ext, label] = format === "m3u8" ? ["m3u8", "M3U8 playlist"] : format === "csv" ? ["csv", "CSV list"] : ["xml", "rekordbox XML"];
+    try {
+      const dest = await pickSavePath(`${safe}.${ext}`, label, ext);
+      if (!dest) return;
+      const r = await exportCase(root, c.id, format, dest);
+      toast.show(`Saved ${r.tracks} track${r.tracks === 1 ? "" : "s"} to ${baseName(r.path)}`, "ok");
+    } catch (e) {
+      toast.show(`Could not export: ${e}`, "bad", 8000);
     }
   }
 

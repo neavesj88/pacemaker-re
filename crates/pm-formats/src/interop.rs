@@ -1333,7 +1333,29 @@ fn tempo_elements(a: &strfile::Analysis, sample_rate: f64) -> String {
 /// folder) as a playlist. The device's single cue point is not exported: its unit is not
 /// confirmed (notes/FINDINGS.md), so a guess could put cues in the wrong place.
 pub fn export_rekordbox(lib: &Library) -> Result<String, Error> {
-    let tracks = lib.tracks()?;
+    export_rekordbox_scoped(lib, None)
+}
+
+/// [`export_rekordbox`] for one case: the collection holds only that case's tracks (in case
+/// order) and the playlist tree only that case, so other software imports just this list.
+pub fn export_rekordbox_case(lib: &Library, case_id: i64) -> Result<String, Error> {
+    export_rekordbox_scoped(lib, Some(case_id))
+}
+
+fn export_rekordbox_scoped(lib: &Library, only_case: Option<i64>) -> Result<String, Error> {
+    let mut tracks = lib.tracks()?;
+    let mut cases = lib.cases()?;
+    let mut mixes = lib.mix_infos()?;
+    if let Some(cid) = only_case {
+        if !cases.iter().any(|c| c.id == cid) {
+            return Err(bad(format!("no case {cid}")));
+        }
+        cases.retain(|c| c.id == cid);
+        mixes.clear();
+        let order: HashMap<i64, usize> = lib.case_track_ids(cid)?.into_iter().enumerate().map(|(i, id)| (id, i)).collect();
+        tracks.retain(|t| order.contains_key(&t.track_id));
+        tracks.sort_by_key(|t| order[&t.track_id]);
+    }
     let extras = lib.interop_extras()?;
     let mut s = String::from("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<DJ_PLAYLISTS Version=\"1.0.0\">\n");
     s.push_str("  <PRODUCT Name=\"Pacemaker Revival\" Version=\"0.1.0\" Company=\"\"/>\n");
@@ -1377,8 +1399,6 @@ pub fn export_rekordbox(lib: &Library) -> Result<String, Error> {
     }
     s.push_str("  </COLLECTION>\n  <PLAYLISTS>\n");
 
-    let cases = lib.cases()?;
-    let mixes = lib.mix_infos()?;
     let known: HashSet<i64> = tracks.iter().map(|t| t.track_id).collect();
     let playlist = |s: &mut String, indent: &str, name: &str, ids: Vec<i64>| {
         let ids: Vec<i64> = ids.into_iter().filter(|i| known.contains(i)).collect();
@@ -1780,6 +1800,32 @@ mod tests {
         assert_eq!((plan.matched, plan.matched_by_file), (3, 3), "files inside the library's own folder map straight to their rows");
         assert!(plan.ratings.is_empty());
         assert_eq!(plan.cases[0].action, CaseAction::Unchanged);
+        clean(lib, dirs);
+    }
+
+    #[test]
+    fn rekordbox_export_of_one_case_holds_only_that_case() {
+        let (mut lib, dirs, _) = library("expcase", 4);
+        let t = lib.tracks().unwrap();
+        let wanted = lib.create_case("Wanted").unwrap();
+        let other = lib.create_case("Other").unwrap();
+        lib.set_case_tracks(wanted, &[t[3].track_id, t[1].track_id]).unwrap();
+        lib.set_case_tracks(other, &[t[0].track_id]).unwrap();
+        lib.create_mix("A mix").unwrap();
+
+        let xml = export_rekordbox_case(&lib, wanted).unwrap();
+        let back = parse_library(&xml).unwrap();
+        assert_eq!(back.tracks.len(), 2, "only the case's tracks");
+        assert_eq!(back.tracks[0].title, "Synth Title 3", "in case order");
+        assert_eq!(back.tracks[1].title, "Synth Title 1");
+        assert_eq!(back.playlists.len(), 1, "one playlist, no other case, no mixes");
+        assert_eq!(back.playlists[0].name, "Wanted");
+        assert_eq!(back.playlists[0].tracks, vec![0, 1]);
+        assert_eq!(xml.matches("<TEMPO").count(), 2 * 2, "tempo maps of the two tracks");
+        assert!(export_rekordbox_case(&lib, 9999).is_err());
+        // the whole-library export is unchanged by the refactor
+        let all = parse_library(&export_rekordbox(&lib).unwrap()).unwrap();
+        assert_eq!((all.tracks.len(), all.playlists.len()), (4, 3));
         clean(lib, dirs);
     }
 

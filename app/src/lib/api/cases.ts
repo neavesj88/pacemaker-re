@@ -116,3 +116,72 @@ export const setSmartCaseOnDevice = (root: string, id: number, on: boolean) =>
 
 /** Refreshes the device case of every smart case that has "Put on Pacemaker" on. */
 export const refreshSmartDeviceCases = (root: string) => invoke<DeviceCopy[]>("smart_cases_refresh_all", { root });
+
+// ---- organising: duplicate, merge, copy / move, delete several, export ------------------------
+
+/** What a merge adds. Counts are tracks; `added` is the list that will be appended, in order. */
+export type MergePlan = {
+  added: number[];
+  /** Source tracks the destination already holds. */
+  already_there: number;
+  /** Source tracks left out because an earlier source supplied them. */
+  repeated: number;
+  /** Source rows that point at a track no longer in the library (not copied). */
+  stale: number;
+};
+
+export type MergeDone = { case_id: number; added: number; deleted_sources: number };
+
+/** What copying or moving tracks between cases does. Every list holds track ids. */
+export type TransferPlan = {
+  to_add: number[];
+  already_there: number[];
+  /** Removed from the source (a move only). */
+  to_remove: number[];
+  not_in_source: number[];
+  /** Ids that are not tracks of the library. */
+  missing: number[];
+};
+
+export type TransferDone = { added: number; removed: number };
+
+/** Where a merge goes: an existing case (kept as it is, new tracks appended) or a new one. */
+export type MergeTarget = { existing: number } | { newName: string };
+
+/** A copy of a case under `name` (tracks in order, metadata copied, play statistics reset);
+ * returns the new case's id. */
+export const duplicateCase = (root: string, caseId: number, name: string) =>
+  invoke<number>("cases_duplicate", { root, caseId, name });
+
+/** What `mergeCases` would add for the same arguments. Writes nothing. */
+export const mergePreview = (root: string, sourceIds: number[], target: number | null) =>
+  invoke<MergePlan>("cases_merge_preview", { root, sourceIds, target });
+
+/** Merges cases without repeats, into an existing case or a new one; with `deleteSources` the
+ * source cases are deleted in the same transaction (their tracks stay in the library). */
+export const mergeCases = (root: string, sourceIds: number[], to: MergeTarget, deleteSources: boolean) =>
+  invoke<MergeDone>("cases_merge", {
+    root,
+    sourceIds,
+    target: "existing" in to ? to.existing : null,
+    newName: "newName" in to ? to.newName : null,
+    deleteSources,
+  });
+
+/** What `transferTracks` would do for the same arguments. `from` null = picked from the library. */
+export const transferPreview = (root: string, from: number | null, to: number, trackIds: number[], removeFromSource: boolean) =>
+  invoke<TransferPlan>("cases_transfer_preview", { root, from, to, trackIds, removeFromSource });
+
+/** Copies (`removeFromSource` false) or moves tracks from case `from` into case `to`, appended
+ * and skipping any it already holds. A move takes them out of `from` only. */
+export const transferTracks = (root: string, from: number | null, to: number, trackIds: number[], removeFromSource: boolean) =>
+  invoke<TransferDone>("cases_transfer", { root, from, to, trackIds, removeFromSource });
+
+/** Deletes several cases in one transaction (the tracks stay); returns how many went. */
+export const deleteCases = (root: string, caseIds: number[]) => invoke<number>("cases_delete_many", { root, caseIds });
+
+export type CaseExportFormat = "m3u8" | "csv" | "rekordbox";
+
+/** Writes one case to `dest` (a file outside the device volume) as M3U8, CSV or rekordbox XML. */
+export const exportCase = (root: string, caseId: number, format: CaseExportFormat, dest: string) =>
+  invoke<{ path: string; tracks: number }>("cases_export", { root, caseId, format, dest });

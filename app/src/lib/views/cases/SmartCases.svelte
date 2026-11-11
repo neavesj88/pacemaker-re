@@ -7,6 +7,7 @@
   import { cases } from "$lib/state/cases.svelte";
   import { nav } from "$lib/state/nav.svelte";
   import { session } from "$lib/state/session.svelte";
+  import CaseDrops from "./CaseDrops.svelte";
 
   $effect(() => {
     if (!session.library?.root) return;
@@ -25,6 +26,9 @@
     });
   }
 </script>
+
+<!-- the drop strip that shows while tracks are being dragged (see CaseDrops.svelte) -->
+<CaseDrops />
 
 <div class="sect head">
   <span>Smart cases</span>

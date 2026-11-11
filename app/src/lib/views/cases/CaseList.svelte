@@ -6,14 +6,19 @@
   import { jobs } from "$lib/state/jobs.svelte";
   import { selection } from "$lib/state/selection.svelte";
   import { session } from "$lib/state/session.svelte";
+  import { toast } from "$lib/state/toast.svelte";
+  import { hasTrackDrag, readTrackDrag } from "$lib/state/trackDrag.svelte";
   import Button from "$lib/ui/Button.svelte";
   import ContextMenu, { type MenuItem } from "$lib/ui/ContextMenu.svelte";
   import Stars from "$lib/ui/Stars.svelte";
   import Table, { type Column } from "$lib/ui/Table.svelte";
+  import { copyName, plural } from "./caseLogic";
   import ConfirmDialog from "./ConfirmDialog.svelte";
+  import MergeDialog from "./MergeDialog.svelte";
   import NameDialog from "./NameDialog.svelte";
 
   const columns: Column[] = [
+    { key: "pick", label: "" },
     { key: "name", label: "Name" },
     { key: "track_count", label: "Tracks", num: true },
     { key: "play_time_secs", label: "Length", num: true },
@@ -21,15 +26,27 @@
     { key: "times_played", label: "Plays", num: true },
     { key: "actions", label: "" },
   ];
+  const SORTABLE = new Set(["name", "track_count", "play_time_secs", "rating", "times_played"]);
 
-  let naming = $state<{ kind: "new" } | { kind: "from-selection" } | { kind: "rename"; c: CaseInfo } | null>(null);
-  let deleting = $state<CaseInfo | null>(null);
+  let naming = $state<{ kind: "new" } | { kind: "from-selection" } | { kind: "rename"; c: CaseInfo } | { kind: "duplicate"; c: CaseInfo } | null>(null);
+  let deleting = $state<CaseInfo[] | null>(null);
+  let merging = $state<number[] | null>(null);
   let menu = $state<{ x: number; y: number; c: CaseInfo } | null>(null);
+  // the cases ticked in the first column (bulk delete, merge)
+  let picked = $state<Set<number>>(new Set());
+  let sortKey = $state<string>("name");
+  let sortAsc = $state(true);
+  let dropId = $state<number | null>(null);
 
+  const collator = new Intl.Collator(undefined, { sensitivity: "base", numeric: true });
   let rows = $derived.by(() => {
     const q = filters.query.trim().toLowerCase();
-    return q ? cases.infos.filter((c) => [c.name, c.genre].some((f) => f.toLowerCase().includes(q))) : cases.infos;
+    const list = q ? cases.infos.filter((c) => [c.name, c.genre].some((f) => f.toLowerCase().includes(q))) : cases.infos;
+    const dir = sortAsc ? 1 : -1;
+    const k = sortKey as keyof CaseInfo;
+    return [...list].sort((a, b) => (k === "name" ? collator.compare(a.name, b.name) : (a[k] as number) - (b[k] as number)) * dir || collator.compare(a.name, b.name) || a.id - b.id);
   });
+  let pickedCases = $derived(cases.infos.filter((c) => picked.has(c.id)));
   let selected = $derived(selection.trackIds.length);
   // the device copy of a smart case, so deleting it can say so
   const smartOf = (c: CaseInfo) => cases.smart.find((s) => s.device_case_id === c.id);
@@ -37,20 +54,75 @@
   const isFav = (c: CaseInfo) => c.name === "Favourites";
   const FAV_NOTE = "This is the case the heart on a track uses.";
   const othersThan = (id?: number) => cases.infos.filter((x) => x.id !== id).map((x) => x.name);
+  const tracksWord = (n: number) => plural(n, "track");
 
-  // The shared Table has no row context-menu hook, so find the row from the event.
-  function rowMenu(e: MouseEvent) {
+  // a case that was deleted or merged away leaves the ticks
+  $effect(() => {
+    const live = new Set(cases.infos.map((c) => c.id));
+    if ([...picked].some((id) => !live.has(id))) picked = new Set([...picked].filter((id) => live.has(id)));
+  });
+
+  function sortBy(key: string) {
+    if (!SORTABLE.has(key)) return;
+    if (sortKey === key) sortAsc = !sortAsc;
+    else {
+      sortKey = key;
+      sortAsc = true;
+    }
+  }
+
+  function toggle(id: number) {
+    const next = new Set(picked);
+    if (!next.delete(id)) next.add(id);
+    picked = next;
+  }
+
+  // The shared Table has no row hooks, so find the row from the event.
+  const rowOf = (e: Event) => {
     const tr = (e.target as HTMLElement).closest("tbody tr") as HTMLTableRowElement | null;
-    const c = tr ? rows[tr.sectionRowIndex] : undefined;
+    return tr ? rows[tr.sectionRowIndex] : undefined;
+  };
+
+  function rowMenu(e: MouseEvent) {
+    const c = rowOf(e);
     if (!c) return;
     e.preventDefault();
     menu = { x: e.clientX, y: e.clientY, c };
   }
 
+  function dragOver(e: DragEvent) {
+    const c = rowOf(e);
+    if (!c || !jobs.canWrite || !hasTrackDrag(e) || smartOf(c)) {
+      dropId = null;
+      return;
+    }
+    e.preventDefault();
+    if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
+    dropId = c.id;
+  }
+
+  async function drop(e: DragEvent) {
+    dropId = null;
+    const c = rowOf(e);
+    const ids = readTrackDrag(e);
+    if (!c || ids.length === 0 || !jobs.canWrite || smartOf(c)) return;
+    e.preventDefault();
+    await cases.dropTracks(c.id, c.name, ids);
+  }
+
+  const exportItems = (c: CaseInfo): MenuItem[] => [
+    { label: "Export as M3U8…", onclick: () => cases.exportOne(c, "m3u8"), disabled: c.track_count === 0 },
+    { label: "Export as CSV…", onclick: () => cases.exportOne(c, "csv"), disabled: c.track_count === 0 },
+    { label: "Export as rekordbox XML…", onclick: () => cases.exportOne(c, "rekordbox"), disabled: c.track_count === 0 },
+  ];
+
   const menuItems = (c: CaseInfo): MenuItem[] => [
     { label: "Open", onclick: () => open(c) },
     { label: "Rename…", onclick: () => (naming = { kind: "rename", c }), disabled: !jobs.canWrite },
-    { label: "Delete…", onclick: () => (deleting = c), disabled: !jobs.canWrite, danger: true },
+    { label: "Duplicate…", onclick: () => (naming = { kind: "duplicate", c }), disabled: !jobs.canWrite },
+    { label: "Merge with other cases…", onclick: () => (merging = [...new Set([...picked, c.id])]), disabled: !jobs.canWrite || cases.infos.length < 2 },
+    ...exportItems(c),
+    { label: picked.has(c.id) && picked.size > 1 ? `Delete ${picked.size} ticked cases…` : "Delete…", onclick: () => (deleting = picked.has(c.id) && picked.size > 1 ? pickedCases : [c]), disabled: !jobs.canWrite, danger: true },
   ];
 
   function open(c: CaseInfo) {
@@ -63,10 +135,30 @@
     naming = null;
     if (!what) return;
     if (what.kind === "rename") await cases.rename(what.c.id, name);
-    else {
+    else if (what.kind === "duplicate") {
+      const id = await cases.duplicate(what.c.id, name);
+      if (id !== undefined) toast.show(`Made “${name}” with ${tracksWord(cases.infos.find((x) => x.id === id)?.track_count ?? 0)}`, "ok");
+    } else {
       const id = await cases.create(name, what.kind === "from-selection" ? [...selection.trackIds] : []);
       const col = id === undefined ? undefined : session.library?.cases.find((x) => x.id === id);
       if (col) await cases.openCase(col);
+    }
+  }
+
+  // Deleting one or several: one confirmation naming every case, one transaction.
+  function deleteNote(list: CaseInfo[]): string {
+    const notes: string[] = [];
+    if (list.some(isFav)) notes.push(`“Favourites” is the case the heart on a track uses: deleting it clears every heart, and the next heart click starts a new, empty Favourites case.`);
+    const smart = list.filter(smartOf);
+    if (smart.length > 0) notes.push(`${smart.map((c) => `“${c.name}”`).join(", ")} ${smart.length === 1 ? "is the Pacemaker copy of a smart case, which will make it" : "are Pacemaker copies of smart cases, which will make them"} again the next time you refresh.`);
+    return notes.join(" ");
+  }
+
+  async function confirmDelete(list: CaseInfo[]) {
+    const n = await cases.removeMany(list.map((c) => c.id));
+    if (n !== undefined) {
+      picked = new Set();
+      toast.show(`Deleted ${plural(n, "case")}`, "ok");
     }
   }
 </script>
@@ -79,6 +171,10 @@
     title={selected === 0 ? "Select tracks in the Tracks view first" : ""}
     onclick={() => (naming = { kind: "from-selection" })}
   >From selection{selected > 0 ? ` (${selected})` : ""}</Button>
+  <Button disabled={!jobs.canWrite || cases.infos.length < 2} onclick={() => (merging = [...picked])} title="Merge cases into a new or an existing case, without repeats">
+    Merge{picked.size > 1 ? ` ${picked.size}` : ""}…
+  </Button>
+  <Button disabled={!jobs.canWrite || picked.size === 0} onclick={() => (deleting = pickedCases)}>Delete{picked.size > 0 ? ` ${picked.size}` : ""}…</Button>
   {#if cases.smart.some((s) => s.on_device)}
     <Button
       disabled={!jobs.canWrite}
@@ -88,32 +184,48 @@
   {/if}
   <span class="muted">Cases are the Pacemaker's own playlists; the order here is the order on the device.</span>
 </div>
+{#if rows.length > 0}
+  <div class="pickbar muted">
+    {#if picked.size > 0}{plural(picked.size, "case")} ticked ·{/if}
+    <Button small variant="link" onclick={() => (picked = new Set(rows.map((c) => c.id)))}>Tick all {rows.length === cases.infos.length ? "" : "shown "}</Button>
+    {#if picked.size > 0}<Button small variant="link" onclick={() => (picked = new Set())}>Clear ticks</Button>{/if}
+    · Drag tracks onto a case to add them (not onto a smart case's copy: its rules rewrite it)
+  </div>
+{/if}
 
-<div role="presentation" oncontextmenu={rowMenu}>
-<Table {columns} {rows} rowKey={(c) => c.id} onrowclick={open}>
-  {#snippet cell(c, col)}
-    {#if col.key === "name"}
-      <span>
-        <Button variant="link" onclick={(e) => (e.stopPropagation(), open(c))}>{c.name}</Button>
-        {#if isFav(c)}<span class="tag" title={FAV_NOTE}>hearts</span>{/if}
-        {#if smartOf(c)}<span class="tag" title="Made by the smart case “{smartOf(c)?.name}”">smart</span>{/if}
-      </span>
-    {:else if col.key === "track_count"}
-      {c.track_count}
-    {:else if col.key === "play_time_secs"}
-      {mmss(c.play_time_secs)}
-    {:else if col.key === "rating"}
-      <Stars rating={c.rating} />
-    {:else if col.key === "times_played"}
-      {c.times_played}
-    {:else}
-      <span class="actions">
-        <Button small variant="ghost" disabled={!jobs.canWrite} onclick={(e) => (e.stopPropagation(), (naming = { kind: "rename", c }))}>Rename</Button>
-        <Button small variant="ghost" disabled={!jobs.canWrite} onclick={(e) => (e.stopPropagation(), (deleting = c))}>Delete</Button>
-      </span>
-    {/if}
-  {/snippet}
-</Table>
+<div class="wrap" role="presentation" oncontextmenu={rowMenu} ondragover={dragOver} ondragleave={() => (dropId = null)} ondrop={drop}>
+  <Table {columns} {rows} rowKey={(c) => c.id} onrowclick={open} {sortKey} {sortAsc} onsort={sortBy} rowClass={(c) => (c.id === dropId ? "drop" : "")}>
+    {#snippet cell(c, col)}
+      {#if col.key === "pick"}
+        <input
+          type="checkbox"
+          checked={picked.has(c.id)}
+          aria-label={`Tick ${c.name}`}
+          onclick={(e) => (e.stopPropagation(), toggle(c.id))}
+        />
+      {:else if col.key === "name"}
+        <span>
+          <Button variant="link" onclick={(e) => (e.stopPropagation(), open(c))}>{c.name}</Button>
+          {#if isFav(c)}<span class="tag" title={FAV_NOTE}>hearts</span>{/if}
+          {#if smartOf(c)}<span class="tag" title="Made by the smart case “{smartOf(c)?.name}”">smart</span>{/if}
+        </span>
+      {:else if col.key === "track_count"}
+        {c.track_count}
+      {:else if col.key === "play_time_secs"}
+        {mmss(c.play_time_secs)}
+      {:else if col.key === "rating"}
+        <Stars rating={c.rating} />
+      {:else if col.key === "times_played"}
+        {c.times_played}
+      {:else}
+        <span class="actions">
+          <Button small variant="ghost" disabled={!jobs.canWrite} onclick={(e) => (e.stopPropagation(), (naming = { kind: "rename", c }))}>Rename</Button>
+          <Button small variant="ghost" disabled={!jobs.canWrite} onclick={(e) => (e.stopPropagation(), (naming = { kind: "duplicate", c }))}>Duplicate</Button>
+          <Button small variant="ghost" disabled={!jobs.canWrite} onclick={(e) => (e.stopPropagation(), (deleting = [c]))}>Delete</Button>
+        </span>
+      {/if}
+    {/snippet}
+  </Table>
 </div>
 {#if !cases.loaded}
   <p class="empty">Loading cases…</p>
@@ -127,23 +239,39 @@
 
 {#if naming}
   <NameDialog
-    title={naming.kind === "rename" ? "Rename case" : naming.kind === "from-selection" ? `New case from ${selected} selected track${selected === 1 ? "" : "s"}` : "New case"}
-    initial={naming.kind === "rename" ? naming.c.name : ""}
-    note={naming.kind === "rename" && isFav(naming.c) ? `${FAV_NOTE} If you rename it, the next heart click starts a new, empty “Favourites” case and the hearts here stop showing.` : undefined}
+    title={naming.kind === "rename"
+      ? "Rename case"
+      : naming.kind === "duplicate"
+        ? "Duplicate case"
+        : naming.kind === "from-selection"
+          ? `New case from ${selected} selected track${selected === 1 ? "" : "s"}`
+          : "New case"}
+    initial={naming.kind === "rename" ? naming.c.name : naming.kind === "duplicate" ? copyName(naming.c.name, othersThan()) : ""}
+    note={naming.kind === "rename" && isFav(naming.c)
+      ? `${FAV_NOTE} If you rename it, the next heart click starts a new, empty “Favourites” case and the hearts here stop showing.`
+      : naming.kind === "duplicate"
+        ? `Makes a new case with the same ${tracksWord(naming.c.track_count)} in the same order and the same genre, year, rating and notes. “${naming.c.name}” is not changed.`
+        : undefined}
     taken={othersThan(naming.kind === "rename" ? naming.c.id : undefined)}
-    confirmLabel={naming.kind === "rename" ? "Rename" : "Create"}
+    confirmLabel={naming.kind === "rename" ? "Rename" : naming.kind === "duplicate" ? "Duplicate" : "Create"}
     onconfirm={confirmName}
     onclose={() => (naming = null)}
   />
 {/if}
 
+{#if merging}
+  <MergeDialog initial={merging} onclose={() => (merging = null)} />
+{/if}
+
 {#if deleting}
-  {@const c = deleting}
+  {@const list = deleting}
+  {@const total = list.reduce((s, c) => s + c.track_count, 0)}
   <ConfirmDialog
-    title="Delete this case?"
-    message={`Delete the case “${c.name}” (${c.track_count} track${c.track_count === 1 ? "" : "s"}) from the Pacemaker? The tracks stay in the library; only the case is removed.${isFav(c) ? ` ${FAV_NOTE} Deleting it clears every heart; the next heart click starts a new, empty Favourites case.` : ""}${smartOf(c) ? ` It is the Pacemaker copy of the smart case “${smartOf(c)?.name}”, which will make it again the next time you refresh it.` : ""}`}
-    confirmLabel="Delete case"
-    onconfirm={() => cases.remove(c.id)}
+    title={list.length === 1 ? "Delete this case?" : `Delete ${list.length} cases?`}
+    message={`Delete ${list.length === 1 ? `the case “${list[0].name}”` : `these ${list.length} cases`} (${tracksWord(total)} in all) from the Pacemaker? The tracks stay in the library; only the ${list.length === 1 ? "case is" : "cases are"} removed. This cannot be undone.${deleteNote(list) ? ` ${deleteNote(list)}` : ""}`}
+    items={list.map((c) => `${c.name} (${tracksWord(c.track_count)})`)}
+    confirmLabel={list.length === 1 ? "Delete case" : `Delete ${list.length} cases`}
+    onconfirm={() => confirmDelete(list)}
     onclose={() => (deleting = null)}
   />
 {/if}
@@ -160,9 +288,25 @@
   .bar :global(.btn) {
     white-space: nowrap;
   }
+  .pickbar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 10px;
+    border-bottom: 1px solid var(--line);
+    font-size: 12px;
+  }
   h2 {
     margin: 0 6px 0 0;
     font-size: 15px;
+  }
+  .wrap :global(tr.drop) {
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
+    background: var(--accent-soft);
+  }
+  .wrap :global(input[type="checkbox"]) {
+    padding: 0;
   }
   .actions {
     display: inline-flex;

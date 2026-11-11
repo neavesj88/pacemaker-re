@@ -1,17 +1,19 @@
-//! Cases: list, create, rename, edit, delete, membership and order, favourites, and smart cases.
+//! Cases: list, create, rename, edit, delete, membership and order, favourites, duplicate, merge,
+//! copy / move between cases, bulk delete, export of one case, and smart cases.
 //!
 //! Every write goes through pm-formats `Library` (so `date_modified`, `play_time_secs` and the
 //! rest of a case row stay what the Editor and the device would write) and happens only on an
 //! explicit user action. Smart-case rules are kept in the app's config dir, never on the
 //! device; see `cases/smart.rs`.
 
+mod export;
 mod smart;
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use pm_formats::library::{CaseInfo, CaseMeta, Error, Library};
+use pm_formats::library::{CaseInfo, CaseMeta, Error, Library, MergeDest, MergeDone, MergePlan, TransferDone, TransferPlan};
 use serde::Serialize;
 use tauri::Manager;
 
@@ -115,6 +117,84 @@ pub async fn cases_toggle_favourite(app: tauri::AppHandle, root: String, track_i
 #[tauri::command]
 pub async fn cases_favourite_ids(root: String) -> AppResult<Vec<i64>> {
     read(root, |lib| lib.favourite_track_ids()).await
+}
+
+
+// ---- organising: duplicate, merge, copy / move, delete several, export ---------------------------
+
+/// Copies a case under `name`: same tracks in the same order, same genre / year / rating /
+/// producer / remixer / comments, play statistics reset. Returns the new case's id.
+#[tauri::command]
+pub async fn cases_duplicate(app: tauri::AppHandle, root: String, case_id: i64, name: String) -> AppResult<i64> {
+    write(app, root, move |lib| lib.duplicate_case(case_id, &name)).await
+}
+
+/// What merging `source_ids` into `target` (an existing case) or into a new case (`None`) would
+/// add. The merge itself computes its tracks with the same function. Reads only.
+#[tauri::command]
+pub async fn cases_merge_preview(root: String, source_ids: Vec<i64>, target: Option<i64>) -> AppResult<MergePlan> {
+    read(root, move |lib| lib.merge_plan(&source_ids, target)).await
+}
+
+/// Merges `source_ids` without repeats. Exactly one of `target` (an existing case, which keeps
+/// its order and gets the new tracks appended) and `new_name` (a new case) must be given.
+/// `delete_sources` deletes the source cases afterwards in the same transaction.
+#[tauri::command]
+pub async fn cases_merge(
+    app: tauri::AppHandle,
+    root: String,
+    source_ids: Vec<i64>,
+    target: Option<i64>,
+    new_name: Option<String>,
+    delete_sources: bool,
+) -> AppResult<MergeDone> {
+    let dest = match (target, new_name) {
+        (Some(id), None) => MergeDest::Existing(id),
+        (None, Some(name)) => MergeDest::New(name),
+        _ => return Err("Pick either an existing case or a name for a new one.".into()),
+    };
+    write(app, root, move |lib| lib.merge_cases(&source_ids, &dest, delete_sources)).await
+}
+
+/// What copying (or, with `remove_from_source`, moving) `track_ids` from case `from` (`None`:
+/// from the library) into case `to` would do. Reads only.
+#[tauri::command]
+pub async fn cases_transfer_preview(
+    root: String,
+    from: Option<i64>,
+    to: i64,
+    track_ids: Vec<i64>,
+    remove_from_source: bool,
+) -> AppResult<TransferPlan> {
+    read(root, move |lib| lib.transfer_plan(from, to, &track_ids, remove_from_source)).await
+}
+
+/// Copies or moves tracks between cases; see [`cases_transfer_preview`]. A move removes the
+/// tracks from `from` only; the tracks themselves stay in the library.
+#[tauri::command]
+pub async fn cases_transfer(
+    app: tauri::AppHandle,
+    root: String,
+    from: Option<i64>,
+    to: i64,
+    track_ids: Vec<i64>,
+    remove_from_source: bool,
+) -> AppResult<TransferDone> {
+    write(app, root, move |lib| lib.transfer_tracks(from, to, &track_ids, remove_from_source)).await
+}
+
+/// Deletes several cases (and their membership rows) in one transaction; the tracks stay.
+/// Returns how many cases were deleted.
+#[tauri::command]
+pub async fn cases_delete_many(app: tauri::AppHandle, root: String, case_ids: Vec<i64>) -> AppResult<usize> {
+    write(app, root, move |lib| lib.delete_cases(&case_ids)).await
+}
+
+/// Writes one case to `dest` as "m3u8", "csv" or "rekordbox" (XML). Reads the library, writes
+/// only the chosen file, which may not be inside the device volume.
+#[tauri::command]
+pub async fn cases_export(root: String, case_id: i64, format: String, dest: String) -> AppResult<export::ExportDone> {
+    tauri::async_runtime::spawn_blocking(move || export::export_case(Path::new(&root), case_id, &format, &dest)).await?
 }
 
 // ---- smart cases -----------------------------------------------------------------------------
@@ -275,6 +355,13 @@ macro_rules! cases_commands {
                 $crate::commands::cases::cases_set_tracks,
                 $crate::commands::cases::cases_toggle_favourite,
                 $crate::commands::cases::cases_favourite_ids,
+                $crate::commands::cases::cases_duplicate,
+                $crate::commands::cases::cases_merge_preview,
+                $crate::commands::cases::cases_merge,
+                $crate::commands::cases::cases_transfer_preview,
+                $crate::commands::cases::cases_transfer,
+                $crate::commands::cases::cases_delete_many,
+                $crate::commands::cases::cases_export,
                 $crate::commands::cases::smart_cases_list,
                 $crate::commands::cases::smart_cases_counts,
                 $crate::commands::cases::smart_cases_evaluate,

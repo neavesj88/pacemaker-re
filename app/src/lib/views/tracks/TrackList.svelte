@@ -8,6 +8,7 @@
   import { playback } from "$lib/state/playback.svelte";
   import { selection } from "$lib/state/selection.svelte";
   import { session } from "$lib/state/session.svelte";
+  import { endTrackDrag, startTrackDrag } from "$lib/state/trackDrag.svelte";
   import ContextMenu from "$lib/ui/ContextMenu.svelte";
   import Stars from "$lib/ui/Stars.svelte";
   import type { ColDef } from "./columns";
@@ -216,6 +217,19 @@
   });
 
   const stop = (e: Event) => e.stopPropagation();
+
+  // Dragging rows carries the selected tracks (or just this one) so a case can take them: the
+  // drop strip in the sidebar (cases area) lists the cases while a drag is running.
+  function dragRows(e: DragEvent, t: Track) {
+    let ids = selection.trackIds;
+    if (!selSet.has(t.track_id)) {
+      anchorId = t.track_id;
+      select([t.track_id], t.track_id);
+      ids = [t.track_id];
+    }
+    const byId = new Map(rows.map((r) => [r.track_id, r]));
+    startTrackDrag(e, [...ids], ids.map((id) => byId.get(id)?.title ?? ""));
+  }
 </script>
 
 <!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
@@ -280,6 +294,9 @@
         onclick={(e) => clickRow(e, t, i)}
         ondblclick={() => playTrack(t.track_id)}
         oncontextmenu={(e) => openMenu(e, t)}
+        draggable="true"
+        ondragstart={(e) => dragRows(e, t)}
+        ondragend={endTrackDrag}
       >
         {#each cols as c (c.key)}
           <div class="cell" class:num={c.num} role="gridcell">
