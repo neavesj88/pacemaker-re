@@ -60,6 +60,7 @@ class GridSuspectsStore {
   sync(lib: LibraryView | null) {
     if (lib === this.seen) return;
     this.seen = lib;
+    this.error = "";
     if (!lib) {
       this.report = null;
       this.run++;
@@ -95,9 +96,11 @@ class GridSuspectsStore {
     }
   }
 
-  /** Makes sure there is a result for the open library, checking if there is none yet. */
+  /** Makes sure there is a result for the open library, checking if there is none yet. A failed
+   *  check is not retried here (callers run inside effects that track `report` and `checking`, so
+   *  retrying would loop); a library change, new rules or the Rules dialog try again. */
   async ensure() {
-    if (!this.report && !this.checking) await this.check();
+    if (!this.report && !this.checking && !this.error) await this.check();
   }
 }
 

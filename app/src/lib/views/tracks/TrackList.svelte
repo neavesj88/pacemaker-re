@@ -5,7 +5,9 @@
   import { onMount, tick } from "svelte";
   import type { Track } from "$lib/api/types";
   import { mmss } from "$lib/format";
+  import { suspectKinds } from "$lib/state/batchLogic";
   import { gridBatch } from "$lib/state/gridBatch.svelte";
+  import { suspects } from "$lib/state/gridSuspects.svelte";
   import { jobs } from "$lib/state/jobs.svelte";
   import { playback } from "$lib/state/playback.svelte";
   import { selection } from "$lib/state/selection.svelte";
@@ -315,6 +317,8 @@
             {:else if c.key === "wave"}
               {#if t.location}<MiniWave {root} location={t.location} />{/if}
             {:else if c.key === "bpm"}
+              {@const sus = suspects.byId.get(t.track_id)}
+              {#if sus && !need}<span class="suspect" title={`Suspect grid: ${suspectKinds(sus)}\n${sus.reasons.join("\n")}`} aria-label="Suspect grid">⚑</span>{/if}
               {t.bpm && !need ? t.bpm.toFixed(2) : "–"}
             {:else if c.key === "key"}
               {@const k = parseKey(t.key)}
@@ -459,6 +463,11 @@
     font-size: 11px;
     background: var(--accent-soft);
     color: var(--accent);
+  }
+  .suspect {
+    margin-right: 4px;
+    color: var(--accent);
+    cursor: help;
   }
   .heart {
     width: 100%;
