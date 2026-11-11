@@ -40,9 +40,15 @@ export type PlayLogSettings = {
   retention_days: number;
   /** A pause longer than this many minutes ends a session. */
   session_gap_minutes: number;
+  /** Cap on the changes kept in the file whatever the retention says; the oldest fold into the starting point past it. */
+  max_events: number;
+  /** Percent of the played tracks the log knows that must still be in the library, or it is taken for a different card. 0 never refuses. */
+  identity_min_present_pct: number;
+  /** Ask before starting a new log for a card that matches the log of another drive. */
+  ask_before_new_log: boolean;
 };
 
-export type RecordStatus = "off" | "started" | "unchanged" | "changed" | "mismatch" | "recovered";
+export type RecordStatus = "off" | "started" | "unchanged" | "changed" | "mismatch" | "adopted" | "candidate" | "recovered";
 export type RecordReport = {
   enabled: boolean;
   status: RecordStatus;
@@ -66,13 +72,31 @@ export type LogHit = {
 export type LogSession = { start: number; end: number; plays: number; hits: LogHit[] };
 export type LogRank = { track_id: number; plays: number; windows: number; first: number; last: number };
 
+/** The log of another drive that matches most of this library's tracks. */
+export type LogCandidate = {
+  /** File name in the app's config folder; pass it to `playlogAdoptLog`. */
+  file: string;
+  /** Where that log last saw its library; "" when not known. */
+  root: string;
+  started_at: number;
+  last_change_at: number;
+  played_tracks: number;
+  present_tracks: number;
+};
+
 export type PlayLogOverview = {
   enabled: boolean;
   has_log: boolean;
-  /** The saved file could not be read. */
+  /** The saved file could not be used. */
   problem: string | null;
+  /** The problem is damage, so the next snapshot moves the file aside; otherwise (unreadable just now, or from a newer app) it is left alone. */
+  problem_moves_aside: boolean;
   /** This library is not the one the log was made from. */
   mismatch: boolean;
+  /** The drive or path the log last saw its library at; the log is tied to it. "" when not known. */
+  log_root: string;
+  /** While there is no log: logs of other drives that match this library. */
+  candidates: LogCandidate[];
   started_at: number;
   last_change_at: number;
   events: number;
@@ -88,7 +112,10 @@ export type PlayLogOverview = {
   /** Newest first. */
   sessions: LogSession[];
   ranking_total: number;
+  /** The most played tracks of the period, cut to the page size. */
   ranking: LogRank[];
+  /** Every track of the period's ranking, in rank order (not cut): what "save as case" saves. */
+  ranking_ids: number[];
 };
 
 export type PlayLogQuery = {
@@ -115,6 +142,12 @@ export const playlogSettings = () => invoke<PlayLogSettings>("playlog_settings_g
 export const playlogSetSettings = (settings: PlayLogSettings) => invoke<PlayLogSettings>("playlog_settings_set", { settings });
 /** Snapshots the counters into the log. Writes only the app's own file, and only if something changed. */
 export const playlogRecord = (root: string) => invoke<RecordReport>("playlog_record", { root });
+/** "Keep this log and continue": accepts a library the log refused as a different card. Tracks it lacks are set aside, tracks the log never saw start from their present counters. */
+export const playlogAdopt = (root: string) => invoke<RecordReport>("playlog_adopt", { root });
+/** Starts a new log for this library although the log of another drive matches it. */
+export const playlogStartNew = (root: string) => invoke<RecordReport>("playlog_start_new", { root });
+/** Continues the log of another drive here: moves its file (nothing is copied or deleted). */
+export const playlogAdoptLog = (root: string, file: string) => invoke<void>("playlog_adopt_log", { root, file });
 export const playlogOverview = (root: string, q: PlayLogQuery = {}) =>
   invoke<PlayLogOverview>("playlog_overview", {
     root,

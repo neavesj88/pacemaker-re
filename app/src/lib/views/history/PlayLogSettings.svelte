@@ -4,8 +4,8 @@
   import Button from "$lib/ui/Button.svelte";
   import { retentionLabel } from "./playlogLogic";
 
-  // The play log's choices. Each one saves as soon as it changes; shortening the retention asks
-  // first because the individual dates of the older plays are folded away.
+  // The play log's choices. Each one saves as soon as it changes; shortening the retention (or the
+  // event cap) asks first because the individual dates of the older plays are folded away.
   const GAPS = [
     { min: 60, label: "1 hour" },
     { min: 120, label: "2 hours" },
@@ -17,11 +17,19 @@
   let err = $state("");
   let busy = $state(false);
   let retention = $state("");
+  let identity = $state("");
+  let cap = $state("");
   // A shorter retention waiting for the user's yes.
   let pendingDays = $state<number | null>(null);
 
+  // Show a saved value in its field, but only when that value changed: saving some other setting
+  // replaces `playlog.settings` as a whole and must not wipe what is half typed in these fields.
+  let shown = { retention: NaN, identity: NaN, cap: NaN };
   $effect(() => {
-    retention = String(playlog.settings.retention_days);
+    const s = playlog.settings;
+    if (s.retention_days !== shown.retention) retention = String((shown.retention = s.retention_days));
+    if (s.identity_min_present_pct !== shown.identity) identity = String((shown.identity = s.identity_min_present_pct));
+    if (s.max_events !== shown.cap) cap = String((shown.cap = s.max_events));
   });
 
   async function commit(patch: Partial<PlayLogSettings>) {
@@ -34,6 +42,27 @@
     } finally {
       busy = false;
     }
+  }
+
+  // A whole number in [lo, hi] from a text field, or null (and the saved value back in the field).
+  function wholeNumber(raw: string, lo: number, hi: number, what: string): number | null {
+    const n = Number(raw);
+    if (raw.trim() === "" || !Number.isInteger(n) || n < lo || n > hi) {
+      err = `${what} must be a whole number from ${lo} to ${hi}.`;
+      return null;
+    }
+    err = "";
+    return n;
+  }
+  function commitIdentity() {
+    const n = wholeNumber(identity, 0, 100, "The percentage of tracks that must match");
+    if (n === null) identity = String(playlog.settings.identity_min_present_pct);
+    else if (n !== playlog.settings.identity_min_present_pct) void commit({ identity_min_present_pct: n });
+  }
+  function commitCap() {
+    const n = wholeNumber(cap, 1000, 2_000_000, "The most changes kept");
+    if (n === null) cap = String(playlog.settings.max_events);
+    else if (n !== playlog.settings.max_events) void commit({ max_events: n });
   }
 
   function commitRetention() {
@@ -85,8 +114,8 @@
     <span class="muted">{retentionLabel(playlog.settings.retention_days)}; 0 keeps everything</span>
   </label>
   <p class="hint">
-    Older changes are folded into the starting point: their play counts are kept but their individual dates are not. Applied the next time a
-    library is opened.
+    Older changes are folded into the starting point: their play counts are kept but their individual dates are not. A new value is applied when
+    you change it, if a library is open and logging is on; otherwise the next time a library is opened.
   </p>
   {#if pendingDays !== null}
     <div class="ask" role="alertdialog" aria-label="Confirm a shorter retention">
@@ -99,6 +128,23 @@
   {/if}
 
   <label class="field">
+    Most changes kept, whatever the days say
+    <input
+      type="text"
+      inputmode="numeric"
+      bind:value={cap}
+      disabled={busy}
+      onchange={commitCap}
+      onkeydown={(e) => e.key === "Enter" && commitCap()}
+    />
+    <span class="muted">1000 to 2000000; each change is one track at one opening</span>
+  </label>
+  <p class="hint">
+    A guard against an ever growing file, so even "0 keeps everything" stops at this many changes: past it the oldest are folded into the starting
+    point exactly like the days above (counts kept, dates lost). The default, 400000, is years of use; a change is about 40 bytes on disk.
+  </p>
+
+  <label class="field">
     A pause ends a session after
     <select value={playlog.settings.session_gap_minutes} disabled={busy} onchange={(e) => commit({ session_gap_minutes: Number(e.currentTarget.value) })}>
       {#each GAPS as g (g.min)}<option value={g.min}>{g.label}</option>{/each}
@@ -107,6 +153,37 @@
       {/if}
     </select>
   </label>
+
+  <label class="field">
+    Tracks that must still match the log
+    <input
+      type="text"
+      inputmode="numeric"
+      bind:value={identity}
+      disabled={busy}
+      onchange={commitIdentity}
+      onkeydown={(e) => e.key === "Enter" && commitIdentity()}
+    />
+    <span class="muted">percent; 0 never refuses a library</span>
+  </label>
+  <p class="hint">
+    The log belongs to a drive or path. If fewer than this share of the played tracks it knows are on the card, it is taken for a different card
+    and nothing is logged until you choose "Keep this log and continue" or delete the log. Logs with fewer than five played tracks are never judged.
+  </p>
+
+  <label class="check">
+    <input
+      type="checkbox"
+      checked={playlog.settings.ask_before_new_log}
+      disabled={busy}
+      onchange={(e) => commit({ ask_before_new_log: e.currentTarget.checked })}
+    />
+    Ask before starting a new log for a card that matches the log of another drive
+  </label>
+  <p class="hint">
+    A card that turns up at a new drive letter has no log yet. With this on it is not logged until you choose between continuing the old drive's
+    log and starting a new one; off, a new log starts straight away.
+  </p>
   {#if err}<p class="err" role="alert">{err}</p>{/if}
 </div>
 

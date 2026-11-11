@@ -51,6 +51,8 @@
   let showSettings = $state(false);
   let confirmClear = $state(false);
   let clearing = $state(false);
+  // One of the log-choice buttons (keep, continue another drive's log, start a new one) is running.
+  let choosing = $state(false);
   let detailTrack = $state<Track | null>(null);
 
   let rangeError = $derived(periodRange(period, 0, customFrom, customTo).error);
@@ -137,6 +139,21 @@
   const dateStamp = (ms: number) => dayLabel(ms).replace(/,/g, "");
   const ids = (rows: Row[]) => [...new Set(rows.map((r) => r.track.track_id))];
 
+  async function choose(what: () => Promise<void>, failed: string) {
+    if (choosing) return;
+    choosing = true;
+    try {
+      await what();
+    } catch (e) {
+      session.error = `${failed}: ${String(e)}`;
+    } finally {
+      choosing = false;
+    }
+  }
+  const keepLog = (root: string) => choose(() => playlog.adopt(root), "The play log could not be kept");
+  const startNew = (root: string) => choose(() => playlog.startNew(root), "A new play log could not be started");
+  const continueFrom = (root: string, file: string) => choose(() => playlog.continueLog(root, file), "That play log could not be continued here");
+
   async function clearLog() {
     const root = session.library?.root;
     if (!root || clearing) return;
@@ -177,6 +194,7 @@
     {#if data?.has_log}
       Logging since {dayLabel(data.started_at)}, {data.events} change{data.events === 1 ? "" : "s"} recorded, {fmtBytes(data.file_bytes)},
       {retentionLabel(data.retention_days)}.
+      {#if data.log_root}This log belongs to the drive or path <b>{data.log_root}</b>.{/if}
     {/if}
   </span>
   <span class="grow"></span>
@@ -200,17 +218,55 @@
 
   {#if data.problem}
     <div class="note bad" role="alert">
-      <b>The play log file could not be read.</b>
+      <b>The play log file could not be {data.problem_moves_aside ? "read" : "used"}.</b>
       {data.problem}
-      It has not been changed. The next time a library is opened with logging on, this file is moved aside (kept, not deleted) and a new
-      log starts; or use Delete log to remove it now.
+      {#if data.problem_moves_aside}
+        It has not been changed. The next time a library is opened with logging on, this file is moved aside (kept, not deleted) and a new
+        log starts; or use Delete log to remove it now.
+      {:else}
+        This is not taken as damage, so the file is left exactly as it is and nothing is logged until it can be read again (close whatever
+        is holding it, or update the app if it was written by a newer version).
+      {/if}
     </div>
   {:else if data.mismatch}
     <div class="note bad" role="alert">
       <b>This library does not match its play log.</b>
-      Most of the tracks the log has seen played are not here, so this is probably a different card mounted at the same drive or path.
-      Nothing is being logged for it, so the log is not filled with false plays. Delete the log to start a new one for this card.
-      <span class="row"><Button small onclick={() => (confirmClear = true)}>Delete log and start a new one...</Button></span>
+      Fewer than {playlog.settings.identity_min_present_pct}% of the tracks the log has seen played are here. That is a different card at the
+      same drive or path, or the same card after a clean-out or a new set. Nothing is being logged for it until you choose, so the log is
+      not filled with false plays.
+      <span class="row">
+        <Button small variant="primary" disabled={choosing} onclick={() => session.library && keepLog(session.library.root)}>
+          Keep this log and continue
+        </Button>
+        <Button small onclick={() => (confirmClear = true)}>Delete log and start a new one...</Button>
+      </span>
+      <span class="sub">
+        Keep: the played tracks that are not on this card stay in the log (set aside, not deleted, and not held against the card), and
+        tracks the log has never seen start from the counters they have now, so they are not counted as plays. Nothing is deleted.
+        You can also change how many tracks must match, or switch the check off, in Log settings.
+      </span>
+    </div>
+  {:else if !data.has_log && data.candidates.length > 0}
+    <div class="note" role="status">
+      <b>This card matches a play log kept for another drive.</b>
+      A log is stored per drive or path, and the card does not carry an identity of its own, so a card that appears at a new drive letter has no log yet.
+      Nothing is logged for it until you choose.
+      {#each data.candidates as c (c.file)}
+        <span class="cand">
+          The log for <b class="inl">{c.root || "an unnamed drive"}</b>: since {dayLabel(c.started_at)}, last changed {dayLabel(c.last_change_at)},
+          {c.present_tracks} of its {c.played_tracks} played tracks are on this card.
+          <Button small variant="primary" disabled={choosing} onclick={() => session.library && continueFrom(session.library.root, c.file)}>
+            Continue it here
+          </Button>
+        </span>
+      {/each}
+      <span class="sub">
+        Continue moves that log's file to this drive (nothing is copied or deleted; it stops being the log of the old drive). Or start a
+        separate log for this drive, which begins from the counters as they are now. "Ask before starting a new log" in Log settings turns this question off.
+      </span>
+      <span class="row">
+        <Button small disabled={choosing} onclick={() => session.library && startNew(session.library.root)}>Start a new log for this drive</Button>
+      </span>
     </div>
   {:else if !data.has_log}
     <div class="note" role="status">
@@ -310,8 +366,13 @@
             Most plays first in {words}. Showing {ranked.length} of {data.ranking_total}.
           </span>
           <span class="grow"></span>
-          <Button small disabled={ranked.length === 0} onclick={() => ask(`Most played, ${words}`, ids(ranked), `the most played list for ${words}`)}>
-            Save list as case
+          <Button
+            small
+            disabled={data.ranking_ids.length === 0}
+            title="Every track of this period's ranking, not only the rows shown"
+            onclick={() => ask(`Most played, ${words}`, data?.ranking_ids ?? [], `the most played list for ${words}`)}
+          >
+            Save all {data.ranking_ids.length} as case
           </Button>
         </div>
         <Table columns={rankCols} rows={ranked} rowKey={(r) => r.key} onrowclick={pick}>
@@ -354,7 +415,11 @@
         on the card) is counted from zero. A play of a track that was added after the last snapshot is counted from zero too.
       </li>
       <li>Plays before logging began are only a count (shown in a track's History). Plays in this app's own player are not counted: the device writes the counters.</li>
-      <li>The log is stored on this computer, not on the Pacemaker, and the device cannot show it. A different card at the same drive letter is detected and not mixed in.</li>
+      <li>
+        The log is stored on this computer, not on the Pacemaker, and the device cannot show it. The card carries no identity the app can rely on, so the log is
+        tied to the drive letter or path it was opened at: a card that turns up at a new letter is offered the matching log of the old one (it is never merged
+        silently), and a different card at the same letter is detected and not mixed in. The checks and their thresholds are in Log settings.
+      </li>
     </ul>
   </details>
 {/if}
@@ -421,8 +486,28 @@
     color: var(--bad);
   }
   .row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 8px;
+  }
+  .sub {
     display: block;
     margin-top: 8px;
+    color: var(--muted);
+    font-size: 12px;
+  }
+  .cand {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+    margin-top: 8px;
+  }
+  .note b.inl {
+    display: inline;
+    margin: 0;
+    color: var(--text);
   }
   .controls {
     display: flex;

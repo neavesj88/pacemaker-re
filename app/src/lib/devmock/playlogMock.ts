@@ -2,7 +2,8 @@
 // track fixture. Invented nights of plays; the grouping and ranking follow the Rust rules
 // (a pause longer than the gap starts a session; most plays, then newest, then lowest id).
 // Dev URL switches: ?nolog (no log yet), ?logoff (logging switched off), ?logmismatch (a log
-// that belongs to another card), ?logproblem (an unreadable file).
+// that belongs to another card), ?logproblem (an unreadable file), ?logcandidate (no log yet, but
+// the log of another drive matches this card).
 import { tracks } from "./db";
 import type { Handlers } from "./types";
 
@@ -17,8 +18,9 @@ const flag = (name: string) => {
     return false;
   }
 };
-const noLog = flag("nolog");
-const mismatch = flag("logmismatch");
+const candidate = flag("logcandidate");
+const noLog = flag("nolog") || candidate;
+let mismatch = flag("logmismatch");
 const problem = flag("logproblem");
 
 type Hit = { track_id: number; at: number; plays: number; approx: boolean; time_known: boolean; reset: boolean };
@@ -58,7 +60,17 @@ function build(): Hit[] {
 
 let hits = build();
 let cleared = noLog;
-let settings = { enabled: !flag("logoff"), retention_days: 730, session_gap_minutes: 240 };
+/** The user chose between continuing the other drive's log and starting a new one. */
+let chose = false;
+let settings = {
+  enabled: !flag("logoff"),
+  retention_days: 730,
+  session_gap_minutes: 240,
+  max_events: 400_000,
+  identity_min_present_pct: 50,
+  ask_before_new_log: true,
+};
+const CANDIDATE = { file: "playlog-0123456789abcdef.json", root: "E:\\", started_at: NOW - 230 * D, last_change_at: NOW - 2 * D, played_tracks: 14, present_tracks: 13 };
 const STARTED = NOW - 230 * D;
 let started = STARTED;
 const BEFORE = new Map(tracks.map((t) => [t.track_id, { plays: (t.track_id * 3) % 11, last: NOW - ((t.track_id * 7) % 300 + 231) * D }]));
@@ -90,7 +102,10 @@ function overview(a: Record<string, any>) {
     enabled: settings.enabled,
     has_log: !cleared,
     problem: problem ? "playlog-0123456789abcdef.json is not readable: expected value at line 1 column 1" : null,
+    problem_moves_aside: !!problem,
     mismatch,
+    log_root: cleared ? "" : "E:\\",
+    candidates: cleared && candidate && settings.ask_before_new_log ? [CANDIDATE] : [],
     started_at: cleared ? 0 : started,
     last_change_at: cleared ? 0 : hits.length ? hits[hits.length - 1].at + 40 * 60_000 : NOW,
     events: hits.length,
@@ -109,6 +124,7 @@ function overview(a: Record<string, any>) {
       .map((g) => ({ start: g[0].at, end: g[g.length - 1].at, plays: g.reduce((n, h) => n + h.plays, 0), hits: g })),
     ranking_total: ranks.length,
     ranking: ranks.slice(0, a.rankLimit ?? 100),
+    ranking_ids: ranks.map((r) => r.track_id),
   };
 }
 
@@ -122,11 +138,17 @@ export const playlogHandlers: Handlers = {
       enabled: !!s.enabled,
       retention_days: Math.min(Math.max(Math.trunc(s.retention_days ?? 730), 0), 36500),
       session_gap_minutes: Math.min(Math.max(Math.trunc(s.session_gap_minutes ?? 240), 1), 1440),
+      max_events: Math.min(Math.max(Math.trunc(s.max_events ?? 400_000), 1000), 2_000_000),
+      identity_min_present_pct: Math.min(Math.max(Math.trunc(s.identity_min_present_pct ?? 50), 0), 100),
+      ask_before_new_log: s.ask_before_new_log !== false,
     };
     return { ...settings };
   },
   playlog_record: () => {
     if (!settings.enabled) return { enabled: false, status: "off", tracks: 0, pruned: 0, detail: null };
+    if (cleared && candidate && settings.ask_before_new_log && !chose) {
+      return { enabled: true, status: "candidate", tracks: 0, pruned: 0, detail: "the play log from E:\\ has 13 of the 14 tracks it has seen played on this card" };
+    }
     if (cleared) {
       cleared = false;
       started = NOW; // a log started now has no plays yet
@@ -135,6 +157,22 @@ export const playlogHandlers: Handlers = {
     }
     if (mismatch) return { enabled: true, status: "mismatch", tracks: 0, pruned: 0, detail: "only 1 of the 14 tracks this log has seen played are in this library" };
     return { enabled: true, status: "unchanged", tracks: 0, pruned: 0, detail: null };
+  },
+  playlog_adopt: () => {
+    if (!settings.enabled) return { enabled: false, status: "off", tracks: 0, pruned: 0, detail: null };
+    mismatch = false;
+    return { enabled: true, status: "adopted", tracks: 2, pruned: 0, detail: "9 tracks this library lacks set aside, 4 tracks new to the log taken as they are now" };
+  },
+  playlog_start_new: () => {
+    chose = true;
+    cleared = false;
+    started = NOW;
+    hits = [];
+    return { enabled: true, status: "started", tracks: 14, pruned: 0, detail: null };
+  },
+  playlog_adopt_log: () => {
+    chose = true;
+    cleared = false; // the other drive's log (and its nights) is this library's now
   },
   playlog_overview: (a) => (cleared || problem ? { ...empty(), problem: problem ? overview({}).problem : null, enabled: settings.enabled } : overview(a)),
   playlog_track: (a) => {
