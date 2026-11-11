@@ -9,10 +9,15 @@ use serde::Serialize;
 
 use crate::error::AppResult;
 
+pub mod logcmds;
+pub mod playlog;
+
 /// How many rows the "most played" list carries.
 const MOST_PLAYED_LIMIT: usize = 100;
 
-pub fn setup(_app: &mut tauri::App) {}
+pub fn setup(app: &mut tauri::App) {
+    logcmds::setup(app);
+}
 
 /// Everything the History view shows, from one read of the library.
 #[derive(Debug, Serialize)]
@@ -86,6 +91,12 @@ macro_rules! history_commands {
                 $($acc)*
                 $crate::commands::history::history_overview,
                 $crate::commands::history::history_save_as_case,
+                $crate::commands::history::logcmds::playlog_settings_get,
+                $crate::commands::history::logcmds::playlog_settings_set,
+                $crate::commands::history::logcmds::playlog_record,
+                $crate::commands::history::logcmds::playlog_overview,
+                $crate::commands::history::logcmds::playlog_track,
+                $crate::commands::history::logcmds::playlog_clear,
             ];
             $($rest),*
         }

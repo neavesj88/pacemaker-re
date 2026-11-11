@@ -1,5 +1,6 @@
 // Mock of src-tauri/src/commands/history.rs. Invented counters over the shared track fixture.
 import { cases, tracks } from "./db";
+import { playlogHandlers } from "./playlogMock";
 import type { Handlers } from "./types";
 
 const H = 3_600_000;
@@ -43,6 +44,7 @@ function sessionsOf(gapMin: number) {
 let nextCase = 100;
 
 export const handlers: Handlers = {
+  ...playlogHandlers,
   history_overview: (a) => {
     const gap = Math.min(Math.max(a.gapMinutes ?? 240, 1), 1440);
     const e = entries();
