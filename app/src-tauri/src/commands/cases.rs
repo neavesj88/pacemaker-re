@@ -8,6 +8,9 @@
 
 mod export;
 mod smart;
+mod smart_export;
+mod smart_settings;
+mod smart_sync;
 
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -18,6 +21,7 @@ use tauri::Manager;
 
 use crate::error::AppResult;
 use smart::{Data, Eval, Query, SmartCase};
+use smart_settings::SmartSettings;
 
 pub fn setup(_app: &mut tauri::App) {}
 
@@ -317,11 +321,9 @@ pub struct DeviceCopy {
 
 /// A smart case must not read its own device copy: that copy is rebuilt from the rules.
 fn check_not_self_referencing(sc: &SmartCase) -> AppResult<()> {
-    match sc.device_case_id {
-        Some(id) if smart::refers_to_case(&sc.query, id) => {
-            Err("This smart case has a rule that reads its own Pacemaker copy, which is rebuilt from the rules. Remove that rule first.".into())
-        }
-        _ => Ok(()),
+    match smart_sync::self_reference(sc) {
+        Some(why) => Err(why.into()),
+        None => Ok(()),
     }
 }
 
@@ -353,40 +355,90 @@ pub async fn smart_cases_set_on_device(app: tauri::AppHandle, root: String, id: 
     .await
 }
 
-/// Refreshes the device case of every smart case that has "Put on Pacemaker" on.
+/// What refreshing the Pacemaker copies of the smart cases that are switched on would change,
+/// by smart case, with the tracks that would come and go named. Reads only; the same
+/// computation `smart_cases_refresh_apply` writes from.
 #[tauri::command]
-pub async fn smart_cases_refresh_all(app: tauri::AppHandle, root: String) -> AppResult<Vec<DeviceCopy>> {
+pub async fn smart_cases_refresh_plan(app: tauri::AppHandle, root: String) -> AppResult<smart_sync::Report> {
     let dir = config_dir(&app)?;
-    crate::state::quick_write(app, root.clone(), move || -> AppResult<Vec<DeviceCopy>> {
+    tauri::async_runtime::spawn_blocking(move || refresh_preview(&dir, &root)).await?
+}
+
+fn refresh_preview(dir: &Path, root: &str) -> AppResult<smart_sync::Report> {
+    let list: Vec<SmartCase> = smart::load(dir, root)?.into_iter().filter(|s| s.on_device).collect();
+    if list.is_empty() {
+        return Ok(smart_sync::Report { items: Vec::new(), changes: 0 });
+    }
+    let lib = Library::open_read_only(&PathBuf::from(root))?;
+    Ok(smart_sync::preview(&lib, &list, now_ms())?)
+}
+
+/// Refreshes the Pacemaker copy of every smart case that has "Put on Pacemaker" on and no
+/// longer matches its rules, and returns what was done. Nothing is written (and no safety copy
+/// of `music.db` is made) when every copy is already current. A smart case that cannot run is
+/// reported as skipped with the reason and its copy is left as it was.
+#[tauri::command]
+pub async fn smart_cases_refresh_apply(app: tauri::AppHandle, root: String) -> AppResult<smart_sync::Report> {
+    let dir = config_dir(&app)?;
+    let (d, r) = (dir.clone(), root.clone());
+    let pre = tauri::async_runtime::spawn_blocking(move || refresh_preview(&d, &r)).await??;
+    if pre.changes == 0 {
+        return Ok(pre);
+    }
+    crate::state::quick_write(app, root.clone(), move || -> AppResult<smart_sync::Report> {
         let list: Vec<SmartCase> = smart::load(&dir, &root)?.into_iter().filter(|s| s.on_device).collect();
-        if list.is_empty() {
-            return Ok(Vec::new());
-        }
         let mut lib = Library::open(&PathBuf::from(&root))?;
-        let mut out = Vec::new();
-        for mut sc in list {
-            // one smart case that cannot run (a deleted case in a rule, invalid hand-edited
-            // rules) is reported and skipped; the others still refresh and its device copy is
-            // left as it was rather than emptied
-            let ids = smart::validate(&sc.name, &sc.query)
-                .map_err(Into::into)
-                .and_then(|()| check_not_self_referencing(&sc))
-                .and_then(|()| matches_in(&lib, &sc.query));
-            let ids = match ids {
-                Ok(e) => e.ids,
-                Err(e) => {
-                    out.push(DeviceCopy { smart_case: sc, count: 0, error: Some(e.to_string()) });
-                    continue;
-                }
-            };
-            let (case_id, count) = smart::put_on_device(&mut lib, &sc, &ids)?;
-            sc.device_case_id = Some(case_id);
-            smart::update(&dir, &root, &sc)?;
-            out.push(DeviceCopy { smart_case: sc, count, error: None });
-        }
-        Ok(out)
+        Ok(smart_sync::apply(&mut lib, &dir, &root, &list, now_ms())?)
     })
     .await
+}
+
+// ---- smart-case settings and exports -----------------------------------------------------------
+
+#[derive(Serialize)]
+pub struct SettingsState {
+    settings: SmartSettings,
+    /// Set when the settings file could not be fully read (the defaults are used for that part).
+    warning: Option<String>,
+}
+
+/// The smart-case settings (refresh mode, export choices).
+#[tauri::command]
+pub async fn smart_settings_get(app: tauri::AppHandle) -> AppResult<SettingsState> {
+    let dir = config_dir(&app)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let (settings, warning) = smart_settings::load(&dir);
+        Ok(SettingsState { settings, warning })
+    })
+    .await?
+}
+
+/// Saves the smart-case settings in the app's config dir (not on the device).
+#[tauri::command]
+pub async fn smart_settings_set(app: tauri::AppHandle, settings: SmartSettings) -> AppResult<SettingsState> {
+    let dir = config_dir(&app)?;
+    tauri::async_runtime::spawn_blocking(move || -> AppResult<SettingsState> {
+        smart_settings::save(&dir, &settings)?;
+        let (settings, warning) = smart_settings::load(&dir);
+        Ok(SettingsState { settings, warning })
+    })
+    .await?
+}
+
+/// Writes one smart case, as it matches now, to `dest` as "m3u8", "csv" or "rekordbox" (XML).
+/// Reads only; the file may not be inside the device volume.
+#[tauri::command]
+pub async fn smart_cases_export(app: tauri::AppHandle, root: String, id: u32, format: String, dest: String) -> AppResult<export::ExportDone> {
+    let dir = config_dir(&app)?;
+    tauri::async_runtime::spawn_blocking(move || smart_export::export_one(&root, &dir, id, &format, &dest, now_ms())).await?
+}
+
+/// The library-wide rekordbox XML, smart cases included per the settings. For the Import view's
+/// "Export XML" (`import::interop_export`), so there is one library export. Blocking.
+pub fn library_xml(app: &tauri::AppHandle, root: &str) -> AppResult<smart_export::LibraryXml> {
+    let dir = config_dir(app)?;
+    let lib = Library::open_read_only(&PathBuf::from(root))?;
+    smart_export::library_xml(&lib, &dir, root, now_ms())
 }
 
 /// This area's command paths, one per line.
@@ -421,7 +473,11 @@ macro_rules! cases_commands {
                 $crate::commands::cases::smart_cases_save,
                 $crate::commands::cases::smart_cases_delete,
                 $crate::commands::cases::smart_cases_set_on_device,
-                $crate::commands::cases::smart_cases_refresh_all,
+                $crate::commands::cases::smart_cases_refresh_plan,
+                $crate::commands::cases::smart_cases_refresh_apply,
+                $crate::commands::cases::smart_cases_export,
+                $crate::commands::cases::smart_settings_get,
+                $crate::commands::cases::smart_settings_set,
             ];
             $($rest),*
         }

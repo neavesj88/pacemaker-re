@@ -1,6 +1,6 @@
 // Mock of src-tauri/src/commands/cases.rs. Mutates the shared `cases` fixture so the Cases view,
 // the sidebar counts and the library reload all agree. Invented placeholder data only.
-import type { CaseInfo, CaseMeta, Query, SmartCase } from "../api/cases";
+import type { CaseInfo, CaseMeta, Query, RefreshItem, RefreshReport, SmartCase, SmartSettings } from "../api/cases";
 import { planMerge, planTransfer } from "../state/casePlan";
 import { evaluateQuery, referencedCases, validateQuery, type RuleRow } from "../state/smartRules";
 import { cases, tracks } from "./db";
@@ -164,7 +164,61 @@ function takeOffDevice(sc: SmartCase) {
 
 // the one smart case that starts "on the device" gets its case so the demo is consistent
 putOnDevice(smartCases[1]);
+// Add ?smartstale to the dev URL to start with that copy out of date, which shows the refresh question.
+if (typeof location !== "undefined" && new URLSearchParams(location.search).has("smartstale")) {
+  const copy = cases.find((c) => c.id === smartCases[1].device_case_id);
+  copy?.ids.pop();
+}
 for (const c of cases) refresh(c);
+
+// ---- keeping the device copies current, settings, export ------------------------------------------
+
+let settings: SmartSettings = { refresh_mode: "ask", export_smart: true, export_folder: true };
+
+const ref = (id: number) => {
+  const t = trackById.get(id);
+  return t ? { track_id: id, title: t.title, artist: t.artist } : { track_id: id, title: "(no longer in the library)", artist: "" };
+};
+
+/** The Rust `smart_sync::plan`, in TypeScript: what each switched-on smart case's copy should hold. */
+function planOne(s: SmartCase): { item: RefreshItem; ids: number[] } {
+  const item: RefreshItem = {
+    id: s.id, name: s.name, device_name: PREFIX + s.name.trim(), action: "create", before: 0, after: 0,
+    added: [], removed: [], reordered: false, renamed_from: null, recreated: s.device_case_id != null, error: null,
+  };
+  let ids: number[];
+  try {
+    checkSmart(s.name, s);
+    selfCheck(s);
+    ids = matches(s).ids;
+  } catch (e) {
+    return { item: { ...item, action: "skip", recreated: false, error: String(e) }, ids: [] };
+  }
+  item.after = ids.length;
+  const copy = s.device_case_id != null ? cases.find((x) => x.id === s.device_case_id && x.name.startsWith(PREFIX)) : undefined;
+  if (!copy) return { item: { ...item, added: ids.map(ref) }, ids };
+  const now = copy.ids;
+  const inNew = new Set(ids);
+  const inNow = new Set(now);
+  item.recreated = false;
+  item.before = now.length;
+  item.added = ids.filter((i) => !inNow.has(i)).map(ref);
+  item.removed = now.filter((i) => !inNew.has(i)).map(ref);
+  item.reordered = now.filter((i) => inNew.has(i)).join() !== ids.filter((i) => inNow.has(i)).join();
+  if (copy.name !== item.device_name) item.renamed_from = copy.name;
+  item.action = now.join() === ids.join() && item.renamed_from === null ? "unchanged" : "update";
+  return { item, ids };
+}
+
+const report = (items: RefreshItem[]): RefreshReport => ({ items, changes: items.filter((i) => i.action === "create" || i.action === "update").length });
+
+/** What the library-wide rekordbox export says about smart cases (the Rust `smart_export::library_xml` notes). */
+export function smartLibraryNotes(): string[] {
+  if (!settings.export_smart || smartCases.length === 0) return [];
+  const names = smartCases.map((s) => `“${s.name}”`).join(", ");
+  const copies = smartCases.filter((s) => s.on_device && s.device_case_id != null).map((s) => `“${PREFIX}${s.name}”`);
+  return [`Smart cases written as playlists of what they match now: ${names}.` + (copies.length ? ` Their Pacemaker copies (${copies.join(", ")}) were not written a second time.` : "")];
+}
 
 export const handlers: Handlers = {
   case_tracks: (a) => find(a.caseId).ids,
@@ -335,17 +389,23 @@ export const handlers: Handlers = {
     const count = a.on ? putOnDevice(sc) : (takeOffDevice(sc), 0);
     return { smart_case: structuredClone(sc), count, error: null };
   },
-  smart_cases_refresh_all: () =>
-    smartCases
-      .filter((s) => s.on_device)
-      .map((s) => {
-        try {
-          checkSmart(s.name, s);
-          selfCheck(s);
-          matches(s);
-          return { count: putOnDevice(s), smart_case: structuredClone(s), error: null };
-        } catch (e) {
-          return { count: 0, smart_case: structuredClone(s), error: String(e) };
-        }
-      }),
+  smart_cases_refresh_plan: () => report(smartCases.filter((s) => s.on_device).map((s) => planOne(s).item)),
+  smart_cases_refresh_apply: () => {
+    const planned = smartCases.filter((s) => s.on_device).map((s) => ({ s, ...planOne(s) }));
+    if (!planned.some((p) => p.item.action === "create" || p.item.action === "update")) return report(planned.map((p) => p.item));
+    for (const p of planned) if (p.item.action === "create" || p.item.action === "update") putOnDevice(p.s);
+    return report(planned.map((p) => p.item));
+  },
+  smart_cases_export: (a) => {
+    const s = smartCases.find((x) => x.id === a.id);
+    if (!s) throw `no smart case ${a.id}`;
+    const n = matches(s).ids.length;
+    if (n === 0) throw `“${s.name}” matches no tracks right now, so there is nothing to export.`;
+    return { path: String(a.dest), tracks: n };
+  },
+  smart_settings_get: () => ({ settings: { ...settings }, warning: null }),
+  smart_settings_set: (a) => {
+    settings = { ...(a.settings as SmartSettings) };
+    return { settings: { ...settings }, warning: null };
+  },
 };

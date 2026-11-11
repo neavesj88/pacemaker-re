@@ -96,7 +96,7 @@ export const interopApply = (root: string, path: string, options: ImportOptions)
 
 /** Write the whole library (rekordbox) or a case / mix / the library as a list (M3U8, CSV). */
 export const interopExport = (root: string, format: ExportFormat, where: ExportScope, dest: string) =>
-  invoke<{ path: string; tracks: number }>("interop_export", {
+  invoke<{ path: string; tracks: number; notes?: string[] }>("interop_export", {
     root,
     format,
     scope: where.scope,

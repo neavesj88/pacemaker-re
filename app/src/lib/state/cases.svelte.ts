@@ -21,12 +21,12 @@ import {
   deleteSmartCase,
   duplicateCase,
   exportCase,
+  exportSmartCase,
   favouriteIds,
   listCases,
   listSmartCases,
   mergeCases,
   mergePreview,
-  refreshSmartDeviceCases,
   removeTracksFromCase,
   renameCase,
   saveSmartCase,
@@ -283,6 +283,23 @@ class Cases {
     }
   }
 
+  /** Asks where to save, then writes a smart case as it matches right now (M3U8, CSV or rekordbox
+   *  XML: rekordbox XML cannot hold rules, so it is an ordinary playlist of those tracks). */
+  async exportSmart(s: { id: number; name: string }, format: CaseExportFormat) {
+    const root = this.#root();
+    if (!root) return;
+    const safe = s.name.replace(/[\\/:*?"<>|]+/g, "_").trim() || "smart case";
+    const [ext, label] = format === "m3u8" ? ["m3u8", "M3U8 playlist"] : format === "csv" ? ["csv", "CSV list"] : ["xml", "rekordbox XML"];
+    try {
+      const dest = await pickSavePath(`${safe}.${ext}`, label, ext);
+      if (!dest) return;
+      const r = await exportSmartCase(root, s.id, format, dest);
+      toast.show(`Saved ${r.tracks} track${r.tracks === 1 ? "" : "s"} that “${s.name}” matches now to ${baseName(r.path)}`, "ok", 6000);
+    } catch (e) {
+      toast.show(`Could not export: ${e}`, "bad", 8000);
+    }
+  }
+
   /** The heart on a track: adds it to / removes it from the "Favourites" case. */
   async toggleFavourite(trackId: number) {
     const now = await this.#write((root) => toggleFavourite(root, trackId));
@@ -371,24 +388,6 @@ class Cases {
       toast.show(on ? `On the Pacemaker: ${copy.count} track${copy.count === 1 ? "" : "s"}` : "Removed from the Pacemaker", "ok");
     }
     return copy;
-  }
-
-  /** Re-runs every smart case that is on the Pacemaker and rewrites its device case. */
-  async refreshDeviceCopies() {
-    const done = await this.#write((root) => refreshSmartDeviceCases(root));
-    if (done) {
-      await this.loadSmart();
-      const failed = done.filter((d) => d.error);
-      const ok = done.length - failed.length;
-      if (done.length === 0) toast.show("No smart case is on the Pacemaker", "ok");
-      else if (failed.length === 0) toast.show(`Refreshed ${ok} smart case${ok === 1 ? "" : "s"} on the Pacemaker`, "ok");
-      else {
-        // name each one that was skipped and why; its device copy was left as it was
-        session.error = failed.map((d) => `“${d.smart_case.name}” was not refreshed: ${d.error}`).join("\n");
-        toast.show(`Refreshed ${ok} of ${done.length} smart cases; ${failed.length} skipped`, "bad");
-      }
-    }
-    return done;
   }
 
   reset() {

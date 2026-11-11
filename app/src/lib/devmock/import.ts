@@ -2,6 +2,7 @@
 import { emit } from "@tauri-apps/api/event";
 import type { CasePlan, ImportOptions, ImportPlan } from "$lib/api/import";
 import { baseName } from "$lib/format";
+import { smartLibraryNotes } from "./cases";
 import { AUDIO, tracks } from "./db";
 import { jobLock, runJob } from "./jobs";
 import type { Handlers } from "./types";
@@ -76,7 +77,11 @@ export const handlers: Handlers = {
     }
     return null;
   },
-  interop_export: (a) => ({ path: String(a.dest), tracks: a.scope === "library" || a.format === "rekordbox" ? tracks.length : 6 }),
+  interop_export: (a) => ({
+    path: String(a.dest),
+    tracks: a.scope === "library" || a.format === "rekordbox" ? tracks.length : 6,
+    notes: a.format === "rekordbox" ? smartLibraryNotes() : [],
+  }),
 
   expand_audio_paths: (a) => (a.paths as string[]).filter((p) => AUDIO.test(p) || !/\.[a-z0-9]+$/i.test(p)),
   add_tracks: (a) => {

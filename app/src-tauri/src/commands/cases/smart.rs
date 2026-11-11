@@ -16,6 +16,8 @@ use pm_formats::library::{Error, Library, MAX_CASE_NAME_CHARS};
 use serde::{Deserialize, Serialize};
 
 pub use rules::{Data, Eval, Query, evaluate, migrate, referenced_cases, validate_query};
+#[cfg(test)]
+pub use rules::{Rule, Sort, SortField};
 
 /// Prefix of the device case a smart case is materialised as, so it is recognisable on the
 /// device and in the Cases list. (How the device's font draws the star is not verified.)
@@ -179,7 +181,7 @@ pub fn device_name(sc: &SmartCase) -> String {
 /// The device case a smart case remembers, but only while it is still ours: the id must exist
 /// and the case must still carry [`DEVICE_PREFIX`]. A different card mounted at the same path,
 /// or a case the user renamed and repurposed, fails this and is left alone.
-fn owned_device_case(lib: &Library, sc: &SmartCase) -> Result<Option<i64>, Error> {
+pub(super) fn owned_device_case(lib: &Library, sc: &SmartCase) -> Result<Option<i64>, Error> {
     let Some(id) = sc.device_case_id else {
         return Ok(None);
     };

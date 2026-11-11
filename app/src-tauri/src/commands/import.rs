@@ -138,18 +138,26 @@ pub async fn interop_apply(
 pub struct ExportDone {
     pub path: String,
     pub tracks: usize,
+    /// What the user should know about this export (smart cases written or left out), in words.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub notes: Vec<String>,
 }
 
 /// Writes a track list for other software. `format` is "m3u8", "csv" or "rekordbox" (the whole
-/// library with playlists; `scope` is ignored); `scope` is "library", "case" or "mix" with the
+/// library with playlists, and the smart cases as playlists of their current matches when the
+/// smart-case setting is on; `scope` is ignored); `scope` is "library", "case" or "mix" with the
 /// id of the case or mix. The file goes to `dest`, a path the user chose; nothing on the
 /// volume is changed.
 #[tauri::command]
-pub async fn interop_export(root: String, format: String, scope: String, id: Option<i64>, dest: String) -> AppResult<ExportDone> {
+pub async fn interop_export(app: AppHandle, root: String, format: String, scope: String, id: Option<i64>, dest: String) -> AppResult<ExportDone> {
     tauri::async_runtime::spawn_blocking(move || {
         let lib = Library::open_read_only(Path::new(&root))?;
+        let mut notes = Vec::new();
         let (text, tracks) = if format == "rekordbox" {
-            (interop::export_rekordbox(&lib)?, lib.tracks()?.len())
+            // the cases area owns smart cases, so the library XML is built there
+            let x = crate::commands::cases::library_xml(&app, &root)?;
+            notes = x.notes;
+            (x.text, x.tracks)
         } else {
             let scope = match (scope.as_str(), id) {
                 ("library", _) => interop::Scope::Library,
@@ -170,7 +178,7 @@ pub async fn interop_export(root: String, format: String, scope: String, id: Opt
         std::fs::write(&tmp, text).and_then(|_| std::fs::rename(&tmp, &dest)).inspect_err(|_| {
             let _ = std::fs::remove_file(&tmp);
         })?;
-        Ok(ExportDone { path: dest, tracks })
+        Ok(ExportDone { path: dest, tracks, notes })
     })
     .await
     .map_err(|e| e.to_string())?

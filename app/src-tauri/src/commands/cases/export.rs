@@ -19,6 +19,9 @@ use crate::error::{AppError, AppResult};
 pub struct ExportDone {
     pub path: String,
     pub tracks: usize,
+    /// Things the user should know about this export (smart cases left out and why), in words.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub notes: Vec<String>,
 }
 
 /// File extension of each export format; `None` for a format this command does not write.
@@ -42,7 +45,7 @@ pub fn plain_location(location: &str) -> bool {
         && rel.split('/').all(|part| !part.is_empty())
 }
 
-fn check_dest(root: &Path, dest: &Path, ext: &str) -> AppResult<()> {
+pub(super) fn check_dest(root: &Path, dest: &Path, ext: &str) -> AppResult<()> {
     if dest.is_dir() {
         return Err("The destination is a folder; choose a file name.".into());
     }
@@ -59,14 +62,16 @@ fn check_dest(root: &Path, dest: &Path, ext: &str) -> AppResult<()> {
     Ok(())
 }
 
-fn refuse_escaping(tracks: &[Track]) -> AppResult<()> {
+/// Stops an export whose tracks include a file location outside the device's music folder;
+/// `what` names the list in the message ("this case", "the library").
+pub(super) fn refuse_escaping(tracks: &[Track], what: &str) -> AppResult<()> {
     let bad: Vec<&Track> = tracks.iter().filter(|t| !plain_location(&t.location)).collect();
     if bad.is_empty() {
         return Ok(());
     }
     let names: Vec<String> = bad.iter().take(5).map(|t| format!("“{}” ({})", t.title, t.location)).collect();
     Err(format!(
-        "{} track{} in this case ha{} a file location outside the device's music folder, so nothing was exported: {}{}",
+        "{} track{} in {what} ha{} a file location outside the device's music folder, so nothing was exported: {}{}",
         bad.len(),
         if bad.len() == 1 { "" } else { "s" },
         if bad.len() == 1 { "s" } else { "ve" },
@@ -86,18 +91,24 @@ pub fn export_case(root: &Path, case_id: i64, format: &str, dest: &str) -> AppRe
     if tracks.is_empty() {
         return Err("This case has no tracks to export.".into());
     }
-    refuse_escaping(&tracks)?;
+    refuse_escaping(&tracks, "this case")?;
     let text = match format {
         "m3u8" => interop::export_m3u8(&lib, &tracks),
         "csv" => interop::export_csv(&lib, &tracks),
         _ => interop::export_rekordbox_case(&lib, case_id)?,
     };
-    // beside the destination, then renamed: a failed write never leaves half a file under the name
+    write_out(dest, &text)?;
+    Ok(ExportDone { path: dest.to_string(), tracks: tracks.len(), notes: Vec::new() })
+}
+
+/// Writes `text` beside `dest` and renames it: a failed write never leaves half a file under
+/// the name.
+pub(super) fn write_out(dest: &str, text: &str) -> AppResult<()> {
     let tmp = format!("{dest}.part");
-    std::fs::write(&tmp, text).and_then(|_| std::fs::rename(&tmp, &dest_path)).inspect_err(|_| {
+    std::fs::write(&tmp, text).and_then(|_| std::fs::rename(&tmp, dest)).inspect_err(|_| {
         let _ = std::fs::remove_file(&tmp);
     })?;
-    Ok(ExportDone { path: dest.to_string(), tracks: tracks.len() })
+    Ok(())
 }
 
 #[cfg(test)]

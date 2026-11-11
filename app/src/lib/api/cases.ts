@@ -151,8 +151,69 @@ export const deleteSmartCase = (root: string, id: number, removeDeviceCase: bool
 export const setSmartCaseOnDevice = (root: string, id: number, on: boolean) =>
   invoke<DeviceCopy>("smart_cases_set_on_device", { root, id, on });
 
-/** Refreshes the device case of every smart case that has "Put on Pacemaker" on. */
-export const refreshSmartDeviceCases = (root: string) => invoke<DeviceCopy[]>("smart_cases_refresh_all", { root });
+// ---- keeping the Pacemaker copies current, settings, export -----------------------------------
+
+/** A track named in a refresh summary. */
+export type TrackRef = { track_id: number; title: string; artist: string };
+
+/** What a refresh does (or did) to one smart case's Pacemaker copy. `create`: it does not exist
+ * (never made, or deleted on the Pacemaker) and is made; `update`: tracks, their order or its name
+ * differ; `unchanged`; `skip`: it cannot be refreshed (see `error`), nothing is written for it. */
+export type RefreshAction = "create" | "update" | "unchanged" | "skip";
+
+export type RefreshItem = {
+  /** The smart case. */
+  id: number;
+  name: string;
+  /** What its Pacemaker copy is called. */
+  device_name: string;
+  action: RefreshAction;
+  /** Tracks in the copy before, and after the refresh. */
+  before: number;
+  after: number;
+  added: TrackRef[];
+  removed: TrackRef[];
+  /** The same tracks in another order. */
+  reordered: boolean;
+  /** The copy's current name when it is not `device_name`. */
+  renamed_from: string | null;
+  /** The smart case had a copy once, but it was deleted (or replaced) on the Pacemaker. */
+  recreated: boolean;
+  error: string | null;
+};
+
+export type RefreshReport = {
+  items: RefreshItem[];
+  /** Items that are (or were) written: `create` and `update`. */
+  changes: number;
+};
+
+/** What a refresh would change, by smart case, with the tracks named. Reads only. */
+export const smartRefreshPlan = (root: string) => invoke<RefreshReport>("smart_cases_refresh_plan", { root });
+
+/** Refreshes the Pacemaker copies that are out of date and returns what was done. Writes nothing
+ * when every copy is current. */
+export const smartRefreshApply = (root: string) => invoke<RefreshReport>("smart_cases_refresh_apply", { root });
+
+/** Off: only the button. Ask: say what would change and wait. Auto: write it, then say what changed. */
+export type RefreshMode = "off" | "ask" | "auto";
+
+export type SmartSettings = {
+  refresh_mode: RefreshMode;
+  /** Library rekordbox XML: smart cases as playlists of their current matches. */
+  export_smart: boolean;
+  /** ...inside a "Smart cases" folder rather than beside the cases. */
+  export_folder: boolean;
+};
+
+export type SmartSettingsState = { settings: SmartSettings; warning: string | null };
+
+export const getSmartSettings = () => invoke<SmartSettingsState>("smart_settings_get");
+export const setSmartSettings = (settings: SmartSettings) => invoke<SmartSettingsState>("smart_settings_set", { settings });
+
+/** Writes one smart case, as it matches right now, as M3U8, CSV or rekordbox XML. */
+export const exportSmartCase = (root: string, id: number, format: CaseExportFormat, dest: string) =>
+  invoke<{ path: string; tracks: number; notes?: string[] }>("smart_cases_export", { root, id, format, dest });
 
 // ---- organising: duplicate, merge, copy / move, delete several, export ------------------------
 
@@ -227,4 +288,4 @@ export type CaseExportFormat = "m3u8" | "csv" | "rekordbox";
 
 /** Writes one case to `dest` (a file outside the device volume) as M3U8, CSV or rekordbox XML. */
 export const exportCase = (root: string, caseId: number, format: CaseExportFormat, dest: string) =>
-  invoke<{ path: string; tracks: number }>("cases_export", { root, caseId, format, dest });
+  invoke<{ path: string; tracks: number; notes?: string[] }>("cases_export", { root, caseId, format, dest });

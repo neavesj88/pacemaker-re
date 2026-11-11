@@ -3,9 +3,11 @@
   import { cases } from "$lib/state/cases.svelte";
   import { jobs } from "$lib/state/jobs.svelte";
   import { session } from "$lib/state/session.svelte";
+  import { smartSettings } from "$lib/state/smartSettings.svelte";
   import { MAX_LIMIT, SORT_FIELDS, describeQuery, directionLabels, newQuery, stampCaseNames, validateQuery } from "$lib/state/smartRules";
   import { toast } from "$lib/state/toast.svelte";
   import Button from "$lib/ui/Button.svelte";
+  import ContextMenu, { type MenuItem } from "$lib/ui/ContextMenu.svelte";
   import ConfirmDialog from "./ConfirmDialog.svelte";
   import SmartPreview from "./SmartPreview.svelte";
   import SmartRuleGroup from "./SmartRuleGroup.svelte";
@@ -99,6 +101,27 @@
   });
   let alsoDevice = $state(false);
   let takingOff = $state(false);
+  let menu = $state<{ x: number; y: number; items: MenuItem[] } | null>(null);
+  $effect(() => {
+    void smartSettings.ensure(); // the note under "Put on Pacemaker" names the refresh setting
+  });
+
+  // The export is of the saved smart case as it matches now (rekordbox XML cannot hold rules, so
+  // it is an ordinary playlist of those tracks), so it waits for unsaved edits to be saved.
+  function exportMenu(e: MouseEvent) {
+    e.stopPropagation();
+    const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const target = { id, name: draft.name };
+    menu = {
+      x: r.left,
+      y: r.bottom + 2,
+      items: [
+        { label: "M3U8 playlist…", onclick: () => cases.exportSmart(target, "m3u8") },
+        { label: "CSV list…", onclick: () => cases.exportSmart(target, "csv") },
+        { label: "rekordbox XML (as a playlist)…", onclick: () => cases.exportSmart(target, "rekordbox") },
+      ],
+    };
+  }
 
   const deviceName = (name: string) => `★ ${name.trim()}`;
 
@@ -120,7 +143,14 @@
   <Button variant="primary" onclick={save} disabled={!dirty || draft.name.trim() === "" || !!ruleError || !!fieldError}>
     {id === 0 ? "Create" : "Save"}
   </Button>
-  {#if id !== 0}<Button onclick={() => ((alsoDevice = false), (deleting = true))}>Delete…</Button>{/if}
+  {#if id !== 0}
+    <Button
+      onclick={exportMenu}
+      disabled={dirty || !!ruleError || !!fieldError || preview.ids.length === 0}
+      title={dirty ? "Save your changes first: the export uses the saved rules" : "Save the tracks this smart case matches right now as a list for other software"}
+    >Export…</Button>
+    <Button onclick={() => ((alsoDevice = false), (deleting = true))}>Delete…</Button>
+  {/if}
 </div>
 
 <div class="builder">
@@ -184,8 +214,14 @@
         {:else if dirty}
           Save your changes first: the Pacemaker copy is made from the saved rules.
         {:else if sc?.on_device}
-          The Pacemaker has a case called “{deviceName(sc.name)}” with these tracks{draft.sort ? ", in this order" : ""}. It does not change by itself:
-          refresh it after the library changes.
+          The Pacemaker has a case called “{deviceName(sc.name)}” with these tracks{draft.sort ? ", in this order" : ""}.
+          {#if smartSettings.value.refresh_mode === "auto"}
+            It is refreshed automatically when the library changes (Cases › Smart case settings).
+          {:else if smartSettings.value.refresh_mode === "ask"}
+            When the library changes you are asked whether to refresh it (Cases › Smart case settings).
+          {:else}
+            It does not change by itself: refresh it after the library changes.
+          {/if}
         {:else}
           Off: this smart case exists only in this app. Switch it on to write a normal case called “{deviceName(draft.name)}” to the Pacemaker.
         {/if}
@@ -200,6 +236,10 @@
 <SmartPreview ids={preview.ids} values={preview.values} valueLabel={sortLabel} />
 {#if preview.ids.length === 0 && !ruleError && !fieldError}
   <p class="empty">No tracks match these rules.</p>
+{/if}
+
+{#if menu}
+  <ContextMenu x={menu.x} y={menu.y} items={menu.items} onclose={() => (menu = null)} />
 {/if}
 
 {#if leaving}

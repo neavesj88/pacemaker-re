@@ -3,11 +3,13 @@
   import type { MergePlan } from "$lib/api/cases";
   import { cases } from "$lib/state/cases.svelte";
   import { session } from "$lib/state/session.svelte";
+  import { smartSettings } from "$lib/state/smartSettings.svelte";
   import { toast } from "$lib/state/toast.svelte";
   import Button from "$lib/ui/Button.svelte";
   import Modal from "$lib/ui/Modal.svelte";
   import { caseView } from "./caseView.svelte";
   import { mergeSummary, plural, trackLabel } from "./caseLogic";
+  import { remakeWhen } from "./smartRefreshLogic";
 
   // Merges cases into a new case or an existing one, without repeats. The sentence and the track
   // list come from `cases_merge_preview`, which runs the same function the merge runs, so what is
@@ -126,7 +128,7 @@
       <ul>
         {#each picked as c (c.id)}
           <li>
-            “{c.name}” ({plural(c.track_count, "track")}){c.name === "Favourites" ? " – the case the heart on a track uses" : ""}{smartOf(c.id) ? ` – the Pacemaker copy of the smart case “${smartOf(c.id)?.name}”, which will be made again the next time you refresh` : ""}
+            “{c.name}” ({plural(c.track_count, "track")}){c.name === "Favourites" ? " – the case the heart on a track uses" : ""}{smartOf(c.id) ? ` – the Pacemaker copy of the smart case “${smartOf(c.id)?.name}”, which will be made again ${remakeWhen(smartSettings.value.refresh_mode)}` : ""}
           </li>
         {/each}
       </ul>

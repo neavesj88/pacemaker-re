@@ -6,6 +6,8 @@
   import { jobs } from "$lib/state/jobs.svelte";
   import { selection } from "$lib/state/selection.svelte";
   import { session } from "$lib/state/session.svelte";
+  import { smartRefresh } from "$lib/state/smartRefresh.svelte";
+  import { smartSettings } from "$lib/state/smartSettings.svelte";
   import { toast } from "$lib/state/toast.svelte";
   import { trackDropTarget } from "$lib/state/trackDrag.svelte";
   import Button from "$lib/ui/Button.svelte";
@@ -16,6 +18,8 @@
   import ConfirmDialog from "./ConfirmDialog.svelte";
   import MergeDialog from "./MergeDialog.svelte";
   import NameDialog from "./NameDialog.svelte";
+  import SmartSettingsDialog from "./SmartSettingsDialog.svelte";
+  import { remakeWhen } from "./smartRefreshLogic";
 
   const columns: Column[] = [
     { key: "pick", label: "" },
@@ -31,6 +35,10 @@
   let naming = $state<{ kind: "new" } | { kind: "from-selection" } | { kind: "rename"; c: CaseInfo } | { kind: "duplicate"; c: CaseInfo } | null>(null);
   let deleting = $state<CaseInfo[] | null>(null);
   let merging = $state<number[] | null>(null);
+  let settingsOpen = $state(false);
+  $effect(() => {
+    void smartSettings.ensure(); // the delete notes say when a deleted smart-case copy comes back
+  });
   let menu = $state<{ x: number; y: number; c: CaseInfo } | null>(null);
   // the cases ticked in the first column (bulk delete, merge)
   let picked = $state<Set<number>>(new Set());
@@ -145,7 +153,7 @@
     const notes: string[] = [];
     if (list.some(isFav)) notes.push(`“Favourites” is the case the heart on a track uses: deleting it clears every heart, and the next heart click starts a new, empty Favourites case.`);
     const smart = list.filter(smartOf);
-    if (smart.length > 0) notes.push(`${smart.map((c) => `“${c.name}”`).join(", ")} ${smart.length === 1 ? "is the Pacemaker copy of a smart case, which will make it" : "are Pacemaker copies of smart cases, which will make them"} again the next time you refresh.`);
+    if (smart.length > 0) notes.push(`${smart.map((c) => `“${c.name}”`).join(", ")} ${smart.length === 1 ? "is the Pacemaker copy of a smart case, which will make it" : "are Pacemaker copies of smart cases, which will make them"} again ${remakeWhen(smartSettings.value.refresh_mode)}.`);
     const used = cases.smartCasesUsing(list.map((c) => c.id));
     if (used.length > 0) notes.push(`${used.map((n) => `“${n}”`).join(", ")} ${used.length === 1 ? "is a smart case that has" : "are smart cases that have"} a rule about ${list.length === 1 ? "this case" : "one of these cases"}; ${used.length === 1 ? "it" : "they"} will report an error until you pick another case in the rule.`);
     return notes.join(" ");
@@ -174,11 +182,12 @@
   <Button disabled={!jobs.canWrite || picked.size === 0} onclick={() => (deleting = pickedCases)}>Delete{picked.size > 0 ? ` ${picked.size}` : ""}…</Button>
   {#if cases.smart.some((s) => s.on_device)}
     <Button
-      disabled={!jobs.canWrite}
-      onclick={() => cases.refreshDeviceCopies()}
-      title="Rewrite the Pacemaker copy of every smart case that is switched on, from the current library"
-    >Refresh smart cases</Button>
+      disabled={!jobs.canWrite || smartRefresh.checking || smartRefresh.applying}
+      onclick={() => smartRefresh.review()}
+      title="Show what rewriting the Pacemaker copy of every smart case that is switched on would change, then do it if you agree"
+    >Refresh smart cases…</Button>
   {/if}
+  <Button onclick={() => (settingsOpen = true)} title="Whether the Pacemaker copies of smart cases refresh by themselves, and how smart cases are exported">Smart case settings…</Button>
   <span class="muted">Cases are the Pacemaker's own playlists; the order here is the order on the device.</span>
 </div>
 {#if rows.length > 0}
@@ -254,6 +263,10 @@
     onconfirm={confirmName}
     onclose={() => (naming = null)}
   />
+{/if}
+
+{#if settingsOpen}
+  <SmartSettingsDialog onclose={() => (settingsOpen = false)} />
 {/if}
 
 {#if merging}
