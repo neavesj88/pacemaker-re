@@ -1188,6 +1188,60 @@
     "title": "01 - Song"
    },
    "expect": {}
+  },
+  {
+   "name": "promo keeps exclusive remix",
+   "settings": {
+    "strip_promo": true
+   },
+   "input": {
+    "title": "Song (Exclusive Remix)"
+   },
+   "expect": {}
+  },
+  {
+   "name": "promo keeps beatport edit",
+   "settings": {
+    "strip_promo": true
+   },
+   "input": {
+    "title": "Song [Beatport Edit]"
+   },
+   "expect": {}
+  },
+  {
+   "name": "promo drops several phrases",
+   "settings": {
+    "strip_promo": true
+   },
+   "input": {
+    "title": "Song (Free Download) [Out Now]"
+   },
+   "expect": {
+    "title": "Song"
+   }
+  },
+  {
+   "name": "feat inside a bracket with other words stays",
+   "settings": {
+    "feat_to_artist": true
+   },
+   "input": {
+    "title": "Song (Foo feat. Bar Remix)",
+    "artist": "Main"
+   },
+   "expect": {}
+  },
+  {
+   "name": "feat inside a square bracket stays",
+   "settings": {
+    "feat_to_artist": true
+   },
+   "input": {
+    "title": "Song [Artist feat. X]",
+    "artist": "Main"
+   },
+   "expect": {}
   }
  ]
 }

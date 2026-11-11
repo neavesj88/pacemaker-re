@@ -44,6 +44,7 @@ use pm_formats::library::{Library, Track};
 use pm_formats::naming;
 use pm_formats::ops_metadata::{MAX_TEXT_CHARS, TrackEdit};
 use serde::{Deserialize, Serialize};
+use sha2::Digest;
 use tauri::State;
 
 use super::audiohash;
@@ -288,10 +289,10 @@ fn set_value(tag: &mut Tag, field: &str, value: &str) {
 }
 
 /// What the generic items outside `touched` look like, as comparable text; with the pictures'
-/// bytes, since a rewrite must not lose or alter the cover art.
+/// hashed in full, since a rewrite must not lose or alter the cover art.
 fn untouched_items(tag: &Tag, touched: &[ItemKey]) -> Vec<String> {
     let mut v: Vec<String> = tag.items().filter(|i| !touched.contains(&i.key())).map(|i| format!("{i:?}")).collect();
-    v.extend(tag.pictures().iter().map(|p| format!("picture {:?} {:?} {} {:x?}", p.pic_type(), p.mime_type(), p.data().len(), &p.data()[..p.data().len().min(64)])));
+    v.extend(tag.pictures().iter().map(|p| format!("picture {:?} {:?} {} {:x}", p.pic_type(), p.mime_type(), p.data().len(), sha2::Sha256::digest(p.data()))));
     v.sort();
     v
 }
@@ -926,6 +927,20 @@ pub fn metadata_tags_write(app: tauri::AppHandle, lock: State<'_, JobLock>, root
 mod tests {
     use super::*;
     use std::sync::atomic::AtomicUsize;
+
+    #[test]
+    fn cover_art_change_deep_in_the_image_is_noticed() {
+        use lofty::picture::{MimeType, Picture, PictureType};
+        let make = |last: u8| {
+            let mut data = vec![7u8; 4096];
+            data[4000] = last;
+            let mut tag = Tag::new(TagType::Id3v2);
+            tag.push_picture(Picture::unchecked(data).pic_type(PictureType::CoverFront).mime_type(MimeType::Png).build());
+            tag
+        };
+        assert_eq!(untouched_items(&make(1), &[]), untouched_items(&make(1), &[]));
+        assert_ne!(untouched_items(&make(1), &[]), untouched_items(&make(2), &[]));
+    }
 
     fn scratch(tag: &str) -> PathBuf {
         static N: AtomicUsize = AtomicUsize::new(0);

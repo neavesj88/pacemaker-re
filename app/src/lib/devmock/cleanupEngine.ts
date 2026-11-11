@@ -145,19 +145,25 @@ const splitWs = (s: string): string[] => {
 
 const containsUrl = (text: string, inBracket: boolean) => splitWs(text).some((t) => looksLikeUrl(t, inBracket));
 
-function phraseIn(words: string[], phrase: string[]): boolean {
-  if (phrase.length === 0) return false;
-  for (let i = 0; i + phrase.length <= words.length; i++) {
-    if (phrase.every((p, j) => words[i + j] === p)) return true;
-  }
-  return false;
-}
-
 function isPromo(content: string, phrases: string[][]): boolean {
   // a bracket holding nothing but one address ("[djsite.me]") is promo even on a word-like domain
   if (containsUrl(content, splitWs(content).length === 1)) return true;
+  // promo phrases only count when they are the whole bracket ("(Exclusive Remix)" is kept)
   const words = wordsLower(content);
-  return phrases.some((p) => phraseIn(words, p));
+  return words.length > 0 && coveredByPhrases(words, phrases);
+}
+
+function coveredByPhrases(words: string[], phrases: string[][]): boolean {
+  let i = 0;
+  while (i < words.length) {
+    let best = 0;
+    for (const p of phrases) {
+      if (p.length > best && p.every((w, j) => words[i + j] === w)) best = p.length;
+    }
+    if (best === 0) return false;
+    i += best;
+  }
+  return true;
 }
 
 const CLOSERS: Record<string, string> = { "(": ")", "[": "]", "{": "}" };
@@ -271,6 +277,15 @@ export function normaliseFeat(s: string, form: string): string {
   return out + cs.slice(at).join("");
 }
 
+function bracketDepth(cs: string[]): number {
+  let depth = 0;
+  for (const c of cs) {
+    if ("([{".includes(c)) depth++;
+    else if (")]}".includes(c)) depth = Math.max(0, depth - 1);
+  }
+  return depth;
+}
+
 export function splitFeat(title: string): [string, string] | null {
   const cs = chars(title);
   let i = 0;
@@ -296,9 +311,10 @@ export function splitFeat(title: string): [string, string] | null {
     }
     i++;
   }
-  const tokens = featTokens(cs);
-  if (tokens.length === 0) return null;
-  const [start, , end] = tokens[0];
+  // only a token outside every bracket; inside "(Foo feat. Bar Remix)" cutting would unbalance it
+  const found = featTokens(cs).find(([s]) => bracketDepth(cs.slice(0, s)) === 0);
+  if (!found) return null;
+  const [start, , end] = found;
   const rest = cs.slice(end);
   let stop = rest.findIndex((c) => "([{".includes(c));
   if (stop < 0) stop = rest.length;

@@ -60,7 +60,8 @@ pub struct CleanupSettings {
     /// Strip URLs and promo bracket text from `promo_fields`.
     pub strip_promo: bool,
     pub promo_fields: Vec<String>,
-    /// A bracket whose words contain one of these phrases is promo text ("free download").
+    /// A bracket made up of nothing but these phrases is promo text ("free download"); a bracket that
+    /// also holds other words ("Exclusive Remix") is kept.
     pub promo_phrases: Vec<String>,
     /// Write feat. / ft. / featuring in one form, in title, artist and album artist.
     pub feat_normalise: bool,
@@ -376,19 +377,34 @@ fn contains_url(text: &str, in_bracket: bool) -> bool {
     text.split(is_ws).any(|t| looks_like_url(t, in_bracket))
 }
 
-fn phrase_in(words: &[String], phrase: &[String]) -> bool {
-    !phrase.is_empty() && words.windows(phrase.len()).any(|w| w == phrase)
-}
-
-/// Is the text inside a bracket promo: a URL, or a whole-word promo phrase?
+/// Is the text inside a bracket promo: a URL, or nothing but whole-word promo phrases?
 fn is_promo(content: &str, phrases: &[Vec<String>]) -> bool {
     // a bracket holding nothing but one address ("[djsite.me]") is promo even on a word-like domain
     let single = content.split(is_ws).filter(|t| !t.is_empty()).count() == 1;
     if contains_url(content, single) {
         return true;
     }
+    // promo phrases only count when they are the whole bracket: "(Free Download)" goes, but
+    // "(Exclusive Remix)" and "(Beatport Edit)" carry a mix credit and stay
     let words = words_lower(content);
-    phrases.iter().any(|p| phrase_in(&words, p))
+    !words.is_empty() && covered_by_phrases(&words, phrases)
+}
+
+/// Can every word be accounted for by whole promo phrases laid end to end (longest phrase first)?
+fn covered_by_phrases(words: &[String], phrases: &[Vec<String>]) -> bool {
+    let mut i = 0;
+    while i < words.len() {
+        let best = phrases
+            .iter()
+            .filter(|p| !p.is_empty() && words[i..].starts_with(p))
+            .map(|p| p.len())
+            .max();
+        match best {
+            Some(n) => i += n,
+            None => return false,
+        }
+    }
+    true
 }
 
 fn closer_of(open: char) -> Option<char> {
@@ -535,6 +551,19 @@ pub fn normalise_feat(s: &str, form: &str) -> String {
     out
 }
 
+/// How many brackets are still open at the end of `chars` (never below zero).
+fn bracket_depth(chars: &[char]) -> usize {
+    let mut depth = 0usize;
+    for &c in chars {
+        match c {
+            '(' | '[' | '{' => depth += 1,
+            ')' | ']' | '}' => depth = depth.saturating_sub(1),
+            _ => {}
+        }
+    }
+    depth
+}
+
 /// Takes "feat. X" out of a title. Returns the title without it and the names, or `None`.
 /// A bracketed "(feat. X)" anywhere, or a bare "feat. X" that runs to the next bracket or the end.
 pub fn split_feat(title: &str) -> Option<(String, String)> {
@@ -562,9 +591,10 @@ pub fn split_feat(title: &str) -> Option<(String, String)> {
         }
         i += 1;
     }
-    // bare form
+    // bare form: only a token outside every bracket. Inside "(Foo feat. Bar Remix)" the names run
+    // into the bracket's other words, and cutting mid-bracket would leave it unbalanced.
     let tokens = feat_tokens(&chars);
-    let &(start, _, end) = tokens.first()?;
+    let &(start, _, end) = tokens.iter().find(|&&(start, _, _)| bracket_depth(&chars[..start]) == 0)?;
     let rest: Vec<char> = chars[end..].to_vec();
     let stop = rest.iter().position(|c| matches!(c, '(' | '[' | '{')).unwrap_or(rest.len());
     let names = collapse_ws(&rest[..stop].iter().collect::<String>());
@@ -1314,6 +1344,16 @@ mod tests {
         assert_eq!(strip_promo("Song http://example.net/x?y=1 live", &p), "Song live");
         assert_eq!(strip_promo("Song (Premiere)", &p), "Song");
         assert_eq!(strip_promo("Song (Radio Edit)", &p), "Song (Radio Edit)");
+        // promo words beside a mix credit are not promo
+        for title in [
+            "Song (Exclusive Remix)", "Song (Premiere Edit)", "Song (Club Exclusive Mix)", "Song (Download Mix)",
+            "Song (Beatport Edit)", "Song (Buy Me A Drink)", "Song (Free Download Mix)", "Song [SoundCloud Edit]",
+        ] {
+            assert_eq!(strip_promo(title, &p), title, "{title}");
+        }
+        assert_eq!(strip_promo("Song (Free Download) [Out Now]", &p), "Song");
+        assert_eq!(strip_promo("Song (Buy Now Exclusive)", &p), "Song", "several phrases, still nothing else");
+        assert_eq!(strip_promo("Song (HD)", &p), "Song");
         assert_eq!(strip_promo("Song (feat. Mr.Me)", &p), "Song (feat. Mr.Me)", "short labels are not domains");
         assert_eq!(strip_promo("Song (Buyer's Remix)", &p), "Song (Buyer's Remix)", "whole words only");
         assert_eq!(strip_promo("Song (Mix [www.example.org])", &p), "Song (Mix)", "nested promo goes, the outer bracket stays");
@@ -1345,6 +1385,11 @@ mod tests {
         assert_eq!(split_feat("Song (Radio Edit)"), None);
         assert_eq!(split_feat("Song (Name Remix)"), None);
         assert_eq!(split_feat("Song feat."), None);
+        // inside a bracket that holds other words the title is left alone, never cut mid-bracket
+        assert_eq!(split_feat("Song (Foo feat. Bar Remix)"), None);
+        assert_eq!(split_feat("Song [Artist feat. X]"), None);
+        assert_eq!(split_feat("Song (Foo (feat. X))"), None);
+        assert_eq!(split_feat("Song (Foo feat. X) feat. Y"), Some(("Song (Foo feat. X)".into(), "Y".into())));
     }
 
     #[test]
