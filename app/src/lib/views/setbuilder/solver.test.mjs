@@ -618,4 +618,132 @@ await test("building a one-track mix and an empty one", async () => {
   assert.equal(e.doc.clips.length, 0);
 });
 
+// ---- review fixes (E3 verifier findings) -------------------------------------------------------
+
+/** A repeatable pool of `count` invented tracks: tempos 110..140, any key, 2 to 7 minutes. */
+function bigPool(count, withEnergy = false) {
+  let x = 12345;
+  const rnd = () => ((x = (x * 1103515245 + 12345) % 2147483648) / 2147483648);
+  return Array.from({ length: count }, (_, i) => tr(i + 1, 110 + Math.floor(rnd() * 30), `${1 + Math.floor(rnd() * 12)}${rnd() < 0.5 ? "A" : "B"}`, 120 + Math.floor(rnd() * 300), withEnergy ? 1 + Math.floor(rnd() * 10) : null));
+}
+
+await test("a target length on a large pool finishes quickly and lands near the target", () => {
+  for (const [count, energy] of [[600, false], [250, true]]) {
+    const pool = bigPool(count, energy);
+    const target = 3600;
+    const o = O({ targetSecs: target, curve: energy ? "arc" : "off" });
+    const t0 = performance.now();
+    const r = S.solve(pool, new Map(), o);
+    const ms = performance.now() - t0;
+    assert.ok(ms < 12000, `${count} tracks took ${Math.round(ms)} ms`);
+    assert.equal(r.order.length + r.dropped.length, count);
+    assert.deepEqual([...r.order, ...r.dropped].sort((a, b) => a - b), pool.map((t) => t.id));
+    // the drop loop stops when no further drop gets closer, so the total is within one track of the target
+    assert.ok(Math.abs(r.secs - target) <= 420, `total ${r.secs}`);
+  }
+});
+
+await test("dropping for length is deterministic and keeps pinned tracks", () => {
+  const pool = bigPool(80);
+  const o = O({ targetSecs: 40 * 60 });
+  const pins = new Map([[3, 0], [41, 4]]);
+  const a = S.solve(pool, pins, o);
+  const b = S.solve(pool, pins, o);
+  assert.deepEqual(a, b);
+  assert.ok(a.order.includes(3) && a.order.includes(41));
+  assert.equal(a.order[0], 3);
+  assert.equal(a.order[4], 41);
+});
+
+await test("pin positions are counted over the tracks the pool has", () => {
+  const order = [10, 11, 12, 13, 14];
+  const pinned = new Set([13, 14]);
+  const all = S.pinPositions(order, pinned, () => true);
+  assert.deepEqual([...all], [[13, 3], [14, 4]]);
+  // 11 is no longer in the library: the pins after it move up one, matching the pool the solver gets
+  const lost = S.pinPositions(order, pinned, (id) => id !== 11);
+  assert.deepEqual([...lost], [[13, 2], [14, 3]]);
+  const pool = [10, 12, 13, 14].map((id, i) => tr(id, 120 + i, `${1 + i}A`));
+  const r = S.solve(pool, lost, O());
+  assert.equal(r.order[2], 13);
+  assert.equal(r.order[3], 14);
+});
+
+await test("a rejected setting keeps the value it had; number settings clamp", () => {
+  const cur = S.mergePrefs({ maxBpmJumpPct: 3, maxTrackMins: 5, targetMins: 60, mixTempo: 126, blendJumpPct: 4 });
+  const bad = S.mergePrefs({ ...cur, maxBpmJumpPct: 60, maxTrackMins: 0.1, targetMins: 0, mixTempo: 5, blendJumpPct: 99, overlapCapPct: 1 }, cur);
+  assert.equal(bad.maxBpmJumpPct, 3);
+  assert.equal(bad.maxTrackMins, 5);
+  assert.equal(bad.targetMins, 60);
+  assert.equal(bad.mixTempo, 126);
+  assert.equal(bad.blendJumpPct, 4);
+  assert.equal(bad.overlapCapPct, 40);
+  // null still unsets a setting that may be unset
+  assert.equal(S.mergePrefs({ ...cur, maxTrackMins: null }, cur).maxTrackMins, null);
+  // saved values are still checked against the defaults
+  assert.deepEqual(S.mergePrefs({ maxBpmJumpPct: 60 }), S.DEFAULT_PREFS);
+  assert.equal(S.mergePrefs({ onToolConflict: "ask" }).onToolConflict, "skip");
+  assert.equal(S.mergePrefs({ onToolConflict: "replace" }).onToolConflict, "replace");
+  // clamping for the inputs
+  assert.equal(S.clampPref("maxBpmJumpPct", 60), 50);
+  assert.equal(S.clampPref("maxTrackMins", 0.1), 0.25);
+  assert.equal(S.clampPref("mixTempo", 5), 40);
+  assert.equal(S.clampPref("targetMins", 90), 90);
+  for (const k of Object.keys(S.PREF_RANGES)) {
+    const [lo, hi] = S.PREF_RANGES[k];
+    assert.ok(S.mergePrefs({ [k]: S.clampPref(k, 1e9) })[k] === hi && S.mergePrefs({ [k]: S.clampPref(k, -1e9) })[k] === lo, k);
+  }
+});
+
+await test("the mix plan does not beat-match a hop beyond the tempo limit", () => {
+  const all = () => true;
+  const t = [tr(1, 80, "8A"), tr(2, 82, "8A"), tr(3, 140, "8A"), tr(4, 143, "8A")];
+  const free = S.planMix(t, all, { beatmatch: true, mixTempo: null, halfDouble: false });
+  assert.deepEqual(free.pairs.map((p) => p.mode), ["blend", "blend", "blend"], "no limit: the old behaviour");
+  const capped = S.planMix(t, all, { beatmatch: true, mixTempo: null, halfDouble: false, maxJumpPct: 6 });
+  assert.deepEqual(capped.pairs.map((p) => [p.mode, p.why]), [["blend", null], ["sequence", "bigJump"], ["blend", null]]);
+  assert.equal(capped.pairs[1].culprit, 3);
+  close(capped.pairs[1].jumpPct, ((140 - 82) / 82) * 100);
+  // each side of the break runs at its own tempo; nothing is stretched across the jump
+  assert.deepEqual(capped.tempos, [81, 81, 141.5, 141.5]);
+  assert.ok(capped.stretchPct.every((x) => Math.abs(x) < 2), capped.stretchPct.join());
+  // exactly at the limit still blends
+  const edge = S.planMix([tr(1, 100, "8A"), tr(2, 106, "8A")], all, { beatmatch: true, mixTempo: null, halfDouble: false, maxJumpPct: 6 });
+  assert.equal(edge.pairs[0].mode, "blend");
+  // without beat-matching nothing is stretched, so the limit does not apply
+  const nb = S.planMix(t, all, { beatmatch: false, mixTempo: null, halfDouble: false, maxJumpPct: 6 });
+  assert.deepEqual(nb.pairs.map((p) => p.mode), ["blend", "blend", "blend"]);
+  // a half-time hop keeps its own reason
+  const hd = S.planMix([tr(1, 140, "8A"), tr(2, 70, "8A")], all, { beatmatch: true, mixTempo: null, halfDouble: true, maxJumpPct: 6 });
+  assert.equal(hd.pairs[0].why, "halfDouble");
+});
+
+await test("building a mix: a hop beyond the limit starts after the last track and says why", async () => {
+  const specs = { 1: { bpm: 80, secs: 200 }, 2: { bpm: 140, secs: 200 } };
+  const t = [tr(1, 80, "8A"), tr(2, 140, "8A")];
+  const plan = S.planMix(t, () => true, { beatmatch: true, mixTempo: null, halfDouble: false, maxJumpPct: 6 });
+  const r = await B.buildSetDoc(emptyDoc(), t.map((x) => ({ id: x.id, title: `T${x.id}` })), plan, bopts(), fakeDeps(specs), kit);
+  assert.equal(r.doc.transitions.length, 0);
+  assert.equal(E.clipOf(r.doc, r.clipIds[1]).visibleStart, E.clipOf(r.doc, r.clipIds[0]).visibleEnd);
+  assert.match(r.notes[0], /"T2".*75\.0 % above.*limit for beat-matching/);
+  close(r.stretchPct[1], 0, 1e-6);
+});
+
+await test("building a mix: the overlap cap and the tool-conflict choice are honoured", async () => {
+  const specs = { 1: { bpm: 124, secs: 200 }, 2: { bpm: 124, secs: 200 } };
+  const t = [tr(1, 124, "8A"), tr(2, 124, "8A")];
+  const plan = S.planMix(t, () => true, { beatmatch: false, mixTempo: null, halfDouble: true });
+  const overlapOf = async (extra) => {
+    const r = await B.buildSetDoc(emptyDoc(), t.map((x) => ({ id: x.id, title: `T${x.id}` })), plan, bopts({ beatmatch: false, bars: 64, ...extra }), fakeDeps(specs), kit);
+    return (E.clipOf(r.doc, r.clipIds[0]).visibleEnd - E.clipOf(r.doc, r.clipIds[1]).visibleStart) / SR;
+  };
+  close(await overlapOf({}), 0.4 * 200, 1e-3, "default 40 %");
+  close(await overlapOf({ overlapMaxFrac: 0.1 }), 0.1 * 200, 1e-3, "10 %");
+  const flags = [];
+  const spy = { ...kit, applyTransition: (d, s, replace) => (flags.push(replace), kit.applyTransition(d, s, replace)) };
+  await B.buildSetDoc(emptyDoc(), t.map((x) => ({ id: x.id, title: `T${x.id}` })), plan, bopts({ beatmatch: false }), fakeDeps(specs), spy);
+  await B.buildSetDoc(emptyDoc(), t.map((x) => ({ id: x.id, title: `T${x.id}` })), plan, bopts({ beatmatch: false, replaceConflicts: true }), fakeDeps(specs), spy);
+  assert.deepEqual(flags, [false, true]);
+});
+
 console.log(`\n${n} set builder tests passed`);

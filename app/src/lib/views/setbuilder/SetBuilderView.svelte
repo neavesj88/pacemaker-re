@@ -5,6 +5,7 @@
   import { selection } from "$lib/state/selection.svelte";
   import { session } from "$lib/state/session.svelte";
   import Button from "$lib/ui/Button.svelte";
+  import ConfirmDialog from "$lib/views/cases/ConfirmDialog.svelte";
   import { keyColour, parseKey } from "$lib/views/tracks/trackLogic";
   import CreateMixDialog from "./CreateMixDialog.svelte";
   import SaveCaseDialog from "./SaveCaseDialog.svelte";
@@ -30,6 +31,22 @@
       const c = session.library?.cases.find((x) => x.id === Number(v.slice(5)));
       if (c) void setBuilder.load({ kind: "case", id: c.id, name: c.name });
     }
+  }
+
+  // Loading replaces the set, so work done by hand (locks, left-out tracks, edits) is named and
+  // confirmed first. `want` is a picker value, or "reload" for the current source.
+  let confirmLoad = $state<string | null>(null);
+
+  function requestLoad(want: string, select?: HTMLSelectElement) {
+    if (!setBuilder.hasHandWork) return runLoad(want);
+    // the picker keeps showing the current source until the load is confirmed
+    if (select) select.value = choice;
+    confirmLoad = want;
+  }
+
+  function runLoad(want: string) {
+    if (want === "reload") void setBuilder.reload();
+    else pickSource(want);
   }
 
   // Deep links: `nav.go("setbuilder", { "setbuilder.caseId": 3 })` or `{ "setbuilder.trackIds": [..] }`.
@@ -166,7 +183,7 @@
     <div class="bar">
       <label class="src">
         <span class="lbl">Tracks from</span>
-        <select value={choice} onchange={(e) => pickSource(e.currentTarget.value)} aria-label="Where the tracks come from">
+        <select value={choice} onchange={(e) => requestLoad(e.currentTarget.value, e.currentTarget)} aria-label="Where the tracks come from">
           <option value="" disabled>Choose a case or the selected tracks…</option>
           <option value="selection" disabled={selectionCount === 0}>Selected tracks ({selectionCount})</option>
           {#if (session.library?.cases.length ?? 0) > 0}
@@ -179,7 +196,7 @@
         </select>
       </label>
       {#if setBuilder.source}
-        <Button onclick={() => pickSource(choice)} title="Read the source again; your changes to the set are dropped" disabled={setBuilder.loading}>Reload</Button>
+        <Button onclick={() => requestLoad("reload")} title="Read the source again. Locks, tracks you left out and your edits are dropped (you are asked first)" disabled={setBuilder.loading}>Reload</Button>
       {/if}
       <span class="sp"></span>
       <Button variant="primary" onclick={() => setBuilder.solve()} disabled={rows.length + setBuilder.out.length < 2}>
@@ -334,6 +351,16 @@
   <SetSettings {hasEnergy} />
 </div>
 
+{#if confirmLoad !== null}
+  <ConfirmDialog
+    title={confirmLoad === "reload" ? "Read the source again?" : "Load other tracks?"}
+    message={confirmLoad === "reload" ? "The set is read from its source again and ordered afresh. This would be lost:" : "The set is replaced by the tracks you picked. This would be lost:"}
+    items={setBuilder.lostByLoading()}
+    confirmLabel={confirmLoad === "reload" ? "Read again" : "Replace the set"}
+    onconfirm={() => runLoad(confirmLoad!)}
+    onclose={() => (confirmLoad = null)}
+  />
+{/if}
 {#if savingCase}
   <SaveCaseDialog onclose={() => (savingCase = false)} />
 {/if}

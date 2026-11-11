@@ -39,6 +39,10 @@ export type BuildOptions = {
   bars: number;
   recipe: RecipeId;
   cutAt: CutAt;
+  /** The most a blend may overlap, as a fraction of the shorter track (default 0.4). */
+  overlapMaxFrac?: number;
+  /** A transition tool that lands on one already there replaces it instead of being left out. */
+  replaceConflicts?: boolean;
 };
 
 export type BuildTrack = { id: number; title: string };
@@ -126,7 +130,9 @@ export async function buildSetDoc(
           ? "a track here has no beat grid"
           : pair.why === "noTempo"
             ? "a track here has no tempo"
-            : "it is at half or double the tempo of the one before";
+            : pair.why === "bigJump"
+              ? `its tempo is ${Math.abs(pair.jumpPct ?? 0).toFixed(1)} % ${(pair.jumpPct ?? 0) >= 0 ? "above" : "below"} the one before, more than the limit for beat-matching`
+              : "it is at half or double the tempo of the one before";
       sequence(`${label} starts when the track before it ends, with no overlap: ${why}.`, runTempo);
       continue;
     }
@@ -135,7 +141,8 @@ export async function buildSetDoc(
     const bar = (60 / (kit.effectiveBpm(prev, Math.max(0, prev.length - prev.trimEnd - 1)) || 120)) * 4 * SR;
     const prevDur = prev.visibleEnd - prev.visibleStart;
     const thisDur = fresh.length - fresh.trimStart - fresh.trimEnd;
-    const overlap = Math.min(o.bars * bar, 0.4 * prevDur, 0.4 * thisDur);
+    const frac = o.overlapMaxFrac ?? 0.4;
+    const overlap = Math.min(o.bars * bar, frac * prevDur, frac * thisDur);
     const before = doc;
     try {
       doc = kit.addClip(doc, fresh, Math.max(0, prev.visibleEnd - overlap), channel);
@@ -148,7 +155,7 @@ export async function buildSetDoc(
       const suggested = await deps.autoTransition(doc, prevId, fresh.id, o.bars);
       const built = kit.recipe(doc, suggested, o.recipe, o.cutAt);
       toolsSkipped += built.tools.filter((x) => x.conflicts.length > 0).length;
-      doc = kit.applyTransition(doc, built, false);
+      doc = kit.applyTransition(doc, built, o.replaceConflicts === true);
       clipIds.push(fresh.id);
     } catch (e) {
       doc = before;

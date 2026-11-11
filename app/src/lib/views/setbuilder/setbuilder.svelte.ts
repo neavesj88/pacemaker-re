@@ -11,7 +11,7 @@ import { session } from "$lib/state/session.svelte";
 import { parseKey } from "$lib/views/tracks/trackLogic";
 import { energyOf } from "./energy";
 import { setPrefs } from "./prefs.svelte";
-import { bestInsert, evaluate, moveBlock, solve, solverOptions, type SetSummary, type SetTrack } from "./solver";
+import { bestInsert, evaluate, moveBlock, pinPositions, solve, solverOptions, type SetSummary, type SetTrack } from "./solver";
 
 export type Source =
   | { kind: "case"; id: number; name: string }
@@ -120,6 +120,26 @@ class SetBuilder {
     }
   }
 
+  /** Reads the current source again (a fixed list of tracks keeps its own ids, not the current selection). */
+  reload() {
+    return this.source ? this.load(this.source) : Promise.resolve();
+  }
+
+  /** Is there work here that loading a source would throw away: locks, tracks left out by hand, or edits that can be undone? */
+  get hasHandWork(): boolean {
+    return this.source !== null && (this.canUndo || this.pinned.size > 0 || this.out.some((x) => x.why === "you"));
+  }
+
+  /** Words for what a load would lose, one line each (for the confirmation). */
+  lostByLoading(): string[] {
+    const lines: string[] = [];
+    if (this.pinned.size > 0) lines.push(`${this.pinned.size} locked track${this.pinned.size === 1 ? "" : "s"} would be unlocked`);
+    const you = this.out.filter((x) => x.why === "you").length;
+    if (you > 0) lines.push(`${you} track${you === 1 ? "" : "s"} you left out would come back`);
+    if (this.canUndo) lines.push("your edits to the order, and the undo history, would be dropped");
+    return lines;
+  }
+
   /** Loads the Tracks / Cases view's current selection. */
   loadSelection() {
     return this.load({ kind: "tracks", name: "Selected tracks", ids: [...selection.trackIds] });
@@ -173,10 +193,8 @@ class SetBuilder {
       .map((id) => this.byId.get(id))
       .filter((t): t is SetTrack => !!t);
     if (remember) this.#remember("Re-solve");
-    const pins = new Map<number, number>();
-    this.order.forEach((id, i) => {
-      if (this.pinned.has(id)) pins.set(id, i);
-    });
+    // positions are counted over the tracks the solver is given (ids the library lost are not slots)
+    const pins = pinPositions(this.order, this.pinned, (id) => this.byId.has(id));
     const r = solve(pool, pins, o);
     this.order = r.order;
     this.out = [...userOut, ...r.dropped.map((id): Out => ({ id, why: "length" }))];

@@ -363,6 +363,16 @@ export function resolvePins(pins: readonly (readonly [number, number])[], n: num
   return out;
 }
 
+/** The position each pinned track holds in `order`, counted over the tracks the pool actually has
+ * (`known`): an id the library lost is not a slot, so counting it would shift the pins after it. */
+export function pinPositions(order: readonly number[], pinned: ReadonlySet<number>, known: (id: number) => boolean): Map<number, number> {
+  const pins = new Map<number, number>();
+  order.filter(known).forEach((id, i) => {
+    if (pinned.has(id)) pins.set(id, i);
+  });
+  return pins;
+}
+
 // ---------------------------------------------------------------------------------------------
 // Arranging a fixed set of tracks
 // ---------------------------------------------------------------------------------------------
@@ -543,25 +553,49 @@ export function solve(pool: readonly SetTrack[], pins: ReadonlyMap<number, numbe
   let short = false;
 
   if (o.targetSecs != null && o.targetSecs > 0) {
+    const target = o.targetSecs;
     let total = ids.reduce((s, id) => s + secsOf(id), 0);
-    short = total < o.targetSecs;
-    while (!short && total > o.targetSecs) {
-      const closer = ids.filter((id) => !pinnedIds.has(id) && Math.abs(total - secsOf(id) - o.targetSecs!) < Math.abs(total - o.targetSecs!) - 1e-9);
-      if (closer.length === 0) break;
-      // the arrangement the removal gains are measured on: cheap (greedy only, pins respected)
-      const quick = greedyOnly(byId, ids, pins, o);
-      let pick = -1;
-      let bestGain = -Infinity;
-      for (const id of closer) {
-        const g = removalGain(byId, quick, id, o);
-        if (g > bestGain + 1e-9 || (Math.abs(g - bestGain) <= 1e-9 && pick >= 0 && secsOf(id) > secsOf(pick))) {
-          bestGain = g;
-          pick = id;
+    short = total < target;
+    if (!short && total > target) {
+      // Rank by the cost each track adds to ONE greedy arrangement of the whole pool and drop from
+      // that arrangement as it stands: re-arranging after every drop made this cubic, which froze
+      // the app on a few hundred tracks. Without an energy curve only the two neighbours of a
+      // dropped track change their gain; with one, every slot shifts, so all gains are redone.
+      let seq = greedyOnly(byId, ids, pins, o);
+      const useCurve = curveActive(ids.map((id) => byId.get(id)!), o);
+      const gains = new Map<number, number>();
+      while (total > target) {
+        const pos = new Map(seq.map((id, i) => [id, i]));
+        let pick = -1;
+        let bestGain = -Infinity;
+        for (const id of ids) {
+          if (pinnedIds.has(id)) continue;
+          const s = secsOf(id);
+          // only a track whose removal brings the total closer to the target may go
+          if (!(Math.abs(total - s - target) < Math.abs(total - target) - 1e-9)) continue;
+          let g = gains.get(id);
+          if (g === undefined) {
+            g = removalGain(byId, seq, pos.get(id)!, o);
+            gains.set(id, g);
+          }
+          if (g > bestGain + 1e-9 || (Math.abs(g - bestGain) <= 1e-9 && pick >= 0 && s > secsOf(pick))) {
+            bestGain = g;
+            pick = id;
+          }
+        }
+        if (pick < 0) break;
+        const at = pos.get(pick)!;
+        seq = seq.filter((id) => id !== pick);
+        ids = ids.filter((id) => id !== pick);
+        dropped.push(pick);
+        total -= secsOf(pick);
+        gains.delete(pick);
+        if (useCurve) gains.clear();
+        else {
+          if (at > 0) gains.delete(seq[at - 1]);
+          if (at < seq.length) gains.delete(seq[at]);
         }
       }
-      ids = ids.filter((id) => id !== pick);
-      dropped.push(pick);
-      total -= secsOf(pick);
     }
   }
 
@@ -604,10 +638,9 @@ function greedyOnly(byId: ReadonlyMap<number, SetTrack>, ids: readonly number[],
   return seq.map((i) => ids[i]);
 }
 
-/** How much cheaper the set gets when `id` is taken out of `order` (positive = the set improves). */
-function removalGain(byId: ReadonlyMap<number, SetTrack>, order: readonly number[], id: number, o: SolverOptions): number {
-  const i = order.indexOf(id);
-  const t = byId.get(id)!;
+/** How much cheaper the set gets when the track at `i` is taken out of `order` (positive = the set improves). */
+function removalGain(byId: ReadonlyMap<number, SetTrack>, order: readonly number[], i: number, o: SolverOptions): number {
+  const t = byId.get(order[i])!;
   const prev = i > 0 ? byId.get(order[i - 1]) : undefined;
   const next = i + 1 < order.length ? byId.get(order[i + 1]) : undefined;
   let gain = 0;
@@ -693,6 +726,13 @@ export type SetPrefs = {
   beatmatch: boolean;
   /** Creating a mix: the tempo it runs at, BPM; null = the middle tempo of the set. */
   mixTempo: number | null;
+  /** Creating a mix: a hop bigger than this many percent is not beat-matched; the track starts
+   * when the one before ends. null = the same as the largest tempo jump of the set. */
+  blendJumpPct: number | null;
+  /** Creating a mix: the most a blend may overlap, as a percent of the shorter track. */
+  overlapCapPct: number;
+  /** Creating a mix: what happens when a transition's tool lands on one already there. */
+  onToolConflict: "skip" | "replace";
 };
 
 export const DEFAULT_PREFS: SetPrefs = {
@@ -709,31 +749,56 @@ export const DEFAULT_PREFS: SetPrefs = {
   lockOnDrag: true,
   beatmatch: true,
   mixTempo: null,
+  blendJumpPct: null,
+  overlapCapPct: 40,
+  onToolConflict: "skip",
 };
 
-const num = (v: unknown, lo: number, hi: number): number | null => (typeof v === "number" && Number.isFinite(v) && v >= lo && v <= hi ? v : null);
+/** The ranges the number settings accept; one table for the saved-settings check and the inputs. */
+export const PREF_RANGES = {
+  maxBpmJumpPct: [0, 50],
+  maxTrackMins: [0.25, 120],
+  targetMins: [1, 1440],
+  mixTempo: [40, 250],
+  blendJumpPct: [0, 50],
+  overlapCapPct: [5, 50],
+} as const;
+export type NumberPref = keyof typeof PREF_RANGES;
 
-/** Saved settings merged over the defaults; anything missing, unknown or out of range falls back,
- * so an old or corrupt entry never breaks the view. */
-export function mergePrefs(saved: unknown): SetPrefs {
-  const out: SetPrefs = { ...DEFAULT_PREFS, allowedMoves: [...DEFAULT_PREFS.allowedMoves] };
+/** `v` pulled into the range of setting `key`. */
+export function clampPref(key: NumberPref, v: number): number {
+  const [lo, hi] = PREF_RANGES[key];
+  return Math.min(hi, Math.max(lo, v));
+}
+
+const num = (v: unknown, lo: number, hi: number): number | null => (typeof v === "number" && Number.isFinite(v) && v >= lo && v <= hi ? v : null);
+const inRange = (v: unknown, key: NumberPref): number | null => num(v, PREF_RANGES[key][0], PREF_RANGES[key][1]);
+
+/** Saved settings merged over `base` (the defaults unless told otherwise); anything missing,
+ * unknown or out of range keeps the `base` value, so an old or corrupt entry never breaks the view
+ * and a bad edit leaves the setting where it was. */
+export function mergePrefs(saved: unknown, base: SetPrefs = DEFAULT_PREFS): SetPrefs {
+  const out: SetPrefs = { ...base, allowedMoves: [...base.allowedMoves] };
   if (!saved || typeof saved !== "object") return out;
   const s = saved as Record<string, unknown>;
   if (Array.isArray(s.allowedMoves)) {
     out.allowedMoves = KEY_MOVES.map((m) => m.id).filter((id) => (s.allowedMoves as unknown[]).includes(id));
   }
-  out.maxBpmJumpPct = num(s.maxBpmJumpPct, 0, 50) ?? out.maxBpmJumpPct;
+  out.maxBpmJumpPct = inRange(s.maxBpmJumpPct, "maxBpmJumpPct") ?? out.maxBpmJumpPct;
   if (typeof s.halfDouble === "boolean") out.halfDouble = s.halfDouble;
   out.keyWeight = num(s.keyWeight, 0, 1) ?? out.keyWeight;
   if (s.curve === "off" || s.curve === "arc") out.curve = s.curve;
   out.peakAt = num(s.peakAt, 0.3, 0.9) ?? out.peakAt;
   out.energyWeight = num(s.energyWeight, 0, 1) ?? out.energyWeight;
-  out.maxTrackMins = s.maxTrackMins === null ? null : (num(s.maxTrackMins, 0.25, 120) ?? out.maxTrackMins);
-  out.targetMins = s.targetMins === null ? null : (num(s.targetMins, 1, 1440) ?? out.targetMins);
+  out.maxTrackMins = s.maxTrackMins === null ? null : (inRange(s.maxTrackMins, "maxTrackMins") ?? out.maxTrackMins);
+  out.targetMins = s.targetMins === null ? null : (inRange(s.targetMins, "targetMins") ?? out.targetMins);
   if (typeof s.solveOnLoad === "boolean") out.solveOnLoad = s.solveOnLoad;
   if (typeof s.lockOnDrag === "boolean") out.lockOnDrag = s.lockOnDrag;
   if (typeof s.beatmatch === "boolean") out.beatmatch = s.beatmatch;
-  out.mixTempo = s.mixTempo === null ? null : (num(s.mixTempo, 40, 250) ?? out.mixTempo);
+  out.mixTempo = s.mixTempo === null ? null : (inRange(s.mixTempo, "mixTempo") ?? out.mixTempo);
+  out.blendJumpPct = s.blendJumpPct === null ? null : (inRange(s.blendJumpPct, "blendJumpPct") ?? out.blendJumpPct);
+  out.overlapCapPct = inRange(s.overlapCapPct, "overlapCapPct") ?? out.overlapCapPct;
+  if (s.onToolConflict === "skip" || s.onToolConflict === "replace") out.onToolConflict = s.onToolConflict;
   return out;
 }
 
@@ -767,9 +832,11 @@ export type PairPlan = {
   to: number;
   mode: PairMode;
   /** Why a hop is a sequence, as a code the dialog words: no beat grid / no tempo / half or double time. */
-  why: "noGrid" | "noTempo" | "halfDouble" | null;
-  /** The track the reason is about (for "noGrid" / "noTempo" / "halfDouble"). */
+  why: "noGrid" | "noTempo" | "halfDouble" | "bigJump" | null;
+  /** The track the reason is about (for "noGrid" / "noTempo" / "halfDouble" / "bigJump"). */
   culprit: number | null;
+  /** For "bigJump": the signed tempo change of the hop, percent. */
+  jumpPct?: number;
 };
 
 export type MixPlan = {
@@ -788,6 +855,10 @@ export type MixPlanOptions = {
    * (it keeps the biggest stretch smallest). Only used with beat-matching. */
   mixTempo: number | null;
   halfDouble: boolean;
+  /** With beat-matching: a hop whose tempo change is bigger than this many percent is not blended
+   * (the track starts when the last one ends) so nothing is stretched that far. null / absent =
+   * no limit. */
+  maxJumpPct?: number | null;
 };
 
 /** The middle tempo of `tracks` that have a tempo and a grid; a track at half or double time of
@@ -817,8 +888,13 @@ export function planMix(tracks: readonly SetTrack[], hasGrid: (id: number) => bo
     else if (!hasGrid(t.id)) seq("noGrid", t.id);
     else if (!known(a.bpm)) seq("noTempo", a.id);
     else if (!known(t.bpm)) seq("noTempo", t.id);
-    else if (bpmMatch(a.bpm, t.bpm, o.halfDouble).relation !== "same") seq("halfDouble", t.id);
-    else pairs.push({ from: a.id, to: t.id, mode: "blend", why: null, culprit: null });
+    else {
+      const m = bpmMatch(a.bpm, t.bpm, o.halfDouble);
+      if (m.relation !== "same") seq("halfDouble", t.id);
+      else if (o.beatmatch && o.maxJumpPct != null && Math.abs(m.deltaPct) > o.maxJumpPct + 1e-9) {
+        pairs.push({ from: a.id, to: t.id, mode: "sequence", why: "bigJump", culprit: t.id, jumpPct: m.deltaPct });
+      } else pairs.push({ from: a.id, to: t.id, mode: "blend", why: null, culprit: null });
+    }
   }
   const tempos: (number | null)[] = [];
   const stretchPct: number[] = [];

@@ -3,7 +3,7 @@
   import { transitionWords } from "./createMix";
   import { setPrefs } from "./prefs.svelte";
   import { setBuilder } from "./setbuilder.svelte";
-  import { KEY_MOVES, type KeyMoveId, type SetPrefs } from "./solver";
+  import { KEY_MOVES, type KeyMoveId, type NumberPref, type SetPrefs } from "./solver";
 
   // Every choice the builder makes is here, with its default. Changing one re-scores the strip at
   // once; the order only changes when the set is solved again.
@@ -16,10 +16,11 @@
     setBuilder.settingsChanged();
   }
 
-  const num = (v: string): number | null => {
-    const n = Number(v);
-    return v.trim() === "" || !Number.isFinite(n) ? null : n;
-  };
+  /** A typed number: clamped into the setting's range, and the box shows what is now in force. */
+  function typed(e: Event, key: NumberPref, nullable = false) {
+    setPrefs.commitNumber(e.currentTarget as HTMLInputElement, key, nullable);
+    setBuilder.settingsChanged();
+  }
 
   function toggleMove(id: KeyMoveId, on: boolean) {
     patch({ allowedMoves: on ? [...p.allowedMoves, id] : p.allowedMoves.filter((x) => x !== id) });
@@ -44,7 +45,7 @@
     <legend>Tempo</legend>
     <label class="row">
       <span>Largest jump between neighbours (%)</span>
-      <input type="number" min="0" max="50" step="0.5" value={p.maxBpmJumpPct} onchange={(e) => patch({ maxBpmJumpPct: num(e.currentTarget.value) ?? p.maxBpmJumpPct })} />
+      <input type="number" min="0" max="50" step="0.5" value={p.maxBpmJumpPct} onchange={(e) => typed(e, "maxBpmJumpPct")} />
     </label>
     <label class="check">
       <input type="checkbox" checked={p.halfDouble} onchange={(e) => patch({ halfDouble: e.currentTarget.checked })} />
@@ -84,11 +85,11 @@
     <legend>Length</legend>
     <label class="row">
       <span>Longest a track plays (minutes)</span>
-      <input type="number" min="0.25" max="120" step="0.25" placeholder="whole track" value={p.maxTrackMins ?? ""} onchange={(e) => patch({ maxTrackMins: num(e.currentTarget.value) })} />
+      <input type="number" min="0.25" max="120" step="0.25" placeholder="whole track" value={p.maxTrackMins ?? ""} onchange={(e) => typed(e, "maxTrackMins", true)} />
     </label>
     <label class="row">
       <span>Aim for a set of (minutes)</span>
-      <input type="number" min="1" max="1440" step="1" placeholder="use every track" value={p.targetMins ?? ""} onchange={(e) => patch({ targetMins: num(e.currentTarget.value) })} />
+      <input type="number" min="1" max="1440" step="1" placeholder="use every track" value={p.targetMins ?? ""} onchange={(e) => typed(e, "targetMins", true)} />
     </label>
     <p class="note muted">With a target, the tracks that fit the set least are left out until the total is as close to it as it can get. It is the sum of the play times; the transitions overlap tracks, so a mix made from the set comes out a little shorter.</p>
   </fieldset>
@@ -104,9 +105,25 @@
     <label class="check"><input type="checkbox" checked={p.beatmatch} onchange={(e) => patch({ beatmatch: e.currentTarget.checked })} /><span>Beat-match each track to the one before it</span></label>
     <label class="row">
       <span>Tempo the mix runs at (BPM)</span>
-      <input type="number" min="40" max="250" step="0.1" placeholder="middle tempo of the set" disabled={!p.beatmatch} value={p.mixTempo ?? ""} onchange={(e) => patch({ mixTempo: num(e.currentTarget.value) })} />
+      <input type="number" min="40" max="250" step="0.1" placeholder="middle tempo of the set" disabled={!p.beatmatch} value={p.mixTempo ?? ""} onchange={(e) => typed(e, "mixTempo", true)} />
     </label>
-    <p class="note muted">Transitions use the Mixes view's auto-transition settings: {transitionWords(recipePrefs.value)}.</p>
+    <label class="row">
+      <span>Do not beat-match a hop bigger than (%)</span>
+      <input type="number" min="0" max="50" step="0.5" placeholder="the largest tempo jump ({p.maxBpmJumpPct} %)" disabled={!p.beatmatch} value={p.blendJumpPct ?? ""} onchange={(e) => typed(e, "blendJumpPct", true)} />
+    </label>
+    <p class="note muted">A bigger hop is not stretched: that track starts when the one before it ends.</p>
+    <label class="row">
+      <span>Most a blend may overlap (% of the shorter track)</span>
+      <input type="number" min="5" max="50" step="1" value={p.overlapCapPct} onchange={(e) => typed(e, "overlapCapPct")} />
+    </label>
+    <label class="row">
+      <span>A tool overlaps one an earlier transition placed</span>
+      <select value={p.onToolConflict} onchange={(e) => patch({ onToolConflict: e.currentTarget.value as SetPrefs["onToolConflict"] })}>
+        <option value="skip">Leave the new tool out</option>
+        <option value="replace">Replace the earlier tool</option>
+      </select>
+    </label>
+    <p class="note muted">Transitions use the Mixes view's auto-transition recipe and length: {transitionWords(recipePrefs.value)}. Its “when a tool is in the way” setting does not apply here (a new mix holds none of your own tools, only ones this build places); the choice above does.</p>
   </fieldset>
 
   <button class="reset" onclick={() => (setPrefs.reset(), setBuilder.settingsChanged())}>Reset these settings</button>

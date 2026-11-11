@@ -8,7 +8,7 @@
   import Button from "$lib/ui/Button.svelte";
   import Modal from "$lib/ui/Modal.svelte";
   import { recipePrefs } from "$lib/views/mixes/recipePrefs.svelte";
-  import { createMix, planFor, preflight, transitionWords, type Created, type Preflight } from "./createMix";
+  import { blendLimit, createMix, planFor, preflight, transitionWords, type Created, type Preflight } from "./createMix";
   import { setPrefs } from "./prefs.svelte";
   import { setBuilder } from "./setbuilder.svelte";
   import { clock, playSecs, solverOptions, type SetTrack } from "./solver";
@@ -68,9 +68,10 @@
 
   const sign = (n: number) => `${n >= 0 ? "+" : "−"}${Math.abs(n).toFixed(1)} %`;
 
-  function why(p: { why: string | null; culprit: number | null }): string {
+  function why(p: { why: string | null; culprit: number | null; jumpPct?: number }): string {
     if (p.why === "noGrid") return `“${titleOf(p.culprit ?? 0)}” has no beat grid`;
     if (p.why === "noTempo") return `“${titleOf(p.culprit ?? 0)}” has no tempo`;
+    if (p.why === "bigJump") return `“${titleOf(p.culprit ?? 0)}” is ${Math.abs(p.jumpPct ?? 0).toFixed(1)} % ${(p.jumpPct ?? 0) >= 0 ? "faster" : "slower"} than the track before it, over the ${blendLimit(prefs)} % limit for beat-matching`;
     return `“${titleOf(p.culprit ?? 0)}” is at half or double the tempo of the track before it`;
   }
 
@@ -133,7 +134,7 @@
     {:else if pre && plan}
       <p>
         {pre.usable.length} track{pre.usable.length === 1 ? "" : "s"}, about {clock(sumSecs)} before the transitions overlap them.
-        Transitions: {transitionWords(recipePrefs.value)} (the Mixes view's settings).
+        Transitions: {transitionWords(recipePrefs.value)} (the Mixes view's settings). A blend overlaps by at most {prefs.overlapCapPct} % of the shorter track; a tool that overlaps one an earlier transition placed is {prefs.onToolConflict === "replace" ? "replaced" : "left out"} (set in the builder's settings).
         {#if o.maxTrackSecs != null}Each track is cut to at most {clock(o.maxTrackSecs)}, on a whole bar.{/if}
       </p>
 
@@ -148,7 +149,11 @@
       </label>
       <label class="row">
         <span>Tempo the mix runs at (BPM)</span>
-        <input type="number" min="40" max="250" step="0.1" placeholder="middle tempo of the set" disabled={!prefs.beatmatch || phase === "building"} value={prefs.mixTempo ?? ""} onchange={(e) => setPrefs.set({ mixTempo: e.currentTarget.value.trim() === "" ? null : Number(e.currentTarget.value) })} />
+        <input type="number" min="40" max="250" step="0.1" placeholder="middle tempo of the set" disabled={!prefs.beatmatch || phase === "building"} value={prefs.mixTempo ?? ""} onchange={(e) => setPrefs.commitNumber(e.currentTarget, "mixTempo", true)} />
+      </label>
+      <label class="row">
+        <span>Do not beat-match a hop bigger than (%)</span>
+        <input type="number" min="0" max="50" step="0.5" placeholder="the set's largest tempo jump ({prefs.maxBpmJumpPct} %)" disabled={!prefs.beatmatch || phase === "building"} value={prefs.blendJumpPct ?? ""} onchange={(e) => setPrefs.commitNumber(e.currentTarget, "blendJumpPct", true)} />
       </label>
 
       {#if prefs.beatmatch && biggest && Math.abs(biggest.pct) >= 0.05}

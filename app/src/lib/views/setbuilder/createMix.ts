@@ -45,9 +45,12 @@ export async function preflight(root: string, order: SetTrack[], prefs: SetPrefs
   return { usable, unusable, infos };
 }
 
+/** The tempo change above which a hop is not beat-matched: its own setting, else the set's largest tempo jump. */
+export const blendLimit = (prefs: SetPrefs): number => prefs.blendJumpPct ?? prefs.maxBpmJumpPct;
+
 /** What will be done to each hop with the current settings. The dialog shows it and `createMix` follows it. */
 export function planFor(pre: Preflight, prefs: SetPrefs): MixPlan {
-  return planMix(pre.usable, (id) => pre.infos.get(id)?.grid != null, { beatmatch: prefs.beatmatch, mixTempo: prefs.mixTempo, halfDouble: prefs.halfDouble });
+  return planMix(pre.usable, (id) => pre.infos.get(id)?.grid != null, { beatmatch: prefs.beatmatch, mixTempo: prefs.mixTempo, halfDouble: prefs.halfDouble, maxJumpPct: blendLimit(prefs) });
 }
 
 /** The recipe and length the new mix will use, in words (they are the Mixes view's auto-transition settings). */
@@ -92,7 +95,7 @@ export async function createMix(
       base,
       pre.usable.map((t) => ({ id: t.id, title: titleOf(t.id) })),
       plan,
-      { beatmatch: prefs.beatmatch, maxTrackSecs: prefs.maxTrackMins != null ? prefs.maxTrackMins * 60 : null, bars: requestedBars(recipe.recipe, recipe), recipe: recipe.recipe, cutAt: recipe.cutAt },
+      { beatmatch: prefs.beatmatch, maxTrackSecs: prefs.maxTrackMins != null ? prefs.maxTrackMins * 60 : null, bars: requestedBars(recipe.recipe, recipe), recipe: recipe.recipe, cutAt: recipe.cutAt, overlapMaxFrac: prefs.overlapCapPct / 100, replaceConflicts: prefs.onToolConflict === "replace" },
       {
         makeClip: (trackId) => mixMakeClip(root, trackId, null),
         beatmatch: (doc, clipId) => mixBeatmatch(root, doc, clipId),

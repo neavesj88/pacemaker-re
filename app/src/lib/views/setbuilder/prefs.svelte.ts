@@ -1,7 +1,7 @@
 // The set builder's settings. A per-person preference of the app, so it lives in the browser
 // storage like the mix editor's auto-transition settings do (try/catch-guarded: the view works the
 // same when storage is unavailable, it just forgets).
-import { DEFAULT_PREFS, mergePrefs, type SetPrefs } from "./solver";
+import { clampPref, DEFAULT_PREFS, mergePrefs, type NumberPref, type SetPrefs } from "./solver";
 
 const STORAGE_KEY = "pm.setbuilder.prefs.v1";
 
@@ -18,12 +18,23 @@ class SetBuilderPrefs {
   }
 
   set(patch: Partial<SetPrefs>) {
-    this.value = mergePrefs({ ...this.value, ...patch });
+    this.value = mergePrefs({ ...this.value, ...patch }, this.value);
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(this.value));
     } catch {
       // not remembered this time
     }
+  }
+
+  /** Applies what was typed into a number box: clamped into the setting's range; a blank box sets
+   * a setting that may be unset (`nullable`) to unset and is otherwise ignored. Either way the box is
+   * rewritten with the value now in force, so it never shows a number the setting does not hold. */
+  commitNumber(el: HTMLInputElement, key: NumberPref, nullable = false) {
+    const raw = el.value.trim();
+    const n = Number(raw);
+    if (raw === "" ? nullable : Number.isFinite(n)) this.set({ [key]: raw === "" ? null : clampPref(key, n) });
+    const now = this.value[key];
+    el.value = now == null ? "" : String(now);
   }
 
   reset() {
