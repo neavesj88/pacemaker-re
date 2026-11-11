@@ -4,10 +4,13 @@
   import type { Peak } from "$lib/api/analysis";
   import type { Track } from "$lib/api/types";
   import { mmss } from "$lib/format";
+  import { labelEditor, labels } from "$lib/state/labels.svelte";
   import { playback } from "$lib/state/playback.svelte";
   import { session } from "$lib/state/session.svelte";
   import Button from "$lib/ui/Button.svelte";
   import Stars from "$lib/ui/Stars.svelte";
+  import ColourSwatch from "./ColourSwatch.svelte";
+  import EnergyBar from "./EnergyBar.svelte";
   import { cachedPeaks, requestPeaks } from "./peakCache";
   import { addToCase } from "./addToCase.svelte";
   import { addToMix, editGrid, editMetadata, playTrack, rate, revealInExplorer } from "./trackActions";
@@ -60,6 +63,7 @@
   const matches = $derived(track && !needs && session.library ? matchingTracks(track, session.library.tracks, 4, session.needs) : []);
   const loaded = $derived(!!track && playback.trackId === track.track_id && playback.duration > 0);
   const many = $derived(selectedIds.length > 1);
+  const lab = $derived(track ? labels.get(track.track_id) : undefined);
   const fav = $derived(!!track && tracksState.favourites.has(track.track_id));
   const allFav = $derived(selectedIds.length > 0 && selectedIds.every((id) => tracksState.favourites.has(id)));
 
@@ -110,6 +114,18 @@
       <Stars rating={track.rating} onchange={(n) => rate(track, n)} />
     </div>
     <div class="field">
+      <span class="label" title="Kept by this app, not on the Pacemaker">Labels</span>
+      <span class="labs">
+        {#if lab}
+          <ColourSwatch colour={lab.colour} size={14} />
+          <EnergyBar energy={lab.energy} />
+          {#each lab.tags as tag (tag)}<span class="chip tagc">{tag}</span>{/each}
+        {:else}
+          <span class="muted">none</span>
+        {/if}
+      </span>
+    </div>
+    <div class="field">
       <span class="label">Played</span>
       <span>{track.times_played === 0 ? "never" : track.times_played === 1 ? "1 time" : `${track.times_played} times`}</span>
     </div>
@@ -120,6 +136,7 @@
     <div class="buttons">
       <Button variant="primary" small onclick={() => playTrack(track.track_id)}>Play</Button>
       <Button small onclick={() => editMetadata(selectedIds)}>{many ? `Edit ${selectedIds.length} tracks…` : "Edit metadata…"}</Button>
+      <Button small onclick={() => labelEditor.edit(selectedIds.length ? selectedIds : [track.track_id])}>{many ? `Tags for ${selectedIds.length}…` : "Tags, colour, energy…"}</Button>
       <Button small onclick={() => editGrid(track.track_id)}>Edit grid</Button>
       <Button small active={many ? allFav : fav} onclick={() => tracksState.setFavourite(selectedIds, !(many ? allFav : fav))}>
         ♥ {(many ? allFav : fav) ? "Unfavourite" : "Favourite"}
@@ -224,6 +241,16 @@
   }
   .key {
     font-weight: 600;
+  }
+  .labs {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+  }
+  .chip.tagc {
+    background: var(--hover);
+    color: var(--text);
   }
   .buttons {
     display: flex;

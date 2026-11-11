@@ -2,7 +2,7 @@
 // are shown, their widths and the sort.
 import type { SortField } from "./trackLogic";
 
-export type ColKey = "fav" | "title" | "artist" | "album" | "wave" | "bpm" | "key" | "rating" | "plays" | "time" | "genre";
+export type ColKey = "fav" | "colour" | "title" | "artist" | "album" | "wave" | "bpm" | "key" | "energy" | "rating" | "plays" | "time" | "genre" | "tags";
 
 export type ColDef = {
   key: ColKey;
@@ -18,16 +18,20 @@ export type ColDef = {
 
 export const COLUMNS: ColDef[] = [
   { key: "fav", label: "", width: 34, min: 34, sort: "fav", fixed: true, defaultOn: true },
+  // colour, energy and tags are app-side labels (state/labels.ts), not data on the device
+  { key: "colour", label: "Colour", width: 58, min: 44, sort: "colour", defaultOn: true },
   { key: "title", label: "Title", width: 190, min: 90, sort: "title", fixed: true, defaultOn: true },
   { key: "artist", label: "Artist", width: 140, min: 70, sort: "artist", defaultOn: true },
   { key: "album", label: "Album", width: 160, min: 70, sort: "album", defaultOn: false },
   { key: "wave", label: "Waveform", width: 100, min: 70, defaultOn: true },
   { key: "bpm", label: "BPM", width: 64, min: 50, num: true, sort: "bpm", defaultOn: true },
   { key: "key", label: "Key", width: 54, min: 46, sort: "key", defaultOn: true },
+  { key: "energy", label: "Energy", width: 84, min: 60, sort: "energy", defaultOn: true },
   { key: "rating", label: "Rating", width: 92, min: 90, sort: "rating", defaultOn: true },
   { key: "plays", label: "Plays", width: 48, min: 44, num: true, sort: "times_played", defaultOn: true },
   { key: "time", label: "Time", width: 56, min: 50, num: true, sort: "play_time_secs", defaultOn: true },
   { key: "genre", label: "Genre", width: 100, min: 60, sort: "genre", defaultOn: true },
+  { key: "tags", label: "Tags", width: 170, min: 70, sort: "tags", defaultOn: true },
 ];
 
 export type ViewPrefs = {

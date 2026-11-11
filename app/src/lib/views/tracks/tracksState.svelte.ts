@@ -3,6 +3,7 @@
 // Selection itself is the shared `selection` store.
 import { SvelteSet } from "svelte/reactivity";
 import { favouriteIds, toggleFavourite } from "$lib/api/cases";
+import { freshLabelFilter, type LabelFilter } from "$lib/state/labels";
 import { jobs } from "$lib/state/jobs.svelte";
 import { session } from "$lib/state/session.svelte";
 import { toast } from "$lib/state/toast.svelte";
@@ -18,6 +19,8 @@ class TracksState {
   /** "", "compat:8A" or "is:8A" (see trackLogic.KeyFilter). */
   keyFilter = $state("");
   onlyAnalysed = $state(false);
+  /** Tag, colour and energy conditions (app-side labels, see state/labels.ts). */
+  labelFilter = $state<LabelFilter>(freshLabelFilter());
 
   /** Tracks in the "Favourites" case. */
   favourites = new SvelteSet<number>();
@@ -64,6 +67,7 @@ class TracksState {
     this.bpmMax = "";
     this.keyFilter = "";
     this.onlyAnalysed = false;
+    this.labelFilter = freshLabelFilter();
   }
 
   /** A different library was opened. */

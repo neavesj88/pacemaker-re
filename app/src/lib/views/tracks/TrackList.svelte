@@ -5,12 +5,15 @@
   import { onMount, tick } from "svelte";
   import type { Track } from "$lib/api/types";
   import { mmss } from "$lib/format";
+  import { labelEditor, labels } from "$lib/state/labels.svelte";
   import { playback } from "$lib/state/playback.svelte";
   import { selection } from "$lib/state/selection.svelte";
   import { session } from "$lib/state/session.svelte";
   import ContextMenu from "$lib/ui/ContextMenu.svelte";
   import Stars from "$lib/ui/Stars.svelte";
   import type { ColDef } from "./columns";
+  import ColourSwatch from "./ColourSwatch.svelte";
+  import EnergyBar from "./EnergyBar.svelte";
   import MiniWave from "./MiniWave.svelte";
   import { addToCase } from "./addToCase.svelte";
   import { analysis } from "$lib/state/analysis.svelte";
@@ -191,7 +194,7 @@
       anchorId = t.track_id;
       select([t.track_id], t.track_id);
     }
-    menu = { x: Math.max(0, Math.min(e.clientX, innerWidth - 230)), y: Math.max(0, Math.min(e.clientY, innerHeight - 250)), ids: [...selection.trackIds] };
+    menu = { x: Math.max(0, Math.min(e.clientX, innerWidth - 230)), y: Math.max(0, Math.min(e.clientY, innerHeight - 280)), ids: [...selection.trackIds] };
   }
 
   const menuItems = $derived.by(() => {
@@ -203,6 +206,7 @@
     return [
       { label: "Play", onclick: () => playTrack(ids[0]) },
       { label: one ? "Edit metadata…" : `Edit metadata of ${n} tracks…`, onclick: () => editMetadata(ids) },
+      { label: one ? "Tags, colour, energy…" : `Tags, colour, energy of ${n} tracks…`, onclick: () => labelEditor.edit(ids) },
       { label: one ? "Add to mix" : `Add ${n} tracks to mix`, onclick: () => addToMix(ids) },
       { label: one ? "Add to case…" : `Add ${n} tracks to case…`, onclick: () => addToCase.ask(ids) },
       {
@@ -262,6 +266,7 @@
       {@const i = start + k}
       {@const need = session.needs.has(t.track_id)}
       {@const fav = tracksState.favourites.has(t.track_id)}
+      {@const lab = labels.get(t.track_id)}
       {@const selected = selSet.has(t.track_id)}
       <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
       <div
@@ -292,6 +297,14 @@
                 onclick={(e) => (stop(e), tracksState.setFavourite([t.track_id], !fav))}
                 ondblclick={stop}
               >♥</button>
+            {:else if c.key === "colour"}
+              <ColourSwatch colour={lab?.colour ?? null} size={14} />
+            {:else if c.key === "energy"}
+              <EnergyBar energy={lab?.energy ?? null} />
+            {:else if c.key === "tags"}
+              {#if lab?.tags.length}
+                <span class="tags" title={lab.tags.join(", ")}>{#each lab.tags as tag (tag)}<span class="tag">{tag}</span>{/each}</span>
+              {/if}
             {:else if c.key === "title"}
               {#if playback.trackId === t.track_id}<span class="now" title="Loaded in the player">▶</span>{/if}
               <span class="text">{t.title}</span>
@@ -473,5 +486,19 @@
   }
   .rate {
     display: inline-flex;
+  }
+  .tags {
+    display: flex;
+    gap: 4px;
+    min-width: 0;
+    overflow: hidden;
+  }
+  .tag {
+    flex: none;
+    padding: 0 6px;
+    border-radius: 8px;
+    font-size: 11px;
+    background: var(--hover);
+    color: var(--text);
   }
 </style>

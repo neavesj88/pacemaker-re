@@ -1,8 +1,9 @@
 // Run: node --experimental-strip-types --test src/lib/views/tracks/trackLogic.test.mjs
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { LABEL_COLOURS } from "../../state/labels.ts";
 import {
-  filterTracks, keyName, keysCompatible, matchingTracks, NO_FILTER, parseBpm, parseKey, sortTracks, uniqueGenres,
+  COLOUR_SORT_ORDER, filterTracks, keyName, keysCompatible, matchingTracks, NO_FILTER, parseBpm, parseKey, sortTracks, uniqueGenres,
 } from "./trackLogic.ts";
 
 const code = (k) => parseKey(k)?.code ?? null;
@@ -99,4 +100,27 @@ test("matching tracks: compatible key and bpm within 4 percent, nearest bpm firs
 
 test("unique genres are sorted and non-empty", () => {
   assert.deepEqual(uniqueGenres([T(1, { genre: "Techno" }), T(2, { genre: "" }), T(3), T(4, { genre: "house" })]), ["House", "house", "Techno"]);
+});
+
+test("sorting by the app-side labels: colour palette order, energy, tags; unlabelled tracks last either way", () => {
+  const list = [T(1), T(2), T(3), T(4), T(5)];
+  const labels = {
+    1: { tags: ["b"], colour: "blue", energy: 5 },
+    2: { tags: [], colour: "red", energy: 9 },
+    3: { tags: ["A", "z"], colour: "pink", energy: null },
+    4: { tags: ["a"], colour: null, energy: 1 },
+  };
+  const ids = (f, asc = true) => sortTracks(list, f, asc, () => false, (id) => labels[id]).map((t) => t.track_id);
+  assert.deepEqual(ids("colour"), [2, 1, 3, 4, 5]);
+  assert.deepEqual(ids("colour", false), [3, 1, 2, 4, 5]);
+  assert.deepEqual(ids("energy"), [4, 1, 2, 3, 5]);
+  assert.deepEqual(ids("energy", false), [2, 1, 4, 3, 5]);
+  assert.deepEqual(ids("tags"), [4, 3, 1, 2, 5]);
+  assert.deepEqual(ids("tags", false), [1, 3, 4, 2, 5]);
+  // without a label source every track is unlabelled and the order falls back to title
+  assert.deepEqual(sortTracks(list, "energy", false, () => false).map((t) => t.track_id), [1, 2, 3, 4, 5]);
+});
+
+test("the colour sort order is the label palette", () => {
+  assert.deepEqual([...COLOUR_SORT_ORDER], [...LABEL_COLOURS]);
 });

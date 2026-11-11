@@ -1,5 +1,7 @@
 <script lang="ts">
   // The Tracks view: filter bar, the virtualised table, and the inspector on the right.
+  import { filterByLabels, labelFilterActive } from "$lib/state/labels";
+  import { labels } from "$lib/state/labels.svelte";
   import { filters } from "$lib/state/filters.svelte";
   import { selection } from "$lib/state/selection.svelte";
   import { session } from "$lib/state/session.svelte";
@@ -18,17 +20,18 @@
   // header search + needs filter, then the toolbar's filters, then the sort
   const rows = $derived(
     sortTracks(
-      filterTracks(searchTracks(all), tracksState.filter, session.needs),
+      filterByLabels(filterTracks(searchTracks(all), tracksState.filter, session.needs), tracksState.labelFilter, (id) => labels.get(id)),
       tracksState.prefs.sortKey,
       tracksState.prefs.sortAsc,
       (id) => tracksState.favourites.has(id),
+      (id) => labels.get(id),
     ),
   );
 
   const byId = $derived(new Map(all.map((t) => [t.track_id, t])));
   const focus = $derived(tracksState.focusId === null ? null : (byId.get(tracksState.focusId) ?? null));
   const filtersActive = $derived(
-    !!(filters.query || filters.onlyNeeds || tracksState.genre || tracksState.bpmMin || tracksState.bpmMax || tracksState.keyFilter || tracksState.onlyAnalysed),
+    !!(filters.query || filters.onlyNeeds || tracksState.genre || tracksState.bpmMin || tracksState.bpmMax || tracksState.keyFilter || tracksState.onlyAnalysed || labelFilterActive(tracksState.labelFilter)),
   );
 
   // favourites belong to the open library; read them when it (or a different one) opens

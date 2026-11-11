@@ -2,7 +2,9 @@
   // The toolbar above the table: genre, BPM range, key, analysed / missing, column chooser.
   import { filters } from "$lib/state/filters.svelte";
   import Button from "$lib/ui/Button.svelte";
+  import { labelFilterActive } from "$lib/state/labels";
   import { COLUMNS } from "./columns";
+  import LabelFilterBar from "./LabelFilterBar.svelte";
   import { ALL_CAMELOT, filterIsActive, type Camelot } from "./trackLogic";
   import { tracksState } from "./tracksState.svelte";
 
@@ -32,7 +34,7 @@
   });
 
   const anyFilter = $derived(
-    filterIsActive({ ...tracksState.filter }) || filters.onlyNeeds || !!filters.query,
+    filterIsActive({ ...tracksState.filter }) || labelFilterActive(tracksState.labelFilter) || filters.onlyNeeds || !!filters.query,
   );
 
   // Analysed and Missing are opposites; pressing one releases the other, pressing it again clears it.
@@ -72,6 +74,8 @@
       {#each ALL_CAMELOT as k (k.code)}<option value="is:{k.code}">{k.code}</option>{/each}
     </optgroup>
   </select>
+
+  <LabelFilterBar />
 
   <Button small active={tracksState.onlyAnalysed} onclick={toggleAnalysed} title="Only tracks with a beat grid">Analysed</Button>
   <Button small active={filters.onlyNeeds} onclick={toggleMissing} title="Only tracks whose beat grid (.str) is missing or unreadable">Missing</Button>

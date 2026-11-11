@@ -31,6 +31,7 @@ files.
 | `lib/views/cases/` (`CasesView`, `SmartCases`) | Cases; the sidebar "Smart cases" section | cases |
 | `lib/views/history/`, `grid/`, `device/` | History, beat grid editor, device views (placeholders) | that area |
 | `lib/views/import/` (`ImportView`, `ConfirmModal`, `DropOverlay`, `Overlays.svelte`, `init.ts`) | Import view; write confirmation and drop overlay; job-event and file-drop subscriptions | import |
+| `lib/state/labels.ts`, `labels.svelte.ts` | Tags, colour labels (8 named, `--label-*` tokens) and energy 1-10, app-side only (nothing on the device). `labels.ts` is pure (types, ops mirror, filter predicate `matchesLabels` / `filterByLabels`, drafts) and safe for any area to reuse; `labels.svelte.ts` holds `labels` (by track id) and `labelEditor` (`edit(ids)`, `manage()`). Parity vectors `labels.parity.json` run against both this and the Rust store. UI in `views/metadata/` (`TagEditor`, `TagManager`, `LabelFields`, also a section of the metadata editor) and the Tracks columns / filter (`views/tracks/LabelFilterBar`) | metadata |
 | `lib/views/<area>/Overlays.svelte`, `init.ts` | Optional: always-mounted overlays / startup subscriptions of that area | that area |
 | `lib/player/Player.svelte` (+ optional `Overlays.svelte`, `init.ts`) | Bottom player bar and engine | playback |
 | `lib/ui/*` | Generic primitives: `Button`, `Modal`, `Table`, `CollectionTable`, `Stars`, `Waveform`, `ContextMenu`, `Toast`, `Placeholder`, `RMark` | integration |
@@ -54,6 +55,7 @@ files.
 | `lib.rs` | Registration only: plugins, `setup`, `register_handlers!()` | integration |
 | `commands/mod.rs` | Module list, `setup` chain, `register_handlers!` chain (all twelve areas are already in it) | integration |
 | `commands/library.rs` | `list_volumes`, `open_library`, `LibraryView` | integration |
+| `commands/tags.rs`, `commands/tags/store.rs` | Label store: one JSON file per library volume in the app config dir, atomic writes, generic over kind (track, case, mix) and a stable key; tracks are keyed by `global_id` (fallbacks in the file header). Not a device write, so no write gate | metadata |
 | `commands/<area>.rs` | Commands of that area: `tracks` (`reanalyse_tracks`), `mixes` (`mix_list`), `cases` (`case_tracks`), `import` (`expand_audio_paths`, `add_tracks`); `history`, `grid`, `device`, `playback`, `metadata`, `analysis`, `export` are empty | that area |
 | `state.rs` | State shared by several areas (`JobLock`); `setup` | integration |
 | `jobs.rs` | Generic `spawn_job`, `Progress`, `JobOutcome`, `JobDone` | integration |
