@@ -86,7 +86,7 @@ export function addProcessAt(type: string, deck: number, at: number = mv.playhea
     return false;
   }
   if (isRegion) mixes.addRegion(clip.id, type, start, length);
-  else mixes.addTool(clip.id, type, start, length);
+  else mixes.addTool(clip.id, type, start, length, type === "Trans" ? E.effectiveBpm(clip, start) || bpm : 0);
   return true;
 }
 

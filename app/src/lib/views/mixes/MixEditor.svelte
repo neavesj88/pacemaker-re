@@ -7,7 +7,7 @@
   import Button from "$lib/ui/Button.svelte";
   import { describe, duplicateSelection, errText, pasteAtPlayhead } from "./actions";
   import { confirm } from "./confirm.svelte";
-  import { cancelExport, closeMix, exportAudio, newMix, saveMix } from "./flow";
+  import { cancelExport, closeMix, exportAudio, newMix, saveMix, saveMixAs } from "./flow";
   import Inspector from "./Inspector.svelte";
   import { PPS_MAX, PPS_MIN, SR, clock, ppsFromSlider, sliderFromPps } from "./layout";
   import { preview } from "./preview.svelte";
@@ -82,7 +82,8 @@
     const k = e.key.toLowerCase();
     if (mod && k === "s") {
       e.preventDefault();
-      void save();
+      if (e.shiftKey) saveMixAs();
+      else void save();
       return;
     }
     if (editable(e.target)) return;
@@ -166,6 +167,11 @@
     <span class="chip">mix · {doc.clips.length} track{doc.clips.length === 1 ? "" : "s"} · {clock(doc.lengthSec)}</span>
     <Button onclick={newMix}>New</Button>
     <Button variant="primary" disabled={!mixes.dirty || saving || mixes.busy} onclick={save} title={mixes.problems.length ? `Cannot save yet: ${mixes.problems[0]}` : "Save (Ctrl+S)"}>Save</Button>
+    <Button
+      disabled={saving || mixes.busy}
+      onclick={saveMixAs}
+      title={mixes.problems.length ? `Cannot save yet: ${mixes.problems[0]}` : "Save the mix as a new mix under another name; this one keeps its last saved content (Ctrl+Shift+S)"}>Save as…</Button
+    >
     <span class="sep"></span>
     <Button disabled={mixes.undoDepth === 0} onclick={() => mixes.undo()} title={mixes.undoLabel ? `Undo ${mixes.undoLabel} (Ctrl+Z)` : "Nothing to undo"} aria-label="Undo">↶</Button>
     <Button disabled={mixes.redoDepth === 0} onclick={() => mixes.redo()} title={mixes.redoLabel ? `Redo ${mixes.redoLabel} (Ctrl+Y)` : "Nothing to redo"} aria-label="Redo">↷</Button>

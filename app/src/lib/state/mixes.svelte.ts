@@ -19,6 +19,7 @@ import {
   mixNew,
   mixOpen,
   mixSave,
+  mixSaveAs,
   mixValidate,
   type BeatmatchSuggestion,
   type Clip,
@@ -147,6 +148,30 @@ class Mixes {
       }
       toast.show(`Saved "${saved.name}"`, "ok");
       void this.refreshList();
+    } finally {
+      this.busy = false;
+    }
+  }
+
+  /** Writes the open document (with its unsaved edits) as a NEW mix called `name` and opens that
+   * mix in its place: the undo history is cleared, because its snapshots belong to the old mix id
+   * and undoing into one would save over the original. The mix it came from keeps its last saved
+   * content. Throws the backend's message (taken name, blocking problems) and changes nothing. */
+  async saveAs(name: string) {
+    const root = this.root;
+    const doc = this.doc;
+    if (!root || !doc) throw new Error("no mix is open");
+    this.busy = true;
+    try {
+      const saved = await mixSaveAs(root, doc, name);
+      void this.refreshList();
+      try {
+        this.#load(await mixOpen(root, saved.id));
+      } catch (e) {
+        // the copy exists; do not let a retry in the dialog run into its own name
+        toast.show(`Saved as "${saved.name}", but it could not be opened: ${e instanceof Error ? e.message : String(e)}`, "bad", 12000);
+      }
+      return saved;
     } finally {
       this.busy = false;
     }
@@ -337,8 +362,9 @@ class Mixes {
     this.edit("Change deck", (d) => E.updateClip(d, id, (c) => ({ ...c, channel })));
   }
 
-  addTool(clipId: string, type: string, localStart: number, length: number) {
-    const tool = E.newTool(type, localStart, length);
+  /** `startBpm` is for Trans only (the tempo its gate follows). */
+  addTool(clipId: string, type: string, localStart: number, length: number, startBpm = 0) {
+    const tool = E.newTool(type, localStart, length, undefined, startBpm);
     this.edit(`Add ${type}`, (d) => E.addProcess(d, clipId, tool));
     this.selected = [tool.id];
     return tool;

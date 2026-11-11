@@ -5,7 +5,8 @@
 //! writes go through the `pm-formats` `Library` (`create_mix`, `save_mix`, `rename_mix`,
 //! `set_mix_meta`, `delete_mix`), so rows stay what the Editor and the device expect.
 //!
-//! Submodules: [`doc`] (the model and its conversion), [`timing`] (beat times, beat matching,
+//! Submodules: [`doc`] (the model and its conversion), [`hygiene`] (copies, bulk delete and
+//! export, list facts), [`timing`] (beat times, beat matching,
 //! automatic transitions; pure), [`info`] (library lookups: track facts, beat grids, new clips,
 //! `.pmk` re-linking). The mix audio area converts the editor's document with
 //! `doc::MixDoc::to_mix`.
@@ -15,6 +16,7 @@
 //! `src/lib/devmock/mixes.ts`.
 
 pub mod doc;
+pub mod hygiene;
 pub mod info;
 pub mod timing;
 
@@ -27,6 +29,7 @@ use serde::Serialize;
 
 use crate::error::{AppError, AppResult};
 use doc::{Clip, MixDoc, MixMeta, TrackInfo};
+use hygiene::{DeleteReport, ExportPlanItem, ExportReport, MixDuplicated, MixRow, NamedMix, OnExisting};
 use timing::{BeatmatchSuggestion, TransitionSuggestion};
 
 /// Managed state private to this area goes here (`app.manage(..)`).
@@ -199,6 +202,59 @@ pub async fn mix_export_pmk(root: String, id: i64, path: String) -> AppResult<()
     .await?
 }
 
+/// The library row of every mix (genre, rating, dates, ...) in one query, for the list's columns,
+/// sort and search. Read-only.
+#[tauri::command]
+pub async fn mix_list_meta(root: String) -> AppResult<Vec<MixRow>> {
+    tauri::async_runtime::spawn_blocking(move || -> AppResult<Vec<MixRow>> { hygiene::list_meta_in(&Library::open_read_only(Path::new(&root))?) }).await?
+}
+
+/// Makes a copy of the SAVED mix `id` (document and library-row facts). `name` defaults to
+/// "<name> copy", numbered when taken; a name that is given must be free.
+#[tauri::command]
+pub async fn mix_duplicate(app: tauri::AppHandle, root: String, id: i64, name: Option<String>) -> AppResult<MixDuplicated> {
+    crate::state::quick_write(app, root.clone(), move || -> AppResult<MixDuplicated> {
+        hygiene::duplicate_in(&mut Library::open(Path::new(&root))?, id, name.as_deref())
+    })
+    .await
+}
+
+/// Saves the editor's document (unsaved edits included) as a new mix called `name`. The mix it
+/// came from keeps its saved content. Same checks as `mix_save`; nothing is created when one fails.
+#[tauri::command]
+pub async fn mix_save_as(app: tauri::AppHandle, root: String, doc: MixDoc, name: String) -> AppResult<MixSaved> {
+    crate::state::quick_write(app, root.clone(), move || -> AppResult<MixSaved> {
+        hygiene::save_as_in(&mut Library::open(Path::new(&root))?, &doc, &name)
+    })
+    .await
+}
+
+/// Deletes several mixes. Irreversible: the caller must have asked the user, listing every mix.
+/// `items` carry the names the user saw; a mix whose name has changed since is kept and reported.
+#[tauri::command]
+pub async fn mix_delete_many(app: tauri::AppHandle, root: String, items: Vec<NamedMix>) -> AppResult<DeleteReport> {
+    crate::state::quick_write(app, root.clone(), move || -> AppResult<DeleteReport> {
+        hygiene::delete_many_in(&mut Library::open(Path::new(&root))?, &items)
+    })
+    .await
+}
+
+/// The file each mix would be exported to in `dir`, decided with what is in the folder now and the
+/// `on_existing` setting. Writes nothing; show it to the user and pass it to `mix_export_many`.
+#[tauri::command]
+pub async fn mix_export_plan(items: Vec<NamedMix>, dir: String, on_existing: OnExisting) -> AppResult<Vec<ExportPlanItem>> {
+    tauri::async_runtime::spawn_blocking(move || -> AppResult<Vec<ExportPlanItem>> { hygiene::export_plan_in(&items, Path::new(&dir), on_existing) }).await?
+}
+
+/// Writes the plan: the SAVED content of each mix as a `.pmk` in `dir`. Reads the library only.
+#[tauri::command]
+pub async fn mix_export_many(root: String, dir: String, plan: Vec<ExportPlanItem>) -> AppResult<ExportReport> {
+    tauri::async_runtime::spawn_blocking(move || -> AppResult<ExportReport> {
+        hygiene::export_many_in(&Library::open_read_only(Path::new(&root))?, &plan, Path::new(&dir))
+    })
+    .await?
+}
+
 /// Library facts and beat grids for tracks (for adding them to a mix, or refreshing a clip's
 /// `track`), in the order asked. Unknown ids come back with `available: false`.
 #[tauri::command]
@@ -285,6 +341,12 @@ macro_rules! mixes_commands {
                 $crate::commands::mixes::mix_make_clip,
                 $crate::commands::mixes::mix_beatmatch,
                 $crate::commands::mixes::mix_auto_transition,
+                $crate::commands::mixes::mix_list_meta,
+                $crate::commands::mixes::mix_duplicate,
+                $crate::commands::mixes::mix_save_as,
+                $crate::commands::mixes::mix_delete_many,
+                $crate::commands::mixes::mix_export_plan,
+                $crate::commands::mixes::mix_export_many,
             ];
             $($rest),*
         }

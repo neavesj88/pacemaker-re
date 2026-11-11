@@ -8,6 +8,7 @@
   import { confirm } from "./confirm.svelte";
   import { clock } from "./layout";
   import { listMeta } from "./listmeta.svelte";
+  import { toolPrefs } from "./listPrefs.svelte";
   import { mv } from "./view.svelte";
 
   const doc = $derived(mixes.doc!);
@@ -74,6 +75,13 @@
   <div class="muted small">Rating, genre and comments are written to the library as soon as you change them.</div>
 {/if}
 
+<h4>Tool menu</h4>
+<label class="check">
+  <input type="checkbox" checked={toolPrefs.showTrans} onchange={(e) => toolPrefs.setShowTrans(e.currentTarget.checked)} />
+  Offer the Trans tool when adding a tool
+</label>
+<div class="muted small">Trans (a beat-synced gate) plays in the preview and the audio export, but its file layout has not been checked on a real Pacemaker. This only hides the menu entry: mixes that already have the tool still show it. A volume curve is the clip's Gain curve; there is no separate Volume tool.</div>
+
 {#if mixes.problems.length > 0}
   <h4>Cannot save yet</h4>
   <div class="warn">
@@ -113,6 +121,13 @@
   .lbl {
     color: var(--muted);
     font-size: 12px;
+  }
+  .check {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    color: var(--text);
+    font-size: 13px;
   }
   ul {
     margin: 0;

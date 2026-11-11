@@ -1,15 +1,25 @@
-// Library-level actions of the mix editor: new, open, rename, delete, import / export .pmk,
-// export audio. Each asks the user the way it must (unsaved changes, naming what is deleted,
+// Library-level actions of the mix editor: new, open, rename, duplicate, save as, delete, import /
+// export .pmk (one or many), export audio. Each asks the user the way it must (unsaved changes, naming what is deleted,
 // file dialogs) and reports the outcome with a toast.
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { exportCancel, exportMixAudio } from "$lib/api/export";
-import { mixDelete, mixExportPmk, mixImportPmk, mixRename, type MixSummary } from "$lib/api/mixes";
+import {
+  mixDeleteMany,
+  mixDuplicate,
+  mixExportMany,
+  mixExportPlan,
+  mixExportPmk,
+  mixImportPmk,
+  mixRename,
+  type MixSummary,
+} from "$lib/api/mixes";
 import { mixes } from "$lib/state/mixes.svelte";
 import { toast } from "$lib/state/toast.svelte";
 import { errText } from "./actions";
 import { confirm, guard, namer } from "./confirm.svelte";
-import { mmss } from "./layout";
 import { listMeta } from "./listmeta.svelte";
+import { listPrefs } from "./listPrefs.svelte";
+import { copyName, deleteLine, deleteSummary, exportSummary, planLine } from "./mixlist";
 import { preview } from "./preview.svelte";
 import { mv } from "./view.svelte";
 
@@ -70,26 +80,81 @@ export function renameMix(m: MixSummary) {
       const root = mixes.root;
       if (!root) throw new Error("no library is open");
       if (name !== m.name) await mixRename(root, m.id, name);
-      await mixes.refreshList();
+      await reloadList();
       toast.show(`Renamed to “${name}”`, "ok");
     },
   };
 }
 
-export function deleteMix(m: MixSummary) {
+/** Re-reads the mix list and the library-row facts shown beside it. */
+export async function reloadList() {
+  await mixes.refreshList();
+  await listMeta.refresh();
+}
+
+/** Asks for a name, then makes a copy of the SAVED mix (document and row facts). `done` gets the
+ * new mix's id so the list can pick it. */
+export function duplicateMix(m: MixSummary, done?: (id: number) => void) {
+  namer.req = {
+    title: "Duplicate mix",
+    label: `Name for the copy of “${m.name}”`,
+    initial: copyName(mixes.list.map((x) => x.name), m.name),
+    confirmLabel: "Duplicate",
+    run: async (name) => {
+      const root = mixes.root;
+      if (!root) throw new Error("no library is open");
+      const made = await mixDuplicate(root, m.id, name);
+      await reloadList();
+      done?.(made.id);
+      toast.show(`Made “${made.name}” from “${m.name}”`, "ok");
+    },
+  };
+}
+
+/** Save As: the open mix, with its unsaved edits, becomes a NEW mix and the editor switches to
+ * it. The mix it was made from keeps what was last saved. */
+export function saveMixAs() {
+  const doc = mixes.doc;
+  if (!doc || mixes.busy) return;
+  namer.req = {
+    title: "Save as a new mix",
+    label: `Name for the new mix (“${doc.name}” keeps its last saved content)`,
+    initial: copyName(mixes.list.map((x) => x.name), doc.name),
+    confirmLabel: "Save as",
+    run: async (name) => {
+      preview.stop();
+      const saved = await mixes.saveAs(name);
+      mv.reset();
+      listMeta.set(saved.id, mixes.doc?.meta ?? null);
+      await reloadList();
+      toast.show(`Saved as “${saved.name}”. “${doc.name}” was not changed.`, "ok", 7000);
+    },
+  };
+}
+
+/** Deletes the mixes after a confirmation that lists every one. The backend keeps any mix that
+ * was renamed since the list was drawn and says which. */
+export function deleteMixes(ms: MixSummary[], done?: () => void) {
+  if (ms.length === 0) return;
+  const items = ms.map((m) => ({ id: m.id, name: m.name }));
   confirm.ask({
-    title: "Delete mix",
-    message: `Delete the mix “${m.name}” from the library? This cannot be undone. The tracks in it are not deleted.`,
-    items: [`“${m.name}”: ${m.track_count} track${m.track_count === 1 ? "" : "s"}, ${mmss(m.play_time_secs)}`],
-    confirmLabel: "Delete mix",
+    title: ms.length === 1 ? "Delete mix" : `Delete ${ms.length} mixes`,
+    message:
+      ms.length === 1
+        ? `Delete the mix “${ms[0].name}” from the library? This cannot be undone. The tracks in it are not deleted.`
+        : `Delete these ${ms.length} mixes from the library? This cannot be undone. The tracks in them are not deleted.`,
+    items: ms.map(deleteLine),
+    confirmLabel: ms.length === 1 ? "Delete mix" : `Delete ${ms.length} mixes`,
     danger: true,
     run: async () => {
       const root = mixes.root;
       if (!root) throw new Error("no library is open");
-      await mixDelete(root, m.id);
-      listMeta.forget(m.id);
-      await mixes.refreshList();
-      toast.show(`Deleted “${m.name}”`, "ok");
+      const r = await mixDeleteMany(root, items);
+      for (const d of r.deleted) listMeta.forget(d.id);
+      await reloadList();
+      done?.();
+      const s = deleteSummary(r);
+      toast.show(s.text, s.ok ? "ok" : "bad", s.ok ? 4000 : 14000);
     },
   });
 }
@@ -103,7 +168,7 @@ export async function importPmk() {
     const picked = await open({ multiple: false, directory: false, title: "Import a .pmk mix", filters: PMK });
     if (typeof picked !== "string") return;
     const id = await mixImportPmk(root, picked);
-    await mixes.refreshList();
+    await reloadList();
     const m = mixes.list.find((x) => x.id === id);
     toast.show(`Imported “${m?.name ?? "mix"}”`, "ok");
   } catch (e) {
@@ -122,6 +187,38 @@ export async function exportPmk(m: MixSummary) {
     toast.show(`Exported “${m.name}”`, "ok");
   } catch (e) {
     toast.show(`Export failed: ${errText(e)}`, "bad", 9000);
+  }
+}
+
+/** Exports several saved mixes as .pmk files into a folder the user picks. The confirmation lists
+ * every file in words (new, replaces, skipped) from the same plan the export then runs. */
+export async function exportMixes(ms: MixSummary[]) {
+  const root = mixes.root;
+  if (!root || ms.length === 0) return;
+  try {
+    const dir = await open({ multiple: false, directory: true, title: `Choose the folder for ${ms.length} exported mixes` });
+    if (typeof dir !== "string") return;
+    const plan = await mixExportPlan(ms.map((m) => ({ id: m.id, name: m.name })), dir, listPrefs.value.onExisting);
+    const replacing = plan.filter((p) => p.action === "replace").length;
+    const writing = plan.filter((p) => p.action !== "skip").length;
+    confirm.ask({
+      title: `Export ${ms.length} mixes`,
+      message:
+        `${writing} file${writing === 1 ? "" : "s"} will be written to ${dir}. ` +
+        (replacing ? `${replacing} existing file${replacing === 1 ? "" : "s"} will be replaced. ` : "No existing file is replaced. ") +
+        "The saved mixes are exported, not unsaved edits.",
+      items: plan.map(planLine),
+      confirmLabel: writing === 0 ? "Close" : `Export ${writing}`,
+      danger: replacing > 0,
+      run: async () => {
+        if (writing === 0) return;
+        const r = await mixExportMany(root, dir, plan);
+        const s = exportSummary(r, dir);
+        toast.show(s.text, s.ok ? "ok" : "bad", s.ok ? 6000 : 14000);
+      },
+    });
+  } catch (e) {
+    toast.show(`Export failed: ${errText(e)}`, "bad", 12000);
   }
 }
 

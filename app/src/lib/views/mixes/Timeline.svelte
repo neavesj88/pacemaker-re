@@ -12,6 +12,7 @@
   import { addProcessAt, addTracks, autoTransition, beatmatch, clipTitle, duplicateSelection, neighbours, pasteAtPlayhead } from "./actions";
   import ClipBlock from "./ClipBlock.svelte";
   import EnvelopeSvg from "./EnvelopeSvg.svelte";
+  import { toolPrefs } from "./listPrefs.svelte";
   import { HEADER_W, PPS_MAX, PPS_MIN, SR, clamp, envToKey, keyToEnv, packRows, rulerTicks, mmss } from "./layout";
   import { preview } from "./preview.svelte";
   import ToolBlock from "./ToolBlock.svelte";
@@ -191,7 +192,7 @@
   function fxMenu(deck: number, at: number): MenuItem[] {
     const add = (type: string, label: string): MenuItem => ({ label, onclick: () => addProcessAt(type, deck, at) });
     return [
-      ...E.toolTypesFor(vocal.mode).map((t) => add(t.name, t.label)),
+      ...E.addableToolTypes(vocal.mode, toolPrefs.showTrans).map((t) => add(t.name, t.label)),
       add("loop", "Loop"),
       add("reverse", "Reverse"),
       add("ignore", "Ignore"),

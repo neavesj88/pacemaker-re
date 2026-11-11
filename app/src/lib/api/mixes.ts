@@ -408,6 +408,54 @@ export const mixImportPmk = (root: string, path: string) => invoke<number>("mix_
 /** Writes the SAVED mix as a `.pmk` file (overwrites; ask the user first). */
 export const mixExportPmk = (root: string, id: number, path: string) => invoke<void>("mix_export_pmk", { root, id, path });
 
+// ---- Library hygiene: copies, bulk delete, bulk export, list facts (commands/mixes/hygiene.rs) ----
+
+/** A mix as the user saw it in a confirmation: the id and the name that was on screen. The
+ * backend only acts on a mix that still has this name. */
+export type NamedMix = { id: number; name: string };
+
+/** A mix's id with its library row (genre, rating, dates, ...). */
+export type MixRow = { id: number; meta: MixMeta };
+
+/** The library row of every mix in one query, for the list's columns, sort and search. */
+export const mixListMeta = (root: string) => invoke<MixRow[]>("mix_list_meta", { root });
+
+/** Makes a copy of the SAVED mix (document and row facts; play counters start at 0, the sleeve
+ * image is not copied). `name` defaults to "<name> copy", numbered when taken; a name that is
+ * given must be free. */
+export const mixDuplicate = (root: string, id: number, name: string | null = null) =>
+  invoke<{ id: number; name: string }>("mix_duplicate", { root, id, name });
+
+/** Saves the editor's document (unsaved edits included) as a NEW mix; the mix it came from keeps
+ * its saved content. Same checks as `mixSave`; nothing is created when one refuses. */
+export const mixSaveAs = (root: string, doc: MixDoc, name: string) => invoke<MixSaved>("mix_save_as", { root, doc, name });
+
+export type BulkFailure = { id: number; name: string; error: string };
+
+/** Deletes several mixes for good (the caller listed every one to the user). A mix whose name is
+ * no longer the one in `items` is kept and reported in `failed`. */
+export const mixDeleteMany = (root: string, items: NamedMix[]) =>
+  invoke<{ deleted: NamedMix[]; failed: BulkFailure[] }>("mix_delete_many", { root, items });
+
+/** What to do when the file a mix would be exported to exists: `number` writes `name (2).pmk`
+ * (nothing is overwritten), `replace` overwrites it, `skip` leaves it and skips that mix. */
+export type OnExisting = "number" | "replace" | "skip";
+
+export type ExportPlanItem = { id: number; name: string; fileName: string; action: "write" | "replace" | "skip" };
+
+/** The file each mix would be exported to in `dir`. Writes nothing; show it, then pass the same
+ * list to `mixExportMany`. */
+export const mixExportPlan = (items: NamedMix[], dir: string, onExisting: OnExisting) =>
+  invoke<ExportPlanItem[]>("mix_export_plan", { items, dir, onExisting });
+
+/** Writes the plan: the SAVED content of each mix as a .pmk in `dir`. */
+export const mixExportMany = (root: string, dir: string, plan: ExportPlanItem[]) =>
+  invoke<{ written: { id: number; name: string; path: string }[]; skipped: NamedMix[]; failed: BulkFailure[] }>("mix_export_many", {
+    root,
+    dir,
+    plan,
+  });
+
 /** Library facts + beat grids for tracks, in the order asked (for adding tracks, or refreshing). */
 export const mixTrackInfo = (root: string, trackIds: number[]) => invoke<TrackInfo[]>("mix_track_info", { root, trackIds });
 

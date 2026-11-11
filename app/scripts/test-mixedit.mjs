@@ -13,6 +13,7 @@ import { fileURLToPath } from "node:url";
 import * as E from "../src/lib/state/mixedit.ts";
 import * as R from "../src/lib/state/transitionRecipes.ts";
 import * as L from "../src/lib/views/mixes/layout.ts";
+import * as ML from "../src/lib/views/mixes/mixlist.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 let n = 0;
@@ -694,6 +695,140 @@ test("describeTools names every tool added", () => {
   const lines = R.describeTools(s, (id) => `Track ${id}`);
   assert.deepEqual(lines, ['EQ on "Track a"', 'FILTER on "Track a"', 'Roll on "Track a"']);
   assert.equal(R.describeTools(s, (id) => id, (t) => t.toLowerCase())[0], 'eq on "a"');
+});
+
+// ---- mix library hygiene (mixlist.ts) and the Trans / Volume tools ---------------------------------
+
+const sum = (id, name, secs = 600, tracks = 4) => ({ id, name, play_time_secs: secs, track_count: tracks });
+const row = (over = {}) => ({ genre: "", year: 0, rating: 0, producer: "", remixer: "", comments: "", dateCreated: 0, dateModified: 0, timesPlayed: 0, lastPlayed: 0, playTimeSecs: 0, creatorId: "", ...over });
+const LIST = [sum(1, "Warm-up Set", 1800, 8), sum(2, "Café Closing", 3600, 12), sum(3, "Set 10", 900, 3), sum(4, "Set 2", 905, 3), sum(5, "Peak Time", 2400, 9)];
+const META = new Map([
+  [1, row({ genre: "Deep House", rating: 4, dateModified: 300, comments: "for the Friday gig", year: 2024 })],
+  [2, row({ genre: "Jazz", rating: 0, dateModified: 100, producer: "Invented Producer" })],
+  [3, row({ genre: "Techno", rating: 5, dateModified: 500 })],
+  [5, row({ genre: "Techno", rating: 3, dateModified: 200, remixer: "Invented Remixer" })],
+]);
+const metaOf = (id) => META.get(id);
+const names = (l) => l.map((m) => m.name);
+
+test("search: every word must match, accents and case are ignored, deep search widens the fields", () => {
+  assert.deepEqual(names(ML.filterMixes(LIST, metaOf, "", true)), names(LIST));
+  assert.deepEqual(names(ML.filterMixes(LIST, metaOf, "   ", true)), names(LIST));
+  assert.deepEqual(names(ML.filterMixes(LIST, metaOf, "cafe", false)), ["Café Closing"]);
+  assert.deepEqual(names(ML.filterMixes(LIST, metaOf, "SET", false)), ["Warm-up Set", "Set 10", "Set 2"]);
+  assert.deepEqual(names(ML.filterMixes(LIST, metaOf, "set 10", false)), ["Set 10"], "both words");
+  assert.deepEqual(names(ML.filterMixes(LIST, metaOf, "techno", false)), [], "name only");
+  assert.deepEqual(names(ML.filterMixes(LIST, metaOf, "techno", true)), ["Set 10", "Peak Time"]);
+  assert.deepEqual(names(ML.filterMixes(LIST, metaOf, "friday", true)), ["Warm-up Set"], "comments");
+  assert.deepEqual(names(ML.filterMixes(LIST, metaOf, "invented remixer", true)), ["Peak Time"]);
+  assert.deepEqual(names(ML.filterMixes(LIST, metaOf, "2024", true)), ["Warm-up Set"], "year");
+  assert.deepEqual(names(ML.filterMixes(LIST, metaOf, "set 2024", true)), ["Warm-up Set"], "name word plus year word");
+  assert.deepEqual(names(ML.filterMixes(LIST, metaOf, "techno peak", true)), ["Peak Time"]);
+  assert.deepEqual(names(ML.filterMixes(LIST, () => undefined, "techno", true)), [], "facts not loaded yet: nothing invented");
+  assert.deepEqual(names(ML.filterMixes(LIST, metaOf, "zzz", true)), []);
+});
+
+test("sort: numeric names, descending, ties fall back to the name, missing facts sort as empty", () => {
+  const sorted = (key, asc = true) => names(ML.sortMixes(LIST, key, asc, metaOf));
+  assert.deepEqual(sorted("name"), ["Café Closing", "Peak Time", "Set 2", "Set 10", "Warm-up Set"], "Set 2 before Set 10");
+  assert.deepEqual(sorted("name", false), ["Warm-up Set", "Set 10", "Set 2", "Peak Time", "Café Closing"]);
+  assert.deepEqual(sorted("play_time_secs"), ["Set 10", "Set 2", "Warm-up Set", "Peak Time", "Café Closing"]);
+  assert.deepEqual(sorted("track_count"), ["Set 2", "Set 10", "Warm-up Set", "Peak Time", "Café Closing"], "equal counts: by name");
+  assert.deepEqual(sorted("date", false), ["Set 10", "Warm-up Set", "Peak Time", "Café Closing", "Set 2"], "Set 2 has no facts = 0");
+  assert.deepEqual(sorted("rating", false), ["Set 10", "Warm-up Set", "Peak Time", "Café Closing", "Set 2"]);
+  assert.deepEqual(sorted("genre"), ["Set 2", "Warm-up Set", "Café Closing", "Peak Time", "Set 10"], "empty first, then Deep House, Jazz, Techno (tie by name)");
+  assert.deepEqual(names(LIST), ["Warm-up Set", "Café Closing", "Set 10", "Set 2", "Peak Time"], "the input is not reordered");
+  assert.equal(ML.defaultAscending("name"), true);
+  assert.equal(ML.defaultAscending("rating"), false);
+});
+
+test("selection: click, Ctrl toggles, Shift selects a range, the search un-ticks hidden rows", () => {
+  const rows = [10, 20, 30, 40, 50];
+  const none = { selected: new Set(), anchor: null };
+  const mod = (shift = false, ctrl = false) => ({ shift, ctrl });
+  const ids = (s) => [...s.selected].sort((a, b) => a - b);
+  let s = ML.clickRow(none, rows, 30, mod());
+  assert.deepEqual(ids(s), [30]);
+  s = ML.clickRow(s, rows, 50, mod(true));
+  assert.deepEqual(ids(s), [30, 40, 50], "range from the anchor");
+  assert.equal(s.anchor, 30, "the anchor stays");
+  s = ML.clickRow(s, rows, 10, mod(true));
+  assert.deepEqual(ids(s), [10, 20, 30], "range upwards replaces");
+  s = ML.clickRow(s, rows, 40, mod(false, true));
+  assert.deepEqual(ids(s), [10, 20, 30, 40], "ctrl adds");
+  s = ML.clickRow(s, rows, 20, mod(false, true));
+  assert.deepEqual(ids(s), [10, 30, 40], "ctrl removes");
+  s = ML.clickRow(s, rows, 50, mod());
+  assert.deepEqual(ids(s), [50], "plain click is that row alone");
+  s = ML.clickRow({ selected: new Set([99]), anchor: 99 }, rows, 20, mod(true));
+  assert.deepEqual(ids(s), [20], "shift with the anchor off screen is a plain click");
+  s = ML.toggleRow(ML.toggleRow(none, 10), 20);
+  assert.deepEqual(ids(s), [10, 20]);
+  s = ML.toggleRow(s, 10);
+  assert.deepEqual(ids(s), [20]);
+  assert.deepEqual([...ML.prune(new Set([10, 20, 99]), [20, 30])], [20], "ticked rows that are not shown go");
+});
+
+test("copy names: numbered, within the library's length limit, same rule as the Rust unique_name", () => {
+  assert.equal(ML.uniqueName([], "Set"), "Set");
+  assert.equal(ML.uniqueName(["Set"], "Set"), "Set (2)");
+  assert.equal(ML.uniqueName(["Set", "Set (2)", "Set (3)"], " Set "), "Set (4)");
+  assert.equal(ML.copyName(["Set"], "Set"), "Set copy");
+  assert.equal(ML.copyName(["Set", "Set copy"], "Set"), "Set copy (2)");
+  const long = "x".repeat(ML.MAX_NAME);
+  const n = ML.uniqueName([long], long);
+  assert.equal([...n].length, ML.MAX_NAME);
+  assert.ok(n.endsWith(" (2)"));
+  assert.equal([...ML.copyName([], long)].length, ML.MAX_NAME);
+});
+
+test("list settings: a corrupt or old entry falls back field by field", () => {
+  assert.deepEqual(ML.mergeListPrefs(null), ML.DEFAULT_LIST_PREFS);
+  assert.deepEqual(ML.mergeListPrefs("junk"), ML.DEFAULT_LIST_PREFS);
+  const custom = { sortKey: "rating", asc: false, deepSearch: false, onExisting: "skip" };
+  assert.deepEqual(ML.mergeListPrefs(custom), custom);
+  assert.deepEqual(ML.mergeListPrefs({ sortKey: "bogus", asc: "yes", onExisting: "delete-everything" }), ML.DEFAULT_LIST_PREFS);
+  assert.deepEqual(ML.mergeListPrefs({ sortKey: "genre" }), { ...ML.DEFAULT_LIST_PREFS, sortKey: "genre" });
+  assert.equal(ML.DEFAULT_LIST_PREFS.onExisting, "number", "never overwrite unless told to");
+});
+
+test("confirmation and report wording names every mix and file", () => {
+  assert.equal(ML.deleteLine(sum(1, "Warm-up Set", 1800, 8)), "“Warm-up Set”: 8 tracks, 30:00");
+  assert.equal(ML.deleteLine(sum(1, "One", 61, 1)), "“One”: 1 track, 1:01");
+  assert.equal(ML.planLine({ id: 1, name: "A", fileName: "A.pmk", action: "write" }), "“A” → A.pmk  (new file)");
+  assert.match(ML.planLine({ id: 1, name: "A", fileName: "A.pmk", action: "replace" }), /REPLACES/);
+  assert.match(ML.planLine({ id: 1, name: "A", fileName: "A.pmk", action: "skip" }), /not exported.*kept/);
+  assert.deepEqual(ML.deleteSummary({ deleted: [{ id: 1, name: "A" }], failed: [] }), { text: "Deleted 1 mix.", ok: true });
+  const f = ML.deleteSummary({ deleted: [], failed: Array.from({ length: 6 }, (_, i) => ({ id: i, name: `M${i}`, error: "renamed" })) });
+  assert.equal(f.ok, false);
+  assert.match(f.text, /^Nothing was deleted\. Kept 6: “M0”: renamed; .*“M3”: renamed and 2 more\.$/);
+  const e = ML.exportSummary({ written: [{ id: 1, name: "A", path: "x" }, { id: 2, name: "B", path: "y" }], skipped: [{ id: 3, name: "C" }], failed: [] }, "D:\\out");
+  assert.equal(e.text, "Exported 2 mixes to D:\\out. Skipped 1 (file already there).");
+  assert.equal(e.ok, true);
+  assert.equal(ML.exportSummary({ written: [], skipped: [], failed: [{ id: 1, name: "A", error: "disk full" }] }, "d").ok, false);
+});
+
+test("Trans can be created (no envelope, tempo kept), Volume never is, and the menu follows the setting", () => {
+  const t = E.newTool("Trans", 1000, 88200, "t1", 127.456);
+  assert.equal(t.toolType, "Trans");
+  assert.deepEqual(t.params, {}, "no automation keys: the Editor's names for them are unknown");
+  assert.deepEqual(t.effects, [{ name: "Trans", bypassed: false, class: "trans", startBpm: 127.46, active: true }]);
+  assert.equal(E.newTool("Trans", 0, 1000).effects[0].startBpm, 0, "0 = follow the clip");
+  assert.equal(E.newTool("Trans", 0, 1000, "x", -5).effects[0].startBpm, 0);
+  assert.throws(() => E.newTool("Volume", 0, 1000), /unknown tool type/);
+  assert.throws(() => E.newTool("Delay", 0, 1000), /unknown tool type/);
+  const plain = E.addableToolTypes("off", false).map((x) => x.name);
+  const withTrans = E.addableToolTypes("off", true).map((x) => x.name);
+  assert.deepEqual(withTrans, [...plain, "Trans"]);
+  assert.ok(!plain.includes("Trans") && !withTrans.includes("Volume"));
+  assert.equal(E.addableToolTypes("vocal", true).find((x) => x.name === "Wah").label, "Vocal");
+  // in a document it is a tool like any other
+  const d1 = E.addProcess(recipeDoc(), "a", E.newTool("Trans", 4 * BAR, 2 * BAR, "tr", 128));
+  const tr = d1.clips[0].processes.find((p) => p.id === "tr");
+  assert.equal(tr.toolType, "Trans");
+  assert.deepEqual(E.toolConflicts(d1.clips[0], tr), [], "alone on its clip");
+  const d2 = E.addProcess(d1, "a", E.newTool("Trans", 5 * BAR, 2 * BAR, "tr2", 128));
+  assert.deepEqual(E.toolConflicts(d2.clips[0], d2.clips[0].processes.find((p) => p.id === "tr2")), ["tr"], "two Trans overlapping is refused like any tool");
 });
 
 console.log(`\n${n} tests passed`);
