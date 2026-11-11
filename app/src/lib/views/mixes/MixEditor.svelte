@@ -197,7 +197,7 @@
       <span class="problem" title={mixes.problems.join("\n")}>⚠ {mixes.problems.length} problem{mixes.problems.length === 1 ? "" : "s"} blocking save</span>
     {/if}
     <Button disabled={mv.exporting || doc.clips.length === 0} onclick={() => void exportAudio()} title="Render the mix to an audio file">
-      {mv.exporting ? "Exporting…" : "Export audio"}
+      {mv.exporting ? (mv.exportPct > 0 ? `Exporting ${Math.round(mv.exportPct * 100)}%` : "Exporting…") : "Export audio"}
     </Button>
   </div>
   {#if mv.exporting}<div class="progress" role="progressbar" aria-label="Exporting audio"><i></i></div>{/if}

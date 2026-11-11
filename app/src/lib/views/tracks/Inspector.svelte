@@ -9,6 +9,7 @@
   import Button from "$lib/ui/Button.svelte";
   import Stars from "$lib/ui/Stars.svelte";
   import { cachedPeaks, requestPeaks } from "./peakCache";
+  import { addToCase } from "./addToCase.svelte";
   import { addToMix, editGrid, editMetadata, playTrack, rate, revealInExplorer } from "./trackActions";
   import { keyColour, keyName, matchingTracks, parseKey } from "./trackLogic";
   import { tracksState } from "./tracksState.svelte";
@@ -123,6 +124,7 @@
       <Button small active={many ? allFav : fav} onclick={() => tracksState.setFavourite(selectedIds, !(many ? allFav : fav))}>
         ♥ {(many ? allFav : fav) ? "Unfavourite" : "Favourite"}
       </Button>
+      <Button small onclick={() => addToCase.ask(selectedIds)}>{many ? `Add ${selectedIds.length} to case…` : "Add to case…"}</Button>
       <Button small onclick={() => addToMix(selectedIds)}>{many ? `Add ${selectedIds.length} to mix` : "Add to mix"}</Button>
       <Button small onclick={() => revealInExplorer(track.track_id)}>Show in Explorer</Button>
     </div>

@@ -19,6 +19,8 @@ class MixView {
   pickerOpen = $state(true);
   /** An audio export is rendering. */
   exporting = $state(false);
+  /** Progress of the running audio export, 0..1. */
+  exportPct = $state(0);
   lanes = $state<Record<EnvLaneId, boolean>>({ tempo: false, key: false, gain: true });
   /** Library tracks the tracks view asked to add; consumed when a mix is open. */
   pending = $state.raw<number[]>([]);

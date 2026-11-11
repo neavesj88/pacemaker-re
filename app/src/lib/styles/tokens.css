@@ -14,6 +14,12 @@
   --green: #00ff46;
   --accent: #ff00c8;
   --accent-soft: rgba(255, 0, 200, 0.14);
+  /* waveform bands and editor markers (grid editor, mix editor, tracks) */
+  --wave-low: #ff48a8;
+  --wave-mid: #e070ff;
+  --wave-high: #00ff46;
+  --beat: #3a5a42;
+  --cue: #ffd23b;
   --accent-ramp: linear-gradient(90deg, #c800ff, #ff00c8);
   --ok: #00ff46;
   --bad: #ff3b6b;

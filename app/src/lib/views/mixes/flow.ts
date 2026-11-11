@@ -151,13 +151,13 @@ export async function exportAudio() {
   if (!dest) return;
   const format = dest.toLowerCase().endsWith(".wav") ? "wav" : "ogg";
   mv.exporting = true;
+  mv.exportPct = 0;
   toast.show(`Rendering “${doc.name}” to ${format.toUpperCase()}…`, "info", 6000);
   try {
-    const r = await exportMixAudio(root, doc, dest, format);
-    toast.show(`Exported to ${r.path}${mixes.dirty ? " (includes unsaved edits)" : ""}`, "ok", 8000);
+    // resolves when the job has started; init.ts reports the end from the job-done event
+    await exportMixAudio(root, doc, dest, format);
   } catch (e) {
-    toast.show(`Export failed: ${errText(e)}`, "bad", 12000);
-  } finally {
     mv.exporting = false;
+    toast.show(`Export failed: ${errText(e)}`, "bad", 12000);
   }
 }

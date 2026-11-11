@@ -446,11 +446,11 @@
 
 <style>
   .grid {
-    --g-low: #ff48a8;
-    --g-mid: #e070ff;
-    --g-high: #00ff46;
-    --g-beat: #3a5a42;
-    --g-cue: #ffd23b;
+    --g-low: var(--wave-low);
+    --g-mid: var(--wave-mid);
+    --g-high: var(--wave-high);
+    --g-beat: var(--beat);
+    --g-cue: var(--cue);
     padding: 12px;
     overflow: auto;
     height: 100%;

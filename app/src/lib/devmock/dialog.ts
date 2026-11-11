@@ -8,4 +8,9 @@ export const handlers: Handlers = {
     if (o.multiple) return ["C:\\Music\\New Artist - New Tune.mp3", "C:\\Music\\Another - Skip Me.flac", "C:\\Music\\bad file.wav"];
     return "P:\\";
   },
+  // a save dialog returns a fake path under a made-up folder, named after the suggested file
+  "plugin:dialog|save": (a) => {
+    const d = String(a.options?.defaultPath ?? "export");
+    return `C:\\Exports\\${d.split(/[\\/]/).pop()}`;
+  },
 };

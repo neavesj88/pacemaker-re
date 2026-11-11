@@ -12,6 +12,8 @@
   import Stars from "$lib/ui/Stars.svelte";
   import type { ColDef } from "./columns";
   import MiniWave from "./MiniWave.svelte";
+  import { addToCase } from "./addToCase.svelte";
+  import { analysis } from "$lib/state/analysis.svelte";
   import { addToMix, editGrid, editMetadata, playTrack, rate, revealInExplorer } from "./trackActions";
   import { keyColour, parseKey } from "./trackLogic";
   import { tracksState } from "./tracksState.svelte";
@@ -202,10 +204,12 @@
       { label: "Play", onclick: () => playTrack(ids[0]) },
       { label: one ? "Edit metadata…" : `Edit metadata of ${n} tracks…`, onclick: () => editMetadata(ids) },
       { label: one ? "Add to mix" : `Add ${n} tracks to mix`, onclick: () => addToMix(ids) },
+      { label: one ? "Add to case…" : `Add ${n} tracks to case…`, onclick: () => addToCase.ask(ids) },
       {
         label: allFav ? (one ? "Remove from favourites" : `Remove ${n} from favourites`) : one ? "Favourite" : `Favourite ${n} tracks`,
         onclick: () => tracksState.setFavourite(ids, !allFav),
       },
+      { label: one ? "Detect key" : `Detect keys of ${n} tracks`, onclick: () => analysis.askDetectKeys(ids), disabled: !ids.some((id) => analysis.keyless.some((t) => t.track_id === id)) },
       { label: "Edit grid", onclick: () => editGrid(ids[0]), disabled: !one },
       { label: "Show in Explorer", onclick: () => revealInExplorer(ids[0]), disabled: !one },
     ];

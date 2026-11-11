@@ -27,7 +27,7 @@ files.
 | `lib/views/registry.ts`, `ids.ts` | Auto-discovers `views/*/view.ts`; `ViewDef` type; `ViewId` is a string | integration |
 | `lib/views/<area>/view.ts` | One row for the area's sidebar entry (id, label, section, order, component, count) | that area |
 | `lib/views/tracks/` (`TracksView`, `TrackTable`, `trackFilter.ts`, `NeedsAnalysis`) | Tracks view, the reusable track table, the sidebar "need analysis" block | tracks |
-| `lib/views/mixes/MixesView.svelte` | Mix editor (currently a read-only list from `mix_list`) | mixes |
+| `lib/views/mixes/` (`MixesView`, `MixEditor`, `MixList`, `Timeline`, `flow.ts`, `preview.svelte.ts`, `init.ts`, ...) | Mix list and editor; plays previews through the shared player (`playback.previewMix`); follows the `mix-export` job in `init.ts`. Backend: `commands/mixes.rs` plus `mixes/{doc,timing,info}.rs`; `lib/api/mixes.ts`; store `lib/state/mixes.svelte.ts` (`mixes`); pure edit logic `lib/state/mixedit.ts`; tests `app/scripts/test-mixedit.mjs` (`npm run test:mixedit`, Node >= 22.6). Audio engine: `crates/pm-mixer`, commands in `commands/export.rs` | mixes |
 | `lib/views/cases/` (`CasesView`, `SmartCases`) | Cases; the sidebar "Smart cases" section | cases |
 | `lib/views/history/`, `grid/`, `device/` | History, beat grid editor, device views (placeholders) | that area |
 | `lib/views/import/` (`ImportView`, `ConfirmModal`, `DropOverlay`, `Overlays.svelte`, `init.ts`) | Import view; write confirmation and drop overlay; job-event and file-drop subscriptions | import |
