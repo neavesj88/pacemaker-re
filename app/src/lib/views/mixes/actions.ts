@@ -4,6 +4,7 @@ import type { Clip, MixDoc } from "$lib/api/mixes";
 import * as E from "$lib/state/mixedit";
 import { mixes } from "$lib/state/mixes.svelte";
 import { toast } from "$lib/state/toast.svelte";
+import { vocal } from "$lib/state/vocal.svelte";
 import { SR, toolLabel } from "./layout";
 import { mv } from "./view.svelte";
 
@@ -18,7 +19,7 @@ export function describe(doc: MixDoc, id: string): string {
   if (f.kind === "clip") return `clip "${clipTitle(f.clip)}"`;
   if (f.kind === "process") {
     const p = f.process;
-    const name = p.kind === "tool" ? toolLabel(p.effects[0]?.name ?? p.toolType) : toolLabel(p.kind);
+    const name = p.kind === "tool" ? toolLabel(p.effects[0]?.name ?? p.toolType, vocal.mode) : toolLabel(p.kind);
     return `${name} on "${clipTitle(f.clip)}"`;
   }
   const t = f.transition;
@@ -63,7 +64,7 @@ export function addProcessAt(type: string, deck: number, at: number = mv.playhea
       start = hit.start + hit.length;
       length = Math.min(want, clip.length - start);
       if (length < E.MIN_LENGTH) {
-        toast.show(`There is no room for another ${toolLabel(type)} on "${clipTitle(clip)}" after the existing one.`, "info");
+        toast.show(`There is no room for another ${toolLabel(type, vocal.mode)} on "${clipTitle(clip)}" after the existing one.`, "info");
         return false;
       }
     }

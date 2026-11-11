@@ -11,6 +11,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import * as E from "../src/lib/state/mixedit.ts";
+import * as L from "../src/lib/views/mixes/layout.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 let n = 0;
@@ -110,6 +111,33 @@ test("tool catalogue keys are the ones the Rust model writes", () => {
     const want = arm(byName[t.name]).map((p) => `${t.name}-${p}`);
     assert.deepEqual(t.params.map((p) => p.key).sort(), [...want].sort(), t.name);
   }
+});
+
+test("the Wah tool is presented as Vocal only while the card's Vocal filter is on", () => {
+  const wah = (mode) => E.toolTypesFor(mode).find((t) => t.name === "Wah");
+  // off (stock Wah, or the kill switch): the catalogue itself, nothing renamed
+  assert.equal(E.toolTypesFor("off"), E.TOOL_TYPES);
+  assert.equal(wah("off").label, "Wah");
+  assert.equal(wah("off").params[0].label, "Cut-off");
+  assert.equal(L.toolLabel("Wah"), "Wah");
+  assert.equal(L.toolLabel("Wah", "off"), "Wah");
+  for (const mode of ["vocal", "inverted"]) {
+    const w = wah(mode);
+    // renamed, with the same key and range: documents and the device see no difference
+    assert.equal(w.label, "Vocal");
+    assert.equal(L.toolLabel("Wah", mode), w.label, "the tool block and the menu agree");
+    assert.equal(w.params.length, 1);
+    assert.equal(w.params[0].key, "Wah-CutOff");
+    assert.deepEqual([w.params[0].min, w.params[0].max, w.params[0].flat], [-100, 100, 0]);
+    // the other tools are the very same objects
+    for (const t of E.toolTypesFor(mode)) if (t.name !== "Wah") assert.equal(t, E.TOOL_TYPES.find((x) => x.name === t.name));
+    assert.equal(L.toolLabel("FILTER", mode), "Filter");
+  }
+  // the parameter label names the direction: negative is the first thing it says, positive the second
+  assert.match(wah("vocal").params[0].label, /cut \(-\).*keep \(\+\)/);
+  assert.match(wah("inverted").params[0].label, /keep \(-\).*cut \(\+\)/);
+  // creating a Wah tool does not depend on the mode: the key stays the Editor's
+  assert.deepEqual(Object.keys(E.newTool("Wah", 0, 4410, "w").params), ["Wah-CutOff"]);
 });
 
 test("derived fields and transition links", () => {

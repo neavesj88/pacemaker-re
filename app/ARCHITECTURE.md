@@ -213,7 +213,7 @@ and `music.db` always has a safety copy from before the session's first change.
 
 | Kind | Examples | How |
 | --- | --- | --- |
-| Quick write | rating, tags, cases, smart-case device copy, mix new / save / rename / delete / import, history "save as case", grid save, `settings.dat` | `state::quick_write(app, root, \|\| ...)` on a blocking thread |
+| Quick write | rating, tags, cases, smart-case device copy, mix new / save / rename / delete / import, history "save as case", grid save, `settings.dat`, the Vocal filter flag file (`.Pacemaker/revival-vocal`, `device_vocal_set`) | `state::quick_write(app, root, \|\| ...)` on a blocking thread |
 | Write job | add tracks, re-analyse, key detection, library import | `jobs::spawn_write_job(app, &lock, kind, root, \|app\| ...)`: `JobLock` (one job at a time) plus a write ticket for the body |
 | Exclusive operation | Eject, backup, firmware install | `state::take_exclusive` (backup, firmware: a job, so `spawn_job` holds the `JobLock`) or `state::take_exclusive_locked` (Eject: takes the `JobLock` itself), held until the operation ends |
 | Device-deleting job | Device clean-up | `spawn_job` plus a `WriteTicket` inside the job, so it is refused during an eject / backup and gets the session snapshot |
@@ -255,6 +255,11 @@ Rules:
    then fails, so file and row never describe different grids.
 5. A new write command: use `quick_write` or `spawn_write_job`, never `Library::open` directly in
    a command. A new exclusive operation: take `take_exclusive` before it starts.
+
+The Vocal filter (Revival firmware 180096073: the Wah tool becomes a vocal filter) is one flag file on the card.
+`pm_formats::ops_device::{read_vocal, write_vocal}` own its fixed path; `revival-no-preload` (kill switch) is only ever read.
+Mix previews and exports ask `export/render.rs::peq_mode(root)` for the same effective mode, so what is previewed is what is
+exported; the mix editor names the Wah tool "Vocal" from the same flag (`state/vocal.svelte.ts`).
 
 Mix audio export is cancellable (`export_cancel` sets a flag the render's progress callback turns
 into `false`; the engine removes its `.partial` file). Saving a beat grid for a track that mixes

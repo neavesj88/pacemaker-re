@@ -15,6 +15,7 @@ use pm_formats::mix::{Mix, Track, Transition};
 use crate::audio::{self, Source};
 use crate::clip::ClipStream;
 use crate::env::Env;
+use crate::fx::PeqMode;
 use crate::master::Limiter;
 use crate::Error;
 
@@ -46,6 +47,9 @@ pub struct Options {
     /// Start at the first audible frame instead of timeline 0 (used for exports; previews keep
     /// the timeline positions the editor shows).
     pub skip_leading_silence: bool,
+    /// What `Wah` tools render as. The default is the stock Wah stand-in; the app sets the mode
+    /// of the library the mix belongs to (the same for a preview and an export).
+    pub peq: PeqMode,
 }
 
 /// Receiver of the master output: left and right samples of one block.
@@ -54,7 +58,7 @@ pub type Sink<'a> = dyn FnMut(&[f32], &[f32]) -> Result<(), Error> + 'a;
 impl Options {
     pub fn window_secs(from_sec: f64, to_sec: f64) -> Options {
         let f = |s: f64| (s.max(0.0) * crate::RATE as f64).round() as i64;
-        Options { from: f(from_sec), to: Some(f(to_sec)), skip_leading_silence: false }
+        Options { from: f(from_sec), to: Some(f(to_sec)), ..Options::default() }
     }
 }
 
@@ -216,7 +220,7 @@ pub fn render(
                             warnings.push(format!("clip {}: {} corrupt audio frame(s) were replaced by silence", si + 1, src.glitches));
                         }
                         clips_rendered += 1;
-                        slot.stream = Some(ClipStream::new(slot.track, src, lo - start));
+                        slot.stream = Some(ClipStream::new(slot.track, src, lo - start, opts.peq));
                     }
                     Err(e) => {
                         warnings.push(format!("clip {} skipped: {e}", si + 1));

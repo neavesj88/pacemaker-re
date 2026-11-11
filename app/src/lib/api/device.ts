@@ -72,6 +72,19 @@ export type PfwInfo = {
   warnings: string[];
 };
 
+/** The Vocal filter flag on the card (`.Pacemaker/revival-vocal`): which direction the Wah pad
+ * filters the vocals. Needs Revival firmware 180096073 or later; read by the device at boot. */
+export type VocalMode = "off" | "vocal" | "inverted";
+
+export type VocalState = {
+  /** What the flag file says. */
+  mode: VocalMode;
+  /** `revival-no-preload` is on the card: the device plays its stock Wah whatever `mode` says. */
+  kill_switch: boolean;
+  /** What the device will play, and what mix previews and exports render: `mode`, or "off" under the kill switch. */
+  effective: VocalMode;
+};
+
 export const JOB_FIRMWARE = "device-firmware";
 export const JOB_BACKUP = "device-backup";
 export const JOB_CLEANUP = "device-cleanup";
@@ -98,6 +111,10 @@ export const deviceSettings = (root: string) => invoke<SettingsView | null>("dev
 /** Returns how many settings actually changed. */
 export const deviceSettingsWrite = (root: string, changes: { id: number; value: number }[]) =>
   invoke<number>("device_settings_write", { root, changes });
+/** Reads the Vocal filter flag (and the kill switch) from the card. */
+export const deviceVocal = (root: string) => invoke<VocalState>("device_vocal", { root });
+/** Sets the flag: off deletes revival-vocal, vocal writes it empty, inverted writes "i". Returns the state read back. */
+export const deviceVocalSet = (root: string, mode: VocalMode) => invoke<VocalState>("device_vocal_set", { root, mode });
 export const deviceFirmwareInspect = (path: string) => invoke<PfwInfo>("device_firmware_inspect", { path });
 export const deviceFirmwareInstall = (root: string, path: string) =>
   invoke<void>("device_firmware_install", { root, path });

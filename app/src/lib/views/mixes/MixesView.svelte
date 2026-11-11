@@ -7,6 +7,8 @@
   import { onDestroy } from "svelte";
   import { nav } from "$lib/state/nav.svelte";
   import { mixes } from "$lib/state/mixes.svelte";
+  import { session } from "$lib/state/session.svelte";
+  import { vocal } from "$lib/state/vocal.svelte";
   import { addTracks } from "./actions";
   import ConfirmDialog from "./ConfirmDialog.svelte";
   import MixEditor from "./MixEditor.svelte";
@@ -18,6 +20,15 @@
 
   // leaving the view silences the preview; the open mix stays open
   onDestroy(() => preview.pause());
+
+  // The Wah tool is called "Vocal" when the card is set up for the Vocal filter, and previews and
+  // exports render it that way. Read the card's flag whenever a library is opened or re-read; the
+  // Device view's setting updates the same store.
+  $effect(() => {
+    const root = session.library?.root;
+    if (root) void vocal.load(root);
+    else vocal.clear();
+  });
 
   // accept the key with or without the area prefix
   const KEYS = ["addTracks", "mixes.addTracks"];

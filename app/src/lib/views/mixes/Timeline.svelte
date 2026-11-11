@@ -7,6 +7,7 @@
   import type { Clip, EnvNode, ProcessDoc, TransitionDoc } from "$lib/api/mixes";
   import * as E from "$lib/state/mixedit";
   import { mixes } from "$lib/state/mixes.svelte";
+  import { vocal } from "$lib/state/vocal.svelte";
   import ContextMenu, { type MenuItem } from "$lib/ui/ContextMenu.svelte";
   import { addProcessAt, addTracks, autoTransition, beatmatch, clipTitle, duplicateSelection, neighbours, pasteAtPlayhead } from "./actions";
   import ClipBlock from "./ClipBlock.svelte";
@@ -190,7 +191,7 @@
   function fxMenu(deck: number, at: number): MenuItem[] {
     const add = (type: string, label: string): MenuItem => ({ label, onclick: () => addProcessAt(type, deck, at) });
     return [
-      ...E.TOOL_TYPES.map((t) => add(t.name, t.label)),
+      ...E.toolTypesFor(vocal.mode).map((t) => add(t.name, t.label)),
       add("loop", "Loop"),
       add("reverse", "Reverse"),
       add("ignore", "Ignore"),

@@ -7,7 +7,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use pm_formats::ops_device::{self, FirmwareInfo, Health, PfwInfo, SettingsView, Storage};
+use pm_formats::ops_device::{self, FirmwareInfo, Health, PfwInfo, SettingsView, Storage, VocalMode, VocalState};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager, State};
 
@@ -96,6 +96,32 @@ pub async fn device_settings_write(app: AppHandle, root: String, changes: Vec<Se
         Ok(ops_device::write_settings(Path::new(&path), &pairs)?)
     })
     .await
+}
+
+/// The Vocal filter flag on the card (`.Pacemaker/revival-vocal`) and whether the kill switch
+/// (`revival-no-preload`) overrides it. `effective` is what the device will play and what mix
+/// previews and exports render. Read-only.
+#[tauri::command]
+pub async fn device_vocal(root: String) -> AppResult<VocalState> {
+    tauri::async_runtime::spawn_blocking(move || -> AppResult<VocalState> { Ok(ops_device::read_vocal(Path::new(&root))?) }).await?
+}
+
+/// Sets the Vocal filter flag: `off` deletes `revival-vocal`, `vocal` writes it empty, `inverted`
+/// writes `i`. Takes effect at the device's next boot. The only file touched is that one flag
+/// file (its path is fixed in `pm_formats::ops_device`); `revival-no-preload` is never written.
+/// Returns the state read back from the card.
+#[tauri::command]
+pub async fn device_vocal_set(app: AppHandle, root: String, mode: VocalMode) -> AppResult<VocalState> {
+    // a card that already says so needs no write: no gate, no first-write snapshot
+    let probe = root.clone();
+    let current = tauri::async_runtime::spawn_blocking(move || ops_device::read_vocal(Path::new(&probe))).await??;
+    if current.mode == mode {
+        return Ok(current);
+    }
+    // a quick write like settings.dat: refused during an eject / backup / firmware install,
+    // snapshotted once per session, waited for by Eject
+    let path = root.clone();
+    crate::state::quick_write(app, root, move || -> AppResult<VocalState> { Ok(ops_device::write_vocal(Path::new(&path), mode)?) }).await
 }
 
 /// Checks a `.pfw` (trailer, checksum, the device's version gate). Nothing is written.
@@ -284,6 +310,8 @@ macro_rules! device_commands {
                 $crate::commands::device::device_health,
                 $crate::commands::device::device_settings,
                 $crate::commands::device::device_settings_write,
+                $crate::commands::device::device_vocal,
+                $crate::commands::device::device_vocal_set,
                 $crate::commands::device::device_firmware_inspect,
                 $crate::commands::device::device_firmware_install,
                 $crate::commands::device::device_backup,

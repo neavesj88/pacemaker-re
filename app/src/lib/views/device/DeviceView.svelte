@@ -10,6 +10,7 @@
   import HealthCard from "./HealthCard.svelte";
   import SettingsCard from "./SettingsCard.svelte";
   import StorageCard from "./StorageCard.svelte";
+  import VocalCard from "./VocalCard.svelte";
 
   // Storage, health, firmware, backup and settings of the docked Pacemaker. Everything is read
   // when the view opens and again whenever the library is re-read (after an add or re-analysis).
@@ -47,6 +48,7 @@
     <StorageCard />
     <HealthCard />
     <FirmwareCard />
+    <VocalCard />
     <BackupCard />
     <SettingsCard />
   </div>

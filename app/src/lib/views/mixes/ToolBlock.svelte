@@ -3,6 +3,7 @@
   // Drag to move inside its clip, drag an edge to resize (a tool's envelopes stretch with it).
   import type { Clip, ProcessDoc } from "$lib/api/mixes";
   import { mixes } from "$lib/state/mixes.svelte";
+  import { vocal } from "$lib/state/vocal.svelte";
   import { toolColour, toolLabel } from "./layout";
   import { mv } from "./view.svelte";
 
@@ -28,7 +29,7 @@
   const width = $derived(Math.max(4, mv.x(p.length)));
   const selected = $derived(mixes.selected.includes(p.id));
   const colour = $derived(toolColour(type));
-  const label = $derived(p.kind === "loop" ? `Loop ×${p.iterations}` : toolLabel(type));
+  const label = $derived(p.kind === "loop" ? `Loop ×${p.iterations}` : toolLabel(type, vocal.mode));
 
   /** The first parameter's curve, drawn inside the block as a hint (the editor is in the inspector). */
   const hint = $derived.by(() => {

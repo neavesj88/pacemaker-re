@@ -1,0 +1,5 @@
+golden.f32 = output of the device's float DSP for scenario.txt (vocal_ref.c, gen.sh)
+a841a6c7a754d3eeb7e1d2fd065ea52e9c75fd62439f0a8f9558b7edc2208a56  vocal_dsp.c
+55a3fa2c68d9b1c9c1cb92ccd828c1ab4a8f3a8799b66475a36b00a302050a44  vocal_dsp.h
+e3839c0d01d2467a25b65e5e5d86846b787e4195f8579258fb1d6b4fd6553b67  vocal_ref.c
+gcc (Debian 14.2.0-19) 14.2.0

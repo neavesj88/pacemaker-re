@@ -363,14 +363,18 @@ fn a_preview_window_matches_the_full_render() {
 
 /// RMS of the same tone with and without a tool across `[1 s, 3 s)` of a 4 s clip.
 fn tool_gain_db(freq_hz: f32, effect: Effect, values: &[(&str, f32)]) -> f64 {
+    tool_gain_db_with(&Options::default(), freq_hz, effect, values)
+}
+
+fn tool_gain_db_with(opts: &Options, freq_hz: f32, effect: Effect, values: &[(&str, f32)]) -> f64 {
     let d = dir("tool");
     let src = sine(freq_hz, 4.0, 0.3);
     let f = put(&d, &format!("t{freq_hz}.wav"), &src);
     let plain = mix_of(vec![track(&f, src.len(), 120.0, 1.0, 0.0)]);
     let mut t = track(&f, src.len(), 120.0, 1.0, 0.0);
     t.processes.push(tool(effect, SR as f64, 2.0 * SR as f64, values));
-    let (a, _) = render(&d, &plain, &Options::default());
-    let (b, _) = render(&d, &mix_of(vec![t]), &Options::default());
+    let (a, _) = render(&d, &plain, opts);
+    let (b, _) = render(&d, &mix_of(vec![t]), opts);
     let w = |v: &[f32]| rms(&v[SR + SR / 2..2 * SR + SR / 2]);
     db(w(&b)) - db(w(&a))
 }
@@ -388,6 +392,28 @@ fn eq_kills_a_band_and_leaves_the_others() {
     // half cut = -12 dB
     let half = tool_gain_db(80.0, Effect::eq(), &[("Lo", -50.0), ("Mid", 0.0), ("Hi", 0.0)]);
     assert!((half + 12.0).abs() < 1.5, "{half}");
+}
+
+#[test]
+fn wah_tool_follows_the_peq_mode() {
+    use pm_mixer::PeqMode;
+    let with = |peq| Options { peq, ..Options::default() };
+    let wah = |peq, v: f32| tool_gain_db_with(&with(peq), 1000.0, Effect::wah(), &[("CutOff", v)]);
+    // vocal: negative cuts a centred 1 kHz tone, positive keeps it (about +2.9 dB)
+    assert!(wah(PeqMode::Vocal, -100.0) < -30.0, "{}", wah(PeqMode::Vocal, -100.0));
+    let keep = wah(PeqMode::Vocal, 100.0);
+    assert!(keep > 1.5 && keep < 4.0, "{keep}");
+    // inverted swaps the two directions
+    assert!(wah(PeqMode::VocalInverted, 100.0) < -30.0);
+    assert!(wah(PeqMode::VocalInverted, -100.0) > 1.5);
+    // the neutral position of the vocal filter is transparent (the stock Wah stand-in is not)
+    for m in [PeqMode::Vocal, PeqMode::VocalInverted] {
+        assert!(wah(m, 0.0).abs() < 1e-6, "{m:?}");
+    }
+    // the default stays the stock Wah stand-in, which is not the vocal filter
+    assert_eq!(Options::default().peq, PeqMode::Wah);
+    assert_eq!(tool_gain_db(1000.0, Effect::wah(), &[("CutOff", -100.0)]), wah(PeqMode::Wah, -100.0));
+    assert!(wah(PeqMode::Wah, -100.0) > -30.0);
 }
 
 #[test]

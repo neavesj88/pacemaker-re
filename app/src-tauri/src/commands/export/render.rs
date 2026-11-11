@@ -10,9 +10,10 @@ use std::time::SystemTime;
 
 use pm_formats::library::Library;
 use pm_formats::mix::{Mix, Track};
+use pm_formats::ops_device::{self, VocalMode};
 use pm_mixer::audio::Source;
 use pm_mixer::engine::Resolver;
-use pm_mixer::{Format, Options};
+use pm_mixer::{Format, Options, PeqMode};
 use serde::Serialize;
 
 use crate::commands::mixes::doc::MixDoc;
@@ -114,6 +115,18 @@ fn mixer_err(e: pm_mixer::Error) -> AppError {
     AppError::from(e.to_string())
 }
 
+/// What the `Wah` tool renders as for this library: the Vocal filter when the card is set up for
+/// it (`ops_device::read_vocal`, `effective` so the kill switch counts), else the stock Wah
+/// stand-in. A preview and an export both ask here, so they always sound the same for the same
+/// card. An unreadable flag falls back to the stock Wah.
+pub fn peq_mode(root: &Path) -> PeqMode {
+    match ops_device::read_vocal(root).map(|v| v.effective) {
+        Ok(VocalMode::Vocal) => PeqMode::Vocal,
+        Ok(VocalMode::Inverted) => PeqMode::VocalInverted,
+        Ok(VocalMode::Off) | Err(_) => PeqMode::Wah,
+    }
+}
+
 const PREVIEW_DIR_PREFIX: &str = "pacemaker-revival-preview-";
 
 /// Deletes preview directories left behind by earlier runs (untouched for a day; a running
@@ -155,7 +168,8 @@ pub fn render_preview(root: &Path, doc: &MixDoc, from_sec: f64, to_sec: f64, des
     }
     let mix = doc.to_mix()?;
     let res = LibResolver::open(root, &mix)?;
-    let out = pm_mixer::render_to_file(&mix, &res, &Options::window_secs(from_sec, to_sec), Format::Wav, dest, &mut |_| true).map_err(mixer_err)?;
+    let opts = Options { peq: peq_mode(root), ..Options::window_secs(from_sec, to_sec) };
+    let out = pm_mixer::render_to_file(&mix, &res, &opts, Format::Wav, dest, &mut |_| true).map_err(mixer_err)?;
     Ok(RenderedAudio { path: dest.to_string_lossy().into_owned(), duration_secs: out.frames as f64 / f64::from(pm_mixer::RATE), warnings: out.warnings, clips_failed: out.clips_failed })
 }
 
@@ -194,6 +208,8 @@ pub struct ExportPlan {
     pub res: LibResolver,
     pub format: Format,
     pub dest: PathBuf,
+    /// What `Wah` tools render as, read from the card when the export was planned.
+    pub peq: PeqMode,
 }
 
 impl ExportPlan {
@@ -213,13 +229,13 @@ pub fn plan_export(root: &Path, doc: &MixDoc, dest: &str, format: &str) -> AppRe
     check_dest(root, &dest, format)?;
     let mix = doc.to_mix()?;
     let res = LibResolver::open(root, &mix)?;
-    Ok(ExportPlan { mix, res, format, dest })
+    Ok(ExportPlan { mix, res, format, dest, peq: peq_mode(root) })
 }
 
 /// Renders the whole mix to the planned file (starting at the first audible frame). `progress`
 /// gets 0..1 and returns `false` to cancel.
 pub fn run_export(plan: &ExportPlan, progress: &mut dyn FnMut(f64) -> bool) -> AppResult<RenderedAudio> {
-    let opts = Options { skip_leading_silence: true, ..Options::default() };
+    let opts = Options { skip_leading_silence: true, peq: plan.peq, ..Options::default() };
     let out = pm_mixer::render_to_file(&plan.mix, &plan.res, &opts, plan.format, &plan.dest, progress).map_err(mixer_err)?;
     Ok(RenderedAudio { path: plan.dest.to_string_lossy().into_owned(), duration_secs: out.frames as f64 / f64::from(pm_mixer::RATE), warnings: out.warnings, clips_failed: out.clips_failed })
 }
@@ -315,6 +331,66 @@ mod tests {
         assert!((last - 1.0).abs() < 1e-9);
         assert!((r.duration_secs - 6.0 / 1.25).abs() < 0.01);
         assert!(out.is_file() && std::fs::metadata(&out).unwrap().len() > 1000);
+
+        std::fs::remove_dir_all(vol).unwrap();
+        std::fs::remove_dir_all(scratch).unwrap();
+    }
+
+    /// The Wah tool sounds like the card says: stock Wah without the flag, the Vocal filter with
+    /// it (inverted with `i`), stock again under the kill switch, and a preview of a window sounds
+    /// like the same window of the export.
+    #[test]
+    fn preview_and_export_follow_the_cards_vocal_flag() {
+        use pm_formats::mix::{Effect, Envelope, Process, Tool};
+        let (vol, scratch, id, frames) = library("vocal");
+        let pos = Position { start: 0.0, length: frames as f64, limit_size: true, session_event_id: "a".repeat(32), ..Position::default() };
+        let mut t = Track::new(id, "/pmdb_tracks/unused", 120.0, 1.0, pos);
+        let len = 3.0 * 44100.0;
+        let mut tool = Tool::flat(Effect::wah(), 44100.0, len, 0.0, "t".into());
+        tool.automation.insert("Wah-CutOff".into(), Envelope::flat(len, -100.0));
+        t.processes.push(Process::Tool(tool));
+        let mut mix = Mix::new("Vocal Test");
+        mix.tracks.push(t);
+        let doc = MixDoc::from_mix(7, &mix);
+
+        let flag = vol.join(".Pacemaker").join("revival-vocal");
+        let kill = vol.join(".Pacemaker").join("revival-no-preload");
+        let rms_db = |v: &[f32]| 20.0 * (v.iter().map(|x| f64::from(*x) * f64::from(*x)).sum::<f64>() / v.len() as f64).sqrt().max(1e-9).log10();
+        // (preview level, export level) over the same stretch of the tool, 3.0 s to 3.5 s
+        let levels = |tag: &str| -> (f64, f64) {
+            let pv = scratch.join(format!("pv-{tag}.wav"));
+            render_preview(&vol, &doc, 2.0, 3.5, &pv).unwrap();
+            let p = pm_mixer::audio::load(&pv).unwrap();
+            let ex = scratch.join(format!("ex-{tag}.wav"));
+            let plan = plan_export(&vol, &doc, ex.to_str().unwrap(), "wav").unwrap();
+            run_export(&plan, &mut |_| true).unwrap();
+            let e = pm_mixer::audio::load(&ex).unwrap();
+            (rms_db(&p.l[44100..]), rms_db(&e.l[3 * 44100..(3.5 * 44100.0) as usize]))
+        };
+        let near = |a: f64, b: f64| (a - b).abs() < 0.3;
+
+        let _ = std::fs::remove_file(&flag);
+        assert_eq!(peq_mode(&vol), PeqMode::Wah);
+        let (pv_wah, ex_wah) = levels("wah");
+        assert!(near(pv_wah, ex_wah), "{pv_wah} vs {ex_wah}");
+
+        std::fs::write(&flag, b"").unwrap();
+        assert_eq!(peq_mode(&vol), PeqMode::Vocal);
+        let (pv_voc, ex_voc) = levels("vocal");
+        assert!(near(pv_voc, ex_voc), "preview {pv_voc} vs export {ex_voc}");
+        assert!(pv_voc < pv_wah - 25.0, "vocal cut {pv_voc} dB should be far below the stock wah {pv_wah} dB");
+
+        std::fs::write(&flag, b"i").unwrap();
+        assert_eq!(peq_mode(&vol), PeqMode::VocalInverted);
+        let (pv_inv, ex_inv) = levels("inverted");
+        assert!(near(pv_inv, ex_inv), "{pv_inv} vs {ex_inv}");
+        assert!(pv_inv > pv_voc + 30.0, "inverted -100 keeps the centre: {pv_inv} vs {pv_voc}");
+
+        // the kill switch wins: stock Wah, the same sound as with no flag
+        std::fs::write(&kill, b"").unwrap();
+        assert_eq!(peq_mode(&vol), PeqMode::Wah);
+        let (pv_kill, ex_kill) = levels("kill");
+        assert!(near(pv_kill, pv_wah) && near(ex_kill, ex_wah), "{pv_kill} {ex_kill} vs {pv_wah} {ex_wah}");
 
         std::fs::remove_dir_all(vol).unwrap();
         std::fs::remove_dir_all(scratch).unwrap();

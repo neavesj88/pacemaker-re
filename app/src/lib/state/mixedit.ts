@@ -22,6 +22,7 @@ import type {
   TransitionDoc,
   TransitionSuggestion,
 } from "../api/mixes";
+import type { VocalMode } from "../api/device";
 
 /** Engine sample rate (same as SAMPLE_RATE in api/mixes.ts; duplicated so this file imports no value). */
 export const SR = 44100;
@@ -808,6 +809,17 @@ export const TOOL_TYPES: ToolType[] = [
     params: [prm("EQ", "Hi", "High", 0, 4, "", 0), prm("EQ", "Lo", "Low", -100, 0, "", 0), prm("EQ", "Mid", "Mid", 0, 4, "", 0)],
   },
 ];
+
+/** The catalogue as the card presents it. On a Pacemaker set up for the Vocal filter (Revival
+ * firmware 180096073, `revival-vocal` on the card) the Wah tool is a vocal filter: it is called
+ * "Vocal" and its one parameter says which way cuts. The effect name and the parameter key stay
+ * `Wah` / `Wah-CutOff`, so documents and the device are unaffected. With the filter off (or the
+ * kill switch on) this is `TOOL_TYPES` itself. Mirrors `toolLabel` in views/mixes/layout.ts. */
+export function toolTypesFor(vocal: VocalMode): ToolType[] {
+  if (vocal === "off") return TOOL_TYPES;
+  const label = vocal === "vocal" ? "Vocals: cut (-) / keep (+)" : "Vocals: keep (-) / cut (+)";
+  return TOOL_TYPES.map((t) => (t.name === "Wah" ? { ...t, label: "Vocal", params: t.params.map((p) => ({ ...p, label })) } : t));
+}
 
 /** Effect class (the tagged members of an `EffectDoc`) the Editor writes for each tool type. */
 const EFFECT_CLASS: Record<string, Record<string, unknown>> = {

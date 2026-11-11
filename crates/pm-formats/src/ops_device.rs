@@ -11,7 +11,7 @@ use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::library::{Error, Library};
 use crate::{naming, pfw, strfile};
@@ -1436,6 +1436,88 @@ pub fn write_settings(root: &Path, changes: &[(i64, f64)]) -> Result<usize, Erro
     Ok(changed)
 }
 
+// ---------------------------------------------------------------------------------------------
+// Vocal filter flag (Revival firmware 180096073 and later)
+// ---------------------------------------------------------------------------------------------
+
+/// The flag file that switches the vocal filter on: `.Pacemaker/revival-vocal`. The names are
+/// constants on purpose: nothing a caller passes (or the database holds) ever becomes part of
+/// the path.
+const VOCAL_FLAG: &str = "revival-vocal";
+/// The kill switch: while `.Pacemaker/revival-no-preload` exists the device runs its stock Wah
+/// whatever the vocal flag says. This module only ever reads it.
+const NO_PRELOAD_FLAG: &str = "revival-no-preload";
+
+/// What the vocal flag file asks of the device.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum VocalMode {
+    /// No flag file: the stock Wah.
+    Off,
+    /// The flag file exists: Wah pad right keeps the vocals, left cuts them.
+    Vocal,
+    /// The flag file starts with `i`: the two directions swapped.
+    Inverted,
+}
+
+/// The state of the vocal filter on a card.
+#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
+pub struct VocalState {
+    /// What the flag file says.
+    pub mode: VocalMode,
+    /// `revival-no-preload` exists: the device ignores the flag file and plays the stock Wah.
+    pub kill_switch: bool,
+    /// What the device will actually play: `mode`, or `Off` under the kill switch. Previews and
+    /// exports of mixes use this.
+    pub effective: VocalMode,
+}
+
+/// Reads the vocal flag the way the device does at boot: the file's existence switches the
+/// filter on, a first byte of `i` (or `I`) inverts it. Read-only.
+pub fn read_vocal(root: &Path) -> Result<VocalState, Error> {
+    let dir = pacemaker_dir(root);
+    let mode = match File::open(dir.join(VOCAL_FLAG)) {
+        Ok(mut f) => {
+            let mut first = [0u8; 1];
+            let n = f.read(&mut first)?;
+            if n == 1 && (first[0] == b'i' || first[0] == b'I') { VocalMode::Inverted } else { VocalMode::Vocal }
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => VocalMode::Off,
+        Err(e) => return Err(e.into()),
+    };
+    let kill_switch = dir.join(NO_PRELOAD_FLAG).exists();
+    Ok(VocalState { mode, kill_switch, effective: if kill_switch { VocalMode::Off } else { mode } })
+}
+
+/// Sets the vocal flag: Off deletes `revival-vocal`, Vocal writes it empty, Inverted writes `i`.
+/// Atomic (temp file, fsync, rename), and a no-op when the card already says so. Touches no other
+/// file, `revival-no-preload` included. Returns the state read back from the card.
+pub fn write_vocal(root: &Path, mode: VocalMode) -> Result<VocalState, Error> {
+    let dir = pacemaker_dir(root);
+    if !dir.is_dir() {
+        return Err(Error::NotALibrary(root.to_path_buf()));
+    }
+    let before = read_vocal(root)?;
+    if before.mode == mode {
+        return Ok(before);
+    }
+    let path = dir.join(VOCAL_FLAG);
+    match mode {
+        VocalMode::Off => match fs::remove_file(&path) {
+            Ok(()) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => return Err(e.into()),
+        },
+        VocalMode::Vocal => crate::library::atomic_write(&path, b"")?,
+        VocalMode::Inverted => crate::library::atomic_write(&path, b"i")?,
+    }
+    let now = read_vocal(root)?;
+    if now.mode != mode {
+        return invalid(format!("the flag file reads back as {:?} after writing {:?}", now.mode, mode));
+    }
+    Ok(now)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2019,5 +2101,67 @@ mod tests {
         assert_eq!(emit_settings(&a).as_bytes(), raw.as_slice());
         let v = describe_settings(&a);
         assert!(v.settings.iter().all(|s| s.present), "every known id is in a real dump: {:?}", v.settings.iter().filter(|s| !s.present).map(|s| s.id).collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn vocal_flag_round_trip_and_the_files_it_must_not_touch() {
+        let root = scratch("vocal");
+        let pm = root.join(".Pacemaker");
+        fs::create_dir_all(&pm).unwrap();
+        fs::write(pm.join("music.db"), b"db").unwrap();
+        fs::write(pm.join("settings.dat"), b"settings").unwrap();
+        let st = |m, k, e| VocalState { mode: m, kill_switch: k, effective: e };
+
+        assert_eq!(read_vocal(&root).unwrap(), st(VocalMode::Off, false, VocalMode::Off));
+        // Vocal = an empty file
+        assert_eq!(write_vocal(&root, VocalMode::Vocal).unwrap(), st(VocalMode::Vocal, false, VocalMode::Vocal));
+        assert_eq!(fs::read(pm.join("revival-vocal")).unwrap(), b"");
+        // Inverted = "i"
+        assert_eq!(write_vocal(&root, VocalMode::Inverted).unwrap(), st(VocalMode::Inverted, false, VocalMode::Inverted));
+        assert_eq!(fs::read(pm.join("revival-vocal")).unwrap(), b"i");
+        // back to Vocal replaces the content
+        assert_eq!(write_vocal(&root, VocalMode::Vocal).unwrap().mode, VocalMode::Vocal);
+        assert_eq!(fs::read(pm.join("revival-vocal")).unwrap(), b"");
+        // Off deletes, twice is fine
+        assert_eq!(write_vocal(&root, VocalMode::Off).unwrap(), st(VocalMode::Off, false, VocalMode::Off));
+        assert!(!pm.join("revival-vocal").exists());
+        assert_eq!(write_vocal(&root, VocalMode::Off).unwrap().mode, VocalMode::Off);
+
+        // the device only looks at the first letter; hand-made files still read right
+        for (content, want) in [("", VocalMode::Vocal), ("invert\n", VocalMode::Inverted), ("I", VocalMode::Inverted), ("yes\n", VocalMode::Vocal), ("x i", VocalMode::Vocal)] {
+            fs::write(pm.join("revival-vocal"), content).unwrap();
+            assert_eq!(read_vocal(&root).unwrap().mode, want, "{content:?}");
+        }
+        // a card that already says so is not rewritten (a hand-made 'invert' file stays as it is)
+        fs::write(pm.join("revival-vocal"), "invert\n").unwrap();
+        write_vocal(&root, VocalMode::Inverted).unwrap();
+        assert_eq!(fs::read(pm.join("revival-vocal")).unwrap(), b"invert\n");
+
+        // the kill switch is reported, overrides the effective mode, and is never touched
+        fs::write(pm.join("revival-no-preload"), b"keep me").unwrap();
+        let s = read_vocal(&root).unwrap();
+        assert_eq!((s.mode, s.kill_switch, s.effective), (VocalMode::Inverted, true, VocalMode::Off));
+        for m in [VocalMode::Vocal, VocalMode::Inverted, VocalMode::Off, VocalMode::Vocal] {
+            let s = write_vocal(&root, m).unwrap();
+            assert!(s.kill_switch && s.effective == VocalMode::Off && s.mode == m);
+        }
+        assert_eq!(fs::read(pm.join("revival-no-preload")).unwrap(), b"keep me");
+
+        // nothing else changed and no temp file was left
+        assert_eq!(fs::read(pm.join("music.db")).unwrap(), b"db");
+        assert_eq!(fs::read(pm.join("settings.dat")).unwrap(), b"settings");
+        let mut names: Vec<String> = fs::read_dir(&pm).unwrap().flatten().map(|e| e.file_name().to_string_lossy().into_owned()).collect();
+        names.sort();
+        assert_eq!(names, ["music.db", "revival-no-preload", "revival-vocal", "settings.dat"]);
+    }
+
+    #[test]
+    fn vocal_flag_refuses_a_folder_that_is_not_a_card() {
+        let root = scratch("vocal-nolib");
+        assert_eq!(read_vocal(&root).unwrap().mode, VocalMode::Off);
+        assert!(matches!(write_vocal(&root, VocalMode::Vocal), Err(Error::NotALibrary(_))));
+        assert!(!root.join(".Pacemaker").exists(), "nothing may be created");
+        // 'Off' on a non-card is refused too, rather than reporting success
+        assert!(write_vocal(&root, VocalMode::Off).is_err());
     }
 }

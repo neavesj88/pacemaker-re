@@ -80,6 +80,13 @@ let settings: S[] = [
 // already waits, so an install is refused) to see those states.
 const has = (a: Record<string, unknown>, word: string) => String(a.root ?? "").toLowerCase().includes(word);
 
+// The Vocal filter flag of the mock card. "killswitch" in the drive's name puts revival-no-preload on it.
+let vocalMode: "off" | "vocal" | "inverted" = "off";
+const vocalState = (a: Record<string, unknown>) => {
+  const kill_switch = has(a, "killswitch");
+  return { mode: vocalMode, kill_switch, effective: kill_switch ? "off" : vocalMode };
+};
+
 let running: { job: string; timers: ReturnType<typeof setTimeout>[]; what: string } | null = null;
 
 /** One job-progress event per step on a timer, then job-done, like jobs.rs. */
@@ -147,6 +154,14 @@ export const handlers: Handlers = {
       }
     }
     return n;
+  },
+
+  device_vocal: (a) => vocalState(a),
+
+  device_vocal_set: (a) => {
+    if (!["off", "vocal", "inverted"].includes(String(a.mode))) throw `unknown vocal mode ${String(a.mode)}`;
+    vocalMode = a.mode as typeof vocalMode;
+    return vocalState(a);
   },
 
   device_firmware_inspect: (a) => {
