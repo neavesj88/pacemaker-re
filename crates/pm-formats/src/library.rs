@@ -3,8 +3,11 @@
 //! insert the row). Field conventions follow rows the Windows Editor 2.0.2.14170 wrote; see
 //! notes/FINDINGS.md sections 2-4b.
 
+use std::fs::File;
+use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use rusqlite::{params, Connection, OpenFlags, OptionalExtension};
 
@@ -148,6 +151,67 @@ pub fn find_volumes() -> Vec<PathBuf> {
     roots.into_iter().filter(|r| db_path(r).is_file()).collect()
 }
 
+/// How long a write waits for another connection's lock before giving up. A quick write (a
+/// rating, a case edit) that lands while a long job (adding tracks) holds a short transaction
+/// waits for it instead of failing with "database is locked".
+const BUSY_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// The tempo stored in `tracks.bpm` for an analysis: the median local tempo. On a variable-tempo
+/// grid the first beat's own value can be far off (seen: 132.86 vs 135.24), and the median matches
+/// the rows of a real device (notes/FINDINGS.md 4c). One function for every writer, so adding a
+/// track and re-analysing or saving a grid can never store different values for the same grid.
+pub fn track_bpm(analysis: &strfile::Analysis) -> f64 {
+    let mut v: Vec<f64> = analysis.beats.iter().map(|b| b.bpm).collect();
+    v.sort_by(|a, b| a.total_cmp(b));
+    v.get(v.len() / 2).copied().unwrap_or(0.0)
+}
+
+/// `tracks.ind_bpm` for a tempo: `floor(bpm / 10) * 10` (FINDINGS 4c).
+pub fn ind_bpm_of(bpm: f64) -> i64 {
+    (bpm / 10.0).floor() as i64 * 10
+}
+
+/// A temp file name next to `dest`, unique within this process (two writers of the same target
+/// never share a temp file) and ending in `.tmp`.
+pub(crate) fn temp_sibling(dest: &Path) -> PathBuf {
+    static NEXT: AtomicU64 = AtomicU64::new(0);
+    let mut name = dest.file_name().map(|n| n.to_os_string()).unwrap_or_default();
+    name.push(format!(".{}.tmp", NEXT.fetch_add(1, Ordering::Relaxed)));
+    dest.with_file_name(name)
+}
+
+/// Writes `dest` atomically: `fill` writes a temp file beside it, which is fsynced and renamed
+/// over `dest` only when `fill` succeeded. On any failure the temp file is removed and `dest` is
+/// untouched, so an unplug or an error mid-write never leaves a truncated file under the real name.
+pub(crate) fn atomic_write_with(dest: &Path, fill: impl FnOnce(&mut File) -> std::io::Result<()>) -> std::io::Result<()> {
+    let tmp = temp_sibling(dest);
+    let res = (|| {
+        let mut f = File::create(&tmp)?;
+        fill(&mut f)?;
+        f.flush()?;
+        f.sync_all()?;
+        drop(f);
+        std::fs::rename(&tmp, dest)
+    })();
+    if res.is_err() {
+        let _ = std::fs::remove_file(&tmp);
+    }
+    res
+}
+
+/// [`atomic_write_with`] for bytes in memory.
+pub(crate) fn atomic_write(dest: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    atomic_write_with(dest, |f| f.write_all(bytes))
+}
+
+/// [`atomic_write_with`] copying `src` into `dest`.
+pub(crate) fn atomic_copy(src: &Path, dest: &Path) -> std::io::Result<()> {
+    atomic_write_with(dest, |f| {
+        let mut input = File::open(src)?;
+        std::io::copy(&mut input, f).map(|_| ())
+    })
+}
+
 fn now_ms() -> i64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis() as i64).unwrap_or(0)
 }
@@ -182,6 +246,7 @@ impl Library {
             return Err(Error::NotALibrary(volume_root.to_path_buf()));
         }
         let con = Connection::open(&p)?;
+        con.busy_timeout(BUSY_TIMEOUT)?;
         let problems = db::check(&con)?;
         if !problems.is_empty() {
             return Err(Error::Incompatible(problems));
@@ -293,20 +358,20 @@ impl Library {
         if let Some(parent) = dest.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        std::fs::copy(source, &dest)?;
+        // temp file + fsync + rename for both files, so a cable pulled mid-copy leaves no
+        // truncated file under a real name (a leftover `.tmp` is an unreferenced file the
+        // clean-up lists). Both are removed again if anything later fails.
         let str_dest = PathBuf::from(naming::str_path(&dest.to_string_lossy()));
-        std::fs::write(&str_dest, strfile::encode(analysis, strfile::Newline::Crlf))?;
+        atomic_copy(source, &dest)?;
+        if let Err(e) = atomic_write(&str_dest, strfile::encode(analysis, strfile::Newline::Crlf).as_bytes()) {
+            let _ = std::fs::remove_file(&dest);
+            return Err(e.into());
+        }
 
-        // the track tempo is the median local tempo: on a variable-tempo grid the first beat's
-        // own value can be far off (seen: 132.86 vs 135.24)
-        let bpm = {
-            let mut v: Vec<f64> = analysis.beats.iter().map(|b| b.bpm).collect();
-            v.sort_by(|a, b| a.total_cmp(b));
-            v.get(v.len() / 2).copied().unwrap_or(0.0)
-        };
+        let bpm = track_bpm(analysis);
         let now = now_ms();
         let lower = |s: &str| s.to_lowercase();
-        let ind_bpm = (bpm / 10.0).floor() as i64 * 10;
+        let ind_bpm = ind_bpm_of(bpm);
         let res = self.con.execute(
             "INSERT INTO tracks (artist, album_artist, title, composer, album, track_number, year, genre,
                 is_part_of_c, location, format, bit_rate, sample_rate, file_size, play_time_secs, rating,
@@ -375,15 +440,9 @@ impl Library {
         let (_, sidecar) = self.track_paths(location).ok_or_else(|| {
             Error::Io(std::io::Error::new(std::io::ErrorKind::InvalidInput, "track is not stored under /pmdb_tracks/"))
         })?;
-        let tmp = sidecar.with_extension("str.tmp");
-        let written = std::fs::write(&tmp, strfile::encode(analysis, strfile::Newline::Crlf))
-            .and_then(|_| std::fs::rename(&tmp, &sidecar));
-        if let Err(e) = written {
-            let _ = std::fs::remove_file(&tmp);
-            return Err(e.into());
-        }
-        let bpm = analysis.beats.first().map(|b| b.bpm).unwrap_or(0.0);
-        let ind_bpm = (bpm / 10.0).floor() as i64 * 10;
+        atomic_write(&sidecar, strfile::encode(analysis, strfile::Newline::Crlf).as_bytes())?;
+        let bpm = track_bpm(analysis);
+        let ind_bpm = ind_bpm_of(bpm);
         self.con.execute(
             "UPDATE tracks SET bpm = ?1, ind_bpm = ?2, track_flags = IFNULL(track_flags,0) | 2,
                     date_modified = ?3, modified_by_ed = ?4, analyzed_by_ed = ?4, analysis_ver = 1
@@ -863,6 +922,18 @@ impl Library {
     }
 
     /// The `mixtracks` rows of a mix in `track_index` order.
+    /// `(mix_id, name)` of every mix that has the track in it, by name. Used before a beat grid
+    /// is saved: a mix clip stores the track's tempo as it was when the mix was made, so a new
+    /// grid leaves those mixes out of step until they are beatmatched again.
+    pub fn mixes_using_track(&self, track_id: i64) -> Result<Vec<(i64, String)>, Error> {
+        let mut st = self.con.prepare(
+            "SELECT DISTINCT m.mix_id, IFNULL(m.name,'') FROM mixes m JOIN mixtracks t ON t.mix_id = m.mix_id
+             WHERE t.track_id = ?1 ORDER BY m.name COLLATE NOCASE, m.mix_id",
+        )?;
+        let rows = st.query_map([track_id], |r| Ok((r.get(0)?, r.get(1)?)))?;
+        Ok(rows.collect::<Result<_, _>>()?)
+    }
+
     pub fn mix_track_rows(&self, mix_id: i64) -> Result<Vec<MixTrackRow>, Error> {
         let mut st = self.con.prepare(
             "SELECT track_id, dup_title, dup_artist, dup_album, dup_play_time_secs, IFNULL(track_index,-1),
@@ -1177,6 +1248,126 @@ mod tests {
         std::fs::remove_dir_all(&src_dir).unwrap();
     }
 
+    fn tmp_files(dir: &Path) -> Vec<PathBuf> {
+        let mut out = Vec::new();
+        for e in std::fs::read_dir(dir).into_iter().flatten().flatten() {
+            let p = e.path();
+            if p.is_dir() {
+                out.extend(tmp_files(&p));
+            } else if p.to_string_lossy().ends_with(".tmp") {
+                out.push(p);
+            }
+        }
+        out
+    }
+
+    fn variable_tempo() -> strfile::Analysis {
+        // first beat's own tempo (131.0) is far from the median (135.0): the two derivations differ
+        let bpms = [131.0, 135.0, 135.0, 135.5, 136.0, 134.0, 135.0];
+        strfile::Analysis {
+            normalize_factor: 1.0,
+            beat_start_offset: 100,
+            beats: bpms.iter().enumerate().map(|(i, b)| strfile::Beat { pos: 100 + i as i64 * 20000, bpm: *b }).collect(),
+            first_downbeat: Some(0),
+        }
+    }
+
+    #[test]
+    fn add_track_and_store_analysis_store_the_same_bpm() {
+        let vol = temp_dir("bpm-vol");
+        let src_dir = temp_dir("bpm-src");
+        let src = src_dir.join("Variable.mp3");
+        std::fs::write(&src, vec![0u8; 2222]).unwrap();
+        let analysis = variable_tempo();
+        assert_ne!(analysis.beats[0].bpm, track_bpm(&analysis), "the fixture must tell the two apart");
+        let mut lib = Library::create(&vol).unwrap();
+        let id = lib.add_track(&src, &TrackMeta { title: "v".into(), format: "MP3".into(), ..Default::default() }, &analysis).unwrap();
+        let row = |lib: &Library| -> (f64, i64) {
+            lib.con.query_row("SELECT bpm, ind_bpm FROM tracks WHERE track_id = ?1", [id], |r| Ok((r.get(0)?, r.get(1)?))).unwrap()
+        };
+        let added = row(&lib);
+        assert_eq!(added, (135.0, 130));
+
+        // wreck the row, then re-store the same analysis: it must land on the same values
+        lib.con.execute("UPDATE tracks SET bpm = 1, ind_bpm = 0", []).unwrap();
+        let location: String = lib.con.query_row("SELECT location FROM tracks", [], |r| r.get(0)).unwrap();
+        lib.store_analysis(id, &location, &analysis).unwrap();
+        assert_eq!(row(&lib), added, "add_track and store_analysis agree");
+        assert_eq!(ind_bpm_of(track_bpm(&analysis)), 130);
+
+        drop(lib);
+        std::fs::remove_dir_all(&vol).unwrap();
+        std::fs::remove_dir_all(&src_dir).unwrap();
+    }
+
+    #[test]
+    fn atomic_write_never_leaves_a_truncated_file_or_a_temp() {
+        let dir = temp_dir("atomic");
+        let dest = dir.join("track.str");
+        atomic_write(&dest, b"old").unwrap();
+
+        // the writer dies half way: the old content survives and no temp file is left
+        let err = atomic_write_with(&dest, |f| {
+            f.write_all(b"half of the new con")?;
+            Err(std::io::Error::other("cable pulled"))
+        });
+        assert!(err.is_err());
+        assert_eq!(std::fs::read(&dest).unwrap(), b"old");
+        assert!(tmp_files(&dir).is_empty(), "{:?}", tmp_files(&dir));
+
+        // a target that cannot be replaced (a directory is in the way): error, temp removed
+        let blocked = dir.join("blocked.str");
+        std::fs::create_dir(&blocked).unwrap();
+        assert!(atomic_write(&blocked, b"x").is_err());
+        assert!(tmp_files(&dir).is_empty(), "{:?}", tmp_files(&dir));
+
+        // success replaces the content
+        atomic_write(&dest, b"new").unwrap();
+        assert_eq!(std::fs::read(&dest).unwrap(), b"new");
+        // a missing source never creates the target
+        assert!(atomic_copy(&dir.join("nope.mp3"), &dir.join("nope-copy.mp3")).is_err());
+        assert!(!dir.join("nope-copy.mp3").exists());
+        assert!(tmp_files(&dir).is_empty());
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn add_track_failures_leave_no_files_behind() {
+        let vol = temp_dir("addfail-vol");
+        let src_dir = temp_dir("addfail-src");
+        let src = src_dir.join("Blocked.mp3");
+        std::fs::write(&src, vec![0u8; 3333]).unwrap();
+        let analysis = variable_tempo();
+        let meta = TrackMeta { title: "b".into(), format: "MP3".into(), ..Default::default() };
+        let mut lib = Library::create(&vol).unwrap();
+        let (rel, _) = naming::device_paths("Blocked.mp3", 3333);
+        let audio = vol.join(naming::MUSIC_DIR).join(&rel);
+        let sidecar = PathBuf::from(naming::str_path(&audio.to_string_lossy()));
+
+        // 1. the .str cannot be written (a directory sits on its name): the audio copied before
+        //    it is removed again, and no temp file stays
+        std::fs::create_dir_all(&sidecar).unwrap();
+        assert!(lib.add_track(&src, &meta, &analysis).is_err());
+        assert!(!audio.exists(), "audio without a row or sidecar must not stay");
+        assert!(tmp_files(&vol).is_empty(), "{:?}", tmp_files(&vol));
+        std::fs::remove_dir(&sidecar).unwrap();
+
+        // 2. the audio cannot be written (a directory on its name): error, nothing else created
+        std::fs::create_dir_all(&audio).unwrap();
+        assert!(lib.add_track(&src, &meta, &analysis).is_err());
+        assert!(!sidecar.exists());
+        assert!(tmp_files(&vol).is_empty(), "{:?}", tmp_files(&vol));
+        std::fs::remove_dir(&audio).unwrap();
+
+        // 3. with the way clear it works, and still leaves no temp file
+        let id = lib.add_track(&src, &meta, &analysis).unwrap();
+        assert!(id > 0 && audio.is_file() && sidecar.is_file());
+        assert!(tmp_files(&vol).is_empty());
+        drop(lib);
+        std::fs::remove_dir_all(&vol).unwrap();
+        std::fs::remove_dir_all(&src_dir).unwrap();
+    }
+
     /// A library in a temp dir holding one synthetic track per entry of `secs`, returning the
     /// library, the temp dirs to clean up and the track ids.
     fn library_with_tracks(tag: &str, secs: &[i64]) -> (Library, Vec<PathBuf>, Vec<i64>) {
@@ -1408,6 +1599,44 @@ mod tests {
         assert!(lib.mix_track_rows(a).unwrap().is_empty());
         assert!(lib.mix_info(other).unwrap().is_some());
         drop(lib); // Windows won't delete a database file that is still open
+        for d in dirs {
+            std::fs::remove_dir_all(d).unwrap();
+        }
+    }
+
+    #[test]
+    fn mixes_using_a_track_are_listed_by_name() {
+        let (mut lib, dirs, ids) = library_with_tracks("mixuse", &[100, 250, 300]);
+        let b = lib.create_mix("Bravo").unwrap();
+        let a = lib.create_mix("alpha").unwrap();
+        let c = lib.create_mix("Charlie").unwrap();
+        lib.save_mix(b, &synthetic_mix("Bravo", &[ids[0], ids[1]])).unwrap();
+        lib.save_mix(a, &synthetic_mix("alpha", &[ids[0]])).unwrap();
+        lib.save_mix(c, &synthetic_mix("Charlie", &[ids[1]])).unwrap();
+        let names = |t: i64| lib.mixes_using_track(t).unwrap().into_iter().map(|(_, n)| n).collect::<Vec<_>>();
+        assert_eq!(names(ids[0]), ["alpha", "Bravo"], "case-insensitive name order");
+        assert_eq!(names(ids[1]), ["Bravo", "Charlie"]);
+        assert!(names(ids[2]).is_empty());
+        drop(lib);
+        for d in dirs {
+            std::fs::remove_dir_all(d).unwrap();
+        }
+    }
+
+    #[test]
+    fn a_quick_write_waits_for_a_long_jobs_transaction_instead_of_failing() {
+        let (job, dirs, ids) = library_with_tracks("busy", &[100]);
+        let vol = job.root().to_path_buf();
+        job.con.execute_batch("BEGIN IMMEDIATE").unwrap(); // the long job is mid-transaction
+        let id = ids[0];
+        let quick = std::thread::spawn(move || {
+            let mut lib = Library::open(&vol).unwrap();
+            lib.set_track_rating(id, 4)
+        });
+        std::thread::sleep(Duration::from_millis(400));
+        job.con.execute_batch("COMMIT").unwrap();
+        assert!(quick.join().unwrap().unwrap(), "the rating was written once the job's transaction ended");
+        drop(job);
         for d in dirs {
             std::fs::remove_dir_all(d).unwrap();
         }

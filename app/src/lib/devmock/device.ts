@@ -185,6 +185,17 @@ export const handlers: Handlers = {
 
   device_eject: () => true,
 
+  // the automatic music.db snapshots (folder in the app data dir, never on the device)
+  device_snapshots: () => ({
+    folder: "C:\\Users\\demo\\AppData\\Local\\pacemaker-revival\\snapshots\\E",
+    keep: 10,
+    snapshots: [
+      { name: "music-db-20261111T094512Z", folder: "C:\\Users\\demo\\AppData\\Local\\pacemaker-revival\\snapshots\\E\\music-db-20261111T094512Z", files: ["music.db", "settings.dat"] },
+      { name: "music-db-20261108T201133Z", folder: "C:\\Users\\demo\\AppData\\Local\\pacemaker-revival\\snapshots\\E\\music-db-20261108T201133Z", files: ["music.db", "settings.dat"] },
+    ],
+  }),
+  device_snapshots_open: () => undefined,
+
   // stops the running copy like the backend: the work is undone and job-done carries the error
   device_cancel: () => {
     const r = running;

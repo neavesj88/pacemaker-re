@@ -13,6 +13,7 @@
 mod render;
 
 use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use serde::Serialize;
@@ -29,8 +30,14 @@ pub use render::RenderedAudio;
 /// The `job` name of mix exports in `job-progress` / `job-done` events.
 pub const JOB_MIX_EXPORT: &str = "mix-export";
 
-/// Managed state private to this area goes here (`app.manage(..)`).
-pub fn setup(_app: &mut tauri::App) {}
+/// Set by `export_cancel`, polled by the running mix export between render blocks. Cleared when
+/// an export starts, so a cancel never leaks into the next one.
+#[derive(Default)]
+pub struct ExportCancel(AtomicBool);
+
+pub fn setup(app: &mut tauri::App) {
+    app.manage(ExportCancel::default());
+}
 
 /// Renders `[from_sec, to_sec)` of the mix timeline (seconds) to a temporary WAV and returns its
 /// path, which the player can stream (the file is added to the asset scope here). `mix` is the
@@ -65,16 +72,23 @@ pub fn export_mix_audio(app: AppHandle, lock: State<'_, JobLock>, root: String, 
     let total = (plan.span_secs().ceil() as usize).max(1);
     let label = if mix.name.trim().is_empty() { "mix".to_string() } else { mix.name.clone() };
     let out_path = plan.dest.to_string_lossy().into_owned();
+    app.state::<ExportCancel>().0.store(false, Ordering::SeqCst);
     spawn_job(app, &lock, JOB_MIX_EXPORT, move |app| {
         let mut last = Instant::now() - Duration::from_secs(1);
-        let result = render::run_export(&plan, &mut |p| {
+        let cancel = &app.state::<ExportCancel>().0;
+        let rendered = render::run_export(&plan, &mut |p| {
             if last.elapsed() >= Duration::from_millis(250) {
                 last = Instant::now();
                 let done = (p * total as f64) as usize;
                 events::emit(app, JOB_PROGRESS, Progress::new(JOB_MIX_EXPORT, label.clone(), done.min(total), total, "rendering"));
             }
-            true
-        })?;
+            keep_going(cancel)
+        });
+        // the engine stops at the next block and removes its `.partial` file: no file is left
+        if cancel.load(Ordering::SeqCst) && rendered.is_err() {
+            return Ok(JobOutcome { ok: 0, failed: 0, summary: format!("Export of {label} was cancelled. No file was written.") });
+        }
+        let result = rendered?;
         // the throttle can swallow the last update, so the bar always ends full
         events::emit(app, JOB_PROGRESS, Progress::new(JOB_MIX_EXPORT, label.clone(), total, total, "rendering"));
         let skipped = result.warnings.len();
@@ -89,6 +103,19 @@ pub fn export_mix_audio(app: AppHandle, lock: State<'_, JobLock>, root: String, 
         Ok(JobOutcome { ok: 1, failed: skipped, summary })
     })?;
     Ok(ExportStarted { path: out_path })
+}
+
+/// The value the render progress callback returns: false (stop) once a cancel was asked for.
+fn keep_going(cancel: &AtomicBool) -> bool {
+    !cancel.load(Ordering::SeqCst)
+}
+
+/// Asks the running mix export (`export_mix_audio`) to stop. The render ends at its next block
+/// and no file is left behind; the job then reports `job-done` with a "cancelled" summary. Does
+/// nothing when no export is running.
+#[tauri::command]
+pub fn export_cancel(app: AppHandle) {
+    app.state::<ExportCancel>().0.store(true, Ordering::SeqCst);
 }
 
 fn clock(secs: f64) -> String {
@@ -109,6 +136,7 @@ macro_rules! export_commands {
                 $($acc)*
                 $crate::commands::export::export_render_preview,
                 $crate::commands::export::export_mix_audio,
+                $crate::commands::export::export_cancel,
             ];
             $($rest),*
         }
@@ -118,6 +146,14 @@ macro_rules! export_commands {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn cancel_flag_turns_into_a_stop_for_the_engine() {
+        let flag = AtomicBool::new(false);
+        assert!(keep_going(&flag));
+        flag.store(true, Ordering::SeqCst);
+        assert!(!keep_going(&flag), "the progress callback returns false, which the engine reads as cancel");
+    }
 
     #[test]
     fn clock_formats_minutes_and_seconds() {

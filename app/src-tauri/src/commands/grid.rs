@@ -9,10 +9,9 @@ use std::path::Path;
 use pm_formats::library::Library;
 use pm_formats::ops_grid::{self, EditCtx, GridDoc, GridEdit, GridLoad};
 use serde::{Deserialize, Serialize};
-use tauri::State;
+use tauri::AppHandle;
 
 use crate::error::{AppResult, IntoApp};
-use crate::state::{JobGuard, JobLock};
 
 /// Managed state private to this area goes here (`app.manage(..)`).
 pub fn setup(_app: &mut tauri::App) {}
@@ -63,23 +62,34 @@ pub struct GridSaved {
     pub wrote_cue: bool,
 }
 
+/// Names of the mixes that contain the track. A mix clip keeps the tempo the track had when the
+/// mix was made, so saving a new beat grid leaves those mixes out of step until they are
+/// beatmatched again; the grid editor lists them and asks before saving. Read-only.
+#[tauri::command]
+pub async fn grid_mixes_using(root: String, track_id: i64) -> AppResult<Vec<String>> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let lib = Library::open_read_only(Path::new(&root))?;
+        Ok(lib.mixes_using_track(track_id)?.into_iter().map(|(_, name)| name).collect())
+    })
+    .await
+    .app()?
+}
+
 /// Writes the edited grid and/or cue. Each part is optional so only what changed is touched.
-/// Takes the shared job lock so it never overlaps an add / re-analyse job on the same music.db.
+/// A quick write (`state::quick_write`): it neither waits for nor fails because of a long job
+/// such as adding tracks, and Eject waits for it. The editor calls [`grid_mixes_using`] and gets
+/// the user's confirmation before it saves a grid.
 #[tauri::command]
 pub async fn grid_save(
-    lock: State<'_, JobLock>,
+    app: AppHandle,
     root: String,
     track_id: i64,
     doc: Option<GridDoc>,
     cue: Option<CueChange>,
 ) -> AppResult<GridSaved> {
-    if !lock.try_acquire() {
-        return Err("Another job is still running.".into());
-    }
-    // released when this scope ends, panics included; the blocking work below is awaited inside it
-    let _guard = JobGuard(&lock.0);
-    tauri::async_runtime::spawn_blocking(move || {
-        let mut lib = Library::open(Path::new(&root))?;
+    let path = root.clone();
+    crate::state::quick_write(app, root, move || {
+        let mut lib = Library::open(Path::new(&path))?;
         let mut saved = GridSaved { wrote_grid: false, wrote_cue: false };
         if let Some(doc) = doc {
             lib.save_grid(track_id, &doc)?;
@@ -95,7 +105,6 @@ pub async fn grid_save(
         Ok(saved)
     })
     .await
-    .app()?
 }
 
 /// This area's command paths, one per line, written `$crate::commands::grid::name,`.
@@ -108,6 +117,7 @@ macro_rules! grid_commands {
                 $crate::commands::grid::grid_load,
                 $crate::commands::grid::grid_edit,
                 $crate::commands::grid::grid_analyse,
+                $crate::commands::grid::grid_mixes_using,
                 $crate::commands::grid::grid_save,
             ];
             $($rest),*

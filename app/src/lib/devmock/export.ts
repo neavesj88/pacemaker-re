@@ -10,6 +10,7 @@ import { jobLock } from "./jobs";
 import type { Handlers } from "./types";
 
 const RATE = 22050;
+let cancelled = false;
 
 /** A mono 16-bit WAV with a decaying 60 Hz thump on every beat. */
 function clickWav(secs: number, bpm: number): Blob {
@@ -73,10 +74,16 @@ export const handlers: Handlers = {
     const total = Math.max(1, Math.ceil(Math.max(...doc.clips.map((c) => c.visibleEndSec)) - Math.min(...doc.clips.map((c) => c.visibleStartSec))));
     const skipped = doc.clips.filter((c) => c.trackId < 0).length;
     jobLock.running = true;
+    cancelled = false;
     void (async () => {
       const steps = 6;
       for (let i = 1; i <= steps; i++) {
         await wait(450);
+        if (cancelled) {
+          jobLock.running = false;
+          await emit("job-done", { job: "mix-export", ok: 0, failed: 0, summary: `Export of ${doc.name} was cancelled. No file was written.`, error: null });
+          return;
+        }
         await emit("job-progress", {
           job: "mix-export",
           label: doc.name,
@@ -100,5 +107,8 @@ export const handlers: Handlers = {
       });
     })();
     return { path: String(a.dest) };
+  },
+  export_cancel: () => {
+    cancelled = true;
   },
 };

@@ -2,7 +2,7 @@
 // export audio. Each asks the user the way it must (unsaved changes, naming what is deleted,
 // file dialogs) and reports the outcome with a toast.
 import { open, save } from "@tauri-apps/plugin-dialog";
-import { exportMixAudio } from "$lib/api/export";
+import { exportCancel, exportMixAudio } from "$lib/api/export";
 import { mixDelete, mixExportPmk, mixImportPmk, mixRename, type MixSummary } from "$lib/api/mixes";
 import { mixes } from "$lib/state/mixes.svelte";
 import { toast } from "$lib/state/toast.svelte";
@@ -122,6 +122,18 @@ export async function exportPmk(m: MixSummary) {
     toast.show(`Exported “${m.name}”`, "ok");
   } catch (e) {
     toast.show(`Export failed: ${errText(e)}`, "bad", 9000);
+  }
+}
+
+/** Stops the running export. The render ends at its next block and leaves no file; the end is
+ *  reported by the job-done event like any other (init.ts). */
+export async function cancelExport() {
+  if (!mv.exporting) return;
+  try {
+    await exportCancel();
+    toast.show("Cancelling the export…", "info", 3000);
+  } catch (e) {
+    toast.show(`Could not cancel the export: ${errText(e)}`, "bad", 7000);
   }
 }
 

@@ -66,15 +66,15 @@ pub async fn history_overview(root: String, gap_minutes: Option<i64>) -> AppResu
 /// Creates a case named `name` holding `track_ids` in that order; returns its id. Called only
 /// after the user confirmed the name in the UI.
 #[tauri::command]
-pub async fn history_save_as_case(root: String, name: String, track_ids: Vec<i64>) -> AppResult<i64> {
-    tauri::async_runtime::spawn_blocking(move || -> AppResult<i64> {
+pub async fn history_save_as_case(app: tauri::AppHandle, root: String, name: String, track_ids: Vec<i64>) -> AppResult<i64> {
+    crate::state::quick_write(app, root.clone(), move || -> AppResult<i64> {
         if track_ids.is_empty() {
             return Err(pm_formats::library::Error::Invalid("no tracks to put in the case".into()).into());
         }
         let mut lib = Library::open(&PathBuf::from(root))?;
         Ok(lib.create_case_with_tracks(name.trim(), &track_ids)?)
     })
-    .await?
+    .await
 }
 
 /// This area's command paths, one per line, written `$crate::commands::history::name,`.

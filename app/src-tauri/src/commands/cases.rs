@@ -25,13 +25,19 @@ fn now_ms() -> i64 {
 }
 
 /// Runs `f` on a blocking thread with the library open for writing (refused if the library is
-/// not device-compatible).
-async fn write<T: Send + 'static>(root: String, f: impl FnOnce(&mut Library) -> Result<T, Error> + Send + 'static) -> AppResult<T> {
-    tauri::async_runtime::spawn_blocking(move || -> AppResult<T> {
-        let mut lib = Library::open(&PathBuf::from(root))?;
+/// not device-compatible), as a quick write: after the session's first-write snapshot, and
+/// waited for by Eject (see `state::quick_write`).
+async fn write<T: Send + 'static>(
+    app: tauri::AppHandle,
+    root: String,
+    f: impl FnOnce(&mut Library) -> Result<T, Error> + Send + 'static,
+) -> AppResult<T> {
+    let path = PathBuf::from(&root);
+    crate::state::quick_write(app, root, move || {
+        let mut lib = Library::open(&path)?;
         Ok(f(&mut lib)?)
     })
-    .await?
+    .await
 }
 
 /// Runs `f` on a blocking thread with the library open read-only.
@@ -59,50 +65,50 @@ pub async fn cases_list(root: String) -> AppResult<Vec<CaseInfo>> {
 
 /// Creates a case holding `track_ids` (may be empty); returns its id.
 #[tauri::command]
-pub async fn cases_create(root: String, name: String, track_ids: Vec<i64>) -> AppResult<i64> {
-    write(root, move |lib| lib.create_case_with_tracks(&name, &track_ids)).await
+pub async fn cases_create(app: tauri::AppHandle, root: String, name: String, track_ids: Vec<i64>) -> AppResult<i64> {
+    write(app, root, move |lib| lib.create_case_with_tracks(&name, &track_ids)).await
 }
 
 #[tauri::command]
-pub async fn cases_rename(root: String, case_id: i64, name: String) -> AppResult<bool> {
-    write(root, move |lib| lib.rename_case(case_id, &name)).await
+pub async fn cases_rename(app: tauri::AppHandle, root: String, case_id: i64, name: String) -> AppResult<bool> {
+    write(app, root, move |lib| lib.rename_case(case_id, &name)).await
 }
 
 /// Saves the case dialog's fields (name, genre, year, rating, producer, remixer, comments).
 #[tauri::command]
-pub async fn cases_set_meta(root: String, case_id: i64, meta: CaseMeta) -> AppResult<bool> {
-    write(root, move |lib| lib.set_case_meta(case_id, &meta)).await
+pub async fn cases_set_meta(app: tauri::AppHandle, root: String, case_id: i64, meta: CaseMeta) -> AppResult<bool> {
+    write(app, root, move |lib| lib.set_case_meta(case_id, &meta)).await
 }
 
 /// Deletes a case and its membership rows (the tracks themselves stay).
 #[tauri::command]
-pub async fn cases_delete(root: String, case_id: i64) -> AppResult<bool> {
-    write(root, move |lib| lib.delete_case(case_id)).await
+pub async fn cases_delete(app: tauri::AppHandle, root: String, case_id: i64) -> AppResult<bool> {
+    write(app, root, move |lib| lib.delete_case(case_id)).await
 }
 
 /// Appends tracks to a case, skipping any already in it; returns how many were added. The
 /// tracks view calls this for "Add to case".
 #[tauri::command]
-pub async fn cases_add_tracks(root: String, case_id: i64, track_ids: Vec<i64>) -> AppResult<usize> {
-    write(root, move |lib| lib.add_case_tracks(case_id, &track_ids)).await
+pub async fn cases_add_tracks(app: tauri::AppHandle, root: String, case_id: i64, track_ids: Vec<i64>) -> AppResult<usize> {
+    write(app, root, move |lib| lib.add_case_tracks(case_id, &track_ids)).await
 }
 
 #[tauri::command]
-pub async fn cases_remove_tracks(root: String, case_id: i64, track_ids: Vec<i64>) -> AppResult<usize> {
-    write(root, move |lib| lib.remove_case_tracks(case_id, &track_ids)).await
+pub async fn cases_remove_tracks(app: tauri::AppHandle, root: String, case_id: i64, track_ids: Vec<i64>) -> AppResult<usize> {
+    write(app, root, move |lib| lib.remove_case_tracks(case_id, &track_ids)).await
 }
 
 /// Replaces a case's tracks with exactly this list, in this order (drag-to-reorder).
 #[tauri::command]
-pub async fn cases_set_tracks(root: String, case_id: i64, track_ids: Vec<i64>) -> AppResult<()> {
-    write(root, move |lib| lib.set_case_tracks(case_id, &track_ids)).await
+pub async fn cases_set_tracks(app: tauri::AppHandle, root: String, case_id: i64, track_ids: Vec<i64>) -> AppResult<()> {
+    write(app, root, move |lib| lib.set_case_tracks(case_id, &track_ids)).await
 }
 
 /// Adds the track to the "Favourites" case (created on first use) or removes it; returns
 /// whether it is now a favourite. Cross-area contract, see `api/cases.ts`.
 #[tauri::command]
-pub async fn cases_toggle_favourite(root: String, track_id: i64) -> AppResult<bool> {
-    write(root, move |lib| lib.toggle_favourite(track_id)).await
+pub async fn cases_toggle_favourite(app: tauri::AppHandle, root: String, track_id: i64) -> AppResult<bool> {
+    write(app, root, move |lib| lib.toggle_favourite(track_id)).await
 }
 
 /// Ids in the "Favourites" case (empty if it does not exist yet).
@@ -178,7 +184,7 @@ pub async fn smart_cases_save(app: tauri::AppHandle, root: String, smart_case: S
 #[tauri::command]
 pub async fn smart_cases_delete(app: tauri::AppHandle, root: String, id: u32, remove_device_case: bool) -> AppResult<bool> {
     let dir = config_dir(&app)?;
-    tauri::async_runtime::spawn_blocking(move || -> AppResult<bool> {
+    crate::state::quick_write(app, root.clone(), move || -> AppResult<bool> {
         let list = smart::load(&dir, &root)?;
         let Some(sc) = list.into_iter().find(|s| s.id == id) else {
             return Ok(false);
@@ -191,7 +197,7 @@ pub async fn smart_cases_delete(app: tauri::AppHandle, root: String, id: u32, re
         smart::remove(&dir, &root, id)?;
         Ok(deleted)
     })
-    .await?
+    .await
 }
 
 #[derive(Serialize)]
@@ -206,7 +212,7 @@ pub struct DeviceCopy {
 #[tauri::command]
 pub async fn smart_cases_set_on_device(app: tauri::AppHandle, root: String, id: u32, on: bool) -> AppResult<DeviceCopy> {
     let dir = config_dir(&app)?;
-    tauri::async_runtime::spawn_blocking(move || -> AppResult<DeviceCopy> {
+    crate::state::quick_write(app, root.clone(), move || -> AppResult<DeviceCopy> {
         let mut sc = smart::load(&dir, &root)?.into_iter().find(|s| s.id == id).ok_or_else(|| format!("no smart case {id}"))?;
         smart::validate(&sc.name, &sc.rules)?;
         let mut lib = Library::open(&PathBuf::from(&root))?;
@@ -225,14 +231,14 @@ pub async fn smart_cases_set_on_device(app: tauri::AppHandle, root: String, id: 
         smart::update(&dir, &root, &sc)?;
         Ok(DeviceCopy { smart_case: sc, count })
     })
-    .await?
+    .await
 }
 
 /// Refreshes the device case of every smart case that has "Put on Pacemaker" on.
 #[tauri::command]
 pub async fn smart_cases_refresh_all(app: tauri::AppHandle, root: String) -> AppResult<Vec<DeviceCopy>> {
     let dir = config_dir(&app)?;
-    tauri::async_runtime::spawn_blocking(move || -> AppResult<Vec<DeviceCopy>> {
+    crate::state::quick_write(app, root.clone(), move || -> AppResult<Vec<DeviceCopy>> {
         let list: Vec<SmartCase> = smart::load(&dir, &root)?.into_iter().filter(|s| s.on_device).collect();
         if list.is_empty() {
             return Ok(Vec::new());
@@ -248,7 +254,7 @@ pub async fn smart_cases_refresh_all(app: tauri::AppHandle, root: String) -> App
         }
         Ok(out)
     })
-    .await?
+    .await
 }
 
 /// This area's command paths, one per line.

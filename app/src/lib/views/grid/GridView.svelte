@@ -7,6 +7,7 @@
   import Button from "$lib/ui/Button.svelte";
   import Modal from "$lib/ui/Modal.svelte";
   import { toast } from "$lib/state/toast.svelte";
+  import { gridMixesUsing } from "$lib/api/grid";
   import { editor, tempoMap } from "./editor.svelte";
   import { fmtTime, lowerBound } from "./gridMath";
   import { Metronome } from "./metronome";
@@ -23,6 +24,9 @@
   let confirmSave = $state(false);
   /** The cue unit is unverified on a device: saving a cue needs an explicit tick. */
   let cueOk = $state(false);
+  /** Names of the mixes that use the open track, listed before a grid is saved. */
+  let usedByMixes = $state<string[]>([]);
+  let mixesOk = $state(false);
   /** Bumped when a track switch is refused so the picker is rebuilt showing the open track. */
   let pickerKey = $state(0);
 
@@ -203,6 +207,27 @@
 
   const needsCueTick = $derived(editor.cueDirty && editor.cue !== null);
 
+  const needsMixTick = $derived(editor.gridDirty && usedByMixes.length > 0);
+
+  /** Opens the confirmation. A new grid changes the tempo the track has, but a mix clip keeps the
+   *  tempo it had when the mix was made: the mixes that use the track are looked up and named
+   *  first, and the save needs a tick. If the lookup fails the save is not offered blind. */
+  async function askSave() {
+    cueOk = false;
+    mixesOk = false;
+    usedByMixes = [];
+    const lib = session.library;
+    if (editor.gridDirty && lib && editor.loaded) {
+      try {
+        usedByMixes = await gridMixesUsing(lib.root, editor.loaded.track_id);
+      } catch (err) {
+        toast.show(`Could not check which mixes use this track: ${String(err)}`, "bad", 8000);
+        return;
+      }
+    }
+    confirmSave = true;
+  }
+
   async function doSave() {
     confirmSave = false;
     await editor.save();
@@ -239,10 +264,7 @@
       <span class="spacer"></span>
       <Button small disabled={!editor.canUndo || editor.busy} onclick={() => editor.undo()} title="Undo (Ctrl+Z)">Undo</Button>
       <Button small disabled={!editor.canRedo || editor.busy} onclick={() => editor.redo()} title="Redo (Ctrl+Shift+Z)">Redo</Button>
-      <Button variant="primary" small disabled={!editor.dirty || editor.busy} onclick={() => {
-          cueOk = false;
-          confirmSave = true;
-        }}>Save…</Button>
+      <Button variant="primary" small disabled={!editor.dirty || editor.busy} onclick={() => void askSave()}>Save…</Button>
     </div>
 
     {#if editor.loaded}
@@ -403,10 +425,22 @@
       </p>
       <label class="tick"><input type="checkbox" bind:checked={cueOk} /> Write the cue anyway</label>
     {/if}
-    <p class="muted">The previous grid cannot be restored from here. No backup file is written to the device.</p>
+    {#if needsMixTick}
+      <p class="warn-box">
+        {usedByMixes.length === 1 ? "1 mix uses" : `${usedByMixes.length} mixes use`} this track:
+        <strong>{usedByMixes.join(", ")}</strong>. A mix clip keeps the tempo the track had when the mix was made, so
+        with the new grid {usedByMixes.length === 1 ? "that mix" : "those mixes"} will drift out of step and may need to
+        be beatmatched again.
+      </p>
+      <label class="tick"><input type="checkbox" bind:checked={mixesOk} /> Save the grid anyway</label>
+    {/if}
+    <p class="muted">
+      The previous grid cannot be restored from here. A copy of music.db is kept in the app's data folder before the
+      first write of each session (Device, Backup).
+    </p>
     {#snippet actions()}
       <Button data-autofocus onclick={() => (confirmSave = false)}>Cancel</Button>
-      <Button variant="primary" disabled={needsCueTick && !cueOk} onclick={doSave}>Save to device</Button>
+      <Button variant="primary" disabled={(needsCueTick && !cueOk) || (needsMixTick && !mixesOk)} onclick={doSave}>Save to device</Button>
     {/snippet}
   </Modal>
 {/if}

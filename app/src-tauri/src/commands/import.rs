@@ -10,7 +10,7 @@ use tauri::{AppHandle, State};
 
 use crate::error::{AppError, AppResult};
 use crate::events::{self, JOB_PROGRESS};
-use crate::jobs::{progress_of, spawn_job, JobOutcome, Progress};
+use crate::jobs::{progress_of, spawn_write_job, JobOutcome, Progress};
 use crate::state::JobLock;
 
 /// Extensions the analyser's decoder handles and the file picker offers.
@@ -63,7 +63,7 @@ pub fn add_tracks(app: AppHandle, lock: State<'_, JobLock>, root: String, files:
     if files.is_empty() {
         return Err("No audio files to add.".into());
     }
-    spawn_job(app, &lock, "add", move |app| {
+    spawn_write_job(app, &lock, "add", root.clone(), move |app| {
         let mut lib = Library::open(Path::new(&root))?;
         let total = files.len();
         let mut done = 0;
@@ -118,7 +118,7 @@ pub async fn interop_apply(
     let opts = options.unwrap_or_default();
     // fail before starting the job when the file is unreadable; read and parsed off the UI thread
     let foreign = tauri::async_runtime::spawn_blocking(move || read_foreign(&path)).await.map_err(|e| e.to_string())??;
-    spawn_job(app, &lock, JOB_INTEROP, move |app| {
+    spawn_write_job(app, &lock, JOB_INTEROP, root.clone(), move |app| {
         let mut lib = Library::open(Path::new(&root))?;
         let plan = interop::plan_import(&lib, &foreign, &opts)?;
         let rep = interop::apply_plan(&mut lib, &plan, &opts, |s| {

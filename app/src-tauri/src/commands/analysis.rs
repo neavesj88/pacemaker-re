@@ -18,7 +18,7 @@ use tauri::{AppHandle, Manager, State};
 
 use crate::error::{AppError, AppResult, IntoApp};
 use crate::events::{self, JOB_PROGRESS};
-use crate::jobs::{spawn_job, JobOutcome, Progress};
+use crate::jobs::{spawn_write_job, JobOutcome, Progress};
 use crate::state::JobLock;
 
 /// The job kind string of key detection (`jobs.ask({ kind: "keys" })` on the frontend).
@@ -147,7 +147,7 @@ pub fn analysis_detect_keys(
     min_confidence: Option<f32>,
 ) -> AppResult<()> {
     check_key_args(track_ids.as_deref(), overwrite.unwrap_or(false))?;
-    spawn_job(app, &lock, KEYS_JOB, move |app| {
+    spawn_write_job(app, &lock, KEYS_JOB, root.clone(), move |app| {
         let mut lib = Library::open(Path::new(&root))?;
         Ok(detect_keys(&mut lib, track_ids.as_deref(), overwrite.unwrap_or(false), min_confidence.unwrap_or(0.0), |p| {
             events::emit(app, JOB_PROGRESS, p)

@@ -14,7 +14,7 @@ use tauri::{AppHandle, Manager, State};
 use crate::error::AppResult;
 use crate::events::{self, JOB_PROGRESS};
 use crate::jobs::{JobOutcome, Progress, spawn_job};
-use crate::state::{JobGuard, JobLock};
+use crate::state::{ExclusiveGuard, JobLock};
 
 /// Set by `device_cancel`, polled by the running device job between files / chunks. Cleared when
 /// a job starts, so a cancel never leaks into the next job.
@@ -87,17 +87,15 @@ pub struct SettingChange {
 /// Writes the given setting changes to `settings.dat`. Returns how many settings changed.
 /// The UI asks for confirmation first.
 #[tauri::command]
-pub async fn device_settings_write(lock: State<'_, JobLock>, root: String, changes: Vec<SettingChange>) -> AppResult<usize> {
-    // settings.dat is on the volume an import or re-analysis is writing to: not while one runs
-    if !lock.try_acquire() {
-        return Err("Another job is still running. Write the settings when it has finished.".into());
-    }
-    let _guard = JobGuard(&lock.0);
-    tauri::async_runtime::spawn_blocking(move || -> AppResult<usize> {
+pub async fn device_settings_write(app: AppHandle, root: String, changes: Vec<SettingChange>) -> AppResult<usize> {
+    // a quick write: settings.dat is a different file from the one a running import writes, so it
+    // does not wait for the job, but Eject waits for it
+    let path = root.clone();
+    crate::state::quick_write(app, root, move || -> AppResult<usize> {
         let pairs: Vec<(i64, f64)> = changes.iter().map(|c| (c.id, c.value)).collect();
-        Ok(ops_device::write_settings(Path::new(&root), &pairs)?)
+        Ok(ops_device::write_settings(Path::new(&path), &pairs)?)
     })
-    .await?
+    .await
 }
 
 /// Checks a `.pfw` (trailer, checksum, the device's version gate). Nothing is written.
@@ -108,8 +106,11 @@ pub async fn device_firmware_inspect(path: String) -> AppResult<PfwInfo> {
 
 /// Job `device-firmware`: copies a verified `.pfw` into `.Pacemaker` of the volume.
 #[tauri::command]
-pub fn device_firmware_install(app: AppHandle, lock: State<'_, JobLock>, root: String, path: String) -> AppResult<()> {
+pub async fn device_firmware_install(app: AppHandle, lock: State<'_, JobLock>, root: String, path: String) -> AppResult<()> {
+    // waits for (or refuses on) writes in progress, and keeps new ones out while it copies
+    let exclusive = exclusive_gate(&app, "Install the firmware").await?;
     spawn_job(app, &lock, "device-firmware", move |app| {
+        let _exclusive = exclusive;
         start_job_cancel(app);
         let rep = ops_device::install_pfw(
             Path::new(&root),
@@ -133,8 +134,11 @@ pub fn device_firmware_install(app: AppHandle, lock: State<'_, JobLock>, root: S
 /// Job `device-backup`: a snapshot of the library data (and audio only when `include_audio`)
 /// into a new folder inside `dest`, with a SHA-256 manifest. Reads the device only.
 #[tauri::command]
-pub fn device_backup(app: AppHandle, lock: State<'_, JobLock>, root: String, dest: String, include_audio: bool) -> AppResult<()> {
+pub async fn device_backup(app: AppHandle, lock: State<'_, JobLock>, root: String, dest: String, include_audio: bool) -> AppResult<()> {
+    // music.db must not change under the copy: new writes are held off until the backup ends
+    let exclusive = exclusive_gate(&app, "Back up").await?;
     spawn_job(app, &lock, "device-backup", move |app| {
+        let _exclusive = exclusive;
         start_job_cancel(app);
         let rep = ops_device::backup_snapshot(
             Path::new(&root),
@@ -194,13 +198,75 @@ pub fn device_cleanup(app: AppHandle, lock: State<'_, JobLock>, root: String, fi
 
 /// Asks the OS to eject the volume. True once the library has disappeared from it.
 #[tauri::command]
-pub async fn device_eject(lock: State<'_, JobLock>, root: String) -> AppResult<bool> {
-    // ejecting under a running copy would cut it off half-written
-    if !lock.try_acquire() {
-        return Err("A job is still writing to the device. Eject when it has finished.".into());
-    }
-    let _guard = JobGuard(&lock.0);
-    tauri::async_runtime::spawn_blocking(move || -> AppResult<bool> { Ok(ops_device::eject(Path::new(&root))?) }).await?
+pub async fn device_eject(app: AppHandle, root: String) -> AppResult<bool> {
+    // ejecting under a running copy or a quick write would cut it off half-written: refuse while
+    // a job runs, wait briefly for quick writes, and hold new writes off until the eject returns
+    let exclusive = exclusive_gate(&app, "Eject").await?;
+    tauri::async_runtime::spawn_blocking(move || -> AppResult<bool> {
+        let _exclusive = exclusive;
+        let ejected = ops_device::eject(Path::new(&root))?;
+        if ejected {
+            // a different device may come back under this drive letter: it gets its own snapshot
+            app.state::<crate::state::WriteGate>().forget(Path::new(&root));
+        }
+        Ok(ejected)
+    })
+    .await?
+}
+
+/// Takes the write gate for an operation that must not overlap any device write (the wait for
+/// quick writes in flight blocks, so it runs off the async threads).
+async fn exclusive_gate(app: &AppHandle, what: &'static str) -> AppResult<ExclusiveGuard> {
+    let app = app.clone();
+    tauri::async_runtime::spawn_blocking(move || crate::state::take_exclusive(&app, what)).await?
+}
+
+/// Where the automatic `music.db` snapshots of this library go and what is in there now.
+#[derive(Serialize)]
+pub struct SnapshotsView {
+    /// The folder (never on the device); it may not exist yet before the first write.
+    folder: String,
+    /// How many snapshots are kept per library.
+    keep: usize,
+    /// Newest first.
+    snapshots: Vec<ops_device::SnapshotEntry>,
+}
+
+/// The automatic snapshot folder of the library on `root`. Read-only.
+#[tauri::command]
+pub async fn device_snapshots(app: AppHandle, root: String) -> AppResult<SnapshotsView> {
+    let dir = crate::state::snapshots_dir(&app, Path::new(&root))?;
+    tauri::async_runtime::spawn_blocking(move || -> AppResult<SnapshotsView> {
+        Ok(SnapshotsView { folder: dir.display().to_string(), keep: ops_device::SNAPSHOTS_KEPT, snapshots: ops_device::list_snapshots(&dir) })
+    })
+    .await?
+}
+
+/// Opens the snapshot folder in the system file manager.
+#[tauri::command]
+pub async fn device_snapshots_open(app: AppHandle, root: String) -> AppResult<()> {
+    let dir = crate::state::snapshots_dir(&app, Path::new(&root))?;
+    tauri::async_runtime::spawn_blocking(move || -> AppResult<()> {
+        std::fs::create_dir_all(&dir)?;
+        open_folder(&dir)?;
+        Ok(())
+    })
+    .await?
+}
+
+#[cfg(windows)]
+fn open_folder(dir: &Path) -> std::io::Result<()> {
+    std::process::Command::new("explorer").arg(dir.to_string_lossy().replace('/', "\\")).spawn().map(|_| ())
+}
+
+#[cfg(target_os = "macos")]
+fn open_folder(dir: &Path) -> std::io::Result<()> {
+    std::process::Command::new("open").arg(dir).spawn().map(|_| ())
+}
+
+#[cfg(all(not(windows), not(target_os = "macos")))]
+fn open_folder(dir: &Path) -> std::io::Result<()> {
+    std::process::Command::new("xdg-open").arg(dir).spawn().map(|_| ())
 }
 
 /// This area's command paths, one per line, written `$crate::commands::device::name,`.
@@ -220,6 +286,8 @@ macro_rules! device_commands {
                 $crate::commands::device::device_cleanup,
                 $crate::commands::device::device_eject,
                 $crate::commands::device::device_cancel,
+                $crate::commands::device::device_snapshots,
+                $crate::commands::device::device_snapshots_open,
             ];
             $($rest),*
         }

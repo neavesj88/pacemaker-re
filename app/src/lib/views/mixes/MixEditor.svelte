@@ -7,7 +7,7 @@
   import Button from "$lib/ui/Button.svelte";
   import { describe, duplicateSelection, errText, pasteAtPlayhead } from "./actions";
   import { confirm } from "./confirm.svelte";
-  import { closeMix, exportAudio, newMix, saveMix } from "./flow";
+  import { cancelExport, closeMix, exportAudio, newMix, saveMix } from "./flow";
   import Inspector from "./Inspector.svelte";
   import { PPS_MAX, PPS_MIN, SR, clock, ppsFromSlider, sliderFromPps } from "./layout";
   import { preview } from "./preview.svelte";
@@ -199,6 +199,9 @@
     <Button disabled={mv.exporting || doc.clips.length === 0} onclick={() => void exportAudio()} title="Render the mix to an audio file">
       {mv.exporting ? (mv.exportPct > 0 ? `Exporting ${Math.round(mv.exportPct * 100)}%` : "Exporting…") : "Export audio"}
     </Button>
+    {#if mv.exporting}
+      <Button onclick={() => void cancelExport()} title="Stop rendering; no file is kept">Cancel export</Button>
+    {/if}
   </div>
   {#if mv.exporting}<div class="progress" role="progressbar" aria-label="Exporting audio"><i></i></div>{/if}
 

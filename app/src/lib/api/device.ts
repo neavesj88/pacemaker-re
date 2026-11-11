@@ -77,6 +77,21 @@ export const JOB_BACKUP = "device-backup";
 export const JOB_CLEANUP = "device-cleanup";
 
 export const deviceOverview = (root: string) => invoke<DeviceOverview>("device_overview", { root });
+export type SnapshotEntry = { name: string; folder: string; files: string[] };
+
+/** The automatic safety copies of music.db (and settings.dat) the app makes before its first
+ * write to a library in each session. They live in the app's data folder, never on the device. */
+export type SnapshotsView = {
+  folder: string;
+  /** How many are kept per library. */
+  keep: number;
+  /** Newest first. */
+  snapshots: SnapshotEntry[];
+};
+
+export const deviceSnapshots = (root: string) => invoke<SnapshotsView>("device_snapshots", { root });
+/** Opens the snapshot folder in the file manager. */
+export const deviceSnapshotsOpen = (root: string) => invoke<void>("device_snapshots_open", { root });
 export const deviceHealth = (root: string) => invoke<Health>("device_health", { root });
 /** null when the device has not written settings.dat yet. */
 export const deviceSettings = (root: string) => invoke<SettingsView | null>("device_settings", { root });

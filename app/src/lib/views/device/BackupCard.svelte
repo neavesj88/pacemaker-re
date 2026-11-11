@@ -1,5 +1,12 @@
 <script lang="ts">
-  import { deviceBackup, JOB_BACKUP, pickBackupFolder } from "$lib/api/device";
+  import {
+    deviceBackup,
+    deviceSnapshots,
+    deviceSnapshotsOpen,
+    JOB_BACKUP,
+    pickBackupFolder,
+    type SnapshotsView,
+  } from "$lib/api/device";
   import { jobs } from "$lib/state/jobs.svelte";
   import { session } from "$lib/state/session.svelte";
   import { toast } from "$lib/state/toast.svelte";
@@ -14,6 +21,31 @@
   let dest = $state<string | null>(null);
   let lib = $derived(session.library);
   let audioBytes = $derived(device.overview?.storage.music_bytes ?? 0);
+
+  // The automatic music.db safety copies (made before the first write of each session).
+  let snaps = $state<SnapshotsView | null>(null);
+  let snapsError = $state("");
+  $effect(() => {
+    const root = lib?.root;
+    // re-read after a job ends too: a first write may just have made one
+    void device.job;
+    snaps = null;
+    snapsError = "";
+    if (!root) return;
+    deviceSnapshots(root).then(
+      (s) => (snaps = s),
+      (e) => (snapsError = String(e)),
+    );
+  });
+
+  async function openSnaps() {
+    if (!lib) return;
+    try {
+      await deviceSnapshotsOpen(lib.root);
+    } catch (e) {
+      toast.show(String(e), "bad", 8000);
+    }
+  }
 
   async function choose() {
     const d = await pickBackupFolder();
@@ -54,6 +86,25 @@
   </div>
   <JobProgress kind={JOB_BACKUP} />
   {#if device.results[JOB_BACKUP]}<p class="note">{device.results[JOB_BACKUP]}</p>{/if}
+
+  <div class="auto">
+    <h4>Automatic snapshots</h4>
+    <p class="muted">
+      Before the first change to this library in each session the app copies music.db and the settings to its own data
+      folder (never onto the Pacemaker) and keeps the last {snaps?.keep ?? 10}. If the copy fails, nothing is written.
+    </p>
+    {#if snapsError}
+      <p class="bad">{snapsError}</p>
+    {:else if snaps}
+      <p class="muted">
+        {snaps.snapshots.length === 0
+          ? "None yet: the first change in this session makes one."
+          : `${plural(snaps.snapshots.length, "snapshot")}, newest ${snaps.snapshots[0].name.replace("music-db-", "")}`}
+      </p>
+      <p class="path">{snaps.folder}</p>
+      <Button small onclick={openSnaps}>Open folder</Button>
+    {/if}
+  </div>
 </Card>
 
 {#if dest && lib}
@@ -88,6 +139,24 @@
   }
   .actions {
     margin-top: 6px;
+  }
+  .auto {
+    border-top: 1px solid var(--line);
+    margin-top: 12px;
+    padding-top: 10px;
+  }
+  .auto h4 {
+    margin: 0 0 4px;
+    font-size: 13px;
+  }
+  .path {
+    font-size: 12px;
+    overflow-wrap: anywhere;
+    margin: 4px 0 8px;
+  }
+  .bad {
+    color: var(--bad);
+    font-size: 12px;
   }
   .note {
     font-size: 12px;

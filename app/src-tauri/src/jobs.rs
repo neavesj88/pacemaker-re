@@ -122,3 +122,18 @@ where
     });
     Ok(())
 }
+
+/// [`spawn_job`] for a job that writes to the library at `root`: the job body runs under a
+/// `state::WriteTicket`, after the session's first-write snapshot of `music.db`. If the snapshot
+/// fails or the device is being ejected / backed up, the job ends with that error and writes
+/// nothing. Use this for every job that changes the device; `spawn_job` stays for jobs that only
+/// read it or write elsewhere (mix export).
+pub fn spawn_write_job<F>(app: AppHandle, lock: &JobLock, job: &str, root: String, work: F) -> AppResult<()>
+where
+    F: FnOnce(&AppHandle) -> AppResult<JobOutcome> + Send + 'static,
+{
+    spawn_job(app, lock, job, move |app| {
+        let _ticket = crate::state::begin_write(app, std::path::Path::new(&root))?;
+        work(app)
+    })
+}

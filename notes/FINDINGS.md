@@ -197,6 +197,22 @@ backup of the drive; 240 tracks with a readable `.str`, all 44.1 kHz):
 `settings.dat` is decoded in notes/settings-dat.md (`scripts/settingsdat.py`, byte-exact).
 Replacing the hard drive is covered in notes/ssd-swap.md.
 
+> **UNVERIFIED: our `modified_by_ed` / `analyzed_by_ed` value.** The Editor writes its own version
+> there (e.g. `2.0.2.14170`). Pacemaker Revival deliberately writes `pacemaker-re/<version>`
+> (`library::EDITOR_ID`) on every row it adds or changes, so the rows say honestly which software
+> touched them. **How the original Editor reacts to a row stamped like that has never been tested**
+> (it could ignore the field, treat the track as modified elsewhere, offer to re-sync or re-analyse
+> it, or in the worst case refuse the library). Nothing in the decompiled code read so far parses
+> the field, but that is inference from absence, not a test. Do not change the value without a
+> test against a real Editor; until then, expect this to be the first thing to check if the Editor
+> misbehaves on a library Revival has written to. The same applies to `cases.creator_id`
+> (`pacemaker-re;Editor;<version>;0`, section 4d).
+
+**Track tempo columns (verified against device rows, one function).** `tracks.bpm` is the median
+local tempo of the beat list and `ind_bpm` is `floor(bpm / 10) * 10`. Adding a track, re-analysing
+and saving an edited grid all use `library::track_bpm` / `ind_bpm_of`, so the same grid always
+stores the same values (before this, re-analysis and grid save used the first beat's tempo).
+
 ## 4d. Ratings and cases (verified by decompilation, Nov 2026)
 
 Evidence: pmplayer 180096069 (ARM, addresses as in Ghidra) and the Mac Editor 2.0.2.14170 (i386

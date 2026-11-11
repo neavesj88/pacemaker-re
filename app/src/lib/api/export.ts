@@ -38,3 +38,8 @@ export const MIX_EXPORT_JOB = "mix-export";
  * starts at the mix's first audible frame. */
 export const exportMixAudio = (root: string, mix: MixDoc, dest: string, format: "ogg" | "wav") =>
   invoke<MixExportStarted>("export_mix_audio", { root, mix, dest, format });
+
+/** Asks the running mix export to stop. The render ends at its next block, no file is left, and
+ * the job reports `job-done` with a "cancelled" summary (not an error). Does nothing when no
+ * export is running. */
+export const exportCancel = () => invoke<void>("export_cancel");

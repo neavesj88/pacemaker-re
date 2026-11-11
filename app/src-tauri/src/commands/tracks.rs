@@ -9,7 +9,7 @@ use tauri::{AppHandle, State};
 
 use crate::error::AppResult;
 use crate::events::{self, JOB_PROGRESS};
-use crate::jobs::{progress_of, spawn_job};
+use crate::jobs::{progress_of, spawn_write_job};
 use crate::state::JobLock;
 
 pub fn setup(_app: &mut tauri::App) {}
@@ -21,7 +21,7 @@ pub fn reanalyse_tracks(app: AppHandle, lock: State<'_, JobLock>, root: String, 
     if track_ids.is_empty() {
         return Err("No tracks to analyse.".into());
     }
-    spawn_job(app, &lock, "reanalyse", move |app| {
+    spawn_write_job(app, &lock, "reanalyse", root.clone(), move |app| {
         let mut lib = Library::open(Path::new(&root))?;
         let wanted: std::collections::HashSet<i64> = track_ids.into_iter().collect();
         let items: Vec<Existing> = lib

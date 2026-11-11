@@ -205,6 +205,51 @@ The file is merged by `devmock/index.ts` automatically (a command name defined t
 start). Fixtures private to your area live in your file; `devmock/db.ts` holds only the shared
 track and case fixture. The mock is invented placeholder data only.
 
+## Writes to the device
+
+Every change to the device volume goes through `state::WriteGate`, so that Eject, backup and
+firmware install never run under a write, quick writes never fail because a long job is running,
+and `music.db` always has a safety copy from before the session's first change.
+
+| Kind | Examples | How |
+| --- | --- | --- |
+| Quick write | rating, tags, cases, smart-case device copy, mix new / save / rename / delete / import, history "save as case", grid save, `settings.dat` | `state::quick_write(app, root, \|\| ...)` on a blocking thread |
+| Write job | add tracks, re-analyse, key detection, library import | `jobs::spawn_write_job(app, &lock, kind, root, \|app\| ...)`: `JobLock` (one job at a time) plus a write ticket for the body |
+| Exclusive operation | Eject, backup, firmware install | `state::take_exclusive` (inside `device.rs`), held until the operation ends |
+| Not a device write | mix audio export, M3U / CSV out, preview render | `spawn_job` with the `JobLock` only |
+
+Rules:
+
+1. A quick write and the body of a write job each hold a `WriteTicket`. Any number of tickets can
+   exist at once; SQLite's own file lock orders the statements, and `Library::open` sets a 10 s
+   busy timeout, so a rating saved while "add tracks" runs waits for the job's current insert
+   instead of failing with "database is locked". A quick write is never refused because of
+   `JobLock`.
+2. An exclusive operation sets a flag first (new writes are refused at once with a clear message),
+   then waits up to 5 s for tickets already out to be returned, then runs. If a write job holds
+   `JobLock`, Eject and the others refuse immediately ("a job is still running"); if a quick write
+   is stuck past 5 s they give up and release the gate. Backup is exclusive so that `music.db` is
+   not copied mid-write.
+3. `WriteGate::begin_write` also makes the safety copy: before the first write of the session to a
+   library (keyed by volume root) it copies `music.db`, `music.db-journal` if present and
+   `settings.dat` to `<app local data>/snapshots/<volume>/music-db-<UTC stamp>/` (never onto the
+   device), read back and checksummed, and keeps the newest 10 per library
+   (`pm_formats::ops_device::snapshot_library`). If the copy fails the write is refused with the
+   reason, and the next attempt tries again. A successful Eject forgets the volume, so a different
+   device that appears under the same drive letter is snapshotted on its first write. The Device
+   view's Backup card lists the folder (`device_snapshots`, `device_snapshots_open`). Restoring is
+   a manual copy of the files back into `.Pacemaker`.
+4. Files are written temp + fsync + rename (`library::atomic_write*`, `install_pfw`'s `.part`,
+   backup's `.partial` folder); every failure path removes the temp file, so an unplug leaves at
+   worst an unreferenced `*.tmp` that the Device clean-up lists, never a truncated file under a
+   real name.
+5. A new write command: use `quick_write` or `spawn_write_job`, never `Library::open` directly in
+   a command. A new exclusive operation: take `take_exclusive` before it starts.
+
+Mix audio export is cancellable (`export_cancel` sets a flag the render's progress callback turns
+into `false`; the engine removes its `.partial` file). Saving a beat grid for a track that mixes
+use asks first (`grid_mixes_using` names them); the clips keep the old tempo until re-beatmatched.
+
 ## Shared and therefore integration-only
 
 `routes/*`, `lib/styles/*`, `lib/format.ts`, `lib/shell/*`, `lib/ui/*`, `lib/views/ids.ts`,

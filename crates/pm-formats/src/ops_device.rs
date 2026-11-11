@@ -846,6 +846,111 @@ pub fn verify_manifest(folder: &Path) -> Result<Vec<String>, Error> {
 }
 
 // ---------------------------------------------------------------------------------------------
+// Automatic safety copies of music.db
+
+/// Name prefix of an automatic snapshot folder (`music-db-<UTC stamp>`).
+pub const SNAPSHOT_PREFIX: &str = "music-db-";
+
+/// How many automatic snapshots of one library the app keeps.
+pub const SNAPSHOTS_KEPT: usize = 10;
+
+/// One automatic snapshot on disk.
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct SnapshotEntry {
+    pub name: String,
+    pub folder: String,
+    /// Files in it, e.g. `music.db`, `settings.dat`.
+    pub files: Vec<String>,
+}
+
+fn is_snapshot_dir(name: &str) -> bool {
+    name.starts_with(SNAPSHOT_PREFIX) && !name.ends_with(".partial")
+}
+
+/// The snapshots in `dest_dir`, newest first (the stamp in the name sorts chronologically).
+pub fn list_snapshots(dest_dir: &Path) -> Vec<SnapshotEntry> {
+    let mut out: Vec<SnapshotEntry> = fs::read_dir(dest_dir)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter(|e| e.path().is_dir())
+        .filter_map(|e| {
+            let name = e.file_name().to_string_lossy().into_owned();
+            if !is_snapshot_dir(&name) {
+                return None;
+            }
+            let mut files: Vec<String> =
+                fs::read_dir(e.path()).into_iter().flatten().flatten().map(|f| f.file_name().to_string_lossy().into_owned()).collect();
+            files.sort();
+            Some(SnapshotEntry { folder: e.path().display().to_string(), name, files })
+        })
+        .collect();
+    out.sort_by(|a, b| b.name.cmp(&a.name));
+    out
+}
+
+/// Copies the library's `music.db` (and `settings.dat`, and a leftover `music.db-journal`, which
+/// a restore needs next to the database) from the device into a new folder `music-db-<UTC
+/// stamp>` inside `dest_dir`, each file read back and checked, and keeps only the newest `keep`
+/// snapshots there. `dest_dir` must not be on the device itself: the point is a copy that
+/// survives a bad write to it. The folder is built as `<name>.partial` and renamed when complete,
+/// so a folder with the final name is always whole. Reads the device only. Call it before the
+/// first write to a library and do not write if it fails.
+pub fn snapshot_library(root: &Path, dest_dir: &Path, keep: usize) -> Result<SnapshotEntry, Error> {
+    let pm = pacemaker_dir(root);
+    if !pm.join("music.db").is_file() {
+        return Err(Error::NotALibrary(root.to_path_buf()));
+    }
+    fs::create_dir_all(dest_dir)?;
+    if inside(root, dest_dir) {
+        return invalid("the snapshot folder is on the device itself; a copy there is lost with the device");
+    }
+    let secs = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+    let base = format!("{SNAPSHOT_PREFIX}{}", utc_stamp(secs));
+    let mut name = base.clone();
+    let mut n = 1;
+    while dest_dir.join(&name).exists() {
+        n += 1;
+        name = format!("{base}-{n}");
+    }
+    let folder = dest_dir.join(&name);
+    let partial = dest_dir.join(format!("{name}.partial"));
+    let _ = fs::remove_dir_all(&partial);
+    fs::create_dir(&partial)?;
+    let built = (|| -> Result<Vec<String>, Error> {
+        let mut files = Vec::new();
+        for f in ["music.db", "music.db-journal", "settings.dat"] {
+            let src = pm.join(f);
+            if src.is_file() {
+                copy_hashed(&src, &partial.join(f))?;
+                files.push(f.to_string());
+            }
+        }
+        fs::rename(&partial, &folder)?;
+        Ok(files)
+    })();
+    let files = match built {
+        Ok(f) => f,
+        Err(e) => {
+            let _ = fs::remove_dir_all(&partial);
+            return Err(e);
+        }
+    };
+    // retention: oldest first out, never the one just made; stale half-built folders go too
+    let all = list_snapshots(dest_dir);
+    for old in all.iter().skip(keep.max(1)) {
+        let _ = fs::remove_dir_all(&old.folder);
+    }
+    for e in fs::read_dir(dest_dir).into_iter().flatten().flatten() {
+        let n = e.file_name().to_string_lossy().into_owned();
+        if n.starts_with(SNAPSHOT_PREFIX) && n.ends_with(".partial") {
+            let _ = fs::remove_dir_all(e.path());
+        }
+    }
+    Ok(SnapshotEntry { name, folder: folder.display().to_string(), files })
+}
+
+// ---------------------------------------------------------------------------------------------
 // Eject
 
 /// Asks the OS to eject the volume (Windows: the shell's Eject verb, as Explorer does). Returns
@@ -1319,12 +1424,9 @@ pub fn write_settings(root: &Path, changes: &[(i64, f64)]) -> Result<usize, Erro
     }
     let out = emit_settings(&a);
     debug_assert!(parse_settings(&out).is_ok());
-    let tmp = path.with_extension("dat.tmp");
-    fs::write(&tmp, out.as_bytes())?;
-    if let Err(e) = fs::rename(&tmp, &path) {
-        let _ = fs::remove_file(&tmp);
-        return Err(e.into());
-    }
+    // temp file beside it, fsynced, renamed; the temp file is removed on every failure path
+    // (a write that runs out of space or an unplug between the steps), see library::atomic_write
+    crate::library::atomic_write(&path, out.as_bytes())?;
     Ok(changed)
 }
 
@@ -1791,6 +1893,66 @@ mod tests {
             assert!(apply_setting_changes(&mut a, &[(2004, 0.0), bad]).is_err(), "{bad:?}");
             assert_eq!(a, before);
         }
+    }
+
+    fn tmp_in(dir: &Path) -> Vec<String> {
+        fs::read_dir(dir).unwrap().flatten().map(|e| e.file_name().to_string_lossy().into_owned()).filter(|n| n.ends_with(".tmp")).collect()
+    }
+
+    #[test]
+    fn settings_write_leaves_no_temp_file() {
+        let root = scratch("settings-tmp");
+        let pm = root.join(".Pacemaker");
+        fs::create_dir_all(&pm).unwrap();
+        fs::write(pm.join("settings.dat"), known_archive()).unwrap();
+        assert_eq!(write_settings(&root, &[(2001, 0.0)]).unwrap(), 1);
+        assert!(tmp_in(&pm).is_empty(), "{:?}", tmp_in(&pm));
+        // refused writes (bad value, unchanged value) never create one either
+        assert!(write_settings(&root, &[(2001, 7.0)]).is_err());
+        assert_eq!(write_settings(&root, &[(2001, 0.0)]).unwrap(), 0);
+        assert!(tmp_in(&pm).is_empty());
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn snapshot_copies_db_and_settings_and_keeps_the_newest() {
+        let root = scratch("snap-root");
+        let dest = scratch("snap-dest").join("snaps");
+        let pm = root.join(".Pacemaker");
+        fs::create_dir_all(&pm).unwrap();
+        fs::write(pm.join("music.db"), b"database bytes").unwrap();
+        fs::write(pm.join("settings.dat"), b"settings bytes").unwrap();
+
+        let s = snapshot_library(&root, &dest, 3).unwrap();
+        assert!(s.name.starts_with(SNAPSHOT_PREFIX));
+        assert_eq!(s.files, ["music.db", "settings.dat"]);
+        assert_eq!(fs::read(Path::new(&s.folder).join("music.db")).unwrap(), b"database bytes");
+        assert_eq!(fs::read(Path::new(&s.folder).join("settings.dat")).unwrap(), b"settings bytes");
+        // without settings.dat only the database is copied; the device is not touched
+        fs::remove_file(pm.join("settings.dat")).unwrap();
+        let s2 = snapshot_library(&root, &dest, 3).unwrap();
+        assert_eq!(s2.files, ["music.db"]);
+        assert_ne!(s.name, s2.name, "two snapshots in the same second get distinct names");
+        assert_eq!(fs::read(pm.join("music.db")).unwrap(), b"database bytes");
+
+        // retention: only the newest `keep` stay, and a stale half-built folder is swept
+        fs::create_dir_all(dest.join(format!("{SNAPSHOT_PREFIX}19990101T000000Z.partial"))).unwrap();
+        for _ in 0..4 {
+            snapshot_library(&root, &dest, 3).unwrap();
+        }
+        let left = list_snapshots(&dest);
+        assert_eq!(left.len(), 3);
+        assert!(left[0].name > left[1].name && left[1].name > left[2].name, "newest first");
+        assert!(fs::read_dir(&dest).unwrap().flatten().all(|e| !e.file_name().to_string_lossy().ends_with(".partial")));
+        assert!(!s.folder.is_empty() && !Path::new(&s.folder).exists(), "the oldest was pruned");
+
+        // refuses a folder on the device, and a volume with no library
+        assert!(snapshot_library(&root, &root.join("inside"), 3).unwrap_err().to_string().contains("device itself"));
+        let empty = scratch("snap-empty");
+        assert!(snapshot_library(&empty, &dest, 3).is_err());
+        let _ = fs::remove_dir_all(&root);
+        let _ = fs::remove_dir_all(dest.parent().unwrap());
+        let _ = fs::remove_dir_all(&empty);
     }
 
     #[test]

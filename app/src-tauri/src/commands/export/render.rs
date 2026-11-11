@@ -321,6 +321,28 @@ mod tests {
     }
 
     #[test]
+    fn a_cancelled_export_stops_early_and_leaves_no_file() {
+        let (vol, scratch, id, frames) = library("cancel");
+        let doc = doc_for(id, frames, 1.0);
+        let out = scratch.join("cancelled.wav");
+        let plan = plan_export(&vol, &doc, out.to_str().unwrap(), "wav").unwrap();
+        let mut calls = 0;
+        let err = run_export(&plan, &mut |_| {
+            calls += 1;
+            calls < 2 // cancel at the second progress report
+        })
+        .unwrap_err();
+        assert!(err.to_string().contains("cancelled"), "{err}");
+        assert_eq!(calls, 2, "no more rendering after the cancel");
+        assert!(!out.exists(), "no half-written file under the real name");
+        let mut left: Vec<_> = std::fs::read_dir(&scratch).unwrap().flatten().map(|e| e.file_name().to_string_lossy().into_owned()).collect();
+        left.retain(|n| n.ends_with(".partial"));
+        assert!(left.is_empty(), "{left:?}");
+        std::fs::remove_dir_all(vol).unwrap();
+        std::fs::remove_dir_all(scratch).unwrap();
+    }
+
+    #[test]
     fn bad_requests_are_refused_before_rendering() {
         let (vol, scratch, id, frames) = library("bad");
         let doc = doc_for(id, frames, 1.0);

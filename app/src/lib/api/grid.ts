@@ -49,3 +49,8 @@ export const gridAnalyse = (root: string, trackId: number) => invoke<GridDoc>("g
 /** Writes the grid (`doc`) and/or the cue (`cue.frames`, null clears it); a null part is left alone. */
 export const gridSave = (root: string, trackId: number, doc: GridDoc | null, cue: { frames: number | null } | null) =>
   invoke<GridSaved>("grid_save", { root, trackId, doc, cue });
+
+/** Names of the mixes that contain the track. A mix clip keeps the tempo the track had when the
+ * mix was made, so saving a new grid leaves these mixes out of step until they are beatmatched
+ * again: the editor lists them and asks before it saves. */
+export const gridMixesUsing = (root: string, trackId: number) => invoke<string[]>("grid_mixes_using", { root, trackId });

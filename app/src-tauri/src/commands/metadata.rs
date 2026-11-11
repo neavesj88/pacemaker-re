@@ -22,13 +22,13 @@ pub struct TrackEditEntry {
 
 /// Sets a track's star rating (0 = unrated to 5).
 #[tauri::command]
-pub async fn metadata_set_rating(root: String, track_id: i64, stars: u8) -> AppResult<()> {
-    tauri::async_runtime::spawn_blocking(move || -> AppResult<()> {
+pub async fn metadata_set_rating(app: tauri::AppHandle, root: String, track_id: i64, stars: u8) -> AppResult<()> {
+    crate::state::quick_write(app, root.clone(), move || -> AppResult<()> {
         let mut lib = Library::open(&PathBuf::from(root))?;
         lib.set_track_rating(track_id, stars)?;
         Ok(())
     })
-    .await?
+    .await
 }
 
 /// The editable fields of the given tracks, in the order asked (read-only).
@@ -43,13 +43,13 @@ pub async fn metadata_track_details(root: String, track_ids: Vec<i64>) -> AppRes
 
 /// Saves the edits in one transaction; returns how many tracks actually changed.
 #[tauri::command]
-pub async fn metadata_save(root: String, edits: Vec<TrackEditEntry>) -> AppResult<usize> {
-    tauri::async_runtime::spawn_blocking(move || -> AppResult<usize> {
+pub async fn metadata_save(app: tauri::AppHandle, root: String, edits: Vec<TrackEditEntry>) -> AppResult<usize> {
+    crate::state::quick_write(app, root.clone(), move || -> AppResult<usize> {
         let mut lib = Library::open(&PathBuf::from(root))?;
         let edits: Vec<(i64, TrackEdit)> = edits.into_iter().map(|e| (e.track_id, e.edit)).collect();
         Ok(lib.edit_tracks(&edits)?)
     })
-    .await?
+    .await
 }
 
 /// This area's command paths, one per line, written `$crate::commands::metadata::name,`.

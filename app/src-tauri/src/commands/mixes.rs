@@ -109,8 +109,8 @@ pub async fn mix_open(root: String, id: i64) -> AppResult<MixDoc> {
 
 /// Creates an empty mix and returns its id. Fails if the name is empty, too long or taken.
 #[tauri::command]
-pub async fn mix_new(root: String, name: String) -> AppResult<i64> {
-    tauri::async_runtime::spawn_blocking(move || -> AppResult<i64> { Ok(Library::open(Path::new(&root))?.create_mix(&name)?) }).await?
+pub async fn mix_new(app: tauri::AppHandle, root: String, name: String) -> AppResult<i64> {
+    crate::state::quick_write(app, root.clone(), move || -> AppResult<i64> { Ok(Library::open(Path::new(&root))?.create_mix(&name)?) }).await
 }
 
 /// Validates the document and writes it as the mix's content (name, blob, `mixtracks`, play
@@ -119,8 +119,8 @@ pub async fn mix_new(root: String, name: String) -> AppResult<i64> {
 /// envelope, positions are out of order and so on. An unchanged document writes the identical
 /// blob.
 #[tauri::command]
-pub async fn mix_save(root: String, id: i64, doc: MixDoc) -> AppResult<MixSaved> {
-    tauri::async_runtime::spawn_blocking(move || -> AppResult<MixSaved> { save_in(&mut Library::open(Path::new(&root))?, id, &doc) }).await?
+pub async fn mix_save(app: tauri::AppHandle, root: String, id: i64, doc: MixDoc) -> AppResult<MixSaved> {
+    crate::state::quick_write(app, root.clone(), move || -> AppResult<MixSaved> { save_in(&mut Library::open(Path::new(&root))?, id, &doc) }).await
 }
 
 /// The problems `mix_save` would refuse the document for (empty = it would save), without
@@ -136,22 +136,22 @@ pub async fn mix_validate(root: String, doc: MixDoc) -> AppResult<Vec<String>> {
 
 /// Renames a mix (the row and the document name together).
 #[tauri::command]
-pub async fn mix_rename(root: String, id: i64, name: String) -> AppResult<()> {
-    tauri::async_runtime::spawn_blocking(move || -> AppResult<()> { Ok(Library::open(Path::new(&root))?.rename_mix(id, &name)?) }).await?
+pub async fn mix_rename(app: tauri::AppHandle, root: String, id: i64, name: String) -> AppResult<()> {
+    crate::state::quick_write(app, root.clone(), move || -> AppResult<()> { Ok(Library::open(Path::new(&root))?.rename_mix(id, &name)?) }).await
 }
 
 /// Deletes a mix. Irreversible: the caller must have asked the user, naming the mix. Returns
 /// whether it existed.
 #[tauri::command]
-pub async fn mix_delete(root: String, id: i64) -> AppResult<bool> {
-    tauri::async_runtime::spawn_blocking(move || -> AppResult<bool> { Ok(Library::open(Path::new(&root))?.delete_mix(id)?) }).await?
+pub async fn mix_delete(app: tauri::AppHandle, root: String, id: i64) -> AppResult<bool> {
+    crate::state::quick_write(app, root.clone(), move || -> AppResult<bool> { Ok(Library::open(Path::new(&root))?.delete_mix(id)?) }).await
 }
 
 /// Writes the metadata fields of the library row (genre, year, rating, producer, remixer,
 /// comments; the other fields of `meta` are ignored).
 #[tauri::command]
-pub async fn mix_set_meta(root: String, id: i64, meta: MixMeta) -> AppResult<()> {
-    tauri::async_runtime::spawn_blocking(move || -> AppResult<()> { Ok(Library::open(Path::new(&root))?.set_mix_meta(id, &meta.to_update())?) }).await?
+pub async fn mix_set_meta(app: tauri::AppHandle, root: String, id: i64, meta: MixMeta) -> AppResult<()> {
+    crate::state::quick_write(app, root.clone(), move || -> AppResult<()> { Ok(Library::open(Path::new(&root))?.set_mix_meta(id, &meta.to_update())?) }).await
 }
 
 fn import_in(lib: &mut Library, bytes: &[u8], fallback_name: &str) -> AppResult<i64> {
@@ -178,13 +178,13 @@ fn import_in(lib: &mut Library, bytes: &[u8], fallback_name: &str) -> AppResult<
 /// library by title and artist (the ids inside the file belong to the library it came from);
 /// the import is refused, listing them, if some are missing. A name already in use gets " (2)".
 #[tauri::command]
-pub async fn mix_import_pmk(root: String, path: String) -> AppResult<i64> {
-    tauri::async_runtime::spawn_blocking(move || -> AppResult<i64> {
+pub async fn mix_import_pmk(app: tauri::AppHandle, root: String, path: String) -> AppResult<i64> {
+    crate::state::quick_write(app, root.clone(), move || -> AppResult<i64> {
         let bytes = std::fs::read(&path)?;
         let stem = Path::new(&path).file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| "Imported mix".into());
         import_in(&mut Library::open(Path::new(&root))?, &bytes, &stem)
     })
-    .await?
+    .await
 }
 
 /// Writes the saved mix as a `.pmk` file at `path` (overwriting; the caller asks first).
