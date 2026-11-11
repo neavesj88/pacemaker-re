@@ -16,6 +16,8 @@ use pm_mixer::engine::Resolver;
 use pm_mixer::{Format, Options, PeqMode};
 use serde::Serialize;
 
+use super::loudness::{self, LevelSettings, LoudnessReport, PreviewGains, Reading, Subject};
+use super::range::{self, RangePrefs, RangeSpec, Resolved};
 use crate::commands::mixes::doc::MixDoc;
 use crate::error::{AppError, AppResult};
 
@@ -165,7 +167,15 @@ pub fn next_preview_path() -> AppResult<PathBuf> {
 }
 
 /// Renders `[from_sec, to_sec)` of the timeline to a WAV at `dest`.
+#[cfg(test)]
 pub fn render_preview(root: &Path, doc: &MixDoc, from_sec: f64, to_sec: f64, dest: &Path) -> AppResult<RenderedAudio> {
+    render_preview_with(root, doc, from_sec, to_sec, dest, None, None)
+}
+
+/// [`render_preview`] with the gains of a loudness analysis (per-clip levelling and master gain),
+/// applied by the same engine options an export uses, so the preview plays at the export's level.
+/// `edge_fade_ms` fades the window's cuts the way a partial export does (omit for plain playback).
+pub fn render_preview_with(root: &Path, doc: &MixDoc, from_sec: f64, to_sec: f64, dest: &Path, gains: Option<&PreviewGains>, edge_fade_ms: Option<f64>) -> AppResult<RenderedAudio> {
     if !from_sec.is_finite() || !to_sec.is_finite() || from_sec < 0.0 || to_sec <= from_sec {
         return Err("The preview range is empty.".into());
     }
@@ -174,7 +184,16 @@ pub fn render_preview(root: &Path, doc: &MixDoc, from_sec: f64, to_sec: f64, des
     }
     let mix = doc.to_mix()?;
     let res = LibResolver::open(root, &mix)?;
-    let opts = Options { peq: peq_mode(root), ..Options::window_secs(from_sec, to_sec) };
+    let mut opts = Options { peq: peq_mode(root), ..Options::window_secs(from_sec, to_sec) };
+    if let Some(g) = gains {
+        loudness::apply_gains(doc, g, &mut opts);
+    }
+    if let Some(ms) = edge_fade_ms {
+        if !ms.is_finite() || !(0.0..=2000.0).contains(&ms) {
+            return Err("The fade at the cuts must be between 0 and 2000 milliseconds.".into());
+        }
+        opts.edge_fade_frames = (ms / 1000.0 * f64::from(pm_mixer::RATE)).round() as i64;
+    }
     let out = pm_mixer::render_to_file(&mix, &res, &opts, Format::Wav, dest, &mut |_| true).map_err(mixer_err)?;
     Ok(RenderedAudio { path: dest.to_string_lossy().into_owned(), duration_secs: out.frames as f64 / f64::from(pm_mixer::RATE), warnings: out.warnings, clips_failed: out.clips_failed })
 }
@@ -212,45 +231,116 @@ pub fn check_dest_ext(root: &Path, dest: &Path, want: &str) -> AppResult<()> {
     Ok(())
 }
 
+/// What the user asked of an export beyond the file name and format: which part of the mix, and
+/// the loudness settings. Every field has a default (the whole mix, no loudness processing).
+#[derive(Debug, Clone, Default, serde::Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct ExportRequest {
+    pub range: RangeSpec,
+    pub range_prefs: RangePrefs,
+    pub levels: LevelSettings,
+}
+
 /// Everything about an export that can fail fast, checked before the job starts.
 pub struct ExportPlan {
     pub mix: Mix,
+    /// The editor's document the plan was made from (clip ids, for the loudness gains).
+    pub doc: MixDoc,
     pub res: LibResolver,
     pub format: Format,
     pub dest: PathBuf,
     /// What `Wah` tools render as, read from the card when the export was planned.
     pub peq: PeqMode,
+    /// The part of the timeline to export; `None` = the whole mix from its first audible frame.
+    pub range: Option<Resolved>,
+    pub levels: LevelSettings,
 }
 
 impl ExportPlan {
     /// Seconds of audio the export renders: from the first audible frame to the end of the last
-    /// audible clip (what the engine does with `skip_leading_silence`), so progress reaches its
-    /// total.
+    /// audible clip (what the engine does with `skip_leading_silence`), or the chosen range cut to
+    /// the end of the last clip, so progress reaches its total.
     pub fn span_secs(&self) -> f64 {
-        pm_mixer::engine::export_span(&self.mix).map_or(0.0, |(from, to)| (to - from) as f64 / f64::from(pm_mixer::RATE))
+        let rate = f64::from(pm_mixer::RATE);
+        let whole = pm_mixer::engine::export_span(&self.mix);
+        match (&self.range, whole) {
+            (Some(r), Some((_, end))) => (r.to.min(end) - r.from).max(0) as f64 / rate,
+            (_, Some((from, to))) => (to - from) as f64 / rate,
+            _ => 0.0,
+        }
+    }
+
+    /// The range as the track list takes it (timeline frames), when this is a partial export.
+    pub fn span(&self) -> Option<(i64, i64)> {
+        self.range.as_ref().map(|r| (r.from, r.to))
     }
 }
 
+#[cfg(test)]
 pub fn plan_export(root: &Path, doc: &MixDoc, dest: &str, format: &str) -> AppResult<ExportPlan> {
+    plan_export_with(root, doc, dest, format, &ExportRequest::default())
+}
+
+pub fn plan_export_with(root: &Path, doc: &MixDoc, dest: &str, format: &str, req: &ExportRequest) -> AppResult<ExportPlan> {
     let format = parse_format(format)?;
     let dest = PathBuf::from(dest);
     check_dest(root, &dest, format)?;
+    req.levels.validate()?;
     let mix = doc.to_mix()?;
+    let range = range::resolve_mix(doc, &mix, &req.range, &req.range_prefs)?;
     let res = LibResolver::open(root, &mix)?;
-    Ok(ExportPlan { mix, res, format, dest, peq: peq_mode(root) })
+    Ok(ExportPlan { mix, doc: doc.clone(), res, format, dest, peq: peq_mode(root), range, levels: req.levels.clone() })
 }
 
-/// Renders the whole mix to the planned file (starting at the first audible frame). `progress`
-/// gets 0..1 and returns `false` to cancel.
+/// An export that has finished: the file and what it measured.
+pub struct Exported {
+    pub audio: RenderedAudio,
+    pub report: LoudnessReport,
+}
+
+/// Renders the planned export (the whole mix from its first audible frame, or the chosen range).
+/// With loudness settings active it first runs the analysis passes (about half of `progress`),
+/// then renders with the gains they found. `progress` gets 0..1 and returns `false` to cancel.
+#[cfg(test)]
 pub fn run_export(plan: &ExportPlan, progress: &mut dyn FnMut(f64) -> bool) -> AppResult<RenderedAudio> {
-    let opts = Options { skip_leading_silence: true, peq: plan.peq, ..Options::default() };
-    let out = pm_mixer::render_to_file(&plan.mix, &plan.res, &opts, plan.format, &plan.dest, progress).map_err(mixer_err)?;
-    Ok(RenderedAudio { path: plan.dest.to_string_lossy().into_owned(), duration_secs: out.frames as f64 / f64::from(pm_mixer::RATE), warnings: out.warnings, clips_failed: out.clips_failed })
+    Ok(run_export_full(plan, progress)?.audio)
+}
+
+/// [`run_export`] that also returns the loudness report (the analysis, when there was one, and the
+/// loudness of the finished audio, measured before it is encoded).
+pub fn run_export_full(plan: &ExportPlan, progress: &mut dyn FnMut(f64) -> bool) -> AppResult<Exported> {
+    let subject = Subject { mix: &plan.mix, doc: &plan.doc, res: &plan.res, peq: plan.peq, range: plan.range.as_ref() };
+    let mut opts = Options { measure: true, ..subject.options() };
+    let share = if plan.levels.active() { 0.5 } else { 0.0 };
+    let mut report = if plan.levels.active() {
+        let r = loudness::analyse(&subject, &plan.levels, "export", &mut |p| progress(p * share)).map_err(mixer_err)?;
+        loudness::apply_gains(&plan.doc, &r.gains, &mut opts);
+        r
+    } else {
+        LoudnessReport { source: "export".into(), ..LoudnessReport::default() }
+    };
+    let out = pm_mixer::render_to_file(&plan.mix, &plan.res, &opts, plan.format, &plan.dest, &mut |p| progress(share + (1.0 - share) * p)).map_err(mixer_err)?;
+    let done = out.loudness.map(|l| Reading::from(l.output));
+    if report.from_secs == 0.0 && report.to_secs == 0.0 {
+        report.from_secs = plan.range.as_ref().map(|r| r.from_secs).or_else(|| pm_mixer::engine::export_span(&plan.mix).map(|(f, _)| f as f64 / f64::from(pm_mixer::RATE))).unwrap_or(0.0);
+        report.to_secs = report.from_secs + out.frames as f64 / f64::from(pm_mixer::RATE);
+    }
+    if let (Some(target), Some(r)) = (plan.levels.target_lufs, done.and_then(|d| d.lufs))
+        && (r - target).abs() > 0.5
+    {
+        report.notes.push(format!("The file measures {r:.1} LUFS, not the {target:.1} LUFS target: {}.", if r < target { "the limiter held the peaks, or the boost limit applied" } else { "the cut limit applied" }));
+    }
+    report.result = done;
+    Ok(Exported {
+        audio: RenderedAudio { path: plan.dest.to_string_lossy().into_owned(), duration_secs: out.frames as f64 / f64::from(pm_mixer::RATE), warnings: out.warnings, clips_failed: out.clips_failed },
+        report,
+    })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::commands::export::loudness::ClipLevel;
     use pm_formats::library::TrackMeta;
     use pm_formats::mix::Position;
     use pm_formats::strfile;
@@ -264,6 +354,11 @@ mod tests {
 
     /// 16-bit stereo WAV of a sine.
     fn write_wav(path: &Path, secs: f32, freq: f32) -> usize {
+        write_wav_amp(path, secs, freq, 12000.0)
+    }
+
+    /// 16-bit stereo WAV of a sine with peak value `amp` (of 32767).
+    fn write_wav_amp(path: &Path, secs: f32, freq: f32, amp: f32) -> usize {
         let n = (secs * 44100.0) as usize;
         let mut b = Vec::new();
         b.extend_from_slice(b"RIFF");
@@ -279,12 +374,50 @@ mod tests {
         b.extend_from_slice(b"data");
         b.extend_from_slice(&(n as u32 * 4).to_le_bytes());
         for i in 0..n {
-            let v = ((2.0 * std::f32::consts::PI * freq * i as f32 / 44100.0).sin() * 12000.0) as i16;
+            let v = ((2.0 * std::f32::consts::PI * freq * i as f32 / 44100.0).sin() * amp) as i16;
             b.extend_from_slice(&v.to_le_bytes());
             b.extend_from_slice(&v.to_le_bytes());
         }
         std::fs::write(path, b).unwrap();
         n
+    }
+
+    /// A temp volume with two synthetic tracks of different level (peak 12000 and 3000 of 32767,
+    /// 20 s each, 1 kHz); returns (volume, scratch dir, their ids).
+    fn library_two(tag: &str) -> (PathBuf, PathBuf, [i64; 2]) {
+        let vol = temp(&format!("{tag}-vol"));
+        let scratch = temp(&format!("{tag}-src"));
+        let mut lib = Library::create(&vol).unwrap();
+        let mut ids = [0i64; 2];
+        for (k, amp) in [12000.0, 3000.0].into_iter().enumerate() {
+            let f = scratch.join(format!("synthetic tone {k}.wav"));
+            write_wav_amp(&f, 20.0, 1000.0, amp);
+            let a = strfile::Analysis {
+                normalize_factor: 1.0,
+                beat_start_offset: 0,
+                beats: (0..8).map(|k| strfile::Beat { pos: (k as f64 * 0.5 * 44100.0) as i64, bpm: 120.0 }).collect(),
+                first_downbeat: Some(0),
+            };
+            let meta = TrackMeta { title: format!("Tone {k}"), format: "WAV".into(), sample_rate: 44100, play_time_secs: 20, ..Default::default() };
+            ids[k] = lib.add_track(&f, &meta, &a).unwrap();
+        }
+        (vol, scratch, ids)
+    }
+
+    /// Two 20 s clips one after the other with a 4 s gap (clip ids "a..." and "b...").
+    fn two_clip_doc(ids: [i64; 2]) -> MixDoc {
+        let mut mix = Mix::new("Level Test");
+        for (k, id) in ids.into_iter().enumerate() {
+            let pos = Position { start: k as f64 * 24.0 * 44100.0, length: 20.0 * 44100.0, limit_size: true, session_event_id: format!("{:032}", k + 1), ..Position::default() };
+            mix.tracks.push(Track::new(id, "/pmdb_tracks/unused", 120.0, 1.0, pos));
+        }
+        MixDoc::from_mix(7, &mix)
+    }
+
+    fn lufs_of(path: &Path, from_sec: f64, to_sec: f64) -> f64 {
+        let a = pm_mixer::audio::load(path).unwrap();
+        let (f, t) = ((from_sec * 44100.0) as usize, (to_sec * 44100.0) as usize);
+        pm_mixer::loudness::measure(&a.l[f..t], &a.r[f..t], 44100).lufs.expect("a loudness")
     }
 
     /// A temp volume with one synthetic track; returns (volume, scratch dir, track id, frames).
@@ -529,6 +662,227 @@ mod tests {
         assert_eq!(crate::commands::export::plan_cue(&plan, &doc, &opts, true).unwrap().0, path);
         let target = crate::commands::export::export_cue_target(plan.dest.to_string_lossy().into_owned());
         assert!(target.exists && target.cue_path.ends_with("mix.cue"));
+        std::fs::remove_dir_all(vol).unwrap();
+        std::fs::remove_dir_all(scratch).unwrap();
+    }
+
+    /// The target loudness is reached in the file itself, and the number the export reports is the
+    /// number an independent measurement of the written file gives.
+    #[test]
+    fn an_export_with_a_target_reaches_it_and_reports_the_files_real_loudness() {
+        let (vol, scratch, ids) = library_two("target");
+        let doc = two_clip_doc(ids);
+        let out = scratch.join("target.wav");
+        let req = ExportRequest { levels: LevelSettings { target_lufs: Some(-20.0), ..LevelSettings::default() }, ..ExportRequest::default() };
+        let plan = plan_export_with(&vol, &doc, out.to_str().unwrap(), "wav", &req).unwrap();
+        let mut seen = Vec::new();
+        let done = run_export_full(&plan, &mut |p| {
+            seen.push(p);
+            true
+        })
+        .unwrap();
+        assert!(seen.windows(2).all(|w| w[1] >= w[0] - 1e-9), "progress never goes back across the passes");
+        assert!((seen.last().unwrap() - 1.0).abs() < 1e-9);
+        let r = &done.report;
+        assert_eq!(r.source, "export");
+        let measured = pm_mixer::audio::load(&out).unwrap();
+        let file = pm_mixer::loudness::measure(&measured.l, &measured.r, 44100).lufs.unwrap();
+        assert!((file + 20.0).abs() < 0.15, "the file measures {file} LUFS, wanted -20");
+        let reported = r.result.unwrap().lufs.unwrap();
+        assert!((reported - file).abs() < 0.1, "reported {reported}, file {file}");
+        assert!((r.target_lufs.unwrap() + 20.0).abs() < 1e-9 && r.master_gain_db != 0.0);
+        assert!(!r.limiter_will_act, "{:?}", r.notes);
+        std::fs::remove_dir_all(vol).unwrap();
+        std::fs::remove_dir_all(scratch).unwrap();
+    }
+
+    /// A target the limiter cannot deliver is reported as missed, not claimed.
+    #[test]
+    fn a_target_beyond_what_the_limiter_allows_is_reported_as_missed() {
+        let (vol, scratch, ids) = library_two("missed");
+        let doc = two_clip_doc(ids);
+        let out = scratch.join("missed.wav");
+        // a 1 kHz sine at -0.2 dBFS peak is already near the ceiling; asking for 0 LUFS cannot be met
+        let req = ExportRequest { levels: LevelSettings { target_lufs: Some(-1.0), max_boost_db: 40.0, ..LevelSettings::default() }, ..ExportRequest::default() };
+        let plan = plan_export_with(&vol, &doc, out.to_str().unwrap(), "wav", &req).unwrap();
+        let done = run_export_full(&plan, &mut |_| true).unwrap();
+        let reached = done.report.result.unwrap().lufs.unwrap();
+        assert!(reached < -1.0 - 0.5, "reached {reached}");
+        assert!(done.report.limiter_will_act);
+        assert!(done.report.notes.iter().any(|n| n.contains("The file measures") && n.contains("limiter")), "{:?}", done.report.notes);
+        std::fs::remove_dir_all(vol).unwrap();
+        std::fs::remove_dir_all(scratch).unwrap();
+    }
+
+    /// Per-clip levelling brings a loud and a quiet clip together, in the file.
+    #[test]
+    fn clip_levelling_evens_out_the_clips_in_the_exported_file() {
+        let (vol, scratch, ids) = library_two("levelling");
+        let doc = two_clip_doc(ids);
+        let plain = scratch.join("plain.wav");
+        run_export(&plan_export(&vol, &doc, plain.to_str().unwrap(), "wav").unwrap(), &mut |_| true).unwrap();
+        let gap_before = lufs_of(&plain, 1.0, 19.0) - lufs_of(&plain, 25.0, 43.0);
+        assert!((gap_before - 12.04).abs() < 0.2, "the clips start {gap_before} LU apart");
+
+        let out = scratch.join("levelled.wav");
+        let req = ExportRequest { levels: LevelSettings { clip_level: ClipLevel::Median, ..LevelSettings::default() }, ..ExportRequest::default() };
+        let plan = plan_export_with(&vol, &doc, out.to_str().unwrap(), "wav", &req).unwrap();
+        let done = run_export_full(&plan, &mut |_| true).unwrap();
+        let gap_after = lufs_of(&out, 1.0, 19.0) - lufs_of(&out, 25.0, 43.0);
+        assert!(gap_after.abs() < 0.2, "after levelling the clips are {gap_after} LU apart");
+        let rows = &done.report.clips;
+        assert_eq!(rows.len(), 2);
+        assert!((rows[0].gain_db + 6.02).abs() < 0.1 && (rows[1].gain_db - 6.02).abs() < 0.1, "{rows:?}");
+        assert!(done.report.clip_reference_lufs.is_some());
+        // no target, so the master gain stays at 0 dB
+        assert_eq!(done.report.master_gain_db, 0.0);
+        std::fs::remove_dir_all(vol).unwrap();
+        std::fs::remove_dir_all(scratch).unwrap();
+    }
+
+    /// Preview equals action: the gains an analysis finds, played through a range preview, sound
+    /// like the same stretch of the export made with the same settings.
+    #[test]
+    fn a_preview_with_the_analysed_gains_matches_the_export() {
+        let (vol, scratch, ids) = library_two("previewmatch");
+        let doc = two_clip_doc(ids);
+        let req = ExportRequest { levels: LevelSettings { target_lufs: Some(-16.0), clip_level: ClipLevel::Median, ..LevelSettings::default() }, ..ExportRequest::default() };
+
+        // the dialog's analysis
+        let mix = doc.to_mix().unwrap();
+        let res = LibResolver::open(&vol, &mix).unwrap();
+        let subject = Subject { mix: &mix, doc: &doc, res: &res, peq: peq_mode(&vol), range: None };
+        let analysis = loudness::analyse(&subject, &req.levels, "analysis", &mut |_| true).unwrap();
+        assert_eq!(analysis.source, "analysis");
+
+        // the preview of a stretch of the second clip, at those gains
+        let pv = scratch.join("pv.wav");
+        render_preview_with(&vol, &doc, 26.0, 30.0, &pv, Some(&analysis.gains), None).unwrap();
+        // the export with the same settings
+        let ex = scratch.join("ex.wav");
+        let plan = plan_export_with(&vol, &doc, ex.to_str().unwrap(), "wav", &req).unwrap();
+        let done = run_export_full(&plan, &mut |_| true).unwrap();
+        assert_eq!(done.report.gains, analysis.gains, "the export finds the same gains as the analysis");
+        // timeline 26 s is 2 s into the second clip; the export starts at timeline 0 here
+        let p = pm_mixer::audio::load(&pv).unwrap();
+        let e = pm_mixer::audio::load(&ex).unwrap();
+        let rms = |v: &[f32]| 20.0 * (v.iter().map(|x| f64::from(*x).powi(2)).sum::<f64>() / v.len() as f64).sqrt().log10();
+        let (pr, er) = (rms(&p.l[44100..3 * 44100]), rms(&e.l[27 * 44100..29 * 44100]));
+        assert!((pr - er).abs() < 0.1, "preview {pr} dB vs export {er} dB");
+        // and without the gains it would have been a different level
+        let flat = scratch.join("flat.wav");
+        render_preview_with(&vol, &doc, 26.0, 30.0, &flat, None, None).unwrap();
+        let f = pm_mixer::audio::load(&flat).unwrap();
+        assert!((rms(&f.l[44100..3 * 44100]) - er).abs() > 3.0, "the gains must make an audible difference in this fixture");
+        std::fs::remove_dir_all(vol).unwrap();
+        std::fs::remove_dir_all(scratch).unwrap();
+    }
+
+    /// A partial export is that part of the mix: right length, right audio, right track list.
+    #[test]
+    fn a_partial_export_is_the_chosen_range_with_its_own_track_list() {
+        use crate::commands::export::tracklist::{self, TracklistOptions};
+        let (vol, scratch, ids) = library_two("partial");
+        let doc = two_clip_doc(ids);
+        let whole = scratch.join("whole.wav");
+        run_export(&plan_export(&vol, &doc, whole.to_str().unwrap(), "wav").unwrap(), &mut |_| true).unwrap();
+        let full = pm_mixer::audio::load(&whole).unwrap();
+
+        // from clip b to clip b: 24 s .. 44 s on the timeline
+        let part = scratch.join("part.wav");
+        let req = ExportRequest { range: RangeSpec::Clips { from_clip: doc.clips[1].id.clone(), to_clip: doc.clips[1].id.clone() }, range_prefs: RangePrefs { edge_fade_ms: 0.0, ..RangePrefs::default() }, ..ExportRequest::default() };
+        let plan = plan_export_with(&vol, &doc, part.to_str().unwrap(), "wav", &req).unwrap();
+        assert!((plan.span_secs() - 20.0).abs() < 1e-9);
+        let done = run_export_full(&plan, &mut |_| true).unwrap();
+        assert!((done.audio.duration_secs - 20.0).abs() < 1e-6);
+        let p = pm_mixer::audio::load(&part).unwrap();
+        assert_eq!(p.len(), 20 * 44100);
+        // the same audio as that stretch of the full export (the whole export starts at timeline 0 here)
+        let off = 24 * 44100;
+        let worst = (0..p.len()).map(|i| (p.l[i] - full.l[off + i]).abs()).fold(0.0f32, f32::max);
+        assert!(worst < 1e-4, "the partial file differs from the same stretch of the full file by {worst}");
+
+        // a time range inside the first clip, with the default 20 ms fade at both cuts
+        let cut = scratch.join("cut.wav");
+        let req = ExportRequest { range: RangeSpec::Time { from_sec: 2.0, to_sec: 6.0 }, ..ExportRequest::default() };
+        let plan = plan_export_with(&vol, &doc, cut.to_str().unwrap(), "wav", &req).unwrap();
+        run_export_full(&plan, &mut |_| true).unwrap();
+        let c = pm_mixer::audio::load(&cut).unwrap();
+        assert_eq!(c.len(), 4 * 44100);
+        assert!(c.l[0].abs() < 0.01 && c.l[c.len() - 1].abs() < 0.01, "faded at the cuts");
+        assert!((c.l[22050..22100].iter().map(|x| x.abs()).fold(0.0, f32::max) - full.l[2 * 44100 + 22050..2 * 44100 + 22100].iter().map(|x| x.abs()).fold(0.0, f32::max)).abs() < 1e-4, "untouched in the middle");
+
+        // previewing the range with the same fade is the same samples as exporting it
+        let pv = scratch.join("range-preview.wav");
+        render_preview_with(&vol, &doc, 2.0, 6.0, &pv, None, Some(20.0)).unwrap();
+        let q = pm_mixer::audio::load(&pv).unwrap();
+        assert_eq!(q.l, c.l, "a range preview with the export's fade is the export");
+        assert!(render_preview_with(&vol, &doc, 2.0, 6.0, &pv, None, Some(-1.0)).is_err());
+        let plain = scratch.join("range-plain.wav");
+        render_preview_with(&vol, &doc, 2.0, 6.0, &plain, None, None).unwrap();
+        let head = |v: &[f32]| v[..441].iter().map(|x| x.abs()).fold(0.0f32, f32::max);
+        assert!(head(&pm_mixer::audio::load(&plain).unwrap().l) > head(&c.l) + 0.05, "no fade unless asked");
+
+        // the CUE sheet of a partial export counts from the start of the range
+        let doc2 = {
+            let mut d = doc.clone();
+            // make clip b start while a is still playing so the range from 10 s catches both
+            d.clips[1].span.start = 15.0 * 44100.0;
+            d.refresh();
+            d
+        };
+        let req = ExportRequest { range: RangeSpec::Time { from_sec: 10.0, to_sec: 30.0 }, ..ExportRequest::default() };
+        let plan = plan_export_with(&vol, &doc2, scratch.join("listed.wav").to_str().unwrap(), "wav", &req).unwrap();
+        assert_eq!(plan.span(), Some((10 * 44100, 30 * 44100)));
+        let list = tracklist::render_all_in(&doc2, &TracklistOptions::default(), "listed.wav", &|id| plan.res.has(id), plan.span()).unwrap();
+        assert_eq!(list.entries.len(), 2);
+        assert_eq!(list.entries[0].start_frames, 0, "already playing when the range starts");
+        assert_eq!(list.entries[1].start_frames, 5 * 44100, "15 s on the timeline, the file starts at 10 s");
+        assert_eq!(list.duration_secs, 20.0);
+        // a range that hears only the first clip lists only it
+        let req = ExportRequest { range: RangeSpec::Time { from_sec: 2.0, to_sec: 6.0 }, ..ExportRequest::default() };
+        let plan = plan_export_with(&vol, &doc, scratch.join("x.wav").to_str().unwrap(), "wav", &req).unwrap();
+        let list = tracklist::render_all_in(&doc, &TracklistOptions::default(), "x.wav", &|id| plan.res.has(id), plan.span()).unwrap();
+        assert_eq!(list.entries.len(), 1);
+        assert!(list.warnings.iter().any(|w| w.contains("outside the exported range")), "{:?}", list.warnings);
+        std::fs::remove_dir_all(vol).unwrap();
+        std::fs::remove_dir_all(scratch).unwrap();
+    }
+
+    #[test]
+    fn bad_loudness_settings_and_ranges_are_refused_before_the_job_starts() {
+        let (vol, scratch, ids) = library_two("badreq");
+        let doc = two_clip_doc(ids);
+        let dest = scratch.join("x.wav");
+        let d = dest.to_str().unwrap();
+        let levels = |l: LevelSettings| ExportRequest { levels: l, ..ExportRequest::default() };
+        assert!(plan_export_with(&vol, &doc, d, "wav", &levels(LevelSettings { target_lufs: Some(3.0), ..LevelSettings::default() })).is_err());
+        assert!(plan_export_with(&vol, &doc, d, "wav", &levels(LevelSettings { max_boost_db: f64::NAN, ..LevelSettings::default() })).is_err());
+        let bad_range = ExportRequest { range: RangeSpec::Time { from_sec: 5.0, to_sec: 1.0 }, ..ExportRequest::default() };
+        assert!(plan_export_with(&vol, &doc, d, "wav", &bad_range).is_err());
+        let silent_gap = ExportRequest { range: RangeSpec::Time { from_sec: 21.0, to_sec: 23.0 }, ..ExportRequest::default() };
+        assert!(plan_export_with(&vol, &doc, d, "wav", &silent_gap).err().unwrap().to_string().contains("No track is heard"));
+        assert!(!dest.exists());
+        std::fs::remove_dir_all(vol).unwrap();
+        std::fs::remove_dir_all(scratch).unwrap();
+    }
+
+    #[test]
+    fn a_cancel_during_the_measuring_pass_leaves_no_file() {
+        let (vol, scratch, ids) = library_two("cancelmeasure");
+        let doc = two_clip_doc(ids);
+        let out = scratch.join("c.wav");
+        let req = ExportRequest { levels: LevelSettings { target_lufs: Some(-14.0), clip_level: ClipLevel::Median, ..LevelSettings::default() }, ..ExportRequest::default() };
+        let plan = plan_export_with(&vol, &doc, out.to_str().unwrap(), "wav", &req).unwrap();
+        let mut calls = 0;
+        let err = run_export_full(&plan, &mut |_| {
+            calls += 1;
+            calls < 3
+        })
+        .err()
+        .unwrap();
+        assert!(err.to_string().contains("cancelled"), "{err}");
+        assert!(!out.exists());
         std::fs::remove_dir_all(vol).unwrap();
         std::fs::remove_dir_all(scratch).unwrap();
     }

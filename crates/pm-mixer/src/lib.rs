@@ -16,13 +16,14 @@ pub mod clip;
 pub mod engine;
 pub mod env;
 pub mod fx;
+pub mod loudness;
 pub mod master;
 pub mod output;
 pub mod sinc;
 pub mod stretch;
 pub mod vocal;
 
-pub use engine::{render, render_to_vecs, DirResolver, Options, Rendered, Resolver};
+pub use engine::{render, render_to_vecs, DirResolver, Options, RenderLoudness, Rendered, Resolver};
 pub use fx::PeqMode;
 pub use output::{render_to_file, Format};
 

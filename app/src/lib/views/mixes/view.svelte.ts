@@ -21,6 +21,10 @@ class MixView {
   exporting = $state(false);
   /** Progress of the running audio export, 0..1. */
   exportPct = $state(0);
+  /** What the export is doing: measuring loudness first (about the first half), then rendering. */
+  exportPhase = $state<"measuring" | "rendering">("rendering");
+  /** The part of the timeline the export dialog has chosen (samples), shown as a band; null = none. */
+  rangeBand = $state<{ from: number; to: number } | null>(null);
   lanes = $state<Record<EnvLaneId, boolean>>({ tempo: false, key: false, gain: true });
   /** Library tracks the tracks view asked to add; consumed when a mix is open. */
   pending = $state.raw<number[]>([]);

@@ -3,8 +3,10 @@
 // so the editor and the player bar are one transport. The playhead follows `playback.position`,
 // which is in mix time. When rendering is unavailable (browser preview, or a build without the
 // mixer) `notice` says so and nothing plays.
+import { mixExport } from "$lib/state/mixexport.svelte";
 import { mixes } from "$lib/state/mixes.svelte";
 import { playback } from "$lib/state/playback.svelte";
+import { sameAudio } from "$lib/state/sameaudio";
 import { session } from "$lib/state/session.svelte";
 import type { MixDoc } from "$lib/api/mixes";
 import { SR, toSamples } from "./layout";
@@ -13,20 +15,8 @@ import { mv } from "./view.svelte";
 /** Length of one rendered window; playback continues into the next window by itself. */
 const WINDOW_SECS = 180;
 
-/** True when two documents sound the same: everything but the name, the library row and the
- * reference tempo, which never change the audio. Untouched parts are shared between documents,
- * so a reference comparison per field is enough. */
-function sameAudio(a: MixDoc | null, b: MixDoc | null): boolean {
-  if (a === b) return true;
-  if (!a || !b) return false;
-  const x = a as Record<string, unknown>;
-  const y = b as Record<string, unknown>;
-  for (const k of new Set([...Object.keys(x), ...Object.keys(y)])) {
-    if (k === "name" || k === "meta" || k === "tempoBpm") continue;
-    if (x[k] !== y[k]) return false;
-  }
-  return true;
-}
+/** The longest stretch one range preview renders (the backend's limit), seconds. */
+const MAX_RANGE_PREVIEW = 900;
 
 export type PreviewStatus = "idle" | "rendering" | "playing" | "paused";
 
@@ -46,6 +36,10 @@ class Preview {
   #span = 0;
   #token = 0;
   #raf = 0;
+  /** The loudness gains the loaded file was rendered with (`mixExport.gainsKey()`; "" = none). */
+  #gainsKey = "";
+  /** A range preview is loaded: it ends at this mix time and does not run on into the next window. */
+  #limit: number | null = null;
 
   /** Preview level 0..1 (the player's volume; a listening aid, not part of the mix). */
   get volume() {
@@ -60,7 +54,7 @@ class Preview {
   }
 
   get stale() {
-    return this.renderedDoc !== null && !sameAudio(this.renderedDoc, mixes.doc);
+    return this.renderedDoc !== null && (!sameAudio(this.renderedDoc, mixes.doc) || this.#gainsKey !== mixExport.gainsKey());
   }
 
   /** Plays from the playhead (or `fromSamples`), rendering first when the loaded audio is out of
@@ -76,7 +70,7 @@ class Preview {
     const endSec = doc.lengthSec;
     let startSec = fromSamples / SR;
     if (startSec >= endSec - 0.05) startSec = 0;
-    const loaded = this.#loaded && this.#owns() && sameAudio(this.renderedDoc, doc);
+    const loaded = this.#loaded && this.#owns() && sameAudio(this.renderedDoc, doc) && this.#limit === null && this.#gainsKey === mixExport.gainsKey();
     const inside = startSec >= this.#from - 0.01 && startSec <= this.#from + this.#span - 0.2;
     if (loaded && inside) {
       playback.seek(startSec);
@@ -86,17 +80,32 @@ class Preview {
     await this.#render(startSec);
   }
 
-  async #render(startSec: number) {
+  /** Plays a stretch of the mix once, as a partial export makes it: at the level of the current
+   * loudness analysis (when there is one) and with the fade at its cuts. It stops at `toSec`. */
+  async playRange(fromSec: number, toSec: number) {
+    const doc = mixes.doc;
+    if (!doc || doc.clips.length === 0) return;
+    this.notice = "";
+    const to = Math.min(toSec, fromSec + MAX_RANGE_PREVIEW);
+    if (to < toSec) this.notice = "Only the first 15 minutes of the range are previewed.";
+    await this.#render(fromSec, { to, fadeMs: mixExport.prefs.edgeFadeMs });
+  }
+
+  async #render(startSec: number, range?: { to: number; fadeMs: number }) {
     const doc = mixes.doc;
     if (!doc) return;
     const token = ++this.#token;
     this.#halt();
     this.status = "rendering";
     mv.playhead = toSamples(startSec);
+    const gains = mixExport.previewGains();
+    const gainsKey = mixExport.gainsKey();
     try {
-      const to = Math.min(doc.lengthSec, startSec + WINDOW_SECS);
-      const { path } = await mixes.renderPreview(startSec, to);
+      const to = range ? range.to : Math.min(doc.lengthSec, startSec + WINDOW_SECS);
+      const { path } = await mixes.renderPreview(startSec, to, gains, range?.fadeMs);
       if (token !== this.#token) return;
+      this.#gainsKey = gainsKey;
+      this.#limit = range ? range.to : null;
       this.#path = path;
       this.#loaded = true;
       this.#from = startSec;
@@ -132,7 +141,7 @@ class Preview {
     const doc = mixes.doc;
     if (!doc) return;
     const next = this.#from + this.#span;
-    if (sameAudio(this.renderedDoc, doc) && next < doc.lengthSec - 0.1) {
+    if (this.#limit === null && sameAudio(this.renderedDoc, doc) && this.#gainsKey === mixExport.gainsKey() && next < doc.lengthSec - 0.1) {
       await this.#render(next);
     } else {
       this.status = "paused";
@@ -191,6 +200,8 @@ class Preview {
     this.#token++;
     this.#halt();
     this.#path = null;
+    this.#limit = null;
+    this.#gainsKey = "";
     this.status = "idle";
     this.notice = "";
     this.renderedDoc = null;

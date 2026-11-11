@@ -2,8 +2,9 @@
 // export audio. Each asks the user the way it must (unsaved changes, naming what is deleted,
 // file dialogs) and reports the outcome with a toast.
 import { open, save } from "@tauri-apps/plugin-dialog";
-import { exportCancel, exportCueTarget, exportMixAudio } from "$lib/api/export";
+import { exportCancel, exportCueTarget, exportMixAudio, type ExportExtras } from "$lib/api/export";
 import { mixDelete, mixExportPmk, mixImportPmk, mixRename, type MixSummary } from "$lib/api/mixes";
+import { mixExport } from "$lib/state/mixexport.svelte";
 import { mixes } from "$lib/state/mixes.svelte";
 import { tracklist } from "$lib/state/tracklist.svelte";
 import { baseName } from "$lib/state/tracklistprefs";
@@ -139,20 +140,31 @@ export async function cancelExport() {
   }
 }
 
-/** Renders the open mix (including unsaved edits) to an audio file the user chooses. */
+/** Renders the open mix (including unsaved edits) to an audio file the user chooses: the part of
+ *  the mix and the loudness settings are the export dialog's (state/mixexport.svelte.ts). */
 export async function exportAudio() {
   const root = mixes.root;
   const doc = mixes.doc;
-  if (!root || !doc || mv.exporting) return;
+  if (!root || !doc || mv.exporting || mixExport.analysing) return;
   if (doc.clips.length === 0) {
     toast.show("There is nothing to export: add a track first.", "info");
+    return;
+  }
+  mixExport.ensureLoaded();
+  const extras = mixExport.extras();
+  if (!extras) {
+    toast.show("Fix the range in the export settings first.", "bad", 6000);
+    return;
+  }
+  if (mixExport.problem) {
+    toast.show(mixExport.problem, "bad", 8000);
     return;
   }
   let dest: string | null = null;
   try {
     dest = await save({
-      title: "Export the mix as audio",
-      defaultPath: `${doc.name}.ogg`,
+      title: mixExport.partial ? "Export part of the mix as audio" : "Export the mix as audio",
+      defaultPath: mixExport.partial ? `${doc.name} (part).ogg` : `${doc.name}.ogg`,
       filters: [
         { name: "Ogg Vorbis", extensions: ["ogg"] },
         { name: "WAV", extensions: ["wav"] },
@@ -180,7 +192,7 @@ export async function exportAudio() {
             message: `A CUE sheet with this name is already there. Exporting will replace it with the one of this mix once the render has finished.`,
             items: [`Replace ${target.cuePath}`],
             confirmLabel: "Replace it and export",
-            run: () => startExport(root, doc, chosen, format, true),
+            run: () => startExport(root, doc, chosen, format, true, extras),
           });
           return;
         }
@@ -190,17 +202,18 @@ export async function exportAudio() {
       return;
     }
   }
-  await startExport(root, doc, dest, format, replaceCue);
+  await startExport(root, doc, dest, format, replaceCue, extras);
 }
 
-async function startExport(root: string, doc: NonNullable<typeof mixes.doc>, dest: string, format: "ogg" | "wav", replaceCue: boolean) {
+async function startExport(root: string, doc: NonNullable<typeof mixes.doc>, dest: string, format: "ogg" | "wav", replaceCue: boolean, extras: ExportExtras) {
   if (mv.exporting) return;
   mv.exporting = true;
   mv.exportPct = 0;
-  toast.show(`Rendering “${doc.name}” to ${format.toUpperCase()}…`, "info", 6000);
+  mv.exportPhase = mixExport.active ? "measuring" : "rendering";
+  toast.show(`${mixExport.active ? "Measuring and rendering" : "Rendering"} “${doc.name}” to ${format.toUpperCase()}…`, "info", 6000);
   try {
     // resolves when the job has started; init.ts reports the end from the job-done event
-    const started = await exportMixAudio(root, doc, dest, format, tracklist.writeCue ? tracklist.snapshot() : undefined, replaceCue);
+    const started = await exportMixAudio(root, doc, dest, format, tracklist.writeCue ? tracklist.snapshot() : undefined, replaceCue, extras);
     if (started.cuePath) {
       const name = baseName(started.cuePath);
       toast.show(started.cueReplaces ? `${name} will be replaced when the render finishes.` : `The CUE sheet ${name} is written when the render finishes.`, "info", 8000);

@@ -206,11 +206,28 @@ fn clock(secs: u64, hours: bool, pad: bool) -> String {
 
 /// Builds the list for the clips of `doc` that an export of it would play. `has_audio` says
 /// whether a library track id has audio on the device (the engine leaves a clip without out).
+#[cfg(test)]
 pub fn build(doc: &MixDoc, opts: &TracklistOptions, has_audio: &dyn Fn(i64) -> bool) -> Result<Tracklist, String> {
+    build_in(doc, opts, has_audio, None)
+}
+
+/// [`build`] for an export of only the timeline frames `span` (`None` = the whole export). Times
+/// are relative to the start of that part; a clip already playing at the start is listed at 0:00 and
+/// a clip that is not heard inside the span is not listed.
+pub fn build_in(doc: &MixDoc, opts: &TracklistOptions, has_audio: &dyn Fn(i64) -> bool, span: Option<(i64, i64)>) -> Result<Tracklist, String> {
     let mix = doc.to_mix()?;
-    let (from, to) = export_span(&mix).ok_or("the mix has no audible clips")?;
-    let all = audible_clips(&mix);
+    let whole = export_span(&mix).ok_or("the mix has no audible clips")?;
+    let (from, to) = span.map_or(whole, |(f, t)| (f, t.min(whole.1)));
+    let mut all = audible_clips(&mix);
     let mut warnings = Vec::new();
+    if span.is_some() {
+        let before = all.len();
+        all.retain(|a| a.end > from && a.start < to);
+        if before > all.len() {
+            let out = before - all.len();
+            warnings.push(format!("{out} clip{} outside the exported range, so not in the list", if out == 1 { " is" } else { "s are" }));
+        }
+    }
     let bypassed = mix.tracks.iter().filter(|t| t.clip_bypassed).count();
     if bypassed > 0 {
         warnings.push(format!("{bypassed} bypassed clip{} not in the audio, so not in the list", if bypassed == 1 { " is" } else { "s are" }));
@@ -513,7 +530,12 @@ impl TracklistOut {
 
 /// Builds every format for `doc`. `audio_file_name` goes into the CUE sheet.
 pub fn render_all(doc: &MixDoc, opts: &TracklistOptions, audio_file_name: &str, has_audio: &dyn Fn(i64) -> bool) -> Result<TracklistOut, String> {
-    let tl = build(doc, opts, has_audio)?;
+    render_all_in(doc, opts, audio_file_name, has_audio, None)
+}
+
+/// [`render_all`] for an export of only the timeline frames `span` (see [`build_in`]).
+pub fn render_all_in(doc: &MixDoc, opts: &TracklistOptions, audio_file_name: &str, has_audio: &dyn Fn(i64) -> bool, span: Option<(i64, i64)>) -> Result<TracklistOut, String> {
+    let tl = build_in(doc, opts, has_audio, span)?;
     let yt = youtube(&tl, opts);
     let (cue, cue_issue) = match cue(doc, &tl, audio_file_name) {
         Ok(c) => (c, None),

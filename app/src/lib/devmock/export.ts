@@ -5,7 +5,7 @@
 // beat of the mix tempo, in a Blob) and an export is a timed fake job that reports progress and
 // finishes. Nothing is written anywhere.
 import { emit } from "@tauri-apps/api/event";
-import type { TracklistEntry, TracklistFormat, TracklistOptions, TracklistOut } from "$lib/api/export";
+import type { LevelSettings, LoudnessReport, RangeInfo, RangePrefs, RangeSpec, TracklistEntry, TracklistFormat, TracklistOptions, TracklistOut } from "$lib/api/export";
 import type { MixDoc } from "$lib/api/mixes";
 import { DEFAULT_OPTIONS } from "$lib/state/tracklistprefs";
 import { jobLock } from "./jobs";
@@ -14,8 +14,10 @@ import type { Handlers } from "./types";
 const RATE = 22050;
 let cancelled = false;
 
-/** A mono 16-bit WAV with a decaying 60 Hz thump on every beat. */
-function clickWav(secs: number, bpm: number): Blob {
+/** A mono 16-bit WAV with a decaying 60 Hz thump on every beat; `gainDb` scales it, so a preview
+ * made with loudness gains is audibly louder or quieter. */
+function clickWav(secs: number, bpm: number, gainDb = 0): Blob {
+  const gain = Math.pow(10, gainDb / 20);
   const n = Math.round(secs * RATE);
   const buf = new ArrayBuffer(44 + n * 2);
   const v = new DataView(buf);
@@ -35,7 +37,7 @@ function clickWav(secs: number, bpm: number): Blob {
   const beat = (60 / bpm) * RATE;
   for (let i = 0; i < n; i++) {
     const t = (i % beat) / RATE;
-    const s = Math.sin(2 * Math.PI * 60 * t) * Math.exp(-t * 14) * 0.6;
+    const s = Math.max(-1, Math.min(1, Math.sin(2 * Math.PI * 60 * t) * Math.exp(-t * 14) * 0.6 * gain));
     v.setInt16(44 + i * 2, Math.round(s * 32767), true);
   }
   return new Blob([buf], { type: "audio/wav" });
@@ -176,6 +178,101 @@ const withDefaults = (o: unknown): TracklistOptions => ({ ...DEFAULT_OPTIONS, ..
 
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+// ---- partial export and loudness --------------------------------------------------------------
+// Browser-side stand-ins for src-tauri/src/commands/export/{range,loudness}.rs: the same rules in
+// miniature (a range resolves against the clips that are heard; gains are the distance to a target,
+// limited), with invented readings derived from the fixture clips. The real commands are verified
+// by the Rust tests; do not grow this to match them.
+
+type MockClip = MixDoc["clips"][number];
+const heardClips = (doc: MixDoc) => doc.clips.filter((c) => !c.clipBypassed && c.visibleEnd > c.visibleStart && c.visibleEnd > 0).sort((a, b) => a.visibleStart - b.visibleStart);
+const clipName = (c?: MockClip) => c?.track?.title || c?.fuzzyId.title || "a clip";
+
+function mockRange(doc: MixDoc, spec: RangeSpec, prefs?: Partial<RangePrefs> | null): RangeInfo {
+  const heard = heardClips(doc);
+  if (!heard.length) throw "The mix has no audible clips.";
+  const first = heard[0].visibleStartSec;
+  const last = Math.max(...heard.map((c) => c.visibleEndSec));
+  const info = (from: number, to: number, whole: boolean): RangeInfo => ({
+    whole,
+    fromSecs: from,
+    toSecs: to,
+    durationSecs: to - from,
+    clipIds: heard.filter((c) => c.visibleEndSec > from && c.visibleStartSec < to).map((c) => c.id),
+  });
+  if (!spec || spec.kind === "whole") return info(first, last, true);
+  if (spec.kind === "time") {
+    const from = Math.max(0, spec.fromSec);
+    const to = Math.min(spec.toSec, last);
+    if (!Number.isFinite(spec.fromSec) || !Number.isFinite(spec.toSec)) throw "The range needs a start and an end time.";
+    if (spec.toSec <= from) throw "The range is empty: it must end after it starts.";
+    if (from >= last) throw "The range starts after the mix has ended.";
+    const r = info(from, to, false);
+    if (!r.clipIds.length) throw "No track is heard in that range.";
+    return r;
+  }
+  const pick = (id: string) => {
+    const c = doc.clips.find((x) => x.id === id);
+    if (!c) throw "A clip of the range is not in the mix any more (it may have been deleted).";
+    if (!heard.includes(c)) throw `${clipName(c)} is not heard in the export (it is bypassed or trimmed away), so it cannot start or end a range.`;
+    return c;
+  };
+  const [a, b] = [pick(spec.fromClip), pick(spec.toClip)].sort((x, y) => x.visibleStart - y.visibleStart);
+  const ender = a.visibleEnd > b.visibleEnd ? a : b;
+  let to = ender.visibleEndSec;
+  if (prefs?.endAt === "nextEnters") {
+    const next = heard.find((c) => c !== ender && c.visibleStart > ender.visibleStart && c.visibleStart > a.visibleStart);
+    if (next) to = Math.min(to, next.visibleStartSec);
+  }
+  return info(a.visibleStartSec, to, false);
+}
+
+/** An invented but stable loudness for a fixture clip. */
+const clipLufs = (c: MockClip) => -9 - ((Math.abs(c.trackId) * 7 + 3) % 11);
+
+function mockReport(doc: MixDoc, spec: RangeSpec, prefs: Partial<RangePrefs> | null, l: Partial<LevelSettings> | null, source: "analysis" | "export"): LoudnessReport {
+  const lv: LevelSettings = { targetLufs: null, maxBoostDb: 12, maxCutDb: 24, capAtPeak: false, peakCeilingDb: -1, clipLevel: "off", clipFixedLufs: -14, clipMaxDb: 9, ...(l ?? {}) };
+  const range = mockRange(doc, spec, prefs);
+  const clips = doc.clips.filter((c) => range.clipIds.includes(c.id));
+  const own = clips.map(clipLufs);
+  const sorted = [...own].sort((a, b) => a - b);
+  const median = sorted.length ? (sorted[Math.floor((sorted.length - 1) / 2)] + sorted[Math.ceil((sorted.length - 1) / 2)]) / 2 : 0;
+  const ref = lv.clipLevel === "fixed" ? lv.clipFixedLufs : median;
+  const rows = lv.clipLevel === "off" ? [] : clips.map((c, i) => ({ clipId: c.id, lufs: own[i], truePeakDb: -2 - (i % 3), gainDb: Math.round(Math.max(-lv.clipMaxDb, Math.min(lv.clipMaxDb, ref - own[i])) * 100) / 100, note: null }));
+  const before = clips.length ? 10 * Math.log10(own.reduce((s, x, i) => s + Math.pow(10, (x + (rows[i]?.gainDb ?? 0)) / 10), 0) / clips.length) : null;
+  const peak = -3;
+  let gain = 0;
+  const notes: string[] = [];
+  if (lv.targetLufs !== null && before !== null) {
+    const want = lv.targetLufs - before;
+    gain = Math.max(-lv.maxCutDb, Math.min(lv.maxBoostDb, want));
+    if (lv.capAtPeak) gain = Math.min(gain, lv.peakCeilingDb - peak);
+    gain = Math.round(gain * 100) / 100;
+    if (Math.abs(gain - want) > 1e-9) notes.push(`The gain needed for ${lv.targetLufs.toFixed(1)} LUFS is ${want > 0 ? "+" : ""}${want.toFixed(1)} dB; it was limited to ${gain > 0 ? "+" : ""}${gain.toFixed(1)} dB.`);
+  }
+  const limiterWillAct = peak + gain > -0.18;
+  const after = before === null ? null : limiterWillAct ? before + gain - 1.5 : before;
+  const reading = (lufs: number | null, tp: number) => ({ lufs: lufs === null ? null : Math.round(lufs * 100) / 100, truePeakDb: tp, samplePeakDb: tp - 0.3 });
+  const clipGainDb: Record<string, number> = {};
+  for (const r of rows) clipGainDb[r.clipId] = r.gainDb;
+  return {
+    source,
+    fromSecs: range.fromSecs,
+    toSecs: range.toSecs,
+    clips: rows,
+    clipReferenceLufs: lv.clipLevel === "off" ? null : ref,
+    beforeLimiter: reading(before, peak),
+    afterLimiter: reading(after, Math.min(peak, -0.6)),
+    targetLufs: lv.targetLufs,
+    masterGainDb: gain,
+    predictedPeakDb: peak + gain,
+    limiterWillAct,
+    result: source === "export" ? reading(before === null ? null : (limiterWillAct ? before + gain - 1.5 : before + gain), Math.min(peak + gain, -0.6)) : null,
+    notes,
+    gains: { clipGainDb, masterGainDb: gain },
+  };
+}
+
 export const handlers: Handlers = {
   export_render_preview: (a) => {
     const doc = a.mix as MixDoc;
@@ -185,12 +282,36 @@ export const handlers: Handlers = {
     if (to - from > 900) throw "A preview can be at most 15 minutes; export the mix to hear more.";
     if (!doc.clips.length) throw "the mix has no audible clips";
     const secs = Math.min(to - from, 20);
+    const g = a.gains as { clipGainDb: Record<string, number>; masterGainDb: number } | null;
     return {
-      path: URL.createObjectURL(clickWav(secs, doc.tempoBpm ?? 128)),
+      path: URL.createObjectURL(clickWav(secs, doc.tempoBpm ?? 128, g ? g.masterGainDb : 0)),
       durationSecs: secs,
       clipsFailed: doc.clips.filter((c) => c.trackId < 0).length,
       warnings: doc.clips.some((c) => c.trackId < 0) ? ["clip skipped: the track was removed from the library"] : [],
     };
+  },
+  export_range_resolve: (a) => mockRange(a.mix as MixDoc, a.range as RangeSpec, a.rangePrefs as Partial<RangePrefs> | null),
+  export_loudness_analyse: (a) => {
+    const doc = a.mix as MixDoc;
+    const report = mockReport(doc, (a.range as RangeSpec) ?? { kind: "whole" }, a.rangePrefs as Partial<RangePrefs> | null, a.levels as Partial<LevelSettings> | null, "analysis");
+    if (jobLock.running) throw "Another job is still running.";
+    jobLock.running = true;
+    cancelled = false;
+    void (async () => {
+      const total = Math.max(1, Math.round(report.toSecs - report.fromSecs));
+      for (let i = 1; i <= 4; i++) {
+        await wait(350);
+        if (cancelled) {
+          jobLock.running = false;
+          await emit("job-done", { job: "mix-loudness", ok: 0, failed: 0, summary: `Measuring ${doc.name} was cancelled.`, error: null });
+          return;
+        }
+        await emit("job-progress", { job: "mix-loudness", label: doc.name, done: Math.round((total * i) / 4), total, status: "measuring", bpm: null, detail: null, error: null });
+      }
+      jobLock.running = false;
+      await emit("mix-loudness-report", report);
+      await emit("job-done", { job: "mix-loudness", ok: 1, failed: 0, summary: `Measured ${doc.name}`, error: null });
+    })();
   },
   export_tracklist: (a) => mockTracklist(a.mix as MixDoc, withDefaults(a.options), String(a.audioFileName ?? "")),
   export_tracklist_save: (a) => {
@@ -216,8 +337,12 @@ export const handlers: Handlers = {
     if (cueExists && !a.replaceCue) throw `${cuePath!.split(/[\\/]/).pop()} is already there and would be replaced. Confirm the replacement, or turn the CUE sheet off to export the audio only.`;
     if (jobLock.running) throw "Another job is still running.";
     if (!doc.clips.length) throw "the mix has no audible clips";
-    // audible span (first audible frame to last clip end), like the Rust command
-    const total = Math.max(1, Math.ceil(Math.max(...doc.clips.map((c) => c.visibleEndSec)) - Math.min(...doc.clips.map((c) => c.visibleStartSec))));
+    const spec = (a.range as RangeSpec | null) ?? { kind: "whole" };
+    const levels = a.levels as Partial<LevelSettings> | null;
+    const report = mockReport(doc, spec, a.rangePrefs as Partial<RangePrefs> | null, levels, "export");
+    const measuring = !!levels && (levels.targetLufs != null || (levels.clipLevel ?? "off") !== "off");
+    // seconds exported (the range, or first audible frame to last clip end), like the Rust command
+    const total = Math.max(1, Math.ceil(report.toSecs - report.fromSecs));
     const skipped = doc.clips.filter((c) => c.trackId < 0).length;
     jobLock.running = true;
     cancelled = false;
@@ -235,7 +360,7 @@ export const handlers: Handlers = {
           label: doc.name,
           done: Math.round((total * i) / steps),
           total,
-          status: "rendering",
+          status: measuring && i <= steps / 2 ? "measuring" : "rendering",
           bpm: null,
           detail: null,
           error: null,
@@ -244,11 +369,14 @@ export const handlers: Handlers = {
       jobLock.running = false;
       const m = Math.floor(total / 60);
       const s = String(total % 60).padStart(2, "0");
+      const res = report.result;
+      const level = res?.lufs != null ? `, ${res.lufs.toFixed(1)} LUFS, ${res.truePeakDb?.toFixed(1)} dBTP` : "";
+      await emit("mix-loudness-report", report);
       await emit("job-done", {
         job: "mix-export",
         ok: 1,
         failed: skipped,
-        summary: `Exported ${doc.name} (${m}:${s}) to ${String(a.dest).split(/[\\/]/).pop()}${cueSheet ? " and the CUE sheet" : ""}${skipped ? ` with ${skipped} clip(s) left out, so it is not the complete mix` : ""}`,
+        summary: `Exported ${doc.name} (${m}:${s}) to ${String(a.dest).split(/[\\/]/).pop()}${skipped ? ` with ${skipped} clip(s) left out, so it is not the complete mix` : ""}${level}${cueSheet ? " and the CUE sheet" : ""}`,
         error: null,
       });
     })();

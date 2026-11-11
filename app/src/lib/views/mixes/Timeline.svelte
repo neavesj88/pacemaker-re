@@ -475,6 +475,9 @@
       <!-- playhead -->
       <!-- the clip keeps the line from showing over the sticky lane headers -->
       <div class="phwrap" style:clip-path="inset(0 0 0 {mv.scrollLeft + HEADER_W}px)">
+        {#if mv.rangeBand}
+          <div class="xrange" style:left="{HEADER_W + mv.x(mv.rangeBand.from)}px" style:width="{Math.max(2, mv.x(mv.rangeBand.to - mv.rangeBand.from))}px" title="The part of the mix the export will contain"></div>
+        {/if}
         <div class="playhead" style:left="{HEADER_W + mv.x(mv.playhead)}px"><span>{mmss(mv.playhead / SR)}</span></div>
       </div>
     </div>
@@ -593,6 +596,16 @@
     inset: 0;
     pointer-events: none;
     z-index: 7;
+  }
+  .xrange {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    background: var(--accent-soft);
+    border-left: 1px solid var(--accent);
+    border-right: 1px solid var(--accent);
+    box-sizing: border-box;
+    pointer-events: none;
   }
   .playhead {
     position: absolute;

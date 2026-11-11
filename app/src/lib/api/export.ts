@@ -1,6 +1,7 @@
 // export commands (src-tauri/src/commands/export.rs): mix audio rendering via crates/pm-mixer.
 // Engine, algorithms and parameter mappings: notes/mix-audio.md.
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import type { MixDoc } from "./mixes";
 
 
@@ -20,9 +21,13 @@ export type RenderedMix = {
  * `toSec` are MIX TIMELINE seconds (the file starts at `fromSec`). At most 15 minutes per call.
  * The file is one of four rotating temp files, so a preview stays valid for the next three
  * renders. Cross-area contract: the mix audio area implements `export_render_preview`; the mix
- * editor calls it. */
-export const renderMixPreview = (root: string, mix: MixDoc, fromSec: number, toSec: number) =>
-  invoke<RenderedMix>("export_render_preview", { root, mix, fromSec, toSec });
+ * editor calls it.
+ *
+ * `gains`: the `gains` of a loudness report (per-clip levelling and master gain): the preview then
+ * plays at the level an export with the same settings has. `edgeFadeMs`: the fade at both ends of
+ * the window, to hear a range as a partial export makes it (omit for plain playback). */
+export const renderMixPreview = (root: string, mix: MixDoc, fromSec: number, toSec: number, gains?: PreviewGains, edgeFadeMs?: number) =>
+  invoke<RenderedMix>("export_render_preview", { root, mix, fromSec, toSec, gains: gains ?? null, edgeFadeMs: edgeFadeMs ?? null });
 
 /** What `exportMixAudio` returns the moment the job has started. */
 export type MixExportStarted = {
@@ -55,9 +60,26 @@ export const MIX_EXPORT_JOB = "mix-export";
  * `.cue`) when the render has finished. An existing `.cue` of that name is replaced only when
  * `replaceCue` is true (`cueReplaces` in the result says it happened); otherwise the call rejects
  * and nothing starts. Rejects up front when the mix cannot have one (more than 99 tracks). Omit
- * `cue` for audio only. */
-export const exportMixAudio = (root: string, mix: MixDoc, dest: string, format: "ogg" | "wav", cue?: TracklistOptions, replaceCue = false) =>
-  invoke<MixExportStarted>("export_mix_audio", { root, mix, dest, format, cue: cue ?? null, replaceCue });
+ * `cue` for audio only.
+ *
+ * `extras.range` exports only a part of the mix (see `RangeSpec`; omitted = the whole mix) and
+ * `extras.levels` is the loudness setting (omitted = none): with a target or clip levelling the
+ * job measures first (progress status "measuring", the first half of the bar), then renders with
+ * the gains found. A CUE sheet of a partial export counts from the start of the range. When the
+ * file is written, a `mix-loudness-report` event carries what it measures (`onLoudnessReport`),
+ * and the `job-done` summary ends with that loudness. */
+export const exportMixAudio = (root: string, mix: MixDoc, dest: string, format: "ogg" | "wav", cue?: TracklistOptions, replaceCue = false, extras: ExportExtras = {}) =>
+  invoke<MixExportStarted>("export_mix_audio", {
+    root,
+    mix,
+    dest,
+    format,
+    cue: cue ?? null,
+    replaceCue,
+    range: extras.range ?? null,
+    rangePrefs: extras.rangePrefs ?? null,
+    levels: extras.levels ?? null,
+  });
 
 /** Asks the running mix export to stop. The render ends at its next block, no file is left, and
  * the job reports `job-done` with a "cancelled" summary (not an error). Does nothing when no
@@ -152,3 +174,126 @@ export const exportTracklistSave = (
   dest: string,
   audioFileName: string,
 ) => invoke<string>("export_tracklist_save", { root, mix, options, format, dest, audioFileName });
+
+// ---------------------------------------------------------------------------------------------
+// Partial export and loudness (src-tauri/src/commands/export/{range,loudness}.rs)
+// ---------------------------------------------------------------------------------------------
+
+/** Which part of the mix an export covers. `time`: timeline seconds, as the ruler shows them (the
+ * start is kept exactly; the end is cut to the last clip). `clips`: from the first audible frame
+ * of one clip to the end of another, given by clip id in either order. */
+export type RangeSpec =
+  | { kind: "whole" }
+  | { kind: "time"; fromSec: number; toSec: number }
+  | { kind: "clips"; fromClip: string; toClip: string };
+
+/** Where a "clip A to clip B" range ends: with the clip's last audible frame (`clipEnd`; the next
+ * track fading in under its tail is cut there) or just before the next clip enters (`nextEnters`). */
+export type EndAt = "clipEnd" | "nextEnters";
+
+/** The user's settings for partial exports. */
+export type RangePrefs = {
+  endAt: EndAt;
+  /** Fade at a cut that falls inside audio, in milliseconds; 0 = a hard cut. */
+  edgeFadeMs: number;
+};
+
+/** What an export of a range covers; the numbers the export itself uses. */
+export type RangeInfo = {
+  /** The request is the whole mix. */
+  whole: boolean;
+  fromSecs: number;
+  toSecs: number;
+  durationSecs: number;
+  /** The clips heard in the range, in timeline order. */
+  clipIds: string[];
+};
+
+/** What an export of `range` covers, computed by the same code the export runs (also for the
+ * whole mix). Rejects with a sentence for the user when the range is empty, silent, or names a
+ * clip that is not heard. Read-only and quick. */
+export const exportRangeResolve = (mix: MixDoc, range: RangeSpec, rangePrefs?: RangePrefs) =>
+  invoke<RangeInfo>("export_range_resolve", { mix, range, rangePrefs: rangePrefs ?? null });
+
+/** How clips are levelled against each other: not at all, to the median loudness of the clips in
+ * the export, or to a fixed level. */
+export type ClipLevel = "off" | "median" | "fixed";
+
+/** The loudness settings of an export (and of the preview that must match it). */
+export type LevelSettings = {
+  /** Integrated loudness to reach in LUFS; null = no target. */
+  targetLufs: number | null;
+  /** The most the master gain may raise or lower the mix, dB. */
+  maxBoostDb: number;
+  maxCutDb: number;
+  /** Never raise the mix past `peakCeilingDb` (true peak) instead of letting the limiter work. */
+  capAtPeak: boolean;
+  peakCeilingDb: number;
+  clipLevel: ClipLevel;
+  /** Reference for `clipLevel: "fixed"`, LUFS. */
+  clipFixedLufs: number;
+  /** The most a clip may be raised or lowered by levelling, dB. */
+  clipMaxDb: number;
+};
+
+/** A loudness reading; null where the value is not defined (silence). */
+export type Reading = { lufs: number | null; truePeakDb: number | null; samplePeakDb: number | null };
+
+export type ClipLoudness = {
+  clipId: string;
+  /** The clip's own integrated loudness; null when too short, silent, or its audio is missing. */
+  lufs: number | null;
+  truePeakDb: number | null;
+  /** The gain levelling applies to it, dB. */
+  gainDb: number;
+  note: string | null;
+};
+
+/** Gains for `renderMixPreview`: dB per clip id (a clip not listed has 0) and the master gain. */
+export type PreviewGains = { clipGainDb: Record<string, number>; masterGainDb: number };
+
+/** What a loudness analysis (or the end of an export) found. */
+export type LoudnessReport = {
+  /** "analysis" or "export". */
+  source: "analysis" | "export";
+  /** The part of the timeline measured, seconds. */
+  fromSecs: number;
+  toSecs: number;
+  /** Levelling table (empty when clip levelling is off) and the level the clips were moved to. */
+  clips: ClipLoudness[];
+  clipReferenceLufs: number | null;
+  /** The mix entering the master limiter, with the clip gains and no master gain. */
+  beforeLimiter: Reading | null;
+  /** The same after the limiter. */
+  afterLimiter: Reading | null;
+  targetLufs: number | null;
+  /** The master gain the export applies, dB. */
+  masterGainDb: number;
+  /** The true peak entering the limiter with the master gain (predicted), dBTP. */
+  predictedPeakDb: number | null;
+  /** With the master gain the peaks pass the limiter's ceiling: the target will be missed. */
+  limiterWillAct: boolean;
+  /** The finished file, measured (export reports only). */
+  result: Reading | null;
+  notes: string[];
+  /** What to give `renderMixPreview` to hear the export's level. */
+  gains: PreviewGains;
+};
+
+/** Optional parts of `exportMixAudio`. */
+export type ExportExtras = { range?: RangeSpec; rangePrefs?: RangePrefs; levels?: LevelSettings };
+
+/** The `job` name of loudness analyses in `job-progress` / `job-done`. */
+export const MIX_LOUDNESS_JOB = "mix-loudness";
+
+/** Starts a loudness analysis and resolves at once. It writes no file: with clip levelling on it
+ * measures every clip heard in the range alone, then renders the mix with those gains and
+ * measures it before and after the limiter. Progress is `job-progress` (job "mix-loudness",
+ * status "measuring"), the result one `mix-loudness-report` event (`onLoudnessReport`, source
+ * "analysis") followed by `job-done`. Rejects when another job is running or the settings or range
+ * are invalid. `exportCancel` stops it. */
+export const exportLoudnessAnalyse = (root: string, mix: MixDoc, range?: RangeSpec, rangePrefs?: RangePrefs, levels?: LevelSettings) =>
+  invoke<void>("export_loudness_analyse", { root, mix, range: range ?? null, rangePrefs: rangePrefs ?? null, levels: levels ?? null });
+
+/** Listens for loudness reports (an analysis finishing, or an export measuring its file). */
+export const onLoudnessReport = (cb: (r: LoudnessReport) => void) => listen<LoudnessReport>("mix-loudness-report", (e) => cb(e.payload));

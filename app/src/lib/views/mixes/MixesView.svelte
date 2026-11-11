@@ -11,6 +11,7 @@
   import { vocal } from "$lib/state/vocal.svelte";
   import { addTracks } from "./actions";
   import ConfirmDialog from "./ConfirmDialog.svelte";
+  import ExportDialog from "./ExportDialog.svelte";
   import MixEditor from "./MixEditor.svelte";
   import MixList from "./MixList.svelte";
   import NameDialog from "./NameDialog.svelte";
@@ -67,6 +68,7 @@
 <NameDialog />
 <UnsavedDialog />
 <TracklistDialog />
+<ExportDialog />
 
 <style>
   .mixes {

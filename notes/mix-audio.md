@@ -202,3 +202,48 @@ destination checks, removed-track warning, preview file rotation.
 - The export destination must end in the format's extension; progress total is the audible span (first audible frame to last clip end) and a final done == total event is sent.
 - Preview WAVs live in `pacemaker-revival-preview-<pid>` under the temp folder; folders untouched for 24 h are removed on the first preview of a run.
 - Not done: cancelling an export (needs a cancel flag in the shared job layer; the engine already stops when the progress callback returns false) and a Preview/Export UI in the mix editor (integration work).
+
+## 12. Loudness and partial export
+
+Code: `crates/pm-mixer/src/loudness.rs` (the meter), `engine.rs` (`Options::{clip_gain_db, master_gain_db,
+edge_fade_frames, measure}`, `Rendered::loudness`, `measure_clips`); app side `commands/export/loudness.rs`
+(policy and the analysis), `export/range.rs` (which part of the mix).
+
+**Meter.** ITU-R BS.1770-4 / EBU R128: K-weighting (shelf + RLB high-pass biquads, derived from the standard's
+analogue parameters by the bilinear transform; a test checks that at 48 kHz they give the published
+coefficients), 400 ms blocks every 100 ms, both channels weight 1, `-0.691 + 10 log10(z)`, absolute gate
+-70 LUFS and relative gate -10 LU. True peak: 4x oversampling with an own 16-taps-per-phase windowed-sinc
+(Blackman-Harris) interpolator, **not** the 12-tap filter printed in BS.1770 Annex 2 (not reproduced from
+memory); it reads a fs/4 sine within 0.1 dB, and a 4x-oversampled peak can still miss the true one by up to
+about 0.3 dB. Tested on 1 kHz sines at -23 / -20 / -40 / 0 dBFS (read within 0.05 LU), one silent channel,
+the two gates, silence, signals under 400 ms, block-size independence, K-weighting shape.
+
+**Where gains go.** `clip gain -> crossfader -> sum -> master gain -> edge fades -> limiter`. The master gain
+is before the limiter, so the limiter stays the safety net (ceiling 0.98). A render with `measure` reports
+the loudness and peaks of the limiter input (`pre_limiter`) and of the output.
+
+**Finding the gains.** `export_loudness_analyse` (and the first half of an export with loudness settings on):
+(1) with per-clip levelling, each clip heard in the range is rendered alone by the same `ClipStream` the mix
+uses (tools and its own volume envelope count, crossfades do not) and measured over its whole audible part;
+its gain is `reference - loudness`, limited to +-`clipMaxDb` (reference: the median of those clips, or a fixed
+LUFS value). (2) the mix is rendered once with the clip gains and no master gain and measured before the
+limiter over the exported range; master gain = `target - measured`, limited to `maxBoostDb` / `maxCutDb` and,
+if asked, to the true-peak ceiling. The export then renders with those gains and measures its own output.
+If the gain pushes peaks into the limiter the file lands below the target; the report says
+`limiterWillAct` beforehand and the export's own measurement afterwards (it never claims the target was met).
+Loudness is measured on the PCM before Ogg encoding or 16-bit quantisation. Raising the gain further until
+the limited output reaches the target (a loudness maximiser) is not done.
+
+**Preview equals action.** `export_render_preview(.., gains, edgeFadeMs)` applies the analysis' gains with the
+same engine options, so a preview of a range at the analysed level is sample-identical to the same range
+exported with the same settings (a test checks it). The editor uses the gains only while the analysis is
+current (same mix audio, range and settings), otherwise it says "not at export level".
+
+**Partial export.** `RangeSpec`: whole, a time range (timeline seconds), or from clip A to clip B (either
+order; the end is the last clip's end, or just before the next clip enters). `range::resolve` is the one
+function the export, the analysis, the preview and the dialog's summary call. Frame 0 of a partial file is the
+start of the range; a CUE sheet of a partial export counts from there (`tracklist::render_all_in`). A cut that
+falls inside audio gets a short fade (`edgeFadeMs`, default 20 ms, 0 = hard cut). **Not carried over:** effect
+state from before the range: a reverb or echo still ringing from a tool that ended before it, or a tool that
+is already running at the start, begins cold (loops and reversed regions that began earlier are found, as for
+previews).
