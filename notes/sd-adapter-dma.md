@@ -18,9 +18,11 @@ disassembled with `objdump -dr -marm`), custom 180096072 on top. Read first: `sd
 - [V] The boot-time `hdparm -d 1 / -X udma5 / -S0` are not in any script. They are string constants in
   `pwrApplication` (`HddInterface::loadHddModules`), run before the first mount. `hddmount.sh` is only run by the
   factory tool `pmptest`.
-- Delivered: `scripts/patch-ide-dma.py` (ide-core.ko: 2 instructions; pwrApplication: 1 byte), `scripts/device/
-  pmplayer-wrapper.sh` (diagnostic, PIO/DMA timing, flag-file DMA with verified fall back), `scripts/device/
-  hddmount.sh` (the stock script with DMA moved behind the mounts and made conditional).
+- Delivered: `scripts/patch-ide-dma.py` (ide-core.ko: 2 instructions; pwrApplication: the boot-time command
+  string), `scripts/device/hdparm-boot.sh` (the boot-time command: stock `hdparm -d 1` only for a drive that reports
+  DMA), `scripts/device/pmplayer-wrapper.sh` (diagnostic, PIO/DMA timing, flag-file DMA with verified fall back, time
+  limit, attempt marker, watcher), `scripts/device/hddmount.sh` (the stock script with the same guard),
+  `scripts/device/test-dma-wrapper.sh` (the shell logic against stubs, also under the device's own shell and busybox).
 
 ## 1. Who decides DMA, and what the kernel does with this IDENTIFY block
 
@@ -115,26 +117,31 @@ re-read, refuses on an already patched file. Output `work/build/ide-core-dma.ko`
 | Where | Before | After | Effect |
 |---|---|---|---|
 | `ide-core.ko` .text+0xde8 (`set_using_dma`) | `0a000011` `beq 0xe34` | `e1a00000` nop | `hdparm -d 1` / `-d 0` stop returning EPERM for a drive without the DMA bit. `-d 1` then runs `mxc_ide_dma_check` (off, returns 0) and `mxc_ide_dma_on` (UDMA3). |
-| `ide-core.ko` .text+0x3600 (`ide_do_request`, PM resume) | `0a000005` `beq 0x361c` | `e1a00000` nop | After an HDD standby / wake the driver now always calls `ide_dma_check`. For this ID it switches DMA off, so the drive wakes in PIO instead of with `using_dma = 1` and an un-negotiated drive. Drives that report the bit take the same path as before. |
+| `ide-core.ko` .text+0x3600 (`ide_do_request`, PM resume) | `0a000005` `beq 0x361c` | `e1a00000` nop | After an HDD standby / wake the driver now always calls `ide_dma_check`. For this ID it switches DMA off, so the drive wakes in PIO instead of with `using_dma = 1` and an un-negotiated drive (the wrapper's watcher re-enables a verified DMA). Drives that report the bit take the same path as before. |
 
 Not changed: `mxc_ide.ko`. Its auto path still needs the DMA bit, so DMA is never on without a userspace request.
 
 Second output, `work/build/pwrApplication-ring-nodma` (input default `work/build/pwrApplication-ring`, the
-recoloured binary that is installed; or pass the stock one): one byte, `hdparm -d 1 /dev/hda` ->
-`hdparm -d 0 /dev/hda` in the string table at file 0x1b2d48. Checks: the segment layout, the bytes around it (the
+recoloured binary that is installed; or pass the stock one): the string `hdparm -d 1 /dev/hda` at file 0x1b2d48
+becomes `/sbin/hdpboot` (NUL padded, same 21 bytes). Checks: the segment layout, the bytes around it (the
 `modprobe mxc_ide` string before, `hdparm -X udma5` after), exactly one literal-pool reference
-(0x61dac, `loadHddModules`). Without it, the patched ide-core would let that boot-time call succeed and put the
-adapter in UDMA3 before the first mount, with no way to condition it on the flag file (the FAT volume is not
-mounted yet) and with a mount failure leading, after five tries, to the "Restore hard drive?" prompt. With it, boot
-is PIO exactly as today; `-X udma5` (kept) is as harmless as it is now.
+(0x61dac, `loadHddModules`). Without it, the patched ide-core would let that boot-time call succeed for the
+adapter and put it in UDMA3 before the first mount, with no way to condition it on the flag file (the FAT volume is
+not mounted yet) and with a mount failure leading, after five tries, to the "Restore hard drive?" prompt.
+`hdpboot` (`scripts/device/hdparm-boot.sh`, in the rootfs) reads `/proc/ide/hda/identify` and runs exactly the stock
+`hdparm -d 1 /dev/hda` when word 49 bit 8 is set (also when IDENTIFY cannot be read), and does nothing otherwise.
+So a drive that reports DMA boots as stock whatever image is installed (this replaced an earlier unconditional
+`-d 0`, which turned DMA off for every drive and relied on the wrapper to restore it), and the adapter boots in PIO
+as today; `-X udma5` (kept) is as harmless as it is now.
 
-Install (nothing done here):
+Install (nothing done here; `+path=file` adds a file the stock rootfs does not have, see `build-rootfs.sh`):
 
     wsl -d Debian -u root -- scripts/build-rootfs.sh STOCK.pfw OUT.cramfs <next FWVERSION> \
       /lib/modules/2.6.19.2/kernel/drivers/ide/ide-disk.ko=work/build/ide-disk-lba.ko \
       /lib/modules/2.6.19.2/kernel/drivers/ide/ide-core.ko=work/build/ide-core-dma.ko \
       /usr/local/bin/pwrApplication=work/build/pwrApplication-ring-nodma \
-      /usr/local/bin/hddmount.sh=scripts/device/hddmount.sh
+      /usr/local/bin/hddmount.sh=scripts/device/hddmount.sh \
+      +/sbin/hdpboot=scripts/device/hdparm-boot.sh
 
 (plus whatever else the current 180096072 build carries). The image side is `build-pfw.sh --diag`; its heredoc
 wrapper is replaced by `scripts/device/pmplayer-wrapper.sh` (not wired into `build-pfw.sh` here, to avoid a
@@ -150,9 +157,37 @@ untouched; no kernel image change.
 
 | File | Effect |
 |---|---|
-| `revival-dma` | After the mounts, try DMA. First word may be `udma0`..`udma5` / `mdma0`..`mdma2`; default `udma2` (33 MB/s, never filtered by the 80-wire check). Sequence: md5 of 8 MiB of `/mnt/private/active_sw_file` (PIO, page cache dropped), `hdparm -d 1` (kernel: UDMA3), `hdparm -X <level>` (kernel: SET FEATURES + host timing), md5 again, kernel log. Any mismatch, new IDE error line or `using_dma 0` -> `hdparm -d 0`, and the diag says so. |
+| `revival-dma` | After the mounts, try DMA. First word may be `udma0`..`udma5` / `mdma0`..`mdma2` (CRLF files are fine); default `udma2` (33 MB/s, never filtered by the 80-wire check). See the sequence below. |
 | `revival-unmask` | `hdparm -u1` at the start of the storage section. |
 | `revival-nobench` | Skip the `hdparm` timings. |
+| `revival-dma-trying` (written) | Exists only while an attempt runs. Still there at the next start = the attempt hung or lost power: it becomes `revival-dma-failed` and DMA stays off. |
+| `revival-dma-failed` (written) | Why DMA was given up (date, reason). While it exists no attempt is made, and DMA found on is switched off. Delete it to allow another attempt. |
+
+Attempt sequence (`try_dma`): write the trying file; md5 of up to 64 MiB of `/mnt/private/active_sw_file` and of its
+first 4 MiB in PIO (page cache dropped before each read); `hdparm -d 1` (kernel: UDMA3 on host and drive, hard-coded);
+`hdparm -X <level>` immediately after (no disk access in between); the same md5 again; a 4 MiB file written to the
+FAT volume and to the directory of the image (if writable), cache dropped, read back and compared; on the first
+start of a boot `hdparm -t` (about 3 s of raw reads); then the verdict. It requires: equal md5s, equal read-backs, no
+new IDE error line (count plus last matching line, so a wrapped ring buffer cannot hide one), `using_dma` still 1.
+A kernel that silently drops `-X udma3..5` ("Speed warnings", ioctl returns 0) is detected in the log and the level
+is reported as udma3. Any failure: `hdparm -d 0`, page cache dropped (nothing read under DMA stays cached), failed
+file written. "Kernel refused -d 1" (ide-core not patched) is not a DMA fault: no failed file, but no retry until
+the next boot.
+
+Time limit: the storage section runs in a background subshell; the wrapper waits 45 s (180 s with the flag), then
+kills it (`kill`, `killall hdparm dd md5sum`), issues `hdparm -d 0` in the background, writes the failed file if an
+attempt was in progress, and starts the player regardless. busybox 1.1.3 has no `timeout`; a task stuck in the
+driver's D state cannot be killed, which is what the trying file covers on the next boot (no need to pull the card).
+
+Watcher: after a verified attempt a background loop (every 5 s, no disk access, PATH without `/pmds` which is a
+loop mount of the drive) (a) on the first new IDE error line while DMA was in use runs `hdparm -d 0`, writes the
+failed file and exits, (b) when `using_dma` dropped to 0 without an error (the patched resume path switches it off
+after an HDD standby/wake) re-runs `-d 1` + `-X` at the verified level and logs it. A player restart in the same boot
+also re-enables without repeating the test. (a) matters because the kernel's own error recovery re-enables DMA
+through `mxc_ide_dma_on`, which is hard-coded to UDMA3 and does not check the DMA bit (`ide_end_request` /
+`ide_end_dequeued_request` / `check_dma_crc` call `hwif->ide_dma_on` while `retry_pio <= 3`); the kernel does that
+within milliseconds of an error, so the watcher cannot stop the first retry, only everything after it. The udma2
+margin therefore holds only until the first DMA error. Not changed: it needs a code cave in `mxc_ide.ko`.
 
 Per boot, the first player start writes `.Pacemaker/revival-diag.txt` fresh with: partitions, `/proc/ide/hda/{identify,
 model,capacity,geometry,media,driver,settings}`, `hdparm`, `hdparm -i`, `hdparm -I`, `/proc/interrupts`, whether
@@ -160,21 +195,28 @@ word 49 bit 8 is set, the settings of interest (`using_dma`, `unmaskirq`, `multc
 `pio_mode`), the IDE lines of `dmesg`, then `hdparm -tT` in PIO with CPU split (user / system / irq / iowait /
 idle, from `/proc/stat`) and the IDE interrupt count before and after, the DMA attempt, and `hdparm -t` again in
 DMA with the same CPU and interrupt figures. Later starts in the same boot (marker in `/tmp`) append a short
-record (state, kernel log) and retry DMA if it was lost; the file is truncated beyond 400 KB. A drive that reports
-DMA itself still gets the stock `hdparm -d 1` / `-X udma5`, there, after the mounts.
+record; the file is truncated beyond 400 KB. A drive that reports DMA itself keeps the stock boot (`hdpboot`); the
+wrapper only repairs it if `using_dma` is 0. Without the flag, a drive that does not report DMA and has `using_dma`
+1 (a stock pwrApplication paired with the patched ide-core) is switched off.
 
-[V] The shell logic was run under dash against stubbed `hdparm`/`dmesg`/`md5sum` and fake `/proc` files for: no
-flag, flag + clean DMA, flag + md5 mismatch, flag + kernel error line, kernel refusal, restart after a lost DMA,
-`unmask`, `nobench`, and a drive that reports DMA. It uses only applets listed in the rootfs's busybox 1.1.3
-(`awk`, `grep -c -E`, `head`, `wc`, `md5sum`, `dd`, `sync`, `dmesg`, `date`) plus the `read`, `case` and `${v#?}` shell built-ins; no `printf`, no `tr`, no `sed`.
+[V] The shell logic is run by `scripts/device/test-dma-wrapper.sh` against stubbed `hdparm`/`dmesg`/`dd` and a fake
+`/proc/ide` + FAT tree: 16 scenarios, 46 checks (no flag; DMA found on; drive that reports DMA; clean DMA with a CRLF
+level; watcher re-enable and error give-up; failed file blocks later boots; restart; corrupted read; corrupted FAT
+write; error line; kernel refusal; left-over trying file; hung `hdparm -X` against the time limit; dropped `-X`;
+`hdpboot` for adapter, DMA drive and unreadable IDENTIFY). It passes under dash, and with `CHROOT=` (the extracted
+180096072 rootfs under qemu-arm, `/bin/sh` = bash and `/bin/ash`) under the device's own shells and busybox 1.1.3
+applets (`awk`, `grep -c -E`, `head`, `tail`, `wc`, `expr`, `md5sum`, `dd`, `sync`, `dmesg`, `killall`, `kill -0`).
+What the stubs cannot show: real timings, the real kernel's reaction, the real `hdparm` output.
 
-Costs and risks: the first start of a boot takes about 6 s longer (PIO `-tT`), 9-15 s with the DMA flag (two
-8 MiB reads in PIO and DMA plus `-t`). `pwrApplication` forks the player and does not wait for it in a way I could
-see (`FunctionalStateMachine::createChild`), but a start-up watchdog elsewhere is not excluded; `revival-nobench`
-is the escape. The player image itself is on the drive, so a DMA fault during the test could hit the loop-mounted
-image; that is what the read-back check is for. Known limit: DMA does not survive an HDD standby / wake (see the
-patch table); the diag shows `using_dma` at each start. Making resume restore it would need a code cave in
-`mxc_ide_dma_check` and was left out.
+Costs and risks: the first start of a boot takes about 6 s longer (PIO `-tT`); with the DMA flag add two reads of up
+to 64 MiB (PIO, which is the slow one, about 10 s) plus the write tests and `-t`. `pwrApplication` forks the player and
+does not wait for it in a way I could see (`FunctionalStateMachine::createChild`), but a start-up watchdog elsewhere
+is not excluded; `revival-nobench` shortens the non-DMA case. The player image is on the drive, so a DMA fault during
+the test could hit the loop-mounted image; that is what the read-back checks, the cache drop and the failed file are
+for. A write fault that only shows on other access patterns (long runs, swap) is not covered by a 4 MiB test; the
+watcher's error-line check is the net for that. `probeall.sh` (not on the boot path, bring-up only) still has a bare
+`hdparm -d 1`; with the patched ide-core it would now put the adapter in UDMA3 if someone ran it. Known limit: the
+kernel's UDMA3 re-enable after an error (above).
 
 ## 6. Open points for the next boot
 

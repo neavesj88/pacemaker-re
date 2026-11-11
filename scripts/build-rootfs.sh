@@ -4,7 +4,10 @@
 # only where intended. Must run as root on Linux (WSL: wsl -d Debian -u root -- ...), so that
 # owners, device nodes and symlinks survive extraction; needs e2fsprogs and util-linux-extra.
 #
-#   scripts/build-rootfs.sh STOCK.pfw OUT.cramfs FWVERSION [/rootfs/path=local/file ...]
+#   scripts/build-rootfs.sh STOCK.pfw OUT.cramfs FWVERSION [/rootfs/path=local/file ...] [+/new/path=local/file ...]
+#
+# "/path=file" replaces a file that exists in the stock rootfs (mode and owner kept); "+/path=file" adds one that
+# does not (root:root, mode 0755, the parent directory must exist).
 #
 # The rootfs flash partition is 12.5 MiB (notes/FINDINGS.md section 5); the image must fit.
 set -euo pipefail
@@ -40,8 +43,14 @@ sed -i -E "s/FWVERSION=\"[0-9]+\"/FWVERSION=\"$fwver\"/" "$work/root/etc/system.
 grep -q "FWVERSION=\"$fwver\"" "$work/root/etc/system.xml"
 for arg in "$@"; do
   dst="${arg%%=*}"; src="${arg#*=}"
-  [[ -f "$work/root$dst" ]] || { echo "no such file in rootfs: $dst" >&2; exit 1; }
-  cat "$src" > "$work/root$dst"  # keeps the stock file's mode and owner
+  if [[ $dst == +* ]]; then
+    dst="${dst#+}"
+    [[ ! -e "$work/root$dst" && -d "$(dirname "$work/root$dst")" ]] || { echo "cannot add $dst (exists, or no parent directory)" >&2; exit 1; }
+    install -m 0755 -o 0 -g 0 "$src" "$work/root$dst"
+  else
+    [[ -f "$work/root$dst" ]] || { echo "no such file in rootfs: $dst" >&2; exit 1; }
+    cat "$src" > "$work/root$dst"  # keeps the stock file's mode and owner
+  fi
   changed+=("$dst")
 done
 

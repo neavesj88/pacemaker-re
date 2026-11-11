@@ -26,16 +26,20 @@ stays in PIO. Two instructions in ide-core.ko are changed:
 
   The standby path cuts the drive's power. Without this change a drive with using_dma = 1 would come
   back un-negotiated while the driver still believed in DMA. With it, resume calls mxc_ide_dma_check,
-  which switches DMA off for this ID (it needs the DMA bit), so the drive wakes in plain PIO and the
-  next player start decides again. Drives that report the bit take the same path as before.
+  which switches DMA off for this ID (it needs the DMA bit), so the drive wakes in plain PIO; the wrapper's watcher
+  (pmplayer-wrapper.sh) turns it back on within 5 s when it was verified earlier in the boot, else the
+  next player start decides. Drives that report the bit take the same path as before.
 
 pwrApplication (optional, the boot-time `hdparm -d 1`)
 
   HddInterface::loadHddModules runs system("hdparm -d 1 /dev/hda") on every boot, before anything is
-  mounted. With ide-core patched that call would now succeed and put the adapter in UDMA3 before the
-  first mount, with no way to condition it on a flag file (the FAT volume is not mounted yet). The
-  string is changed to "hdparm -d 0 /dev/hda" (same length), so boot stays PIO; the image wrapper turns
-  DMA on afterwards when the drive reports it, or when .Pacemaker/revival-dma exists.
+  mounted. With ide-core patched that call would now succeed for the SD adapter and put it in UDMA3
+  before the first mount, with no way to condition it on a flag file (the FAT volume is not mounted
+  yet). The string is changed to "/sbin/hdpboot" (padded with NULs to the same length). That script,
+  scripts/device/hdparm-boot.sh, runs the stock "hdparm -d 1 /dev/hda" for a drive that reports DMA
+  (IDENTIFY word 49 bit 8) and does nothing for one that does not, so a stock HDD boots exactly as before
+  whatever image is installed, and the adapter stays in PIO until the wrapper's flag-file attempt.
+  The script must be in the rootfs (build-rootfs.sh "+/sbin/hdpboot=scripts/device/hdparm-boot.sh").
 
 Usage: patch-ide-dma.py [ide-core.ko [OUT.ko [pwrApplication [OUT]]]]
   ide-core.ko     default work/rootfs-180096069/lib/modules/2.6.19.2/kernel/drivers/ide/ide-core.ko
@@ -91,7 +95,7 @@ CORE_SITES = [
 PWR_VA = 0x1bad48                       # string address; file offset = va - 0x8000 (text LOAD segment)
 PWR_OFF = PWR_VA - 0x8000
 PWR_OLD = b"hdparm -d 1 /dev/hda\0"
-PWR_NEW = b"hdparm -d 0 /dev/hda\0"
+PWR_NEW = b"/sbin/hdpboot\0".ljust(len(PWR_OLD), b"\0")   # scripts/device/hdparm-boot.sh, installed there
 
 
 def sections(d):
@@ -190,13 +194,14 @@ def patch_pwr(src, dst):
     out[PWR_OFF:PWR_OFF + len(PWR_NEW)] = PWR_NEW
     out = bytes(out)
     diff = [i for i in range(len(d)) if d[i] != out[i]]
-    assert len(out) == len(d) and diff == [PWR_OFF + PWR_OLD.index(b"1")], diff
+    assert len(out) == len(d) and diff and all(PWR_OFF <= i < PWR_OFF + len(PWR_OLD) for i in diff), diff
+    assert out[PWR_OFF:PWR_OFF + len(PWR_OLD)] == PWR_NEW
 
     os.makedirs(os.path.dirname(dst), exist_ok=True)
     open(dst, "wb").write(out)
     assert open(dst, "rb").read() == out
-    print(f"ok: {os.path.relpath(dst, ROOT)}  {len(out)} bytes, 1 byte changed at file offset "
-          f"{diff[0]:#x}: {PWR_OLD[:-1].decode()!r} -> {PWR_NEW[:-1].decode()!r}")
+    print(f"ok: {os.path.relpath(dst, ROOT)}  {len(out)} bytes, {len(diff)} bytes changed at file offset "
+          f"{PWR_OFF:#x}: {PWR_OLD[:-1].decode()!r} -> {PWR_NEW.rstrip(bytes(1)).decode()!r}")
     print("sha256 in   ", hashlib.sha256(d).hexdigest())
     print("sha256 patch", hashlib.sha256(out).hexdigest())
 
