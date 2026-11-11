@@ -9,12 +9,16 @@
 //! Printable setlist (case or mix to a print-ready HTML page): the notes store and the save-to-file
 //! command are in [`setlist`]; the page itself is built by the UI.
 //!
+//! VirtualDJ list (a case to a VirtualDJ List file, optionally with copies of the audio, in a
+//! folder outside the device): [`vdj`]. Why that format: `notes/onelibrary-export.md`.
+//!
 //! To add a command: write a `#[tauri::command] pub async fn` here, add its full
 //! path to the list in `export_commands!` below, then mirror it in `src/lib/api/export.ts` and
 //! `src/lib/devmock/export.ts`.
 
 mod render;
 pub mod setlist;
+pub mod vdj;
 
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -148,6 +152,9 @@ macro_rules! export_commands {
                 $crate::commands::export::setlist::setlist_sheet_load,
                 $crate::commands::export::setlist::setlist_sheet_save,
                 $crate::commands::export::setlist::setlist_save_html,
+                $crate::commands::export::vdj::vdj_export_plan,
+                $crate::commands::export::vdj::vdj_export_start,
+                $crate::commands::export::vdj::vdj_export_cancel,
             ];
             $($rest),*
         }

@@ -13,6 +13,7 @@
   import Button from "$lib/ui/Button.svelte";
   import Stars from "$lib/ui/Stars.svelte";
   import { setlist } from "../setlist/setlist.svelte";
+  import { vdj } from "../vdj/vdj.svelte";
   import CaseTrackPicker from "./CaseTrackPicker.svelte";
   import ConfirmDialog from "./ConfirmDialog.svelte";
   import NameDialog from "./NameDialog.svelte";
@@ -232,6 +233,7 @@
         disabled={selectedRows.every((r) => !r.t)}
       >Edit tracks…</Button>
       <Button onclick={() => setlist.openCase(open.id)} disabled={all.length === 0} title="A printable setlist of this case">Setlist…</Button>
+      <Button onclick={() => vdj.openCase(open.id, open.name)} disabled={all.length === 0} title="Export this case as a VirtualDJ list, with copies of the audio if you want them">VirtualDJ…</Button>
       <span class="muted hint">Drag rows to reorder, or drop tracks here from the Tracks view · the order is the order on the Pacemaker</span>
     </div>
 
