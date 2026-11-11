@@ -125,29 +125,38 @@ class Jobs {
     if (files.length) await this.askAdd(files);
   }
 
-  /** Confirm adding these picked / dropped paths; folders are searched, non-audio is dropped. */
-  async askAdd(paths: string[]) {
+  /** Confirm adding these picked / dropped paths; folders are searched, non-audio is dropped.
+   *  `opts.source` names where the files came from (the confirmation says so); `opts.auto` starts
+   *  the add without the question (only the watch-folder "add automatically" setting passes it).
+   *  Returns true when the add was set up (asked, or started for `auto`). */
+  async askAdd(paths: string[], opts: { source?: string; auto?: boolean } = {}): Promise<boolean> {
     const lib = session.library;
-    if (!lib) return;
-    if (!this.guard()) return;
+    if (!lib) return false;
+    if (!this.guard()) return false;
     const files = await expandAudioPaths(paths);
     if (files.length === 0) {
       session.error = "None of those are audio files (mp3, flac, wav, m4a, aac, ogg, aiff).";
-      return;
+      return false;
     }
+    // a background find must never replace a question the user is looking at (checked after the
+    // await above, when it could have appeared meanwhile)
+    if (opts.source && (this.pending || !this.guard())) return false;
     const n = files.length;
-    this.ask({
+    const from = opts.source ? ` from ${opts.source}` : "";
+    const asked = this.ask({
       kind: "add",
       root: lib.root,
       count: n,
       names: files.map(baseName),
-      title: `Add ${n} track${n === 1 ? "" : "s"} to ${lib.root} ?`,
+      title: `Add ${n} track${n === 1 ? "" : "s"}${from} to ${lib.root} ?`,
       description: "The files are analysed, copied onto the device and added to its library. Tracks already there are skipped.",
       confirmLabel: `Add ${n}`,
       runningLabel: "Adding",
       doneLabel: "Add finished",
       start: () => addTracks(lib.root, files),
     });
+    if (asked && opts.auto) await this.confirm();
+    return asked;
   }
 
   async askReanalyse() {
