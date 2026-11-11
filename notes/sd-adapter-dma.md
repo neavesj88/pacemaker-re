@@ -144,9 +144,9 @@ Install (nothing done here; `+path=file` adds a file the stock rootfs does not h
       +/sbin/hdpboot=scripts/device/hdparm-boot.sh
 
 (plus whatever else the current 180096072 build carries). The image side is `build-pfw.sh --diag`; its heredoc
-wrapper is replaced by `scripts/device/pmplayer-wrapper.sh` (not wired into `build-pfw.sh` here, to avoid a
-conflict with the other branches that edit the same wrapper; install it as `/bin/pmplayer`, mode 0755, with the real
-player kept as `pmplayer.real` exactly as `--diag` does, and keep the final `exec`).
+wrapper is replaced by `scripts/device/pmplayer-wrapper.sh`, which `build-pfw.sh --diag` now installs as `/bin/pmplayer`
+(mode 0755, the real player kept as `pmplayer.real`, final `exec` checked). Since firmware 180096073 that one file also
+carries the `LD_PRELOAD` block of `device/vocalfx/wrapper-snippet.sh`; `scripts/build-180096073.sh` is the complete recipe.
 
 Versions: the stock module is rebuilt against `__versions` unchanged, vermagic `2.6.19.2 preempt mod_unload ARMv6`
 untouched; no kernel image change.

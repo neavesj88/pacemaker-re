@@ -58,7 +58,9 @@ Output: `libvocalfx.so`, 13,388 bytes; `build-info.txt` has the readelf summary.
 ## Install on the device
 
 1. Add `libvocalfx.so` to the image as `/pmds/bin/libvocalfx.so` (mode 755), next to `pmplayer.real`.
-2. Add the text of `wrapper-snippet.sh` to the `/bin/pmplayer` wrapper just before the final `exec`. It sets
+2. The text of `wrapper-snippet.sh` goes into the `/bin/pmplayer` wrapper just before the final `exec`. Since firmware
+   180096073 it is already inside `scripts/device/pmplayer-wrapper.sh` (verbatim, checked by `scripts/device/test-dma-wrapper.sh`),
+   which `scripts/build-pfw.sh --diag` installs, so there is only one wrapper. The block sets
    `LD_PRELOAD` only if the library exists **and** `/mnt/public/.Pacemaker/revival-no-preload` does not. That empty
    file is the kill switch: create it from the PC over USB and the next boot is stock.
 3. Replace `/pmds/bin/resources/fonts/english.lang` (and `japanese.lang`) with the files in `lang/`. The pad then

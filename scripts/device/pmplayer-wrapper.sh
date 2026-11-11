@@ -219,6 +219,7 @@ run() {  # run <1 = first start of this boot, 0 = player restart>
     echo "== hdparm -i /dev/hda"; hdparm -i /dev/hda 2>&1
     echo "== hdparm -I /dev/hda"; hdparm -I /dev/hda 2>&1 | head -90
     echo "== /proc/interrupts"; cat /proc/interrupts
+    echo "== dmesg"; dmesg
   fi
   echo "== storage path"
   [ -f $P/revival-unmask ] && { echo "revival-unmask: hdparm -u1"; hdparm -u1 /dev/hda 2>&1; }
@@ -292,4 +293,23 @@ if [ -d $P ]; then
   fi
   sync &
 fi
+# Optional LD_PRELOAD libraries (device/vocalfx/wrapper-snippet.sh, kept verbatim: device/vocalfx/test.sh and
+# scripts/device/test-dma-wrapper.sh check it). Set only here, after the storage section, so hdparm, dd and the
+# watcher never run with a preload.
+# Pacemaker Revival: optional LD_PRELOAD libraries, inserted into the /bin/pmplayer wrapper script
+# (/bin/sh = busybox ash on the device) just before the final `exec /pmds/bin/pmplayer.real "$@"`.
+#
+# A library is preloaded only if its file is in the image AND the kill switch file is absent, so
+#   - an image without the library behaves like stock,
+#   - creating  /mnt/public/.Pacemaker/revival-no-preload  (empty file, from the PC over USB) turns every
+#     preloaded library off at the next boot without reflashing.
+# If ld.so cannot load a listed library it prints "cannot be preloaded: ignored" and carries on (glibc 2.4).
+# Add further libraries (for example libfavourite.so) to the list; the result is a colon-separated LD_PRELOAD.
+pre=
+if [ ! -e /mnt/public/.Pacemaker/revival-no-preload ]; then
+  for lib in libvocalfx.so; do
+    if [ -f "/pmds/bin/$lib" ]; then pre="$pre${pre:+:}/pmds/bin/$lib"; fi
+  done
+fi
+if [ -n "$pre" ]; then export LD_PRELOAD="$pre"; fi
 exec $REAL "$@"

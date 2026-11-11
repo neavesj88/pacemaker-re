@@ -36,6 +36,7 @@ setup() {  # setup <name> [claimed]: fresh fake device in $F
 #!/bin/sh
 # stub: state in $F/ide/settings, calls in $F/calls; knobs are files in $F (hang, refuse, errd1, warn, nopatch)
 echo "hdparm $*" >> $F/calls
+[ -n "${LD_PRELOAD-}" ] && echo "hdparm saw LD_PRELOAD" >> $F/calls
 set_dma() { sed -i "s/^using_dma .*/using_dma $1/" $F/ide/settings; }
 cur() { awk '$1=="using_dma"{print $2}' $F/ide/settings; }
 case "$1" in
@@ -64,7 +65,7 @@ exit $r
 EOS
   printf '#!/bin/sh\ncat $F/dmesg\n' > "$S/dmesg"
   [ -z "$CHROOT" ] && printf '#!/bin/sh\nexec pkill -x "$@"\n' > "$S/killall"
-  printf '#!/bin/sh\necho "REAL PLAYER $*" > $F/real-ran\n' > "$F/real"
+  printf '#!/bin/sh\necho "REAL PLAYER $*" > $F/real-ran\necho "${LD_PRELOAD-}" > $F/real-ld\n' > "$F/real"
   chmod +x "$S"/* "$F/real"
   export F REVIVAL_P="$F/pub/.Pacemaker" REVIVAL_H="$F/ide" REVIVAL_TMP="$F/tmp" REVIVAL_IMG="$F/priv/active_sw_file" \
     REVIVAL_REAL="$F/real" REVIVAL_DROP="$F/drop" REVIVAL_PATH="$S:$SPATH" REVIVAL_WATCH=$WATCH REVIVAL_LIMIT=60
@@ -187,6 +188,25 @@ setup a; export REVIVAL_IDENTIFY="$F/none"
 PATH="$S:$SPATH" $RUN "$B" > "$F/out" 2>&1
 ck "unreadable IDENTIFY: stock command" "grep -q -- 'hdparm -d 1 /dev/hda' $F/calls"
 unset REVIVAL_IDENTIFY; done_
+
+echo "14. LD_PRELOAD block (device/vocalfx/wrapper-snippet.sh, kept verbatim in the wrapper); /pmds and /mnt/public redirected into the fake tree"
+SN="$HERE/../../device/vocalfx/wrapper-snippet.sh"
+snip() { sed -n '/^pre=$/,/^if \[ -n "\$pre" \]/p' "$1"; }
+ck "wrapper holds the snippet verbatim" "[ -n \"\$(snip $SN)\" ] && [ \"\$(snip $SN)\" = \"\$(snip $HERE/pmplayer-wrapper.sh)\" ]"
+ck "the block is the last thing before the final exec" "[ \"\$(tail -2 $HERE/pmplayer-wrapper.sh | head -1)\" = 'if [ -n \"\$pre\" ]; then export LD_PRELOAD=\"\$pre\"; fi' ] && [ \"\$(tail -1 $HERE/pmplayer-wrapper.sh)\" = 'exec \$REAL \"\$@\"' ]"
+setup a; mkdir -p "$F/pmds/bin"; V="$F/vwrapper.sh"
+sed "s|/pmds|$F/pmds|g; s|/mnt/public|$F/pub|g" "$W" > "$V"; W0=$W; W=$V
+run
+ck "library absent: no LD_PRELOAD" "[ -z \"\$(cat $F/real-ld)\" ] && grep -q 'REAL PLAYER' $F/real-ran"
+: > "$F/pmds/bin/libvocalfx.so"; run
+ck "library present: LD_PRELOAD=its path" "[ \"\$(cat $F/real-ld)\" = $F/pmds/bin/libvocalfx.so ]"
+ck "storage helpers (hdparm) ran without it" "! grep -q 'saw LD_PRELOAD' $F/calls"
+: > "$REVIVAL_P/revival-no-preload"; run
+ck "kill switch: no LD_PRELOAD" "[ -z \"\$(cat $F/real-ld)\" ] && grep -q 'REAL PLAYER' $F/real-ran"
+rm -f "$REVIVAL_P/revival-no-preload"; : > "$REVIVAL_P/revival-dma"; run
+ck "with the DMA flag: still preloaded, and hdparm/dd never saw it" "[ \"\$(cat $F/real-ld)\" = $F/pmds/bin/libvocalfx.so ] && ! grep -q 'saw LD_PRELOAD' $F/calls && diag | grep -q 'DMA ok'"
+ck "diag keeps the original content (partitions, ide files, dmesg)" "diag | grep -q '== /proc/partitions' && diag | grep -q '== $REVIVAL_H/identify' && diag | grep -q '^== dmesg'"
+pkill -f "$F" 2>/dev/null; W=$W0; done_
 
 echo; [ $fails = 0 ] && echo "all checks passed" || echo "$fails check(s) FAILED"
 exit $fails

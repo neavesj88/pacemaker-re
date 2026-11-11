@@ -4,16 +4,21 @@
 # versions (so the device installs it without flashing kernel, rootfs or bootloader).
 # Runs on Linux (WSL: wsl -d Debian -u root -- scripts/build-pfw.sh ...); needs e2fsprogs, python3.
 #
-#   scripts/build-pfw.sh STOCK.pfw OUT.pfw [--diag] [--fwver=N] [/image/path=local/file ...]
+#   scripts/build-pfw.sh STOCK.pfw OUT.pfw [--diag] [--fwver=N] [/image/path=local/file ...] [+/new/path=local/file ...]
+#
+# "/path=file" replaces a file that exists in the image (owner kept). "+/path=file" adds one that does not
+# (mode 0755, owner of the parent directory, which must exist).
 #
 # --fwver=N writes N as the trailer's fwver. A fwver different from FWVERSION in the device's
 # running /etc/system.xml makes the device FLASH the image's boot/zImage and boot/cramfs.little
 # (SWUpgrade::startFwUpgrade), so only use it together with a rootfs whose /etc/system.xml says N
 # (scripts/build-rootfs.sh), or the install ends in "FW Upgrade is NOT OK".
 #
-# --diag renames /bin/pmplayer to pmplayer.real and installs a shell wrapper that writes what the
-# kernel sees of the drive to .Pacemaker/revival-diag.txt on each start, then execs the player
-# (same PID, which is how pwrApplication tracks it).
+# --diag renames /bin/pmplayer to pmplayer.real and installs scripts/device/pmplayer-wrapper.sh in its place
+# (the one committed wrapper). It writes what the kernel sees of the drive to .Pacemaker/revival-diag.txt on
+# each start, handles the SD adapter DMA flags (notes/sd-adapter-dma.md), sets LD_PRELOAD for the optional
+# libraries present in the image (device/vocalfx), then execs the player (same PID, which is how
+# pwrApplication tracks it).
 set -euo pipefail
 here="$(cd "$(dirname "$0")/.." && pwd)"
 stock="$1"; out="$2"; shift 2
@@ -49,8 +54,26 @@ EOF
   echo "replaced $dst ($(stat -c %s "$src") bytes, mode $m, owner $u:$g)"
 }
 
+add() {  # add <new image path> <local file>
+  local dst="$1" src="$2" dir base u g
+  dir="$(dirname "$dst")"; base="$(basename "$dst")"
+  [[ -z "$(debugfs -R "stat \"$dst\"" "$img" 2>/dev/null)" ]] || { echo "already in image: $dst" >&2; exit 1; }
+  read -r _ u g < <(meta "$dir")
+  [[ -n "$u" ]] || { echo "no such directory in image: $dir" >&2; exit 1; }
+  debugfs -w -f - "$img" > "$work/debugfs.log" 2>&1 <<EOF
+cd "$dir"
+write "$src" "$base"
+sif "$base" mode 0100755
+sif "$base" uid $u
+sif "$base" gid $g
+EOF
+  [[ -n "$(debugfs -R "stat \"$dst\"" "$img" 2>/dev/null)" ]] || { cat "$work/debugfs.log" >&2; echo "could not add $dst" >&2; exit 1; }
+  echo "added $dst ($(stat -c %s "$src") bytes, mode 755, owner $u:$g)"
+}
+
 for arg in "$@"; do
   case "$arg" in
+    +/*=*) a="${arg#+}"; add "${a%%=*}" "${a#*=}" ;;
     --diag) diag=1 ;;
     --fwver=*) fwver="${arg#--fwver=}"; [[ $fwver =~ ^[0-9]+$ ]] || { echo "bad --fwver" >&2; exit 2; } ;;
     /*=*) replace "${arg%%=*}" "${arg#*=}" ;;
@@ -59,20 +82,9 @@ for arg in "$@"; do
 done
 
 if [[ $diag == 1 ]]; then
-  cat > "$work/pmplayer" <<'EOF'
-#!/bin/sh
-# Pacemaker Revival drive diagnostic: record what the kernel sees of the drive, then run the player.
-d=/mnt/public/.Pacemaker/revival-diag.txt
-{
-  date; uname -a; echo "== /proc/partitions"; cat /proc/partitions
-  for f in identify model capacity geometry media driver settings; do
-    echo "== /proc/ide/hda/$f"; cat /proc/ide/hda/$f
-  done
-  echo "== dmesg"; dmesg
-} > "$d" 2>&1
-sync
-exec /pmds/bin/pmplayer.real "$@"
-EOF
+  install -m 0755 "$here/scripts/device/pmplayer-wrapper.sh" "$work/pmplayer"
+  sh -n "$work/pmplayer"
+  grep -q '^exec \$REAL "\$@"$' "$work/pmplayer" || { echo "wrapper does not end in exec of the real player" >&2; exit 1; }
   read -r m u g < <(meta /bin/pmplayer)
   debugfs -w -f - "$img" > "$work/debugfs.log" 2>&1 <<EOF
 cd /bin
@@ -83,7 +95,7 @@ sif pmplayer mode 0100755
 sif pmplayer uid $u
 sif pmplayer gid $g
 EOF
-  echo "wrapped /bin/pmplayer with the drive diagnostic (real player kept as pmplayer.real, mode $m)"
+  echo "wrapped /bin/pmplayer with scripts/device/pmplayer-wrapper.sh $(sha256sum "$work/pmplayer" | cut -c1-12) (real player kept as pmplayer.real, mode $m)"
 fi
 
 e2fsck -fn "$img" > "$work/fsck.log" 2>&1 || { cat "$work/fsck.log"; echo "e2fsck found problems" >&2; exit 1; }
