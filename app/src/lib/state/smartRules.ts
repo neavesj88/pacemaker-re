@@ -66,7 +66,7 @@ export const KINDS: KindEntry[] = [
 export const kindId = (r: Rule): string => (r.kind === "text" ? `text:${r.field}` : r.kind === "group" ? "group" : r.kind);
 
 /** A fresh rule of this kind (`id` as in KINDS), with sensible starting values. */
-export function defaultRule(id: string, firstCaseId = 0): Rule {
+export function defaultRule(id: string, firstCaseId = NO_CASE): Rule {
   if (id.startsWith("text:")) return { kind: "text", field: id.slice(5) as TextField, op: "contains", text: "" };
   switch (id) {
     case "rating_min": return { kind: "rating_min", stars: 4 };
@@ -90,9 +90,37 @@ export function defaultRule(id: string, firstCaseId = 0): Rule {
   }
 }
 
-/** The case a new case rule starts on: the first real case, not the Pacemaker copy of a smart case. */
+/** Marks a case rule that has no case yet (refused by validation, shown as "Choose a case"). */
+export const NO_CASE = -1;
+
+/** The case a new case rule starts on: the first real case, not the Pacemaker copy of a smart case; NO_CASE when there are none. */
 export const defaultCaseId = (infos: { id: number; name: string }[]): number =>
-  (infos.find((c) => !c.name.startsWith("★ ")) ?? infos[0])?.id ?? 0;
+  (infos.find((c) => !c.name.startsWith("★ ")) ?? infos[0])?.id ?? NO_CASE;
+
+type CaseRef = { id: number; name: string };
+
+/**
+ * The name a case rule was saved with, when the case that has its id is called something else now.
+ * Case ids are only unique within one card, so this is the sign that the rule was written for another
+ * card (or that the case was renamed). Null when the names agree, the rule has no saved name, or the
+ * case is missing (that has its own message).
+ */
+export function caseNameDrift(r: Rule, infos: CaseRef[]): { saved: string; now: string } | null {
+  if (r.kind !== "in_case" || !r.case_name) return null;
+  const now = infos.find((c) => c.id === r.case_id)?.name;
+  return now !== undefined && now !== r.case_name ? { saved: r.case_name, now } : null;
+}
+
+/** Writes the current case name into every case rule that has none (older rule files), groups included. */
+export function stampCaseNames(rules: Rule[], infos: CaseRef[]): void {
+  for (const r of rules) {
+    if (r.kind === "group") stampCaseNames(r.items, infos);
+    else if (r.kind === "in_case" && !r.case_name) {
+      const name = infos.find((c) => c.id === r.case_id)?.name;
+      if (name !== undefined) r.case_name = name;
+    }
+  }
+}
 
 export const newGroup = (first: Rule, mode: Mode = "any"): Rule => ({ kind: "group", mode, items: [first] });
 

@@ -94,7 +94,7 @@ export type Rule =
   | { kind: "added_before"; days: number }
   | { kind: "duration_range"; min_secs: number | null; max_secs: number | null }
   | { kind: "format"; value: string }
-  | { kind: "in_case"; case_id: number; value: boolean }
+  | { kind: "in_case"; case_id: number; value: boolean; case_name?: string }
   | { kind: "group"; mode: Mode; items: Rule[] };
 
 export type SortField =

@@ -99,8 +99,15 @@ pub enum Rule {
     DurationRange { min_secs: Option<i64>, max_secs: Option<i64> },
     /// File format is this one ("MP3", "FLAC"), ignoring case.
     Format { value: String },
-    /// In the case with this id (`value` true) or not in it (false).
-    InCase { case_id: i64, value: bool },
+    /// In the case with this id (`value` true) or not in it (false). `case_name` is the case's
+    /// name when the rule was saved. It plays no part in matching: the editor compares it with
+    /// the case that has this id now, to warn when another card (or a rename) changed what the id means.
+    InCase {
+        case_id: i64,
+        value: bool,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        case_name: Option<String>,
+    },
     /// Its items combined by `mode`. A group needs at least one item.
     Group { mode: Mode, items: Vec<Rule> },
 }
@@ -453,7 +460,7 @@ pub fn rule_matches(rule: &Rule, t: &Track, x: &TrackExtra, cx: &Context) -> boo
         Rule::AddedBefore { days } => x.date_added > 0 && x.date_added < ago(*days),
         Rule::DurationRange { min_secs, max_secs } => t.play_time_secs > 0 && in_range(t.play_time_secs, *min_secs, *max_secs),
         Rule::Format { value } => t.format.trim().eq_ignore_ascii_case(value.trim()),
-        Rule::InCase { case_id, value } => {
+        Rule::InCase { case_id, value, .. } => {
             // a missing case is refused before evaluation starts (see `evaluate`)
             let inside = cx.cases.get(case_id).and_then(|m| m.as_ref()).is_some_and(|m| m.contains(&t.track_id));
             inside == *value

@@ -2,7 +2,7 @@
   import type { Rule } from "$lib/api/cases";
   import { cases } from "$lib/state/cases.svelte";
   import { session } from "$lib/state/session.svelte";
-  import { KINDS, TEXT_OPS, defaultCaseId, defaultRule, formatDuration, kindId, parseDuration } from "$lib/state/smartRules";
+  import { KINDS, NO_CASE, TEXT_OPS, caseNameDrift, defaultCaseId, defaultRule, formatDuration, kindId, parseDuration, stampCaseNames } from "$lib/state/smartRules";
   import Button from "$lib/ui/Button.svelte";
 
   // One rule (anything but a group) of a smart case: the type menu and that type's inputs.
@@ -19,6 +19,21 @@
     return r.kind === "in_case" && cases.infos.some((c) => c.id === r.case_id);
   });
 
+  // A smart case cannot read its own Pacemaker copy (it is rewritten from the rules), so that case
+  // is not offered. A rule that already points at it is kept visible and flagged, not dropped.
+  const ownCopy = $derived(cases.smart.find((s) => s.id === cases.smartOpen)?.device_case_id ?? null);
+  const offered = $derived(cases.infos.filter((c) => c.id !== ownCopy || (rule.kind === "in_case" && c.id === rule.case_id)));
+  const pointsAtOwnCopy = $derived(rule.kind === "in_case" && ownCopy !== null && rule.case_id === ownCopy);
+  const drift = $derived(caseNameDrift(rule, cases.infos));
+  function pickCase(id: number) {
+    if (rule.kind !== "in_case") return;
+    rule.case_id = id;
+    rule.case_name = cases.infos.find((c) => c.id === id)?.name;
+  }
+  function acceptName() {
+    if (drift && rule.kind === "in_case") rule.case_name = drift.now;
+  }
+
   // Length boxes hold text like 3:30; the rule gets seconds, or NaN while the text is not a length.
   let minText = $state(rule.kind === "duration_range" ? formatDuration(rule.min_secs) : "");
   let maxText = $state(rule.kind === "duration_range" ? formatDuration(rule.max_secs) : "");
@@ -29,6 +44,7 @@
   });
   function retype(id: string) {
     rule = defaultRule(id, firstCase());
+    stampCaseNames([rule], cases.infos);
     if (rule.kind === "duration_range") {
       minText = formatDuration(rule.min_secs);
       maxText = formatDuration(rule.max_secs);
@@ -99,11 +115,19 @@
       <option value={true}>is in</option>
       <option value={false}>is not in</option>
     </select>
-    <select bind:value={rule.case_id} aria-label="Case">
-      {#if !caseKnown}<option value={rule.case_id}>(missing case {rule.case_id})</option>{/if}
-      {#each cases.infos as c (c.id)}<option value={c.id}>{c.name}</option>{/each}
+    <select value={rule.case_id} aria-label="Case" onchange={(e) => pickCase(Number(e.currentTarget.value))}>
+      {#if rule.case_id === NO_CASE}<option value={NO_CASE}>Choose a case…</option>
+      {:else if !caseKnown}<option value={rule.case_id}>(missing case {rule.case_id})</option>{/if}
+      {#each offered as c (c.id)}<option value={c.id}>{c.name}</option>{/each}
     </select>
-    {#if cases.infos.length === 0}<span class="muted">there are no cases yet</span>{/if}
+    {#if offered.length === 0}<span class="muted">there are no other cases yet: make one first</span>{/if}
+    {#if pointsAtOwnCopy}<span class="warn" role="status">This is the Pacemaker copy of this smart case, which it cannot read. Pick another case.</span>{/if}
+    {#if drift}
+      <span class="warn" role="status">
+        Saved for a case called “{drift.saved}”; the case with this number is “{drift.now}” here (renamed, or the rule came from another card).
+        <Button small variant="ghost" onclick={acceptName}>Keep “{drift.now}”</Button>
+      </span>
+    {/if}
   {:else if rule.kind === "analysed"}
     <select bind:value={rule.value} aria-label="Analysed">
       <option value={true}>have been analysed</option>
@@ -132,6 +156,9 @@
   }
   .wide {
     min-width: 180px;
+  }
+  .warn {
+    color: var(--bad-text);
   }
   .check {
     display: inline-flex;

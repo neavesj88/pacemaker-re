@@ -29,6 +29,8 @@
 
   const byId = $derived(new Map((session.library?.tracks ?? []).map((t) => [t.track_id, t])));
   const picked = $derived(list.filter((c) => sources.has(c.id)));
+  // smart cases with a rule about one of the cases that would be deleted: they report an error until fixed
+  const smartUsing = $derived(cases.smartCasesUsing(picked.map((c) => c.id)));
   const targetCase = $derived(list.find((c) => c.id === target));
   const intoItself = $derived(mode === "existing" && target !== null && sources.has(target));
   const nameOk = $derived(newName.trim().length > 0 && [...newName].length <= 255);
@@ -128,6 +130,11 @@
           </li>
         {/each}
       </ul>
+      {#if smartUsing.length > 0}
+        <p class="note">
+          {smartUsing.map((n) => `“${n}”`).join(", ")} {smartUsing.length === 1 ? "is a smart case that has" : "are smart cases that have"} a rule about {picked.length === 1 ? "this case" : "one of these cases"}; {smartUsing.length === 1 ? "it" : "they"} will report an error until you pick another case in the rule.
+        </p>
+      {/if}
     </div>
   {/if}
 
@@ -234,6 +241,9 @@
   .danger ul {
     margin: 4px 0 0;
     padding-left: 18px;
+  }
+  .danger .note {
+    margin: 6px 0 0;
   }
   .preview {
     margin-top: 10px;

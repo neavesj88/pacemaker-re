@@ -7,6 +7,7 @@ import { test } from "node:test";
 import {
   MAX_DEPTH, MAX_LIMIT, MAX_NODES, MS_PER_DAY, KINDS, camelot, dateLabel, defaultRule, describeQuery, describeRule, directionLabels,
   evaluateQuery, formatDuration, kindId, newQuery, parseDuration, referencedCases, ruleMatches, validateQuery,
+  NO_CASE, caseNameDrift, defaultCaseId, stampCaseNames,
 } from "../../state/smartRules.ts";
 
 const NOW = 1000 * MS_PER_DAY;
@@ -223,4 +224,33 @@ test("descriptions read as sentences", () => {
   assert.equal(describeQuery(q([], { limit: 1 }), name), "Every track. Only the first 1 track.");
   assert.deepEqual(directionLabels("date_added"), ["oldest first", "newest first"]);
   assert.deepEqual(directionLabels("title"), ["A to Z", "Z to A"]);
+});
+
+test("a case rule remembers the case name and says when the id now means another case", () => {
+  const infos = [{ id: 3, name: "Synthetic case" }, { id: 4, name: "Other synthetic case" }];
+  const rule = (extra = {}) => ({ kind: "in_case", case_id: 3, value: true, ...extra });
+  assert.equal(caseNameDrift(rule(), infos), null, "older rule files carry no name");
+  assert.equal(caseNameDrift(rule({ case_name: "Synthetic case" }), infos), null);
+  assert.deepEqual(caseNameDrift(rule({ case_name: "Renamed since" }), infos), { saved: "Renamed since", now: "Synthetic case" });
+  assert.equal(caseNameDrift(rule({ case_id: 99, case_name: "Gone" }), infos), null, "a missing case has its own message");
+  assert.equal(caseNameDrift({ kind: "plays_zero" }, infos), null);
+  // stamping fills only the rules that have no name, groups included, and skips unknown cases
+  const rules = [rule(), rule({ case_id: 4, case_name: "Kept" }), rule({ case_id: 99 }), grp("any", [rule({ case_id: 4 })])];
+  stampCaseNames(rules, infos);
+  assert.equal(rules[0].case_name, "Synthetic case");
+  assert.equal(rules[1].case_name, "Kept");
+  assert.equal(rules[2].case_name, undefined);
+  assert.equal(rules[3].items[0].case_name, "Other synthetic case");
+  // the name never changes what matches or what validates
+  const l = lib();
+  assert.ok(ruleMatches(rule({ case_id: 9, case_name: "Anything" }), l.rows[0], l.env));
+  assert.ok(!ruleMatches(rule({ case_id: 9, case_name: "Anything" }), l.rows[1], l.env));
+});
+
+test("a case rule with no cases to choose from starts on no case and is refused until one is picked", () => {
+  assert.equal(defaultCaseId([]), NO_CASE);
+  assert.equal(defaultRule("in_case").case_id, NO_CASE);
+  assert.match(validateQuery(q([defaultRule("in_case", defaultCaseId([]))])), /needs a case/);
+  assert.equal(validateQuery(q([defaultRule("in_case", defaultCaseId([{ id: 1, name: "Synthetic case" }]))])), "");
+  assert.equal(defaultCaseId([{ id: 2, name: "★ Synthetic smart" }, { id: 5, name: "Synthetic case" }]), 5);
 });

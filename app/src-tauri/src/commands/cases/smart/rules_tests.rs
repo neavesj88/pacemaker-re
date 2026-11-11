@@ -235,10 +235,10 @@ fn year_date_duration_plays_format_and_stale_rules() {
     assert!(one(&stale(30, true), &t, &x), "0 is the never-played sentinel too");
 
     // case membership
-    assert!(one(&Rule::InCase { case_id: 7, value: true }, &t, &x));
-    assert!(!one(&Rule::InCase { case_id: 7, value: false }, &t, &x));
-    assert!(!one(&Rule::InCase { case_id: 8, value: true }, &t, &x));
-    assert!(one(&Rule::InCase { case_id: 8, value: false }, &t, &x));
+    assert!(one(&Rule::InCase { case_id: 7, value: true, case_name: None }, &t, &x));
+    assert!(!one(&Rule::InCase { case_id: 7, value: false, case_name: None }, &t, &x));
+    assert!(!one(&Rule::InCase { case_id: 8, value: true, case_name: None }, &t, &x));
+    assert!(one(&Rule::InCase { case_id: 8, value: false, case_name: None }, &t, &x));
 }
 
 #[test]
@@ -305,11 +305,11 @@ fn default_order_is_artist_then_title_then_id() {
 #[test]
 fn top_level_mode_and_case_membership() {
     let d = lib_data();
-    let rules = vec![Rule::InCase { case_id: 9, value: true }, Rule::RatingMin { stars: 4 }];
+    let rules = vec![Rule::InCase { case_id: 9, value: true, case_name: None }, Rule::RatingMin { stars: 4 }];
     assert_eq!(ids(&Query { mode: Mode::All, rules: rules.clone(), ..Default::default() }, &d), vec![1]);
     assert_eq!(ids(&Query { mode: Mode::Any, rules: rules.clone(), ..Default::default() }, &d), vec![4, 5, 3, 2, 1]);
     assert_eq!(ids(&Query { mode: Mode::None, rules, ..Default::default() }, &d), Vec::<i64>::new());
-    let not_in = q(vec![Rule::InCase { case_id: 9, value: false }]);
+    let not_in = q(vec![Rule::InCase { case_id: 9, value: false, case_name: None }]);
     assert_eq!(ids(&not_in, &d), vec![5, 3, 2]);
 }
 
@@ -318,11 +318,11 @@ fn a_rule_naming_a_deleted_case_is_an_error_not_a_silent_match_all() {
     let mut d = lib_data();
     d.cases.insert(77, None); // loaded, but the case does not exist
     for id in [77, 1234] {
-        let e = evaluate(&q(vec![Rule::InCase { case_id: id, value: false }]), &d).unwrap_err();
+        let e = evaluate(&q(vec![Rule::InCase { case_id: id, value: false, case_name: None }]), &d).unwrap_err();
         assert!(e.contains("no longer exists"), "{e}");
     }
     // also when the reference is inside a group
-    let nested = q(vec![Rule::Group { mode: Mode::Any, items: vec![Rule::PlaysZero, Rule::InCase { case_id: 77, value: true }] }]);
+    let nested = q(vec![Rule::Group { mode: Mode::Any, items: vec![Rule::PlaysZero, Rule::InCase { case_id: 77, value: true, case_name: None }] }]);
     assert!(evaluate(&nested, &d).is_err());
 }
 
@@ -404,7 +404,7 @@ fn validate_explains_every_refusal() {
         Rule::PlaysRange { min: Some(-1), max: None },
         Rule::LastPlayedBefore { days: 0, include_never: true },
         Rule::Format { value: " ".into() },
-        Rule::InCase { case_id: -1, value: true },
+        Rule::InCase { case_id: -1, value: true, case_name: None },
         Rule::Group { mode: Mode::All, items: vec![] },
         Rule::Group { mode: Mode::Any, items: vec![Rule::PlaysMin { n: 0 }] },
     ] {
@@ -502,8 +502,8 @@ fn migrate_rewrites_the_old_genre_rule_everywhere_and_is_idempotent() {
 #[test]
 fn referenced_cases_walks_groups() {
     let rules = vec![
-        Rule::InCase { case_id: 3, value: true },
-        Rule::Group { mode: Mode::Any, items: vec![Rule::InCase { case_id: 4, value: false }, Rule::Group { mode: Mode::All, items: vec![Rule::InCase { case_id: 3, value: false }] }] },
+        Rule::InCase { case_id: 3, value: true, case_name: None },
+        Rule::Group { mode: Mode::Any, items: vec![Rule::InCase { case_id: 4, value: false, case_name: None }, Rule::Group { mode: Mode::All, items: vec![Rule::InCase { case_id: 3, value: false, case_name: None }] }] },
     ];
     let mut ids = HashSet::new();
     referenced_cases(&rules, &mut ids);
@@ -542,4 +542,22 @@ fn dates_are_formatted_as_utc_calendar_dates() {
         d.now_ms = ms;
         assert_eq!(evaluate(&q, &d).unwrap().values, vec![want.to_string()], "{ms}");
     }
+}
+
+#[test]
+fn case_rule_name_is_optional_advisory_and_round_trips() {
+    // a rule file written before the name existed still reads, and is written back without the key
+    let old: Rule = serde_json::from_str(r#"{"kind":"in_case","case_id":4,"value":true}"#).unwrap();
+    assert_eq!(old, Rule::InCase { case_id: 4, value: true, case_name: None });
+    let back = serde_json::to_string(&old).unwrap();
+    assert!(!back.contains("case_name"), "{back}");
+    // with a name it round-trips
+    let named: Rule = serde_json::from_str(r#"{"kind":"in_case","case_id":4,"value":false,"case_name":"Synthetic case"}"#).unwrap();
+    assert_eq!(named, Rule::InCase { case_id: 4, value: false, case_name: Some("Synthetic case".into()) });
+    assert_eq!(serde_json::from_str::<Rule>(&serde_json::to_string(&named).unwrap()).unwrap(), named);
+    // the name never changes what matches (case 7 holds the track, case 8 is empty in `one`)
+    let (t, x) = (track(1), extra());
+    let with = |id, value, name: &str| Rule::InCase { case_id: id, value, case_name: Some(name.into()) };
+    assert!(one(&with(7, true, "Some other name"), &t, &x));
+    assert!(!one(&with(8, true, "Synthetic case"), &t, &x));
 }

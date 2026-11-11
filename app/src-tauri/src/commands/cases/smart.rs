@@ -320,7 +320,7 @@ mod tests {
 
     #[test]
     fn rules_that_would_read_their_own_device_copy_are_noticed() {
-        let q = Query { rules: vec![Rule::Group { mode: rules::Mode::Any, items: vec![Rule::InCase { case_id: 12, value: false }] }], ..Default::default() };
+        let q = Query { rules: vec![Rule::Group { mode: rules::Mode::Any, items: vec![Rule::InCase { case_id: 12, value: false, case_name: None }] }], ..Default::default() };
         assert!(refers_to_case(&q, 12));
         assert!(!refers_to_case(&q, 13));
         assert!(!refers_to_case(&sc("x").query, 12));
@@ -393,18 +393,18 @@ mod tests {
         assert_eq!(run(&lib, &rules(vec![Rule::AddedWithin { days: 1 }])).unwrap().len(), 3, "add_track stamps date_added with now");
         assert!(run(&lib, &rules(vec![Rule::AddedBefore { days: 1 }])).unwrap().is_empty());
         assert_eq!(run(&lib, &rules(vec![Rule::DurationRange { min_secs: Some(1), max_secs: Some(200) }])).unwrap(), vec![ids[0]]);
-        assert_eq!(run(&lib, &rules(vec![Rule::InCase { case_id: case, value: true }])).unwrap(), vec![ids[1], ids[2]]);
-        assert_eq!(run(&lib, &rules(vec![Rule::InCase { case_id: case, value: false }])).unwrap(), vec![ids[0]]);
+        assert_eq!(run(&lib, &rules(vec![Rule::InCase { case_id: case, value: true, case_name: None }])).unwrap(), vec![ids[1], ids[2]]);
+        assert_eq!(run(&lib, &rules(vec![Rule::InCase { case_id: case, value: false, case_name: None }])).unwrap(), vec![ids[0]]);
         let ordered = Query {
             mode: Mode::Any,
-            rules: vec![Rule::InCase { case_id: case, value: true }, Rule::Text { field: TextField::Title, op: TextOp::Is, text: "t0".into() }],
+            rules: vec![Rule::InCase { case_id: case, value: true, case_name: None }, Rule::Text { field: TextField::Title, op: TextOp::Is, text: "t0".into() }],
             sort: Some(Sort { field: SortField::Duration, descending: true }),
             limit: Some(2),
         };
         assert_eq!(run(&lib, &ordered).unwrap(), vec![ids[1], ids[0]], "300 s, 120 s; the track with no length is last and cut by the limit");
 
         // deleting the case turns the rule into an explanation, not into "everything"
-        let gone = rules(vec![Rule::InCase { case_id: case, value: false }]);
+        let gone = rules(vec![Rule::InCase { case_id: case, value: false, case_name: None }]);
         lib.delete_case(case).unwrap();
         assert!(run(&lib, &gone).unwrap_err().contains("no longer exists"));
         drop(lib);

@@ -3,7 +3,7 @@
   import { cases } from "$lib/state/cases.svelte";
   import { jobs } from "$lib/state/jobs.svelte";
   import { session } from "$lib/state/session.svelte";
-  import { MAX_LIMIT, SORT_FIELDS, describeQuery, directionLabels, newQuery, validateQuery } from "$lib/state/smartRules";
+  import { MAX_LIMIT, SORT_FIELDS, describeQuery, directionLabels, newQuery, stampCaseNames, validateQuery } from "$lib/state/smartRules";
   import { toast } from "$lib/state/toast.svelte";
   import Button from "$lib/ui/Button.svelte";
   import ConfirmDialog from "./ConfirmDialog.svelte";
@@ -103,6 +103,8 @@
   const deviceName = (name: string) => `★ ${name.trim()}`;
 
   async function save() {
+    // case rules remember the case's name, so a rule file read against another card can say so
+    stampCaseNames(draft.rules, cases.infos);
     const out = await cases.saveSmart($state.snapshot(draft) as SmartCase);
     if (!out) return;
     baseline = stateOf(out);
