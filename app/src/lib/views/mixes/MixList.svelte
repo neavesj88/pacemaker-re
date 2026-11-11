@@ -12,6 +12,7 @@
   import { mmss } from "./layout";
   import { listMeta } from "./listmeta.svelte";
   import { mv } from "./view.svelte";
+  import { setlist } from "../setlist/setlist.svelte";
 
   let picked = $state<number | null>(null);
   let sortKey = $state("name");
@@ -93,6 +94,7 @@
     <Button disabled={!current} onclick={() => current && openMix(current.id)}>Open</Button>
     <Button disabled={!current} onclick={() => current && renameMix(current)}>Rename…</Button>
     <Button disabled={!current} onclick={() => current && void exportPmk(current)}>Export .pmk…</Button>
+    <Button disabled={!current} onclick={() => current && setlist.openMix(current.id)} title="A printable setlist of the picked mix">Setlist…</Button>
     <Button disabled={!current} onclick={() => current && deleteMix(current)}><span class:bad={!!current}>Delete…</span></Button>
   </div>
 

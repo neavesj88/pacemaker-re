@@ -12,6 +12,7 @@
   import { session } from "$lib/state/session.svelte";
   import Button from "$lib/ui/Button.svelte";
   import Stars from "$lib/ui/Stars.svelte";
+  import { setlist } from "../setlist/setlist.svelte";
   import CaseTrackPicker from "./CaseTrackPicker.svelte";
   import ConfirmDialog from "./ConfirmDialog.svelte";
   import NameDialog from "./NameDialog.svelte";
@@ -230,6 +231,7 @@
         onclick={() => metadataEditor.edit(selectedRows.filter((r) => r.t).map((r) => r.id))}
         disabled={selectedRows.every((r) => !r.t)}
       >Edit tracks…</Button>
+      <Button onclick={() => setlist.openCase(open.id)} disabled={all.length === 0} title="A printable setlist of this case">Setlist…</Button>
       <span class="muted hint">Drag rows to reorder, or drop tracks here from the Tracks view · the order is the order on the Pacemaker</span>
     </div>
 

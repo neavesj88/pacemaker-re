@@ -14,6 +14,7 @@
   import Timeline from "./Timeline.svelte";
   import TrackPicker from "./TrackPicker.svelte";
   import { mv } from "./view.svelte";
+  import { setlist } from "../setlist/setlist.svelte";
 
   const doc = $derived(mixes.doc!);
   let saving = $state(false);
@@ -196,6 +197,7 @@
     {#if mixes.problems.length > 0}
       <span class="problem" title={mixes.problems.join("\n")}>⚠ {mixes.problems.length} problem{mixes.problems.length === 1 ? "" : "s"} blocking save</span>
     {/if}
+    <Button disabled={doc.clips.length === 0} onclick={() => setlist.openMix(doc.id)} title="A printable setlist of this mix">Setlist…</Button>
     <Button disabled={mv.exporting || doc.clips.length === 0} onclick={() => void exportAudio()} title="Render the mix to an audio file">
       {mv.exporting ? (mv.exportPct > 0 ? `Exporting ${Math.round(mv.exportPct * 100)}%` : "Exporting…") : "Export audio"}
     </Button>

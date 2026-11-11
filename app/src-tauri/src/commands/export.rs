@@ -6,11 +6,15 @@
 //! `pm-mixer` crate (`notes/mix-audio.md`); the library lookup, caching and destination checks
 //! are in [`render`].
 //!
+//! Printable setlist (case or mix to a print-ready HTML page): the notes store and the save-to-file
+//! command are in [`setlist`]; the page itself is built by the UI.
+//!
 //! To add a command: write a `#[tauri::command] pub async fn` here, add its full
 //! path to the list in `export_commands!` below, then mirror it in `src/lib/api/export.ts` and
 //! `src/lib/devmock/export.ts`.
 
 mod render;
+pub mod setlist;
 
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -141,6 +145,9 @@ macro_rules! export_commands {
                 $crate::commands::export::export_render_preview,
                 $crate::commands::export::export_mix_audio,
                 $crate::commands::export::export_cancel,
+                $crate::commands::export::setlist::setlist_sheet_load,
+                $crate::commands::export::setlist::setlist_sheet_save,
+                $crate::commands::export::setlist::setlist_save_html,
             ];
             $($rest),*
         }
