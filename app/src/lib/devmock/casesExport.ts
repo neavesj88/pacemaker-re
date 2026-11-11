@@ -47,6 +47,13 @@ function settle(path: string, size: number | null, policy: ExportRequest["confli
   return { path: join(dir, name), action: "renamed", wanted: file };
 }
 
+/** A small stand-in for the backend's plan fingerprint (FNV-1a over the plan's text). */
+function fingerprint(text: string): string {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < text.length; i++) h = Math.imul(h ^ text.charCodeAt(i), 0x01000193) >>> 0;
+  return h.toString(16).padStart(8, "0");
+}
+
 function plan(req: ExportRequest): ExportPlan {
   if (!req.folder.trim()) throw "Choose a folder to export to.";
   if (/^p:/i.test(req.folder)) throw "Choose a folder outside the device: files written there are not part of its library.";
@@ -126,13 +133,14 @@ function plan(req: ExportRequest): ExportPlan {
       }
     });
   }
-  return {
+  const out = {
     folder: req.folder,
     lists: lists.map(({ ids: _i, dir: _d, ...l }) => l),
     audio,
     notes,
     copy_bytes: audio.filter((a) => ["write", "replace", "renamed"].includes(a.action)).reduce((n, a) => n + a.size, 0),
   };
+  return { ...out, now_ms: 1_700_000_000_000, digest: fingerprint(JSON.stringify({ out, ids: lists.map((l) => l.ids) })) };
 }
 
 const writes = (a: ExportAction) => a === "write" || a === "replace" || a === "renamed";
@@ -146,6 +154,8 @@ export const handlers: Handlers = {
   cases_export_plan: (a) => plan(a.request as ExportRequest),
   cases_export_start: (a) => {
     const p = plan(a.request as ExportRequest);
+    const c = a.confirmed as { digest: string } | undefined;
+    if (c && c.digest !== p.digest) throw "The cases, the library or the folder changed after the preview was made, so nothing was written. The preview has been refreshed: check it and press Export again.";
     if (jobLock.running) throw "Another job is still running.";
     const files = [...p.audio.filter((x) => writes(x.action)).map((x) => ({ path: x.path, size: x.size, file: x.file })), ...p.lists.filter((x) => writes(x.action)).map((x) => ({ path: x.path, size: 1, file: x.file }))];
     jobLock.running = true;

@@ -56,7 +56,7 @@ export function actionText(action: ExportAction, kind: "list" | "audio", wanted:
     case "skip":
       return kind === "list" ? "A file with this name is there: left as it is, not written" : "A different file with this name is there: left as it is, not copied (the playlist keeps pointing at the original)";
     case "same":
-      return "Already there with the same size: left as it is";
+      return "Already there, same size and same start, middle and end: left as it is";
     case "missing":
       return `Cannot be copied${problem ? `: ${problem}` : ""}`;
     case "blocked":
@@ -108,7 +108,9 @@ export function confirmLabel(plan: ExportPlan): string {
   const parts: string[] = [];
   if (t.lists > 0) parts.push(`write ${plural(t.lists, "playlist")}`);
   if (t.audio > 0) parts.push(`copy ${plural(t.audio, "audio file")} (${fmtBytes(t.bytes)})`);
-  const s = parts.join(" and ");
+  let s = parts.join(" and ");
+  // the button itself says when it writes over files, not only the red list above it
+  if (t.replaced > 0) s += `, replacing ${plural(t.replaced, "existing file")}`;
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
@@ -151,10 +153,28 @@ export function requestOf(p: ExportPrefs, caseIds: Iterable<number>, smartIds: I
   };
 }
 
+/** "Replace" is a choice for one export, never a default: it comes back as "skip" (the saved
+ *  choice of an older version included), so the next dialog cannot start out set to overwrite. */
+export function safeConflict(c: ExportPrefs["conflict"]): ExportPrefs["conflict"] {
+  return c === "replace" ? "skip" : c;
+}
+
+/** The choices a dialog starts from: the saved ones, without a saved "replace". */
+export function startingPrefs(saved: ExportPrefs): ExportPrefs {
+  return { ...saved, conflict: safeConflict(saved.conflict) };
+}
+
 /** What to save when an export starts: the dialog's choices, but the folder and format only if
- *  the user asked for them to be remembered (the policies are saved either way). */
+ *  the user asked for them to be remembered (the policies are saved either way, except that
+ *  "replace" is not kept). */
 export function prefsToSave(draft: ExportPrefs, stored: ExportPrefs): ExportPrefs {
-  return draft.remember ? { ...draft } : { ...draft, folder: stored.folder, format: stored.format };
+  const d = { ...draft, conflict: safeConflict(draft.conflict) };
+  return d.remember ? d : { ...d, folder: stored.folder, format: stored.format };
+}
+
+/** Whether the shown plan was made for exactly the request that would be started now. */
+export function planIsCurrent(plannedFor: string | null, request: ExportRequest): boolean {
+  return plannedFor !== null && plannedFor === JSON.stringify(request);
 }
 
 /** After a one-file export (the quick menu items) the remembered folder and format follow it. */

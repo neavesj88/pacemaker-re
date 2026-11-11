@@ -364,14 +364,21 @@ export type ExportPlan = {
   audio: ExportAudioEntry[];
   notes: string[];
   copy_bytes: number;
+  /** The moment the plan was made for; sent back with the start. */
+  now_ms: number;
+  /** Fingerprint of the plan; sent back with the start, which refuses to run on another plan. */
+  digest: string;
 };
+
+/** The plan the user confirmed: the export runs only if the plan rebuilt now is this one. */
+export type ExportConfirmed = { now_ms: number; digest: string };
 
 /** The preview. Writes nothing; the export is made from the same plan. */
 export const planExport = (root: string, request: ExportRequest) => invoke<ExportPlan>("cases_export_plan", { root, request });
 
 /** Starts the export job ("cases-export" in the job events) and returns at once. */
-export const startExport = (root: string, request: ExportRequest) =>
-  invoke<{ folder: string; writes: number }>("cases_export_start", { root, request });
+export const startExport = (root: string, request: ExportRequest, confirmed: ExportConfirmed) =>
+  invoke<{ folder: string; writes: number }>("cases_export_start", { root, request, confirmed });
 
 /** Stops the running export before its next file; what was already written stays. */
 export const cancelExport = () => invoke<void>("cases_export_cancel");

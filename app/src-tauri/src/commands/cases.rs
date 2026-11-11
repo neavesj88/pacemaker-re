@@ -500,15 +500,29 @@ pub struct ExportStarted {
 /// Starts the export as a background job (it writes only into the chosen folder, never to the
 /// device) and returns at once; progress and the end arrive as `job-progress` / `job-done` events
 /// of job `cases-export`. A folder or selection that cannot work is an error here, before any file.
+///
+/// `confirmed` is the moment and fingerprint of the plan the dialog showed. The plan is rebuilt
+/// with that same moment (so smart cases match as they did in the preview) and the job runs only
+/// if the rebuilt plan has the same fingerprint; otherwise nothing is written and the error says
+/// the preview is out of date. The job then runs from the plan that was just checked, not from a
+/// third one.
 #[tauri::command]
-pub async fn cases_export_start(app: tauri::AppHandle, lock: State<'_, JobLock>, root: String, request: export_bulk::Request) -> AppResult<ExportStarted> {
+pub async fn cases_export_start(app: tauri::AppHandle, lock: State<'_, JobLock>, root: String, request: export_bulk::Request, confirmed: Option<export_bulk::Confirmed>) -> AppResult<ExportStarted> {
     let dir = config_dir(&app)?;
     let (d, r, q) = (dir.clone(), root.clone(), request.clone());
-    let writes = tauri::async_runtime::spawn_blocking(move || -> AppResult<usize> {
+    let built = tauri::async_runtime::spawn_blocking(move || -> AppResult<export_bulk::Built> {
         let lib = Library::open_read_only(&PathBuf::from(&r))?;
-        Ok(export_bulk::build(&lib, &d, &r, &q, now_ms())?.writes())
+        let at = confirmed.as_ref().map_or_else(now_ms, |c| c.now_ms);
+        let built = export_bulk::build(&lib, &d, &r, &q, at)?;
+        if let Some(c) = &confirmed
+            && built.digest() != c.digest
+        {
+            return Err("The cases, the library or the folder changed after the preview was made, so nothing was written. The preview has been refreshed: check it and press Export again.".into());
+        }
+        Ok(built)
     })
     .await??;
+    let writes = built.writes();
     let folder = request.folder.clone();
     let shown = folder.clone();
     spawn_job(app, &lock, JOB_CASES_EXPORT, move |app| {
@@ -516,7 +530,6 @@ pub async fn cases_export_start(app: tauri::AppHandle, lock: State<'_, JobLock>,
         let cancel = &app.state::<export_bulk::Cancel>().0;
         cancel.store(false, std::sync::atomic::Ordering::SeqCst);
         let lib = Library::open_read_only(&PathBuf::from(&root))?;
-        let built = export_bulk::build(&lib, &dir, &root, &request, now_ms())?;
         let out = export_bulk::execute(&lib, &built, cancel, &mut |s| {
             let mut p = Progress::new(JOB_CASES_EXPORT, s.label, s.done, s.total, s.status);
             p.error = s.error;

@@ -125,6 +125,20 @@ pub struct Plan {
     pub notes: Vec<String>,
     /// Bytes the audio copies will write.
     pub copy_bytes: u64,
+    /// The clock the plan was made with (smart cases with date rules match against it). Sent
+    /// back with the start so the job matches against the same moment.
+    pub now_ms: i64,
+    /// Fingerprint of everything the plan holds: which tracks go in each list, which files are
+    /// written, replaced, kept. Sent back with the start; the job refuses to run when a fresh
+    /// plan no longer has the same fingerprint.
+    pub digest: String,
+}
+
+/// What the dialog confirmed: the moment and fingerprint of the plan it showed.
+#[derive(Debug, Clone, Deserialize)]
+pub struct Confirmed {
+    pub now_ms: i64,
+    pub digest: String,
 }
 
 #[derive(Debug, Clone)]
@@ -165,9 +179,66 @@ pub struct Built {
     lists: Vec<ListJob>,
     audio: Vec<AudioOp>,
     notes: Vec<String>,
+    now_ms: i64,
+}
+
+/// FNV-1a, 64 bit: a small stable fingerprint (not security, only "is this the same plan").
+struct Fnv(u64);
+
+impl Fnv {
+    fn new() -> Self {
+        Fnv(0xcbf29ce484222325)
+    }
+    fn put(&mut self, bytes: &[u8]) {
+        for b in bytes {
+            self.0 ^= *b as u64;
+            self.0 = self.0.wrapping_mul(0x100000001b3);
+        }
+        // a separator so ("ab","c") and ("a","bc") differ
+        self.0 ^= 0xff;
+        self.0 = self.0.wrapping_mul(0x100000001b3);
+    }
+    fn str(&mut self, s: &str) {
+        self.put(s.as_bytes());
+    }
+    fn num(&mut self, n: u64) {
+        self.put(&n.to_le_bytes());
+    }
 }
 
 impl Built {
+    /// Fingerprint of the plan: the lists with their track ids, the audio copies with sizes, every
+    /// action and path, the notes and the options. Two builds are the same plan exactly when
+    /// this matches.
+    pub fn digest(&self) -> String {
+        let mut h = Fnv::new();
+        h.str(&self.req.format);
+        h.num(self.req.relative_paths as u64);
+        h.num(self.req.copy_audio as u64);
+        h.str(&format!("{:?}{:?}{:?}", self.req.audio_layout, self.req.audio_names, self.req.conflict));
+        for l in &self.lists {
+            h.str(&l.entry.path);
+            h.str(&format!("{:?}", l.entry.action));
+            for t in &l.tracks {
+                h.num(t.track_id as u64);
+            }
+            // which copy stands in for each track changes what the playlist says
+            for t in &l.targets {
+                h.num(t.copy.map_or(u64::MAX, |c| c as u64));
+            }
+        }
+        for a in &self.audio {
+            h.str(&a.entry.path);
+            h.str(&format!("{:?}", a.entry.action));
+            h.num(a.entry.size);
+            h.str(&a.src.as_deref().map(|p| p.to_string_lossy().into_owned()).unwrap_or_default());
+        }
+        for n in &self.notes {
+            h.str(n);
+        }
+        format!("{:016x}", h.0)
+    }
+
     pub fn plan(&self) -> Plan {
         Plan {
             folder: self.folder.to_string_lossy().into_owned(),
@@ -175,6 +246,8 @@ impl Built {
             audio: self.audio.iter().map(|a| a.entry.clone()).collect(),
             notes: self.notes.clone(),
             copy_bytes: self.audio.iter().filter(|a| a.entry.action.writes()).map(|a| a.entry.size).sum(),
+            now_ms: self.now_ms,
+            digest: self.digest(),
         }
     }
 
@@ -361,17 +434,51 @@ fn sources(lib: &Library, config_dir: &Path, root_str: &str, req: &Request, now_
     Ok(out)
 }
 
+/// Whether `dst` holds the same bytes as `src` as far as a quick look can tell: same size, and the
+/// first, middle and last 64 KiB agree (a file up to three blocks long is compared whole). Not a
+/// full compare: reading every audio file twice on each preview would make the dialog crawl.
+/// Any read error counts as "different".
+fn looks_identical(src: &Path, dst: &Path, len: u64) -> bool {
+    use std::io::{Seek, SeekFrom};
+    const BLOCK: u64 = 64 * 1024;
+    let check = || -> std::io::Result<bool> {
+        let (mut a, mut b) = (std::fs::File::open(src)?, std::fs::File::open(dst)?);
+        if a.metadata()?.len() != len || b.metadata()?.len() != len {
+            return Ok(false);
+        }
+        let spans: Vec<(u64, u64)> = if len <= 3 * BLOCK { vec![(0, len)] } else { vec![(0, BLOCK), ((len - BLOCK) / 2, BLOCK), (len - BLOCK, BLOCK)] };
+        let (mut x, mut y) = (Vec::new(), Vec::new());
+        for (at, n) in spans {
+            x.resize(n as usize, 0);
+            y.resize(n as usize, 0);
+            a.seek(SeekFrom::Start(at))?;
+            b.seek(SeekFrom::Start(at))?;
+            a.read_exact(&mut x)?;
+            b.read_exact(&mut y)?;
+            if x != y {
+                return Ok(false);
+            }
+        }
+        Ok(true)
+    };
+    check().unwrap_or(false)
+}
+
 /// What to do about `dst` given the conflict policy; for `Number` the numbered name is chosen
-/// with `used` and the disk. Returns the final path, the action and the wanted name if renamed.
-fn settle(dst: PathBuf, same_size: Option<u64>, policy: Conflict, used: &mut HashSet<String>) -> (PathBuf, Action, Option<String>) {
+/// with `used` and the disk. `same_as` is the audio source and its size: a file already at `dst`
+/// that [`looks_identical`] is the copy and is left alone whatever the policy; one that only has
+/// the same size is a different file and follows the policy. Returns the final path, the action
+/// and the wanted name if renamed.
+fn settle(dst: PathBuf, same_as: Option<(&Path, u64)>, policy: Conflict, used: &mut HashSet<String>) -> (PathBuf, Action, Option<String>) {
     if dst.is_dir() {
         return (dst, Action::Blocked, None);
     }
     if !dst.exists() {
         return (dst, Action::Write, None);
     }
-    if let (Some(want), Ok(m)) = (same_size, std::fs::metadata(&dst))
-        && m.len() == want
+    if let Some((src, want)) = same_as
+        && std::fs::metadata(&dst).is_ok_and(|m| m.len() == want)
+        && looks_identical(src, &dst, want)
     {
         return (dst, Action::Same, None);
     }
@@ -506,7 +613,7 @@ pub fn build(lib: &Library, config_dir: &Path, root_str: &str, req: &Request, no
                             Some(Ok(m)) => {
                                 op.entry.size = m.len();
                                 let used = lib_used.entry(dir.clone()).or_default();
-                                let (final_dst, action, wanted) = settle(dst, Some(m.len()), req.conflict, used);
+                                let (final_dst, action, wanted) = settle(dst, src.as_deref().map(|p| (p, m.len())), req.conflict, used);
                                 if action == Action::Blocked {
                                     op.entry.problem = Some("a folder with that name is in the way".into());
                                 }
@@ -528,7 +635,7 @@ pub fn build(lib: &Library, config_dir: &Path, root_str: &str, req: &Request, no
         }
     }
 
-    let mut built = Built { folder, req: req.clone(), lists, audio, notes };
+    let mut built = Built { folder, req: req.clone(), lists, audio, notes, now_ms };
     // a relative path needs the audio and the playlist on one drive: say how many were not
     if built.req.relative_paths && built.req.format == "m3u8" {
         let mut absolute = 0;
@@ -1317,6 +1424,119 @@ mod tests {
         let built = build(&lib, &cfg, &root, &r, 0).unwrap();
         // p0 now has the right size (Same); p1 is a folder (Blocked) whatever the policy
         assert_eq!(built.plan().audio.iter().map(|x| x.action).collect::<Vec<_>>(), [Action::Same, Action::Blocked]);
+        drop(lib);
+        for d in [vol, cfg, out] {
+            std::fs::remove_dir_all(d).unwrap();
+        }
+    }
+
+    #[test]
+    fn a_file_of_the_same_size_but_other_content_is_not_taken_for_the_copy() {
+        let (mut lib, vol, ids) = volume("samesize", 1);
+        let cfg = temp_dir("samesize-cfg");
+        let out = temp_dir("samesize-out");
+        let root = vol.to_string_lossy().into_owned();
+        let a = lib.create_case_with_tracks("Alpha", &[ids[0]]).unwrap();
+        let mut r = req(&out, "m3u8", vec![a]);
+        r.copy_audio = true;
+        let p0 = PathBuf::from(build(&lib, &cfg, &root, &r, 0).unwrap().plan().audio[0].path.clone());
+        std::fs::create_dir_all(p0.parent().unwrap()).unwrap();
+
+        // 2048 bytes (a file shorter than three blocks is compared whole), one byte different at the end
+        let mut other = vec![1u8; 2048];
+        *other.last_mut().unwrap() = 9;
+        std::fs::write(&p0, &other).unwrap();
+        for (policy, want) in [(Conflict::Skip, Action::Skip), (Conflict::Replace, Action::Replace), (Conflict::Number, Action::Renamed)] {
+            r.conflict = policy;
+            assert_eq!(build(&lib, &cfg, &root, &r, 0).unwrap().plan().audio[0].action, want, "{policy:?}: same size is not the same file");
+        }
+
+        // the real copy is recognised under every policy, even Replace
+        std::fs::write(&p0, vec![1u8; 2048]).unwrap();
+        for policy in [Conflict::Skip, Conflict::Replace, Conflict::Number] {
+            r.conflict = policy;
+            assert_eq!(build(&lib, &cfg, &root, &r, 0).unwrap().plan().audio[0].action, Action::Same, "{policy:?}");
+        }
+
+        // a big file is sampled at its start, middle and end: a difference in any of them shows
+        let big = 3 * 64 * 1024 + 5000;
+        let src = vol.join("big.bin");
+        let mut data: Vec<u8> = (0..big).map(|i| (i % 251) as u8).collect();
+        std::fs::write(&src, &data).unwrap();
+        let dst = out.join("big-copy.bin");
+        std::fs::write(&dst, &data).unwrap();
+        assert!(looks_identical(&src, &dst, big as u64));
+        for at in [3, big / 2 + 7, big - 2] {
+            let was = data[at];
+            data[at] ^= 0xff;
+            std::fs::write(&dst, &data).unwrap();
+            assert!(!looks_identical(&src, &dst, big as u64), "difference at {at}");
+            data[at] = was;
+        }
+        assert!(!looks_identical(&src, &out.join("missing.bin"), big as u64), "unreadable counts as different");
+        drop(lib);
+        for d in [vol, cfg, out] {
+            std::fs::remove_dir_all(d).unwrap();
+        }
+    }
+
+    #[test]
+    fn the_plan_carries_a_fingerprint_that_changes_when_anything_it_shows_would_change() {
+        let (mut lib, vol, ids) = volume("digest", 3);
+        let cfg = temp_dir("digest-cfg");
+        let out = temp_dir("digest-out");
+        let root = vol.to_string_lossy().into_owned();
+        let a = lib.create_case_with_tracks("Alpha", &[ids[0], ids[1]]).unwrap();
+        let mut r = req(&out, "m3u8", vec![a]);
+        r.copy_audio = true;
+        let first = build(&lib, &cfg, &root, &r, 123).unwrap().plan();
+        assert_eq!(first.now_ms, 123, "the plan says which moment it was made for");
+        assert_eq!(build(&lib, &cfg, &root, &r, 123).unwrap().plan().digest, first.digest, "same inputs, same fingerprint");
+
+        // a file shows up in the folder: the action for that name changes
+        std::fs::write(out.join("Alpha.m3u8"), "MINE").unwrap();
+        let with_file = build(&lib, &cfg, &root, &r, 123).unwrap().plan();
+        assert_ne!(with_file.digest, first.digest);
+        std::fs::remove_file(out.join("Alpha.m3u8")).unwrap();
+        assert_eq!(build(&lib, &cfg, &root, &r, 123).unwrap().plan().digest, first.digest, "and back again");
+
+        // the case gets another track: same file names, different playlist
+        lib.set_case_tracks(a, &[ids[0], ids[1], ids[2]]).unwrap();
+        assert_ne!(build(&lib, &cfg, &root, &r, 123).unwrap().plan().digest, first.digest);
+        lib.set_case_tracks(a, &[ids[1], ids[0]]).unwrap();
+        let swapped = build(&lib, &cfg, &root, &r, 123).unwrap().plan().digest;
+        lib.set_case_tracks(a, &[ids[0], ids[1]]).unwrap();
+        assert_ne!(swapped, first.digest, "order counts");
+
+        // an option changes what is written
+        let mut other = r.clone();
+        other.relative_paths = true;
+        assert_ne!(build(&lib, &cfg, &root, &other, 123).unwrap().plan().digest, first.digest);
+        drop(lib);
+        for d in [vol, cfg, out] {
+            std::fs::remove_dir_all(d).unwrap();
+        }
+    }
+
+    #[test]
+    fn a_smart_case_with_a_date_rule_matches_against_the_moment_the_plan_was_made_for() {
+        let (lib, vol, ids) = volume("moment", 2);
+        let cfg = temp_dir("moment-cfg");
+        let out = temp_dir("moment-out");
+        let root = vol.to_string_lossy().into_owned();
+        let sc = smart::save(&cfg, &root, SmartCase { id: 0, name: "Fresh".into(), query: Query { rules: vec![Rule::AddedWithin { days: 1 }], ..Default::default() }, on_device: false, device_case_id: None }).unwrap();
+        let mut r = req(&out, "csv", vec![]);
+        r.smart_ids = vec![sc.id];
+        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() as i64;
+        let day = 86_400_000;
+        let at_preview = build(&lib, &cfg, &root, &r, now).unwrap().plan();
+        assert_eq!(at_preview.lists[0].tracks, ids.len(), "added just now");
+        // the job asked for the preview's moment gets the preview's list, however much later it starts
+        let replay = build(&lib, &cfg, &root, &r, now).unwrap().plan();
+        assert_eq!(replay.digest, at_preview.digest);
+        // a clock three days on (a fresh now_ms) would match nothing: that is what the job no longer does
+        let later = build(&lib, &cfg, &root, &r, now + 3 * day);
+        assert!(later.is_err(), "no track is within a day any more, so nothing would be exported");
         drop(lib);
         for d in [vol, cfg, out] {
             std::fs::remove_dir_all(d).unwrap();

@@ -27,7 +27,7 @@
       .sort((a, b) => (a.r.kind === b.r.kind ? 0 : a.r.kind === "list" ? -1 : 1) || listRank(a.r.action) - listRank(b.r.action) || a.i - b.i)
       .map((x) => x.r);
   });
-  const canStart = $derived(!!plan && !!t && (t.lists > 0 || t.audio > 0) && !ex.planning && ex.stage === "setup");
+  const canStart = $derived(!!plan && !!t && (t.lists > 0 || t.audio > 0) && !ex.planning && ex.planCurrent && ex.stage === "setup");
   const smartOfCase = (id: number) => cases.smart.find((s) => s.device_case_id === id);
   const FORMATS = ["m3u8", "csv", "rekordbox"] as const;
 
@@ -160,8 +160,8 @@
           </label>
         </fieldset>
 
-        <div class="preview" aria-live="polite">
-          <b>What will be written</b>
+        <div class="preview" class:stale={plan && !ex.planCurrent} aria-live="polite">
+          <b>What will be written</b>{#if plan && !ex.planCurrent}<span class="muted"> · updating after your change, Export is off until it is done</span>{/if}
           {#if nothingChosen}
             <p class="muted">Tick at least one case or smart case.</p>
           {:else if (p.folder ?? "").trim() === ""}
@@ -200,7 +200,7 @@
 
         <div class="actions">
           <Button onclick={() => ex.close()}>Cancel</Button>
-          <Button variant="primary" disabled={!canStart} onclick={() => ex.start()} data-autofocus>{plan ? confirmLabel(plan) : "Export"}</Button>
+          <Button variant="primary" disabled={!canStart} onclick={() => ex.start()} data-autofocus>{plan && ex.planCurrent ? confirmLabel(plan) : "Export"}</Button>
         </div>
       {:else if ex.stage === "running"}
         <h2>Exporting…</h2>
@@ -384,6 +384,10 @@
   .grp .inline {
     display: flex;
     margin-bottom: 2px;
+  }
+  .preview.stale .tablewrap,
+  .preview.stale .danger {
+    opacity: 0.45;
   }
   .preview {
     margin: 10px 0 4px;

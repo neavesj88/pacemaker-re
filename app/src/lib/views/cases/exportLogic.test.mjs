@@ -3,7 +3,7 @@
 // choices are remembered. Synthetic names only.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { actionText, afterQuickExport, confirmLabel, defaultSelection, dirName, fmtBytes, joinPath, planSummary, plural, prefsToSave, replaceList, requestOf, rows, saveSuggestion, totals } from "../../state/exportLogic.ts";
+import { actionText, afterQuickExport, confirmLabel, defaultSelection, dirName, fmtBytes, joinPath, planSummary, plural, planIsCurrent, prefsToSave, replaceList, requestOf, rows, safeConflict, saveSuggestion, startingPrefs, totals } from "../../state/exportLogic.ts";
 
 const prefs = (over = {}) => ({ folder: "D:\\Sets", format: "m3u8", relative_paths: true, copy_audio: false, audio_layout: "shared", audio_names: "tags", conflict: "skip", remember: true, ...over });
 const list = (over = {}) => ({ name: "Sample Case", smart: false, file: "Sample Case.m3u8", path: "D:\\Sets\\Sample Case.m3u8", tracks: 3, action: "write", wanted: null, ...over });
@@ -41,7 +41,7 @@ test("every action says in words what happens to the file", () => {
   assert.match(actionText("renamed", "list", "A.m3u8"), /is kept; saved as this instead \(wanted “A.m3u8”\)/);
   assert.match(actionText("skip", "list"), /left as it is, not written/);
   assert.match(actionText("skip", "audio"), /not copied \(the playlist keeps pointing at the original\)/);
-  assert.match(actionText("same", "audio"), /same size/);
+  assert.match(actionText("same", "audio"), /same size and same start, middle and end/);
   assert.equal(actionText("missing", "audio", null, "the audio file is missing from the device"), "Cannot be copied: the audio file is missing from the device");
   assert.match(actionText("blocked", "audio", null, "a folder with that name is in the way"), /Not written: a folder/);
 });
@@ -52,7 +52,7 @@ test("totals count only what is written and the button says exactly that", () =>
     [audio(), audio({ size: 1_000_000, action: "replace" }), audio({ action: "same" }), audio({ action: "skip" }), audio({ action: "missing", size: 0 })],
   );
   assert.deepEqual(totals(p), { lists: 3, audio: 2, bytes: 6_000_000, replaced: 2, renamed: 1, kept: 2, same: 1, problems: 1 });
-  assert.equal(confirmLabel(p), "Write 3 playlists and copy 2 audio files (6.0 MB)");
+  assert.equal(confirmLabel(p), "Write 3 playlists and copy 2 audio files (6.0 MB), replacing 2 existing files");
   assert.equal(confirmLabel(plan([list()])), "Write 1 playlist");
   assert.equal(confirmLabel(plan([list({ action: "skip" })])), "Nothing to write");
   assert.equal(confirmLabel(plan([list({ action: "skip" })], [audio()])), "Copy 1 audio file (5.0 MB)");
@@ -101,4 +101,23 @@ test("the preview rows name every file with its words", () => {
   assert.equal(r.length, 2);
   assert.deepEqual([r[0].kind, r[0].file, r[0].detail], ["list", "Sample Case.m3u8", "Smart case “Rule” · 1 track"]);
   assert.deepEqual([r[1].kind, r[1].detail], ["audio", "Sample Title · 5.0 MB · in 2 playlists"]);
+});
+
+test("replace is never a saved default and the button says when it overwrites", () => {
+  assert.equal(safeConflict("replace"), "skip");
+  assert.equal(safeConflict("number"), "number");
+  assert.equal(startingPrefs(prefs({ conflict: "replace" })).conflict, "skip", "an older saved replace starts as skip");
+  assert.equal(prefsToSave(prefs({ conflict: "replace", remember: true }), prefs()).conflict, "skip");
+  assert.equal(prefsToSave(prefs({ conflict: "replace", remember: false }), prefs()).conflict, "skip");
+  assert.equal(confirmLabel(plan([list({ action: "replace" })])), "Write 1 playlist, replacing 1 existing file");
+});
+
+test("a plan is current only for the exact request it was made for", () => {
+  const a = requestOf(prefs({ folder: "D:/Sets" }), [1], []);
+  const key = JSON.stringify(a);
+  assert.equal(planIsCurrent(key, a), true);
+  assert.equal(planIsCurrent(null, a), false);
+  assert.equal(planIsCurrent(key, requestOf(prefs({ folder: "D:/Sets", conflict: "replace" }), [1], [])), false, "choosing replace makes the shown plan stale");
+  assert.equal(planIsCurrent(key, requestOf(prefs({ folder: "D:/Sets" }), [1, 2], [])), false);
+  assert.equal(planIsCurrent(key, requestOf(prefs({ folder: "D:/Sets", copy_audio: true }), [1], [])), false);
 });

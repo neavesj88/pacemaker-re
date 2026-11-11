@@ -15,7 +15,7 @@ import {
   startExport,
 } from "$lib/api/cases";
 import type { DoneEvent, ProgressEvent } from "$lib/api/types";
-import { afterQuickExport, prefsToSave, requestOf } from "./exportLogic";
+import { afterQuickExport, planIsCurrent, prefsToSave, requestOf, startingPrefs } from "./exportLogic";
 import { session } from "./session.svelte";
 import { toast } from "./toast.svelte";
 
@@ -47,6 +47,8 @@ class CaseExport {
   smartIds = $state<Set<number>>(new Set());
 
   plan = $state<ExportPlan | null>(null);
+  /** The request (as JSON) the shown plan was made for. */
+  #plannedFor = $state<string | null>(null);
   planError = $state("");
   planning = $state(false);
   #seq = 0;
@@ -66,7 +68,7 @@ class CaseExport {
     this.#loading ??= getExportPrefs()
       .then((s) => {
         this.saved = s.prefs;
-        this.prefs = { ...s.prefs };
+        this.prefs = startingPrefs(s.prefs);
         this.warning = s.warning;
       })
       .catch((e) => {
@@ -96,7 +98,7 @@ class CaseExport {
       this.open = true;
       return;
     }
-    this.prefs = { ...this.saved };
+    this.prefs = startingPrefs(this.saved);
     this.caseIds = new Set(sel.caseIds);
     this.smartIds = new Set(sel.smartIds);
     this.plan = null;
@@ -135,6 +137,13 @@ class CaseExport {
     return requestOf(this.prefs, this.caseIds, this.smartIds);
   }
 
+  /** The shown plan answers the choices as they stand now. False in the moments after a change
+   *  and before the new plan has arrived: the plan on screen, and its list of files to be written
+   *  over, would be the old one, so the Export button stays off. */
+  get planCurrent(): boolean {
+    return this.plan !== null && planIsCurrent(this.#plannedFor, this.request);
+  }
+
   /** Recomputes the preview for the current choices. Answers that arrive late are dropped. */
   async refreshPlan() {
     const root = session.library?.root;
@@ -142,6 +151,7 @@ class CaseExport {
     const req = this.request;
     if (!root || req.folder === "" || (req.case_ids.length === 0 && req.smart_ids.length === 0)) {
       this.plan = null;
+      this.#plannedFor = null;
       this.planError = "";
       this.planning = false;
       return;
@@ -151,10 +161,12 @@ class CaseExport {
       const plan = await planExport(root, req);
       if (seq !== this.#seq) return;
       this.plan = plan;
+      this.#plannedFor = JSON.stringify(req);
       this.planError = "";
     } catch (e) {
       if (seq !== this.#seq) return;
       this.plan = null;
+      this.#plannedFor = null;
       this.planError = String(e);
     } finally {
       if (seq === this.#seq) this.planning = false;
@@ -164,7 +176,9 @@ class CaseExport {
   /** Starts the export the preview showed. */
   async start() {
     const root = session.library?.root;
-    if (!root || this.stage === "running") return;
+    const plan = this.plan;
+    // only the plan the user is looking at, for the choices as they stand, can be started
+    if (!root || this.stage === "running" || !plan || !this.planCurrent) return;
     this.startError = "";
     const req = this.request;
     this.done = 0;
@@ -176,13 +190,15 @@ class CaseExport {
     // running first: a one-file export can finish (job-done) before the start call has returned
     this.stage = "running";
     try {
-      const started = await startExport(root, req);
+      const started = await startExport(root, req, { now_ms: plan.now_ms, digest: plan.digest });
       if (this.stage === "running") this.total = started.writes;
       // the choices are saved once the export has really started
       await this.#save(prefsToSave($state.snapshot(this.prefs) as ExportPrefs, this.saved));
     } catch (e) {
       this.stage = "setup";
       this.startError = String(e);
+      // the plan may be what was refused: show the new one
+      void this.refreshPlan();
     }
   }
 
