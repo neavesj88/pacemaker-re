@@ -5,6 +5,7 @@
   import { onMount, tick } from "svelte";
   import type { Track } from "$lib/api/types";
   import { mmss } from "$lib/format";
+  import { jobs } from "$lib/state/jobs.svelte";
   import { playback } from "$lib/state/playback.svelte";
   import { selection } from "$lib/state/selection.svelte";
   import { session } from "$lib/state/session.svelte";
@@ -14,6 +15,8 @@
   import MiniWave from "./MiniWave.svelte";
   import { addToCase } from "./addToCase.svelte";
   import { analysis } from "$lib/state/analysis.svelte";
+  import { energy } from "$lib/state/energy.svelte";
+  import EnergyCell from "../analysis/EnergyCell.svelte";
   import { addToMix, editGrid, editMetadata, playTrack, rate, revealInExplorer } from "./trackActions";
   import { keyColour, parseKey } from "./trackLogic";
   import { tracksState } from "./tracksState.svelte";
@@ -200,6 +203,7 @@
     const one = ids.length === 1;
     const n = ids.length;
     const allFav = ids.every((id) => tracksState.favourites.has(id));
+    const again = ids.every((id) => energy.of(id) !== null);
     return [
       { label: "Play", onclick: () => playTrack(ids[0]) },
       { label: one ? "Edit metadata…" : `Edit metadata of ${n} tracks…`, onclick: () => editMetadata(ids) },
@@ -210,6 +214,12 @@
         onclick: () => tracksState.setFavourite(ids, !allFav),
       },
       { label: one ? "Detect key" : `Detect keys of ${n} tracks`, onclick: () => analysis.askDetectKeys(ids), disabled: !ids.some((id) => analysis.keyless.some((t) => t.track_id === id)) },
+      // tracks that all have an estimate can only mean "measure again"; otherwise only the missing ones run
+      {
+        label: `Analyse energy${again ? " again" : ""}${one ? "" : ` of ${n} tracks`}…`,
+        onclick: () => energy.askAnalyse(ids, again),
+        disabled: !jobs.canWrite,
+      },
       { label: "Edit grid", onclick: () => editGrid(ids[0]), disabled: !one },
       { label: "Show in Explorer", onclick: () => revealInExplorer(ids[0]), disabled: !one },
     ];
@@ -311,6 +321,8 @@
               {#if k}
                 <span class="key" style:color={keyColour(k)} style:background="color-mix(in srgb, {keyColour(k)} 14%, transparent)" title={t.key}>{k.code}</span>
               {/if}
+            {:else if c.key === "energy"}
+              <EnergyCell entry={energy.entry(t.track_id)} />
             {:else if c.key === "rating"}
               <span class="rate" role="presentation" onclick={stop} ondblclick={stop}>
                 <Stars rating={t.rating} onchange={(n) => rate(t, n)} />

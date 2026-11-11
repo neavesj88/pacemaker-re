@@ -34,3 +34,80 @@ export function camelot(key: string): string {
   const number = ((((minor ? tonic + 3 : tonic) % 12) * 7 + 7) % 12) + 1;
   return `${number}${minor ? "A" : "B"}`;
 }
+
+// ---- energy (auto) ---------------------------------------------------------------------------
+// A 1-10 estimate worked out from the audio. The device cannot store it, so results live in an
+// app-side file keyed by the library; nothing here writes to the card.
+
+/** One track's estimate. */
+export type EnergyEntry = {
+  track_id: number;
+  /** 1.0 to 10.0, one decimal. */
+  energy: number;
+  /** The whole level, 1 to 10. */
+  level: number;
+  /** The 0..1 score before the scale. */
+  score: number;
+};
+
+export type EnergyScale = "fit" | "fixed";
+
+export type EnergySettings = {
+  /** "fit": stretch so the library's own spread covers 1-10; "fixed": the same number whatever else is in the library. */
+  scale: EnergyScale;
+  /** Percentile of the library's scores that becomes 1 (fit only), 0-40. */
+  fit_low_pct: number;
+  /** Percentile that becomes 10 (fit only), 60-100. */
+  fit_high_pct: number;
+  /** Tracks shorter than this many seconds get no estimate shown, 5-600. */
+  min_secs: number;
+  /** Tracks decoded at once by the job, 1-8. */
+  threads: number;
+};
+
+export type EnergyState = {
+  entries: EnergyEntry[];
+  total: number;
+  /** Tracks with a number. */
+  ready: number;
+  /** Too short or silent: no estimate possible. */
+  skipped: number;
+  /** Analysed, but the file has changed size since. */
+  stale: number;
+  /** Never analysed. */
+  none: number;
+  /** The scale actually applied (a fit falls back to "fixed" for a small library). */
+  scale_used: EnergyScale;
+  anchor_lo: number;
+  anchor_hi: number;
+  /** Why the fit was not used when it was asked for. */
+  note: string | null;
+  settings: EnergySettings;
+  /** Saved results that could not be read and were dropped. */
+  problem: string | null;
+};
+
+/** The auto energy of every track of the library that has one, with the counts and the scale in
+ * use. The read API for other features: the number is the one the Tracks table shows. It is not
+ * the user's own energy rating. */
+export const energyState = (root: string) => invoke<EnergyState>("analysis_energy_state", { root });
+
+export const energySettings = () => invoke<EnergySettings>("analysis_energy_settings");
+
+/** Saves the settings (the backend checks every range) and returns what was saved. */
+export const saveEnergySettings = (settings: EnergySettings) => invoke<EnergySettings>("analysis_energy_save_settings", { settings });
+
+/** Starts the "energy" background job: decodes tracks and caches what the audio says. Without
+ * `trackIds` it covers the library. Without `recompute` only tracks never analysed or changed
+ * since are done. Reads the card, writes nothing to it. Normally started through
+ * `energy.askAnalyse` (state/energy.svelte.ts), which confirms first. */
+export const analyseEnergy = (root: string, trackIds?: number[], recompute = false) =>
+  invoke<void>("analysis_energy_analyse", { root, trackIds: trackIds ?? null, recompute });
+
+/** Forgets every saved energy result of the library; returns how many. */
+export const clearEnergy = (root: string) => invoke<number>("analysis_energy_clear", { root });
+
+/** The ids a run with these arguments would analyse, in library order: the confirmation lists
+ * them, and the run is started with exactly this list. Same selection code as the run. */
+export const planEnergy = (root: string, trackIds?: number[], recompute = false) =>
+  invoke<number[]>("analysis_energy_plan", { root, trackIds: trackIds ?? null, recompute });

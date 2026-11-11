@@ -116,7 +116,7 @@ test("key x energy: columns follow the scale in use, tracks without energy or ke
   const five = buildKeyEnergy([track({ energy: 5, key: "Am" }), track({ energy: 2, key: "Am" }), track({ key: "Am" })], keyCode);
   assert.equal(five.cols.length, 5);
   assert.equal(five.total, 2);
-  assert.deepEqual(five.skipped, [{ reason: "no energy rating", count: 1 }]);
+  assert.deepEqual(five.skipped, [{ reason: "no energy estimate", count: 1 }]);
   const ten = buildKeyEnergy([track({ energy: 9, key: "C" }), track({ energy: 1, key: "" })], keyCode);
   assert.equal(ten.cols.length, 10);
   assert.equal(ten.cells[KEY_ORDER.indexOf("8B")][8].length, 1);

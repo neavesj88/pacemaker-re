@@ -118,12 +118,28 @@ export function uniqueGenres(list: Track[]): string[] {
 
 // ---- sorting ------------------------------------------------------------------------------
 
-export type SortField = "fav" | "title" | "artist" | "album" | "genre" | "bpm" | "key" | "rating" | "times_played" | "play_time_secs";
+export type SortField = "fav" | "title" | "artist" | "album" | "genre" | "bpm" | "key" | "energy" | "rating" | "times_played" | "play_time_secs";
 
 const collator = new Intl.Collator(undefined, { sensitivity: "base", numeric: true });
 
-/** Sorted copy of `rows`. Ties fall back to title then id so the order is stable. */
-export function sortTracks(rows: Track[], field: SortField, asc: boolean, isFavourite: (id: number) => boolean): Track[] {
+/** Sorted copy of `rows`. Ties fall back to title then id so the order is stable. `energyOf` is
+ *  the auto energy of a track (null when it has none); tracks without one sort last in either
+ *  direction, because "no estimate" is neither low nor high. */
+export function sortTracks(
+  rows: Track[],
+  field: SortField,
+  asc: boolean,
+  isFavourite: (id: number) => boolean,
+  energyOf: (id: number) => number | null = () => null,
+): Track[] {
+  if (field === "energy") {
+    const has = rows.filter((t) => energyOf(t.track_id) !== null);
+    const without = rows.filter((t) => energyOf(t.track_id) === null);
+    const dir = asc ? 1 : -1;
+    const byTitle = (a: Track, b: Track) => collator.compare(a.title, b.title) || a.track_id - b.track_id;
+    has.sort((a, b) => (energyOf(a.track_id)! - energyOf(b.track_id)!) * dir || byTitle(a, b));
+    return [...has, ...without.sort(byTitle)];
+  }
   const dir = asc ? 1 : -1;
   const keyOf = new Map<number, number>();
   if (field === "key") for (const t of rows) keyOf.set(t.track_id, keyRank(parseKey(t.key)));

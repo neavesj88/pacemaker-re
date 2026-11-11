@@ -85,6 +85,17 @@ test("sorting: text, numbers, Camelot order, favourites, stable ties, direction"
   assert.equal(list[0].track_id, 1, "input is not mutated");
 });
 
+test("sorting by auto energy: numbers in either direction, tracks without one always last", () => {
+  const list = [T(1, { title: "b" }), T(2, { title: "a" }), T(3, { title: "c" }), T(4, { title: "d" }), T(5, { title: "e" })];
+  const energy = new Map([[1, 7.4], [2, 3.0], [4, 7.4]]);
+  const of = (id) => energy.get(id) ?? null;
+  const ids = (asc) => sortTracks(list, "energy", asc, () => false, of).map((t) => t.track_id);
+  assert.deepEqual(ids(true), [2, 1, 4, 3, 5], "ties by title, then the unanalysed by title");
+  assert.deepEqual(ids(false), [1, 4, 2, 3, 5], "descending keeps the blanks at the end");
+  assert.deepEqual(sortTracks(list, "energy", true, () => false).map((t) => t.track_id), [2, 1, 3, 4, 5], "with no energy at all it is a title sort");
+  assert.equal(list[0].track_id, 1, "input is not mutated");
+});
+
 test("matching tracks: compatible key and bpm within 4 percent, nearest bpm first, excludes itself", () => {
   const focus = T(1, { bpm: 128, key: "Am" });
   const list = [

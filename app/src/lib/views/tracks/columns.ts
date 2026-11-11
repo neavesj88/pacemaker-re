@@ -2,7 +2,7 @@
 // are shown, their widths and the sort.
 import type { SortField } from "./trackLogic";
 
-export type ColKey = "fav" | "title" | "artist" | "album" | "wave" | "bpm" | "key" | "rating" | "plays" | "time" | "genre";
+export type ColKey = "fav" | "title" | "artist" | "album" | "wave" | "bpm" | "key" | "energy" | "rating" | "plays" | "time" | "genre";
 
 export type ColDef = {
   key: ColKey;
@@ -24,6 +24,8 @@ export const COLUMNS: ColDef[] = [
   { key: "wave", label: "Waveform", width: 100, min: 70, defaultOn: true },
   { key: "bpm", label: "BPM", width: 64, min: 50, num: true, sort: "bpm", defaultOn: true },
   { key: "key", label: "Key", width: 54, min: 46, sort: "key", defaultOn: true },
+  // read-only estimate from the audio, kept app-side (views/analysis); blank until analysed
+  { key: "energy", label: "Energy (auto)", width: 112, min: 70, sort: "energy", defaultOn: true },
   { key: "rating", label: "Rating", width: 92, min: 90, sort: "rating", defaultOn: true },
   { key: "plays", label: "Plays", width: 48, min: 44, num: true, sort: "times_played", defaultOn: true },
   { key: "time", label: "Time", width: 56, min: 50, num: true, sort: "play_time_secs", defaultOn: true },

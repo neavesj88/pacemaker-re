@@ -1,11 +1,13 @@
-//! Analysis: waveform peaks (`analysis_peaks`) and key detection (`analysis_detect_keys`, a
-//! background job of kind "keys").
+//! Analysis: waveform peaks (`analysis_peaks`), key detection (`analysis_detect_keys`, a
+//! background job of kind "keys") and energy analysis (`energy.rs`, kind "energy", app-side cache).
 //!
 //! Peaks are computed once per track from a full decode at a fixed fine resolution, cached in
 //! the app cache dir (see `pm_analysis::peaks`) and resampled to the width asked for. Computing
 //! runs on blocking threads, at most [`MAX_DECODES`] at a time and never twice for the same
 //! track at once, so a table asking for fifty waveforms neither stalls the UI nor decodes a file
 //! fifty times.
+
+pub mod energy;
 
 use std::collections::HashMap;
 use std::path::{Component, Path, PathBuf};
@@ -275,6 +277,12 @@ macro_rules! analysis_commands {
                 $($acc)*
                 $crate::commands::analysis::analysis_peaks,
                 $crate::commands::analysis::analysis_detect_keys,
+                $crate::commands::analysis::energy::analysis_energy_state,
+                $crate::commands::analysis::energy::analysis_energy_settings,
+                $crate::commands::analysis::energy::analysis_energy_save_settings,
+                $crate::commands::analysis::energy::analysis_energy_plan,
+                $crate::commands::analysis::energy::analysis_energy_analyse,
+                $crate::commands::analysis::energy::analysis_energy_clear,
             ];
             $($rest),*
         }

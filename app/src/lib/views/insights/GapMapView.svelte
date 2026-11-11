@@ -2,6 +2,7 @@
   // The Library gap map: how the collection spreads over BPM bands, keys, genres and (when the
   // tracks carry it) energy, with the thin spots called out. Everything is computed here, from
   // the tracks already loaded; nothing is read from or written to the device.
+  import { energy } from "$lib/state/energy.svelte";
   import { filters } from "$lib/state/filters.svelte";
   import { nav } from "$lib/state/nav.svelte";
   import { session } from "$lib/state/session.svelte";
@@ -19,8 +20,9 @@
   const keyCode: KeyCode = (k) => parseKey(k)?.code ?? null;
 
   const library = $derived(session.library);
-  // `energy` is not on the wire type yet: a later analysis step adds it, and this view picks it up
-  const tracks = $derived((library?.tracks ?? []) as GapTrack[]);
+  // `energy` is not on the Track wire type: it comes from the auto energy estimate (app-side, see
+  // state/energy.svelte.ts), so a track is placed on the energy axis only once it has been analysed
+  const tracks = $derived((library?.tracks ?? []).map((t): GapTrack => ({ ...t, energy: energy.of(t.track_id) })));
   const hasEnergy = $derived(anyEnergy(tracks));
   const tabs = $derived(MATRIX_IDS.filter((id) => id !== "key-energy" || hasEnergy));
   const active = $derived(tabs.includes(gap.matrix) ? gap.matrix : tabs[0]);
@@ -140,7 +142,10 @@
       </button>
     {/each}
     {#if !hasEnergy}
-      <span class="hint muted">Key × Energy appears once tracks carry an energy rating.</span>
+      <span class="hint muted">
+        Key × Energy appears once tracks have an energy estimate.
+        <button type="button" class="linkish" onclick={() => energy.openPanel()}>Analyse energy…</button>
+      </span>
     {/if}
   </div>
 
@@ -257,6 +262,15 @@
   .hint {
     margin-left: 12px;
     font-size: 12px;
+  }
+  .linkish {
+    background: none;
+    border: none;
+    padding: 0;
+    font: inherit;
+    color: var(--accent);
+    cursor: pointer;
+    text-decoration: underline;
   }
   .body {
     display: flex;

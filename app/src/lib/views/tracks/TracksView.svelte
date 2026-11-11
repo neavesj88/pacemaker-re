@@ -1,5 +1,6 @@
 <script lang="ts">
   // The Tracks view: filter bar, the virtualised table, and the inspector on the right.
+  import { energy } from "$lib/state/energy.svelte";
   import { filters } from "$lib/state/filters.svelte";
   import { selection } from "$lib/state/selection.svelte";
   import { session } from "$lib/state/session.svelte";
@@ -22,6 +23,7 @@
       tracksState.prefs.sortKey,
       tracksState.prefs.sortAsc,
       (id) => tracksState.favourites.has(id),
+      (id) => energy.of(id),
     ),
   );
 
