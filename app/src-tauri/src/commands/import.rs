@@ -1,5 +1,7 @@
 //! Import: bring audio (and later other libraries) onto the device. Only `add_tracks` writes.
 
+pub mod request;
+
 use std::path::{Path, PathBuf};
 
 use pm_analysis::ingest;
@@ -183,6 +185,8 @@ macro_rules! import_commands {
                 $crate::commands::import::interop_preview,
                 $crate::commands::import::interop_apply,
                 $crate::commands::import::interop_export,
+                $crate::commands::import::request::matcher_read_list,
+                $crate::commands::import::request::matcher_save_text,
             ];
             $($rest),*
         }
