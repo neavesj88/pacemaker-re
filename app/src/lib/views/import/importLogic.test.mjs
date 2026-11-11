@@ -22,8 +22,9 @@ test("cue positions are shown to a tenth of a second", () => {
   assert.equal(cueTime(Number.NaN), "0:00.0");
 });
 
-test("an existing cue is converted with the new cue's own ratio", () => {
-  const c = { cue_frames: 66150, cue_secs: 1.5 };
-  assert.equal(cueSecs(c, 44100), 1);
-  assert.equal(cueSecs({ cue_frames: 0, cue_secs: 0 }, 5), 0);
+test("an existing cue is converted with the track's sample rate, also when the new cue is at 0:00", () => {
+  assert.equal(cueSecs({ sample_rate: 44100 }, 44100), 1);
+  assert.equal(cueSecs({ sample_rate: 48000 }, 5 * 48000), 5);
+  assert.equal(cueTime(cueSecs({ sample_rate: 44100 }, 5 * 44100)), "0:05.0", "a replaced cue is shown as it was, not as 0:00.0");
+  assert.equal(cueSecs({ sample_rate: 0 }, 5), 0);
 });

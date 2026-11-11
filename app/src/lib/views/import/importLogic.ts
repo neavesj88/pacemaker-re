@@ -6,10 +6,10 @@ import type { CueAction, CueMode, CueNote } from "$lib/api/import";
 export const cueApplies = (mode: CueMode, a: CueAction): boolean =>
   (mode === "empty" && a === "set") || (mode === "overwrite" && (a === "set" || a === "replace"));
 
-/** The seconds a cue's stored frames stand for. The note carries the new cue both ways, so the
- *  track's sample rate is not needed. */
-export const cueSecs = (c: Pick<CueNote, "cue_frames" | "cue_secs">, frames: number): number =>
-  c.cue_frames > 0 ? (frames * c.cue_secs) / c.cue_frames : 0;
+/** The seconds a stored cue stands for, at the track's own sample rate (sent with the note, so a
+ *  cue at 0:00 converts as exactly as any other). */
+export const cueSecs = (c: Pick<CueNote, "sample_rate">, frames: number): number =>
+  c.sample_rate > 0 ? frames / c.sample_rate : 0;
 
 /** "1:32.5": a cue position to a tenth of a second. */
 export function cueTime(secs: number): string {

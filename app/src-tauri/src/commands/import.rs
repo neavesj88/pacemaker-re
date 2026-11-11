@@ -122,7 +122,7 @@ pub async fn interop_apply(
             events::emit(app, JOB_PROGRESS, p);
         })?;
         Ok(JobOutcome {
-            ok: rep.ratings_set + rep.cases_created + rep.cases_extended,
+            ok: rep.ratings_set + rep.cues_set + rep.cases_created + rep.cases_extended,
             failed: rep.failures.len(),
             summary: rep.summary(),
         })

@@ -859,6 +859,8 @@ pub struct CueNote {
     pub cue_frames: i64,
     /// The cue the track has now, in source frames.
     pub existing_frames: Option<i64>,
+    /// The track's sample rate, the unit `cue_frames` and `existing_frames` are counted in.
+    pub sample_rate: u32,
     pub action: CueAction,
 }
 
@@ -986,6 +988,7 @@ pub fn plan_import(lib: &Library, foreign: &ForeignLibrary, opts: &ImportOptions
     let mut cues = Vec::new();
     let mut seen_rating: HashSet<i64> = HashSet::new();
     let mut seen_cue: HashSet<i64> = HashSet::new();
+    let mut cues_past_end = 0usize;
     for (f, m) in foreign.tracks.iter().zip(&matches) {
         match m {
             Matched::ByFile(_) => by_file += 1,
@@ -1005,6 +1008,12 @@ pub fn plan_import(lib: &Library, foreign: &ForeignLibrary, opts: &ImportOptions
         }
         if let Some(c) = f.cue_secs.filter(|c| c.is_finite() && *c >= 0.0 && *c < 1e6) {
             if seen_cue.insert(id) {
+                // a cue beyond the end of the track (another edit of the song, or a damaged
+                // file) would put the device's cue where there is no audio: left out, and said so
+                if t.play_time_secs > 0 && c > t.play_time_secs as f64 + 1.0 {
+                    cues_past_end += 1;
+                    continue;
+                }
                 let rate = lib.sample_rate_of(id)?;
                 let frames = (c * f64::from(rate)).round() as i64;
                 let existing = lib.track_cue(id)?;
@@ -1020,6 +1029,7 @@ pub fn plan_import(lib: &Library, foreign: &ForeignLibrary, opts: &ImportOptions
                     cue_secs: c,
                     cue_frames: frames,
                     existing_frames: existing,
+                    sample_rate: rate,
                     action,
                 });
             }
@@ -1114,6 +1124,11 @@ pub fn plan_import(lib: &Library, foreign: &ForeignLibrary, opts: &ImportOptions
     unmatched.sort_by_key(|(i, u)| (!u.in_playlist, *i));
     let unmatched = unmatched.into_iter().take(MAX_LISTED_UNMATCHED).map(|(_, u)| u).collect();
 
+    let mut notes = foreign.notes.clone();
+    if cues_past_end > 0 {
+        let (s, verb, were) = if cues_past_end == 1 { ("", "lies", "was") } else { ("s", "lie", "were") };
+        notes.push(format!("{cues_past_end} cue point{s} {verb} beyond the end of the matching track and {were} left out."));
+    }
     Ok(ImportPlan {
         source: foreign.source,
         foreign_tracks: foreign.tracks.len(),
@@ -1124,7 +1139,7 @@ pub fn plan_import(lib: &Library, foreign: &ForeignLibrary, opts: &ImportOptions
         ratings_unchanged: unchanged,
         cases,
         cues,
-        notes: foreign.notes.clone(),
+        notes,
         unmatched_total,
         unmatched,
         addable_paths,
@@ -1161,6 +1176,27 @@ impl Library {
         }
         Ok(changed)
     }
+
+    /// Sets several cue points in one transaction (all or none), each exactly as
+    /// [`Library::set_track_cue`] does. Returns how many rows changed.
+    pub fn set_track_cues(&mut self, changes: &[(i64, i64)]) -> Result<usize, Error> {
+        self.con.execute_batch("BEGIN IMMEDIATE")?;
+        let mut changed = 0;
+        for (id, frames) in changes {
+            match self.set_track_cue(*id, Some(*frames)) {
+                Ok(c) => changed += usize::from(c),
+                Err(e) => {
+                    let _ = self.con.execute_batch("ROLLBACK");
+                    return Err(e);
+                }
+            }
+        }
+        if let Err(e) = self.con.execute_batch("COMMIT") {
+            let _ = self.con.execute_batch("ROLLBACK");
+            return Err(e.into());
+        }
+        Ok(changed)
+    }
 }
 
 #[derive(Debug, Clone, Default, Serialize)]
@@ -1181,7 +1217,7 @@ pub struct Step<'a> {
     pub error: Option<&'a str>,
 }
 
-/// Performs a plan. Ratings go in one transaction; each case is created and filled, and a case
+/// Performs a plan. Ratings go in one transaction and cue points in another; each case is created and filled, and a case
 /// whose membership cannot be written is deleted again, so a failure never leaves an empty
 /// case behind. A failing step is reported and the rest carries on.
 pub fn apply_plan(
@@ -1218,15 +1254,11 @@ pub fn apply_plan(
     if !cue_changes.is_empty() {
         let label = format!("{} cue point{}", cue_changes.len(), if cue_changes.len() == 1 { "" } else { "s" });
         done += 1;
+        let changes: Vec<(i64, i64)> = cue_changes.iter().map(|c| (c.track_id, c.cue_frames)).collect();
         let mut failed = None;
-        for c in &cue_changes {
-            match lib.set_track_cue(c.track_id, Some(c.cue_frames)) {
-                Ok(changed) => rep.cues_set += usize::from(changed),
-                Err(e) => {
-                    failed = Some(format!("{}: {e}", c.title));
-                    break;
-                }
-            }
+        match lib.set_track_cues(&changes) {
+            Ok(n) => rep.cues_set = n,
+            Err(e) => failed = Some(e.to_string()),
         }
         progress(Step { label: &label, done, total, error: failed.as_deref() });
         if let Some(msg) = failed {
@@ -2156,6 +2188,32 @@ mod tests {
         let plan = plan_import(&lib, &f, &opts).unwrap();
         assert_eq!(apply_plan(&mut lib, &plan, &opts, |_| {}).unwrap().cues_set, 1);
         assert_eq!(lib.track_cue(id0).unwrap(), Some(66_150));
+        clean(lib, dirs);
+    }
+
+    #[test]
+    fn cues_beyond_the_track_end_are_left_out_and_noted() {
+        let (lib, dirs, _) = library("nml-end", 2);
+        let f = parse_library(&NML.replace("START=\"2500\"", "START=\"9000000\"")).unwrap();
+        let plan = plan_import(&lib, &f, &ImportOptions::default()).unwrap();
+        assert_eq!(plan.cues.len(), 1, "the 9000 s cue on a 201 s track is dropped");
+        assert_eq!(plan.cues[0].cue_frames, 66_150);
+        assert_eq!(plan.cues[0].sample_rate, 44_100);
+        assert!(plan.notes.iter().any(|n| n.starts_with("1 cue point lies beyond the end")), "{:?}", plan.notes);
+        clean(lib, dirs);
+    }
+
+    #[test]
+    fn cue_points_are_written_all_or_none() {
+        let (mut lib, dirs, _) = library("cue-batch", 2);
+        let ids: Vec<i64> = lib.tracks().unwrap().iter().map(|t| t.track_id).collect();
+        assert!(lib.set_track_cues(&[(ids[0], 5000), (ids[1], 7000), (987_654, 1)]).is_err(), "unknown track");
+        assert_eq!((lib.track_cue(ids[0]).unwrap(), lib.track_cue(ids[1]).unwrap()), (None, None), "rolled back");
+        assert!(lib.set_track_cues(&[(ids[0], -1)]).is_err());
+        assert_eq!(lib.track_cue(ids[0]).unwrap(), None);
+        assert_eq!(lib.set_track_cues(&[(ids[0], 5000), (ids[1], 7000)]).unwrap(), 2);
+        assert_eq!(lib.set_track_cues(&[(ids[0], 5000)]).unwrap(), 0, "same value: no write");
+        assert_eq!(lib.track_cue(ids[1]).unwrap(), Some(7000));
         clean(lib, dirs);
     }
 

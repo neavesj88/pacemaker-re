@@ -68,6 +68,8 @@ export type CueNote = {
   /** The cue in source frames at the track's sample rate (what the device row stores). */
   cue_frames: number;
   existing_frames: number | null;
+  /** The track's sample rate: the unit of `cue_frames` and `existing_frames`. */
+  sample_rate: number;
   action: CueAction;
 };
 export type UnmatchedTrack = {

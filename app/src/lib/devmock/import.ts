@@ -66,6 +66,7 @@ function mockPlan(path: string, options: ImportOptions): ImportPlan {
             cue_secs: secs,
             cue_frames: Math.round(secs * 44100),
             existing_frames: existing,
+            sample_rate: 44100,
             action: existing === null ? ("set" as const) : existing === Math.round(secs * 44100) ? ("same" as const) : ("replace" as const),
           };
         })
