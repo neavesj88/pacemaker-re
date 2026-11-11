@@ -41,8 +41,12 @@ export type PresetList = {
   unreadable: string[];
 };
 
-/** `exists`: a preset of that name is stored and nothing was written; ask, then repeat with overwrite. */
-export type SaveResult = { saved: boolean; exists: boolean; summary: PresetSummary | null };
+/**
+ * `exists`: a preset of that name is stored and nothing was written; ask, then repeat with
+ * overwrite. `file` is then the file in the presets folder that would be replaced (it may be one
+ * that is listed as unreadable).
+ */
+export type SaveResult = { saved: boolean; exists: boolean; file: string | null; summary: PresetSummary | null };
 
 export type PresetRowStatus = "change" | "same" | "absent" | "unknown" | "invalid";
 

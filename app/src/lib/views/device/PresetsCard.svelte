@@ -148,12 +148,12 @@
 </Card>
 
 {#if saving}
-  <PresetNameModal mode="save" existing={list?.presets ?? []} onclose={() => (saving = false)} ondone={stored} />
+  <PresetNameModal mode="save" existing={list?.presets ?? []} unreadable={list?.unreadable ?? []} onclose={() => (saving = false)} ondone={stored} />
 {/if}
 {#if importing}
   <PresetNameModal
     mode="import"
-    existing={list?.presets ?? []}
+    existing={list?.presets ?? []} unreadable={list?.unreadable ?? []}
     file={importing.file}
     path={importing.path}
     onclose={() => (importing = null)}

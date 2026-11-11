@@ -25,11 +25,14 @@ fn presets_dir(app: &AppHandle) -> AppResult<PathBuf> {
 }
 
 /// What a save or import did. `exists` means a preset of that name is already stored and
-/// nothing was written (ask, then call again with `overwrite`).
+/// nothing was written (ask, then call again with `overwrite`); `file` is then the file in the
+/// presets folder that would be replaced, which matters when that file cannot be read as a
+/// preset and so is not in the list.
 #[derive(Debug, Serialize, PartialEq)]
 pub struct SaveResult {
     pub saved: bool,
     pub exists: bool,
+    pub file: Option<String>,
     pub summary: Option<PresetSummary>,
 }
 
@@ -45,8 +48,8 @@ fn summary(p: &Preset) -> PresetSummary {
 
 fn store(dir: &Path, p: &Preset, overwrite: bool) -> AppResult<SaveResult> {
     Ok(match ops_preset::save_to_dir(dir, p, overwrite)? {
-        SaveOutcome::Saved => SaveResult { saved: true, exists: false, summary: Some(summary(p)) },
-        SaveOutcome::Exists => SaveResult { saved: false, exists: true, summary: None },
+        SaveOutcome::Saved => SaveResult { saved: true, exists: false, file: None, summary: Some(summary(p)) },
+        SaveOutcome::Exists => SaveResult { saved: false, exists: true, file: Some(ops_preset::file_name_for(&p.name)), summary: None },
     })
 }
 
@@ -195,6 +198,21 @@ mod tests {
     }
 
     #[test]
+    fn a_damaged_file_in_the_way_is_named_not_silently_replaced() {
+        let dir = scratch("damaged");
+        let a = card("a", false, 0);
+        let file = ops_preset::file_name_for("Quiet set");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join(&file), b"{ not a preset").unwrap();
+        assert!(ops_preset::list_dir(&dir).presets.is_empty(), "the damaged file is not a listed preset");
+        let r = save_current(&dir, &a, "Quiet set", false).unwrap();
+        assert!(!r.saved && r.exists);
+        assert_eq!(r.file.as_deref(), Some(file.as_str()));
+        assert_eq!(std::fs::read(dir.join(&file)).unwrap(), b"{ not a preset", "untouched until overwrite is asked for");
+        assert!(save_current(&dir, &a, "Quiet set", true).unwrap().saved);
+    }
+
+    #[test]
     fn save_on_one_card_diff_and_apply_on_another() {
         let dir = scratch("store");
         let (a, b) = (card("a", false, 0), card("b", true, 2));
@@ -205,6 +223,7 @@ mod tests {
         // the same name again asks first
         let again = save_current(&dir, &a, "quiet set", false).unwrap();
         assert!(!again.saved && again.exists && again.summary.is_none());
+        assert_eq!(again.file.as_deref(), Some(saved.summary.as_ref().unwrap().file.as_str()), "names the file that would be replaced");
 
         let d = diff_named(&dir, &b, "QUIET SET").unwrap();
         assert_eq!((d.change, d.same, d.blocked), (2, 0, 0));

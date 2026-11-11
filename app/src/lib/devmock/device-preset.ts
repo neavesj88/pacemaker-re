@@ -64,10 +64,10 @@ function find(name: string): Preset {
 
 function put(p: Preset, overwrite: boolean) {
   const i = store.findIndex((x) => key(x.name) === key(p.name));
-  if (i >= 0 && !overwrite) return { saved: false, exists: true, summary: null };
+  if (i >= 0 && !overwrite) return { saved: false, exists: true, file: summary(store[i]).file, summary: null };
   if (i >= 0) store[i] = p;
   else store.push(p);
-  return { saved: true, exists: false, summary: summary(p) };
+  return { saved: true, exists: false, file: null, summary: summary(p) };
 }
 
 function diff(p: Preset) {

@@ -23,6 +23,7 @@
   let {
     mode,
     existing,
+    unreadable = [],
     file,
     path,
     onclose,
@@ -31,6 +32,8 @@
     mode: "save" | "import";
     /** The stored presets, to name the one a replacement would overwrite. */
     existing: PresetSummary[];
+    /** Files in the presets folder that could not be read, each as "file: reason". */
+    unreadable?: string[];
     /** import: what the file holds. */
     file?: Preset;
     /** import: the file's path. */
@@ -42,11 +45,14 @@
   // the dialog is mounted per use, so the starting name is read once
   let name = $state(untrack(() => (mode === "import" ? (file?.name ?? "") : "")));
   let confirmReplace = $state(false);
+  // the file the backend says would be replaced; only needed when no readable preset holds the name
+  let conflictFile = $state("");
   let busy = $state(false);
 
   const problem = $derived(name.trim() === "" ? "" : nameProblem(name));
   const taken = $derived(existing.find((p) => sameName(p.name, name)));
   const cardCount = $derived((device.settings?.settings ?? []).filter((s) => s.present && s.editable).length);
+  const damaged = $derived(taken ? undefined : unreadable.find((u) => u.startsWith(`${conflictFile}:`)));
   const groups = $derived(groupRows(file?.settings ?? []));
 
   $effect(() => {
@@ -64,6 +70,7 @@
           ? await devicePresetSaveCurrent(lib?.root ?? "", name, overwrite)
           : await devicePresetImport(path ?? "", name, overwrite);
       if (r.exists) {
+        conflictFile = r.file ?? "";
         confirmReplace = true;
         return;
       }
@@ -112,11 +119,17 @@
       A preset called "{taken.name}" is already stored ({presetMeta(taken, taken.saved_utc ? stampLabel(taken.saved_utc) : "")}).
       Replacing it deletes its settings; choose another name to keep both.
     </p>
+  {:else if confirmReplace}
+    <p class="warn" role="alert">
+      The file {conflictFile ? `"${conflictFile}"` : "that holds this name"} is already in this app's presets folder but cannot be read as a preset{damaged
+        ? ` (${damaged.slice(conflictFile.length + 1).trim()})`
+        : ""}, so what it holds is unknown. Replacing it deletes that file; choose another name to keep it.
+    </p>
   {/if}
   {#snippet actions()}
     <Button onclick={onclose}>Cancel</Button>
     {#if confirmReplace}
-      <Button variant="primary" disabled={busy} onclick={() => submit(true)}>Replace "{taken?.name ?? name}"</Button>
+      <Button variant="primary" disabled={busy} onclick={() => submit(true)}>Replace {taken ? `"${taken.name}"` : conflictFile ? `the unreadable file "${conflictFile}"` : `"${name}"`}</Button>
     {:else}
       <Button variant="primary" disabled={busy || name.trim() === "" || !!problem || (mode === "save" && !session.library)} onclick={() => submit(false)}>
         {mode === "save" ? "Save preset" : "Add preset"}
