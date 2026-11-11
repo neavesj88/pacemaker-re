@@ -6,8 +6,8 @@ document is the contract. A file is **owned** by one area (only that area edits 
 
 Areas, each with its own folder / files in every layer: `tracks`, `mixes`, `cases`, `history`,
 `grid`, `device`, `import`, `playback`, and the feature-only areas `metadata` (tag and rating
-editor), `analysis` (key detection and other analysis jobs) and `export` (playlists and library
-listings out). `library` is the session plumbing (`commands/library.rs`, `api/library.ts`,
+editor), `analysis` (key detection and other analysis jobs), `export` (playlists and library
+listings out) and `stems` (vocal / instrumental separation into a PC folder). `library` is the session plumbing (`commands/library.rs`, `api/library.ts`,
 `devmock/library.ts`, the `LibraryView` payload) and belongs to **integration**: it is not a
 feature area. "Integration" means the single step that merges feature work and may touch shared
 files.
@@ -29,6 +29,7 @@ files.
 | `lib/views/tracks/` (`TracksView`, `TrackTable`, `trackFilter.ts`, `NeedsAnalysis`) | Tracks view, the reusable track table, the sidebar "need analysis" block | tracks |
 | `lib/views/mixes/` (`MixesView`, `MixEditor`, `MixList`, `Timeline`, `flow.ts`, `preview.svelte.ts`, `init.ts`, ...) | Mix list and editor; plays previews through the shared player (`playback.previewMix`); follows the `mix-export` job in `init.ts`. Backend: `commands/mixes.rs` plus `mixes/{doc,timing,info}.rs`; `lib/api/mixes.ts`; store `lib/state/mixes.svelte.ts` (`mixes`); pure edit logic `lib/state/mixedit.ts`; tests `app/scripts/test-mixedit.mjs` (`npm run test:mixedit`, Node >= 22.6). Audio engine: `crates/pm-mixer`, commands in `commands/export.rs` | mixes |
 | `lib/views/cases/` (`CasesView`, `SmartCases`) | Cases; the sidebar "Smart cases" section | cases |
+| `lib/views/stems/` (`StemsView`, `SetupCard`, `MakeCard`, `SettingsCard`, `PlanModal`, `LicenceModal`, `ResultCard`, `logic.ts`, `init.ts`) | Stems view: vocal and instrumental files for chosen tracks into a folder on this computer; model download behind a licence notice. Store `lib/state/stems.svelte.ts` (`stems`); `lib/api/stems.ts`; `lib/devmock/stems.ts`; tests `logic.test.mjs` (in `npm test`). Engine: `crates/pm-stems` (provider trait, STFT, overlap-add, HTDemucs via ONNX Runtime, file writers) | stems |
 | `lib/views/history/`, `grid/`, `device/` | History, beat grid editor, device views (placeholders) | that area |
 | `lib/views/import/` (`ImportView`, `ConfirmModal`, `DropOverlay`, `Overlays.svelte`, `init.ts`) | Import view; write confirmation and drop overlay; job-event and file-drop subscriptions | import |
 | `lib/views/<area>/Overlays.svelte`, `init.ts` | Optional: always-mounted overlays / startup subscriptions of that area | that area |
@@ -59,6 +60,8 @@ files.
 | `jobs.rs` | Generic `spawn_job`, `Progress`, `JobOutcome`, `JobDone` | integration |
 | `events.rs` | Shared event names (jobs) and `emit` | integration |
 | `error.rs` | `AppError` (serialises to a string), `AppResult`, `.app()` | integration |
+
+`commands/stems.rs` plus `commands/stems/{manifest,download,settings,plan,run}.rs` are the `stems` area: consented downloads of the model and engine into the app data folder, settings and consent records in the app config folder, a plan that the run recomputes with the same function, and a job that writes only into a folder on this computer (the card is reached through the ordinary add-tracks step, which asks first).
 
 Crates in `crates/` are not part of the app layout; the app only calls them.
 

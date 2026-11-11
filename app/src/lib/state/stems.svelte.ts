@@ -187,14 +187,25 @@ class Stems {
     try {
       await stemsRun(lib.root, this.trackIds, this.plan.dest, confirmReplace);
       this.plan = null;
-      // remember the folder (a preference, not a policy) for next time
-      if (this.draft && this.draft.last_folder !== this.dest.trim()) {
-        this.draft.last_folder = this.dest.trim();
-        void this.saveSettings();
-      }
+      void this.rememberFolder(this.dest.trim());
     } catch (e) {
       this.running = false;
       toast.show(String(e), "bad", 10000);
+    }
+  }
+
+  /** Remembers the folder (a preference, not a policy) for next time. Saves the settings the run
+   *  used (the saved ones), never the draft, so edits the user has not saved are not persisted. */
+  private async rememberFolder(folder: string) {
+    const saved = this.status?.settings;
+    if (!saved || !folder || saved.last_folder === folder) return;
+    try {
+      await stemsSettingsSave({ ...saved, last_folder: folder });
+      // last_folder is not an editable field, so keeping the draft in step does not touch its edits
+      if (this.draft) this.draft.last_folder = folder;
+      await this.refresh();
+    } catch {
+      // only a convenience; the run itself has started
     }
   }
 

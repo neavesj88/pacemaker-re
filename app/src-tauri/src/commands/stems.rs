@@ -224,11 +224,16 @@ pub fn stems_download(app: AppHandle, lock: State<'_, JobLock>, id: String, acce
     if installed(&data, &c).0 {
         return Err(format!("{} is already downloaded.", c.name).into());
     }
+    // A cancel left over from an earlier job is dropped here, in the command and not inside the job,
+    // so a Cancel click that arrives after the job has started is never lost. Only when no job is
+    // running: a running one still needs its own cancel.
+    if !lock.is_held() {
+        app.state::<StemsCancel>().0.store(false, Ordering::SeqCst);
+    }
     // the job lock is taken first so a refused start leaves no consent record behind
     spawn_job(app, &lock, JOB_STEMS_DOWNLOAD, move |app| {
         settings::record_consent(&cfg, c.id, c.notice_version, now_secs())?;
         let cancel = &app.state::<StemsCancel>().0;
-        cancel.store(false, Ordering::SeqCst);
         let dir = component_dir(&data, &c);
         let file = dir.join(c.file);
         let mut last = Instant::now() - Duration::from_secs(1);
@@ -446,11 +451,13 @@ pub async fn stems_run(app: AppHandle, lock: State<'_, JobLock>, root: String, t
         return Err(format!("This would replace {} existing file(s); confirm that first.", plan.replaced_files.len()).into());
     }
 
+    if !lock.is_held() {
+        app.state::<StemsCancel>().0.store(false, Ordering::SeqCst);
+    }
     let est: Vec<usize> = plan.items.iter().map(|i| if matches!(i.action, Action::Make | Action::Replace | Action::Partial) { i.segments } else { 0 }).collect();
     let dest_for_result = dest.clone();
     spawn_job(app, &lock, JOB_STEMS, move |app| {
         let cancel = &app.state::<StemsCancel>().0;
-        cancel.store(false, Ordering::SeqCst);
         let count = plan.items.len();
         let progress = |phase: &str, index: usize, label: &str, segment: usize, segments: usize, eta: Option<u64>, device: &str| {
             events::emit(app, STEMS_PROGRESS, StemsProgress { phase: phase.into(), index, count, label: label.into(), segment, segments, eta_secs: eta, device: device.into() });

@@ -60,7 +60,7 @@
           {#each [128, 160, 192, 224, 256, 320] as k (k)}<option value={k}>{k} kbps</option>{/each}
         </select>
         <span></span>
-        <label class="check"><input type="checkbox" bind:checked={d.mp3_align} /> Keep the MP3 in time with the original (drops the encoder's first 25 ms so the beat grid still fits)</label>
+        <label class="check"><input type="checkbox" bind:checked={d.mp3_align} /> Compensate for LAME's encoder delay (drops the first 1105 samples, about 25 ms, so the file lines up with the original in other players; how the Pacemaker treats it is untested)</label>
       {:else if d.format === "ogg"}
         <label for="st-q">Ogg quality</label>
         <div class="inline">
@@ -105,7 +105,7 @@
       </div>
     </div>
     <p class="muted note">
-      The downloaded engine runs on the CPU. To use a graphics card, choose an onnxruntime library that was built with DirectML or CUDA. Which graphics cards a given library can use was not tested here.
+      The engine library is loaded once per run of the app: after a first run, changing it needs an app restart. The downloaded engine runs on the CPU. To use a graphics card, choose an onnxruntime library that was built with DirectML or CUDA. Which graphics cards a given library can use was not tested here.
     </p>
 
     {#if problem}<p class="warn" role="alert">{problem}</p>{/if}
