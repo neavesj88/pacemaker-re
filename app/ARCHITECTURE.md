@@ -259,7 +259,18 @@ Rules:
 The Vocal filter (Revival firmware 180096073: the Wah tool becomes a vocal filter) is one flag file on the card.
 `pm_formats::ops_device::{read_vocal, write_vocal}` own its fixed path; `revival-no-preload` (kill switch) is only ever read.
 Mix previews and exports ask `export/render.rs::peq_mode(root)` for the same effective mode, so what is previewed is what is
-exported; the mix editor names the Wah tool "Vocal" from the same flag (`state/vocal.svelte.ts`).
+exported; the mix editor names the Wah tool "Vocal" from the same flag (`state/vocal.svelte.ts`). `effective` is the flag
+as the device will act on it: the kill switch, or a `system.xml` firmware known to be older than 180096073 (no hook there),
+turn it off, so the editor, the preview and the export all show the stock Wah in those cases; an unreadable `system.xml`
+version counts as unknown and leaves the flag in force. A rendered mix preview remembers the mode it was rendered with
+(`views/mixes/previewState.ts::sameRender`); a change of the flag marks it out of date like an edit. `device_vocal_set`
+treats an unreadable flag as unknown and writes anyway, so the card can be repaired from the app.
+
+A preview window that starts after 0 is rendered from a block boundary about 190 ms earlier and the lead-in is dropped
+(`pm-mixer` `engine.rs`, `PREROLL`), so filters, delays and the limiter are settled at the first kept frame and a mid-tool
+start does not fade in from dry. Control-rate ticks (32 frames) are phased from the render's blocks, so a window matches a
+render from 0 sample for sample but an export that starts at the first audible frame can differ from a preview by one
+tick of control timing at a hard engage edge (measured about -34 dBFS); the DSP is the same.
 
 Mix audio export is cancellable (`export_cancel` sets a flag the render's progress callback turns
 into `false`; the engine removes its `.partial` file). Saving a beat grid for a track that mixes

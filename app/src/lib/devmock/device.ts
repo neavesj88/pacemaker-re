@@ -80,11 +80,13 @@ let settings: S[] = [
 // already waits, so an install is refused) to see those states.
 const has = (a: Record<string, unknown>, word: string) => String(a.root ?? "").toLowerCase().includes(word);
 
-// The Vocal filter flag of the mock card. "killswitch" in the drive's name puts revival-no-preload on it.
+// The Vocal filter flag of the mock card. "killswitch" in the drive's name puts revival-no-preload on it,
+// "oldfw" makes its firmware older than the filter.
 let vocalMode: "off" | "vocal" | "inverted" = "off";
 const vocalState = (a: Record<string, unknown>) => {
   const kill_switch = has(a, "killswitch");
-  return { mode: vocalMode, kill_switch, effective: kill_switch ? "off" : vocalMode };
+  const firmware_too_old = has(a, "oldfw");
+  return { mode: vocalMode, kill_switch, firmware_too_old, effective: kill_switch || firmware_too_old ? "off" : vocalMode };
 };
 
 let running: { job: string; timers: ReturnType<typeof setTimeout>[]; what: string } | null = null;

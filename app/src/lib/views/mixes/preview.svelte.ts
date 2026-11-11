@@ -6,27 +6,15 @@
 import { mixes } from "$lib/state/mixes.svelte";
 import { playback } from "$lib/state/playback.svelte";
 import { session } from "$lib/state/session.svelte";
+import { vocal } from "$lib/state/vocal.svelte";
+import type { VocalMode } from "$lib/api/device";
 import type { MixDoc } from "$lib/api/mixes";
 import { SR, toSamples } from "./layout";
+import { sameRender } from "./previewState";
 import { mv } from "./view.svelte";
 
 /** Length of one rendered window; playback continues into the next window by itself. */
 const WINDOW_SECS = 180;
-
-/** True when two documents sound the same: everything but the name, the library row and the
- * reference tempo, which never change the audio. Untouched parts are shared between documents,
- * so a reference comparison per field is enough. */
-function sameAudio(a: MixDoc | null, b: MixDoc | null): boolean {
-  if (a === b) return true;
-  if (!a || !b) return false;
-  const x = a as Record<string, unknown>;
-  const y = b as Record<string, unknown>;
-  for (const k of new Set([...Object.keys(x), ...Object.keys(y)])) {
-    if (k === "name" || k === "meta" || k === "tempoBpm") continue;
-    if (x[k] !== y[k]) return false;
-  }
-  return true;
-}
 
 export type PreviewStatus = "idle" | "rendering" | "playing" | "paused";
 
@@ -36,6 +24,9 @@ class Preview {
   notice = $state("");
   /** The document the audio was rendered from; differs from `mixes.doc` after an edit. */
   renderedDoc = $state.raw<MixDoc | null>(null);
+  /** The card's Vocal mode the audio was rendered with. A Wah tool sounds different per mode, so a
+   * change of the flag makes the rendered audio out of date like an edit does. */
+  renderedMode = $state<VocalMode>("off");
 
   /** The rendered file this editor handed to the player, or null. */
   #path: string | null = null;
@@ -60,7 +51,7 @@ class Preview {
   }
 
   get stale() {
-    return this.renderedDoc !== null && !sameAudio(this.renderedDoc, mixes.doc);
+    return this.renderedDoc !== null && !sameRender(this.renderedDoc, this.renderedMode, mixes.doc, vocal.mode);
   }
 
   /** Plays from the playhead (or `fromSamples`), rendering first when the loaded audio is out of
@@ -76,7 +67,7 @@ class Preview {
     const endSec = doc.lengthSec;
     let startSec = fromSamples / SR;
     if (startSec >= endSec - 0.05) startSec = 0;
-    const loaded = this.#loaded && this.#owns() && sameAudio(this.renderedDoc, doc);
+    const loaded = this.#loaded && this.#owns() && sameRender(this.renderedDoc, this.renderedMode, doc, vocal.mode);
     const inside = startSec >= this.#from - 0.01 && startSec <= this.#from + this.#span - 0.2;
     if (loaded && inside) {
       playback.seek(startSec);
@@ -90,6 +81,9 @@ class Preview {
     const doc = mixes.doc;
     if (!doc) return;
     const token = ++this.#token;
+    // the mode read before the render starts: if the flag changes while it runs, the audio counts as
+    // out of date and the next play renders again
+    const mode = vocal.mode;
     this.#halt();
     this.status = "rendering";
     mv.playhead = toSamples(startSec);
@@ -102,6 +96,7 @@ class Preview {
       this.#from = startSec;
       this.#span = to - startSec;
       this.renderedDoc = doc;
+      this.renderedMode = mode;
       this.#lastPos = startSec;
       playback.previewMix(path, { mixId: doc.id, label: doc.name || "Mix preview", fromSecs: startSec });
       this.#start();
@@ -132,7 +127,7 @@ class Preview {
     const doc = mixes.doc;
     if (!doc) return;
     const next = this.#from + this.#span;
-    if (sameAudio(this.renderedDoc, doc) && next < doc.lengthSec - 0.1) {
+    if (sameRender(this.renderedDoc, this.renderedMode, doc, vocal.mode) && next < doc.lengthSec - 0.1) {
       await this.#render(next);
     } else {
       this.status = "paused";
@@ -194,6 +189,7 @@ class Preview {
     this.status = "idle";
     this.notice = "";
     this.renderedDoc = null;
+    this.renderedMode = "off";
   }
 }
 

@@ -81,7 +81,9 @@ export type VocalState = {
   mode: VocalMode;
   /** `revival-no-preload` is on the card: the device plays its stock Wah whatever `mode` says. */
   kill_switch: boolean;
-  /** What the device will play, and what mix previews and exports render: `mode`, or "off" under the kill switch. */
+  /** `system.xml` reports a firmware older than 180096073: the device has no vocal filter whatever the file says. */
+  firmware_too_old: boolean;
+  /** What the device will play, and what mix previews and exports render: `mode`, or "off" under the kill switch or on a firmware that is too old. */
   effective: VocalMode;
 };
 

@@ -1460,6 +1460,9 @@ pub enum VocalMode {
     Inverted,
 }
 
+/// The first firmware that has the vocal hook. An older one ignores the flag file.
+pub const VOCAL_MIN_FIRMWARE: u64 = 180_096_073;
+
 /// The state of the vocal filter on a card.
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
 pub struct VocalState {
@@ -1467,26 +1470,42 @@ pub struct VocalState {
     pub mode: VocalMode,
     /// `revival-no-preload` exists: the device ignores the flag file and plays the stock Wah.
     pub kill_switch: bool,
-    /// What the device will actually play: `mode`, or `Off` under the kill switch. Previews and
-    /// exports of mixes use this.
+    /// `system.xml` says the installed firmware is older than [`VOCAL_MIN_FIRMWARE`]: the device
+    /// has no vocal filter whatever the flag file says. False when the version cannot be read.
+    pub firmware_too_old: bool,
+    /// What the device will actually play: `mode`, or `Off` under the kill switch or on a firmware
+    /// that is known to be too old. Previews and exports of mixes use this.
     pub effective: VocalMode,
+}
+
+/// The first byte of the flag file decides the direction. A file that cannot be read is an error;
+/// a missing one is `Off`.
+fn read_vocal_mode(dir: &Path) -> Result<VocalMode, Error> {
+    match File::open(dir.join(VOCAL_FLAG)) {
+        Ok(mut f) => {
+            let mut first = [0u8; 1];
+            let n = f.read(&mut first)?;
+            Ok(if n == 1 && (first[0] == b'i' || first[0] == b'I') { VocalMode::Inverted } else { VocalMode::Vocal })
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(VocalMode::Off),
+        Err(e) => Err(e.into()),
+    }
+}
+
+/// The installed firmware number from `system.xml`, when it is there and numeric.
+fn installed_firmware_number(dir: &Path) -> Option<u64> {
+    let text = fs::read(dir.join("system.xml")).ok()?;
+    parse_system_xml(&String::from_utf8_lossy(&text)).fw_version?.trim().parse().ok()
 }
 
 /// Reads the vocal flag the way the device does at boot: the file's existence switches the
 /// filter on, a first byte of `i` (or `I`) inverts it. Read-only.
 pub fn read_vocal(root: &Path) -> Result<VocalState, Error> {
     let dir = pacemaker_dir(root);
-    let mode = match File::open(dir.join(VOCAL_FLAG)) {
-        Ok(mut f) => {
-            let mut first = [0u8; 1];
-            let n = f.read(&mut first)?;
-            if n == 1 && (first[0] == b'i' || first[0] == b'I') { VocalMode::Inverted } else { VocalMode::Vocal }
-        }
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => VocalMode::Off,
-        Err(e) => return Err(e.into()),
-    };
+    let mode = read_vocal_mode(&dir)?;
     let kill_switch = dir.join(NO_PRELOAD_FLAG).exists();
-    Ok(VocalState { mode, kill_switch, effective: if kill_switch { VocalMode::Off } else { mode } })
+    let firmware_too_old = installed_firmware_number(&dir).is_some_and(|n| n < VOCAL_MIN_FIRMWARE);
+    Ok(VocalState { mode, kill_switch, firmware_too_old, effective: if kill_switch || firmware_too_old { VocalMode::Off } else { mode } })
 }
 
 /// Sets the vocal flag: Off deletes `revival-vocal`, Vocal writes it empty, Inverted writes `i`.
@@ -1497,9 +1516,12 @@ pub fn write_vocal(root: &Path, mode: VocalMode) -> Result<VocalState, Error> {
     if !dir.is_dir() {
         return Err(Error::NotALibrary(root.to_path_buf()));
     }
-    let before = read_vocal(root)?;
-    if before.mode == mode {
-        return Ok(before);
+    // A flag that cannot be read (locked, or a folder of that name) is not a reason to refuse:
+    // go on and write, which repairs it or reports the real I/O error.
+    if let Ok(before) = read_vocal(root) {
+        if before.mode == mode {
+            return Ok(before);
+        }
     }
     let path = dir.join(VOCAL_FLAG);
     match mode {
@@ -2110,7 +2132,7 @@ mod tests {
         fs::create_dir_all(&pm).unwrap();
         fs::write(pm.join("music.db"), b"db").unwrap();
         fs::write(pm.join("settings.dat"), b"settings").unwrap();
-        let st = |m, k, e| VocalState { mode: m, kill_switch: k, effective: e };
+        let st = |m, k, e| VocalState { mode: m, kill_switch: k, firmware_too_old: false, effective: e };
 
         assert_eq!(read_vocal(&root).unwrap(), st(VocalMode::Off, false, VocalMode::Off));
         // Vocal = an empty file
@@ -2153,6 +2175,47 @@ mod tests {
         let mut names: Vec<String> = fs::read_dir(&pm).unwrap().flatten().map(|e| e.file_name().to_string_lossy().into_owned()).collect();
         names.sort();
         assert_eq!(names, ["music.db", "revival-no-preload", "revival-vocal", "settings.dat"]);
+    }
+
+    #[test]
+    fn vocal_flag_is_ignored_by_a_firmware_known_to_be_too_old() {
+        let root = scratch("vocal-fw");
+        let pm = root.join(".Pacemaker");
+        fs::create_dir_all(&pm).unwrap();
+        let xml = |v: &str| format!("<SYSTEM FWVERSION=\"{v}\" SWVERSION=\"{v}\"/>");
+        write_vocal(&root, VocalMode::Inverted).unwrap();
+        // no system.xml, or a version that is not a number: unknown, so the flag counts
+        assert_eq!(read_vocal(&root).unwrap().effective, VocalMode::Inverted);
+        fs::write(pm.join("system.xml"), xml("beta")).unwrap();
+        assert_eq!(read_vocal(&root).unwrap().effective, VocalMode::Inverted);
+        // older than the vocal hook: the file still says Inverted, the device does not act on it
+        fs::write(pm.join("system.xml"), xml("180096070")).unwrap();
+        let s = read_vocal(&root).unwrap();
+        assert_eq!((s.mode, s.firmware_too_old, s.effective), (VocalMode::Inverted, true, VocalMode::Off));
+        // writing the flag still works (it takes effect once the firmware is updated)
+        assert_eq!(write_vocal(&root, VocalMode::Vocal).unwrap().mode, VocalMode::Vocal);
+        // the first firmware with the hook, and later ones
+        for v in ["180096073", "180096074", "190000000"] {
+            fs::write(pm.join("system.xml"), xml(v)).unwrap();
+            let s = read_vocal(&root).unwrap();
+            assert_eq!((s.firmware_too_old, s.effective), (false, VocalMode::Vocal), "{v}");
+        }
+    }
+
+    #[test]
+    fn an_unreadable_vocal_flag_is_reported_and_a_write_does_not_pretend_it_worked() {
+        let root = scratch("vocal-unreadable");
+        let pm = root.join(".Pacemaker");
+        // a folder where the flag file should be: neither readable nor removable as a file
+        fs::create_dir_all(pm.join("revival-vocal")).unwrap();
+        assert!(read_vocal(&root).is_err());
+        // the write goes on to the real operation and reports its error instead of stopping at the probe
+        assert!(write_vocal(&root, VocalMode::Vocal).is_err());
+        assert!(write_vocal(&root, VocalMode::Off).is_err());
+        assert!(pm.join("revival-vocal").is_dir(), "nothing was removed");
+        // once the obstruction is gone the same call repairs the card
+        fs::remove_dir(pm.join("revival-vocal")).unwrap();
+        assert_eq!(write_vocal(&root, VocalMode::Vocal).unwrap().mode, VocalMode::Vocal);
     }
 
     #[test]

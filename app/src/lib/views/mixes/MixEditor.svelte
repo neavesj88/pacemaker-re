@@ -221,7 +221,7 @@
     <span class="muted">/ {clock(doc.lengthSec)}</span>
     {#if busyLabel}<span class="muted">{busyLabel}</span>{/if}
     {#if preview.stale && (preview.playing || preview.status === "paused")}
-      <span class="stale" title="The preview was rendered before your last edit. Press play again to hear the change.">preview is out of date</span>
+      <span class="stale" title="The preview was rendered before your last edit or before the Vocal setting changed. Press play again to hear the change.">preview is out of date</span>
     {/if}
     {#if preview.notice}<span class="notice" role="status">{preview.notice}</span>{/if}
     <label class="ctl" title="Preview volume only; it is not saved in the mix">Master

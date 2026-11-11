@@ -116,9 +116,10 @@ fn mixer_err(e: pm_mixer::Error) -> AppError {
 }
 
 /// What the `Wah` tool renders as for this library: the Vocal filter when the card is set up for
-/// it (`ops_device::read_vocal`, `effective` so the kill switch counts), else the stock Wah
-/// stand-in. A preview and an export both ask here, so they always sound the same for the same
-/// card. An unreadable flag falls back to the stock Wah.
+/// it (`ops_device::read_vocal`, `effective`, so the kill switch and a firmware known to be older
+/// than the vocal hook both count as off), else the stock Wah stand-in. A preview and an export
+/// both ask here, so they always sound the same for the same card, and like the device plays it.
+/// An unreadable flag falls back to the stock Wah, as the device does when it cannot open it.
 pub fn peq_mode(root: &Path) -> PeqMode {
     match ops_device::read_vocal(root).map(|v| v.effective) {
         Ok(VocalMode::Vocal) => PeqMode::Vocal,
@@ -385,6 +386,14 @@ mod tests {
         let (pv_inv, ex_inv) = levels("inverted");
         assert!(near(pv_inv, ex_inv), "{pv_inv} vs {ex_inv}");
         assert!(pv_inv > pv_voc + 30.0, "inverted -100 keeps the centre: {pv_inv} vs {pv_voc}");
+
+        // a firmware older than the vocal hook ignores the flag, so the app renders the stock Wah too
+        let sysxml = vol.join(".Pacemaker").join("system.xml");
+        std::fs::write(&sysxml, br#"<SYSTEM FWVERSION="180096070"/>"#).unwrap();
+        assert_eq!(peq_mode(&vol), PeqMode::Wah);
+        std::fs::write(&sysxml, br#"<SYSTEM FWVERSION="180096073"/>"#).unwrap();
+        assert_eq!(peq_mode(&vol), PeqMode::VocalInverted);
+        std::fs::remove_file(&sysxml).unwrap();
 
         // the kill switch wins: stock Wah, the same sound as with no flag
         std::fs::write(&kill, b"").unwrap();

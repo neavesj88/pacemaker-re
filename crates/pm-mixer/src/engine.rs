@@ -22,6 +22,12 @@ use crate::Error;
 /// Timeline frames per processing block.
 pub const BLOCK: i64 = 4096;
 
+/// A window that starts after frame 0 is rendered from this many frames earlier (rounded down to
+/// a block boundary) and the lead-in is dropped, so the filters, delays and the limiter are
+/// already settled when the first kept frame is reached, as they are in the full render. About
+/// 190 ms, many times the longest smoothing the Vocal filter does (10 ms).
+const PREROLL: i64 = 8 * 1024;
+
 /// Provides the decoded audio of a track. The app implements it with the library lookup (and a
 /// small cache for previews); tests use [`DirResolver`].
 pub trait Resolver {
@@ -187,16 +193,22 @@ pub fn render(
     if to <= from {
         return Err(Error::Invalid("nothing to render: the range is empty or past the end of the mix".into()));
     }
-    let total = (to - from) as f64;
+    // Pre-roll: begin on a block boundary of the full timeline some way before `from` and drop what
+    // comes out before it. Not for a render from the start (an export), which has no lead-in.
+    let begin = if opts.from > 0 { ((from - PREROLL).max(0) / BLOCK) * BLOCK } else { from };
+    let mut skip = (from - begin) as usize;
+    let total = (to - begin) as f64;
 
     let mut limiter = Limiter::new();
     let (mut ml, mut mr) = (vec![0.0f32; BLOCK as usize], vec![0.0f32; BLOCK as usize]);
     let (mut cl, mut cr) = (vec![0.0f32; BLOCK as usize], vec![0.0f32; BLOCK as usize]);
     let (mut ol, mut or) = (Vec::<f32>::new(), Vec::<f32>::new());
     let mut written = 0u64;
+    // frames the limiter has produced so far, the dropped lead-in included
+    let mut emitted = 0u64;
     let (mut clips_rendered, mut clips_failed) = (0usize, 0usize);
 
-    let mut b0 = from;
+    let mut b0 = begin;
     while b0 < to {
         let b1 = (b0 + BLOCK).min(to);
         let n = (b1 - b0) as usize;
@@ -260,12 +272,15 @@ pub fn render(
                 or.push(rr);
             }
         }
-        if !ol.is_empty() {
-            sink(&ol, &or)?;
-            written += ol.len() as u64;
+        emitted += ol.len() as u64;
+        let drop = skip.min(ol.len());
+        skip -= drop;
+        if ol.len() > drop {
+            sink(&ol[drop..], &or[drop..])?;
+            written += (ol.len() - drop) as u64;
         }
         b0 = b1;
-        if !progress((b0 - from) as f64 / total) {
+        if !progress((b0 - begin) as f64 / total) {
             return Err(Error::Cancelled);
         }
     }
@@ -277,13 +292,14 @@ pub fn render(
             ol.push(l);
             or.push(rr);
         }
-        if written + ol.len() as u64 >= (to - from) as u64 {
+        if emitted + ol.len() as u64 >= (to - begin) as u64 {
             break;
         }
     }
-    if !ol.is_empty() {
-        sink(&ol, &or)?;
-        written += ol.len() as u64;
+    let drop = skip.min(ol.len());
+    if ol.len() > drop {
+        sink(&ol[drop..], &or[drop..])?;
+        written += (ol.len() - drop) as u64;
     }
     Ok(Rendered { frames: written, warnings, clips_rendered, clips_failed })
 }

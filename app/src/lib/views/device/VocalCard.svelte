@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { VocalMode } from "$lib/api/device";
+  import Button from "$lib/ui/Button.svelte";
   import { session } from "$lib/state/session.svelte";
   import { toast } from "$lib/state/toast.svelte";
   import { vocal } from "$lib/state/vocal.svelte";
@@ -17,20 +18,14 @@
   const MIN_FIRMWARE = 180096073;
 
   let pick = $state<VocalMode | null>(null);
-  const shown = $derived(pick ?? vocal.state?.mode ?? "off");
+  // null while the flag could not be read: no option is marked, and choosing one writes the file anew
+  const shown = $derived<VocalMode | null>(pick ?? (vocal.state ? vocal.state.mode : vocal.error ? null : "off"));
   const busy = $derived(pick !== null || device.blocked);
 
   // read when the card is opened and whenever the library is re-read
   $effect(() => {
     const root = session.library?.root;
     if (root) void vocal.load(root);
-  });
-
-  // a firmware older than the filter: say so, but only when the version is readable
-  const fw = $derived(device.overview?.firmware.fw_version ?? null);
-  const tooOld = $derived.by(() => {
-    const n = fw && /^\d+$/.test(fw) ? Number(fw) : NaN;
-    return Number.isFinite(n) && n < MIN_FIRMWARE;
   });
 
   async function choose(mode: VocalMode) {
@@ -50,9 +45,15 @@
 </script>
 
 <Card title="Vocal filter">
-  {#if vocal.state === null}
-    <p class="muted">{vocal.error ? `Could not read the setting: ${vocal.error}` : "Reading the drive…"}</p>
+  {#if vocal.state === null && !vocal.error}
+    <p class="muted">Reading the drive…</p>
   {:else}
+    {#if vocal.error}
+      <div class="warn" role="status">
+        Could not read the setting: {vocal.error} Choosing an option below writes the file again.
+        <Button small onclick={() => vocal.reload()}>Try again</Button>
+      </div>
+    {/if}
     <fieldset disabled={busy} title={device.blocked && pick === null ? "A job is still writing to the device" : undefined}>
       <legend class="sr">Vocal filter on the Wah effect</legend>
       {#each OPTIONS as o (o.mode)}
@@ -63,14 +64,17 @@
         </label>
       {/each}
     </fieldset>
-    {#if vocal.state.kill_switch}
+    {#if vocal.state?.kill_switch}
       <div class="warn" role="status">
         The file revival-no-preload is on this card, so the Pacemaker plays its stock Wah whatever is chosen here, and
         mix previews and exports in this app do too. This app never changes that file.
       </div>
     {/if}
-    {#if tooOld}
-      <div class="warn" role="status">This Pacemaker reports firmware {fw}; the filter needs {MIN_FIRMWARE} or later.</div>
+    {#if vocal.state?.firmware_too_old}
+      <div class="warn" role="status">
+        This Pacemaker's firmware is older than {MIN_FIRMWARE}, which the filter needs, so it plays its stock Wah whatever is
+        chosen here, and mix previews and exports in this app do too until the firmware is updated.
+      </div>
     {/if}
     <div class="note">
       Needs Revival firmware {MIN_FIRMWARE} or later. Takes effect at the next Pacemaker boot. It works on the centre of the stereo
@@ -129,7 +133,7 @@
     opacity: 0.6;
   }
   .warn {
-    margin-top: 8px;
+    margin: 8px 0;
     padding: 6px 8px;
     border-radius: 6px;
     background: var(--bad-bg);

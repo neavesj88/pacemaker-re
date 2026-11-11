@@ -112,11 +112,14 @@ pub async fn device_vocal(root: String) -> AppResult<VocalState> {
 /// Returns the state read back from the card.
 #[tauri::command]
 pub async fn device_vocal_set(app: AppHandle, root: String, mode: VocalMode) -> AppResult<VocalState> {
-    // a card that already says so needs no write: no gate, no first-write snapshot
+    // a card that already says so needs no write: no gate, no first-write snapshot. A flag that
+    // cannot be read counts as unknown and goes on to the write, which repairs it or reports the
+    // real error (stopping here would leave no way to fix the card from the app).
     let probe = root.clone();
-    let current = tauri::async_runtime::spawn_blocking(move || ops_device::read_vocal(Path::new(&probe))).await??;
-    if current.mode == mode {
-        return Ok(current);
+    if let Ok(current) = tauri::async_runtime::spawn_blocking(move || ops_device::read_vocal(Path::new(&probe))).await? {
+        if current.mode == mode {
+            return Ok(current);
+        }
     }
     // a quick write like settings.dat: refused during an eject / backup / firmware install,
     // snapshotted once per session, waited for by Eject

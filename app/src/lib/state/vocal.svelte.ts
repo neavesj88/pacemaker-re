@@ -12,9 +12,15 @@ class Vocal {
   #root = "";
   #seq = 0;
 
-  /** What the device will play and the mixes render: "off" until read, or under the kill switch. */
+  /** What the device will play and the mixes render: "off" until read, under the kill switch, or on a
+   *  firmware too old for the filter. */
   get mode(): VocalMode {
     return this.state?.effective ?? "off";
+  }
+
+  /** Reads the flag again for the root it was last read for (the Retry button). */
+  reload() {
+    return this.#root ? this.load(this.#root) : Promise.resolve();
   }
 
   /** Reads the flag from `root`. A newer call wins, so a slow read of a drive that was swapped out
@@ -41,8 +47,10 @@ class Vocal {
   async set(root: string, mode: VocalMode) {
     const seq = ++this.#seq;
     const s = await deviceVocalSet(root, mode);
-    if (root === this.#root && seq === this.#seq) this.state = s;
-    else if (root === this.#root) await this.load(root);
+    if (root === this.#root && seq === this.#seq) {
+      this.state = s;
+      this.error = "";
+    } else if (root === this.#root) await this.load(root);
   }
 
   clear() {

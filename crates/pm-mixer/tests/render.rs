@@ -416,6 +416,32 @@ fn wah_tool_follows_the_peq_mode() {
     assert!(wah(PeqMode::Wah, -100.0) > -30.0);
 }
 
+/// A window that starts inside a tool sounds like the same stretch of the full render: the lead-in
+/// the engine renders and drops has settled the Vocal filter (it cold-starts with a ~10 ms fade-in
+/// from the dry signal) before the first kept frame.
+#[test]
+fn a_window_starting_inside_a_vocal_tool_matches_the_full_render() {
+    use pm_mixer::PeqMode;
+    let d = dir("vocalwindow");
+    let src = sine(1000.0, 5.0, 0.3);
+    let f = put(&d, "v.wav", &src);
+    for peq in [PeqMode::Vocal, PeqMode::VocalInverted] {
+        let mut t = track(&f, src.len(), 120.0, 1.0, 0.0);
+        t.processes.push(tool(Effect::wah(), SR as f64, 3.0 * SR as f64, &[("CutOff", -100.0)]));
+        let m = mix_of(vec![t]);
+        let full_opts = Options { peq, ..Options::default() };
+        let (full, _) = render(&d, &m, &full_opts);
+        // start well inside the tool, a few frames past a block boundary, and just after its start
+        for from in [1.5f64, 2.0, 2.0 + 37.0 / SR as f64, 1.2] {
+            let (win, _) = render(&d, &m, &Options { peq, ..Options::window_secs(from, from + 1.0) });
+            let at = (from * SR as f64).round() as usize;
+            assert_eq!(win.len(), SR);
+            let worst = win.iter().zip(&full[at..]).map(|(a, b)| (a - b).abs()).fold(0.0f32, f32::max);
+            assert!(worst < 1e-3, "{peq:?} from {from}: window differs from the full render by {worst}");
+        }
+    }
+}
+
 #[test]
 fn filter_sweeps_low_pass_and_high_pass() {
     assert!(tool_gain_db(8000.0, Effect::filter(), &[("CutOff", -70.0)]) < -30.0);
