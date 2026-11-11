@@ -473,6 +473,8 @@ pub struct Plan {
     pub labels: Vec<Label>,
     pub files: Vec<FileItem>,
     pub notes: Vec<String>,
+    /// Things to read before confirming; the dialog shows them in red.
+    pub warnings: Vec<String>,
     pub totals: Totals,
     /// Identifies this exact plan; the job runs only if the rebuilt plan has the same one.
     pub digest: String,
@@ -495,6 +497,9 @@ fn build_plan(lib: &Library, req: &MergeRequest) -> AppResult<Plan> {
     }
     if req.delete_files && !req.remove_rows {
         return Err("Deleting the files needs the copies to be removed from the library as well: a track whose file is gone would stay in the library.".into());
+    }
+    if req.remove_rows && !req.settings.allow_row_removal {
+        return Err("Removing copies from the library is switched off in the duplicate finder settings: deleting rows from music.db has not been tried on a real Pacemaker yet.".into());
     }
     let plans = lib.merge_plan_for(&req.groups, &options_of(req))?;
     let all = lib.dup_rows()?;
@@ -535,6 +540,18 @@ fn build_plan(lib: &Library, req: &MergeRequest) -> AppResult<Plan> {
             notes.push(format!("“{label}” stays in the library: {} {mixes} {} it.{tail}", if b.mixes.len() == 1 { "the mix" } else { "the mixes" }, if b.mixes.len() == 1 { "uses" } else { "use" }));
         }
     }
+    let mut warnings = Vec::new();
+    if req.delete_files {
+        for p in &plans {
+            let Some(keeper) = by_id.get(&p.keeper) else { continue };
+            let state = file_state(root, &keeper.location);
+            let loses_a_file = files.iter().any(|f| f.kind == "audio" && f.exists && f.kept_because.is_none() && p.remove.iter().any(|r| r.track_id == f.track_id));
+            if state != FileState::Present && loses_a_file {
+                let why = if state == FileState::Missing { "its audio file is not on the Pacemaker" } else { "its location is not a plain path in the music folder" };
+                warnings.push(format!("“{}”, the track you keep, has no usable audio file ({why}), but a copy you are deleting does: after this merge there would be no playable file. Choose another track to keep, or leave the files alone.", label_of(keeper)));
+            }
+        }
+    }
     let labels = plans
         .iter()
         .flat_map(|p| std::iter::once(p.keeper).chain(p.others.iter().copied()))
@@ -548,8 +565,8 @@ fn build_plan(lib: &Library, req: &MergeRequest) -> AppResult<Plan> {
         files_deleted: deleted.len(),
         bytes: deleted.iter().map(|f| f.size).sum(),
     };
-    let digest = format!("{:016x}", fnv1a(&serde_json::to_string(&(&plans, &files)).map_err(|e| e.to_string())?));
-    Ok(Plan { groups: plans, labels, files, notes, totals, digest })
+    let digest = format!("{:016x}", fnv1a(&serde_json::to_string(&(&plans, &files, &warnings)).map_err(|e| e.to_string())?));
+    Ok(Plan { groups: plans, labels, files, notes, warnings, totals, digest })
 }
 
 /// What merging these groups would do, file by file. Reads only.

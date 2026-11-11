@@ -231,7 +231,37 @@ fn cancelling_stops_before_the_next_track_and_keeps_what_was_done() {
 }
 
 fn request(groups: Vec<MergeGroup>, remove_rows: bool, delete_files: bool) -> MergeRequest {
-    MergeRequest { groups, remove_rows, delete_files, settings: DupSettings::default() }
+    MergeRequest { groups, remove_rows, delete_files, settings: DupSettings { allow_row_removal: true, ..Default::default() } }
+}
+
+#[test]
+fn removing_rows_needs_the_setting_and_a_missing_keeper_file_is_a_warning() {
+    let f = Fixture::new("warn");
+    let k = f.add("k.mp3", &[1; 3000], "Sample Artist", "Sample Title", 200, 320);
+    let c = f.add("c.mp3", &[2; 3100], "Sample Artist", "Sample Title", 200, 128);
+    let lib = Library::open_read_only(&f.vol).unwrap();
+    let g = || vec![MergeGroup { keeper: k, others: vec![c] }];
+
+    // the setting is checked in the plan, which both the preview and the job use
+    let mut off = request(g(), true, false);
+    off.settings.allow_row_removal = false;
+    assert!(build_plan(&lib, &off).unwrap_err().to_string().contains("switched off"));
+    off.remove_rows = false;
+    assert!(build_plan(&lib, &off).is_ok(), "a merge that removes nothing needs no permission");
+
+    // files present on both sides: nothing to warn about
+    assert!(build_plan(&lib, &request(g(), true, true)).unwrap().warnings.is_empty());
+    // the keeper's file gone while the copy's is deleted: red warning, and it is part of the digest
+    let ok_digest = build_plan(&lib, &request(g(), true, true)).unwrap().digest;
+    std::fs::remove_file(f.audio_of(k)).unwrap();
+    let p = build_plan(&lib, &request(g(), true, true)).unwrap();
+    assert_eq!(p.warnings.len(), 1, "{:?}", p.warnings);
+    assert!(p.warnings[0].contains("Sample Artist - Sample Title") && p.warnings[0].contains("no playable file"), "{}", p.warnings[0]);
+    assert_ne!(p.digest, ok_digest);
+    // not deleting files, or keeping the copy that still has its file, is fine
+    assert!(build_plan(&lib, &request(g(), true, false)).unwrap().warnings.is_empty());
+    let swapped = vec![MergeGroup { keeper: c, others: vec![k] }];
+    assert!(build_plan(&lib, &request(swapped, true, true)).unwrap().warnings.is_empty(), "the deleted copy has no file to lose");
 }
 
 #[test]

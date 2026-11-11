@@ -35,11 +35,13 @@ export const DEFAULT_SETTINGS: DupSettings = {
   audio_threshold: 0.9,
   audio_duration_secs: 3,
   audio_offset_secs: 5,
+  audio_min_overlap: 0.8,
   fingerprint_threads: 0,
   keeper_rule: "bitrate",
   move_cases: true,
   rating_rule: "max",
   plays_rule: "max",
+  allow_row_removal: false,
 };
 
 export type Fingerprinting = {

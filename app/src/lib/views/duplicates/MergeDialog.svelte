@@ -3,7 +3,7 @@
   // case places, its row in the library and its files, and the list is the backend's own plan
   // (the job is started from it and refuses to run if the library changed). Removing the copies
   // from the library and deleting their files are two separate boxes, both off at first; the
-  // second needs the first. Cancel has the focus, so Enter never merges.
+  // second needs the first. Cancel is focused when the dialog opens (the effect below), so Enter never merges.
   import { mergeButtonLabel, planSentences, plural, totalsLine } from "$lib/state/dupeLogic";
   import { duplicates } from "$lib/state/duplicates.svelte";
   import Button from "$lib/ui/Button.svelte";
@@ -12,6 +12,14 @@
   const plan = $derived(d.plan);
   const groups = $derived(plan ? planSentences(plan) : []);
   const destructive = $derived(d.removeRows);
+  // removing a row is the one write here no Pacemaker has been seen to accept yet: a setting turns it on
+  const removalAllowed = $derived(d.settings.allow_row_removal);
+
+  let dialog = $state<HTMLDivElement | null>(null);
+  $effect(() => {
+    // same rule as ui/Modal: the element marked data-autofocus (the safe choice) takes the focus on open
+    if (d.mergeOpen && dialog) (dialog.querySelector<HTMLElement>("[data-autofocus]") ?? dialog).focus();
+  });
 </script>
 
 <svelte:window onkeydown={(e) => d.mergeOpen && e.key === "Escape" && d.closeMerge()} />
@@ -19,7 +27,7 @@
 {#if d.mergeOpen}
   <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
   <div class="scrim" onclick={() => d.closeMerge()}>
-    <div class="modal" role="dialog" aria-modal="true" aria-label="Merge duplicates" tabindex="-1" onclick={(e) => e.stopPropagation()}>
+    <div class="modal" role="dialog" aria-modal="true" aria-label="Merge duplicates" tabindex="-1" bind:this={dialog} onclick={(e) => e.stopPropagation()}>
       <h2>Merge {plural(d.picked, "set")} of copies</h2>
       <p class="muted">
         Each set is folded into the track you chose to keep: the case places of the other copies move to it, and it takes the best rating and play count
@@ -27,9 +35,16 @@
       </p>
 
       <div class="choices">
-        <label>
-          <input type="checkbox" checked={d.removeRows} onchange={(e) => d.setRemoveRows(e.currentTarget.checked)} />
-          <span><b>Also remove the other copies from the library.</b> A copy that a mix uses stays, and is listed below.</span>
+        <label class:dis={!removalAllowed}>
+          <input type="checkbox" checked={d.removeRows} disabled={!removalAllowed} onchange={(e) => d.setRemoveRows(e.currentTarget.checked)} />
+          <span>
+            <b>Also remove the other copies from the library.</b> A copy that a mix uses stays, and is listed below.
+            {#if removalAllowed}
+              <span class="muted small">Deleting rows from the library has not been tried on a real Pacemaker yet; the app copies <code>music.db</code> first.</span>
+            {:else}
+              <span class="muted small">Switched off in Settings (“Allow removing copies from the library”): deleting rows has not been tried on a real Pacemaker yet.</span>
+            {/if}
+          </span>
         </label>
         <label class:dis={!d.removeRows}>
           <input type="checkbox" checked={d.deleteFiles} disabled={!d.removeRows} onchange={(e) => d.setDeleteFiles(e.currentTarget.checked)} />
@@ -61,6 +76,11 @@
             </div>
           {/each}
         </div>
+        {#if plan.warnings.length > 0}
+          <ul class="warnings" role="alert" aria-label="Warnings">
+            {#each plan.warnings as w, i (i)}<li>{w}</li>{/each}
+          </ul>
+        {/if}
         {#if plan.notes.length > 0}
           <ul class="notes" aria-label="Notes">
             {#each plan.notes as n, i (i)}<li>{n}</li>{/each}
@@ -90,7 +110,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    background: rgba(0, 0, 0, 0.6);
+    background: var(--scrim);
   }
   .modal {
     width: 780px;
@@ -164,6 +184,15 @@
   li.del,
   li.rem {
     color: var(--bad-text);
+  }
+  .warnings {
+    margin: 8px 0 0;
+    padding: 6px 10px 6px 28px;
+    background: var(--bad-bg);
+    border: 1px solid var(--bad);
+    border-radius: 4px;
+    color: var(--bad-text);
+    font-weight: 600;
   }
   .notes {
     margin: 8px 0 0;

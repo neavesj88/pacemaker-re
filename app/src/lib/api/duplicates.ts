@@ -25,12 +25,16 @@ export type DupSettings = {
   audio_threshold: number;
   audio_duration_secs: number;
   audio_offset_secs: number;
+  /** 0.5 to 1: the share of the shorter track that must line up with the other for a sound match. */
+  audio_min_overlap: number;
   /** 0 = pick by the machine. */
   fingerprint_threads: number;
   keeper_rule: KeeperRule;
   move_cases: boolean;
   rating_rule: RatingRule;
   plays_rule: PlaysRule;
+  /** Whether a merge may take the other copies' rows out of the library (untried on hardware, so off at first). */
+  allow_row_removal: boolean;
 };
 
 export type SettingsState = { settings: DupSettings; warning: string | null };
@@ -132,6 +136,8 @@ export type MergePlan = {
   labels: { track_id: number; label: string }[];
   files: FileItem[];
   notes: string[];
+  /** Things to read before confirming (shown in red), e.g. the kept track has no file while a deleted copy does. */
+  warnings: string[];
   totals: { groups: number; case_entries: number; rows_removed: number; files_deleted: number; bytes: number };
   digest: string;
 };

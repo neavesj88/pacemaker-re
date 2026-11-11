@@ -51,6 +51,8 @@ pub struct DupSettings {
     pub audio_duration_secs: u32,
     /// Audio: one copy may start this many seconds later than the other.
     pub audio_offset_secs: u32,
+    /// Audio: the part of the shorter track that must line up with the other, 0.5 to 1.
+    pub audio_min_overlap: f32,
     /// Audio: tracks decoded at once while fingerprinting; 0 picks by the machine.
     pub fingerprint_threads: u32,
     pub keeper_rule: KeeperRule,
@@ -58,6 +60,10 @@ pub struct DupSettings {
     pub move_cases: bool,
     pub rating_rule: RatingRule,
     pub plays_rule: PlaysRule,
+    /// Merge: whether the other copies' rows may be taken out of the library at all. Off at
+    /// first: deleting `tracks` rows has not been tried on a real Pacemaker. Whether a given
+    /// merge does it is still the per-merge choice.
+    pub allow_row_removal: bool,
 }
 
 impl Default for DupSettings {
@@ -74,11 +80,13 @@ impl Default for DupSettings {
             audio_threshold: 0.90,
             audio_duration_secs: 3,
             audio_offset_secs: 5,
+            audio_min_overlap: 0.80,
             fingerprint_threads: 0,
             keeper_rule: KeeperRule::Bitrate,
             move_cases: true,
             rating_rule: RatingRule::Max,
             plays_rule: PlaysRule::Max,
+            allow_row_removal: false,
         }
     }
 }
@@ -91,6 +99,7 @@ impl DupSettings {
         self.audio_duration_secs = self.audio_duration_secs.min(60);
         self.audio_offset_secs = self.audio_offset_secs.min(30);
         self.fingerprint_threads = self.fingerprint_threads.min(8);
+        self.audio_min_overlap = if self.audio_min_overlap.is_finite() { self.audio_min_overlap.clamp(0.5, 1.0) } else { 0.80 };
         self.audio_threshold = if self.audio_threshold.is_finite() { self.audio_threshold.clamp(0.5, 1.0) } else { 0.90 };
         self
     }
@@ -180,18 +189,20 @@ mod tests {
         assert!(s.by_tags && s.by_size && !s.by_audio, "the sound check is opt-in: it needs the fingerprint job");
         assert_eq!((s.keeper_rule, s.move_cases, s.rating_rule, s.plays_rule), (KeeperRule::Bitrate, true, RatingRule::Max, PlaysRule::Max));
         assert_eq!((s.tag_duration_secs, s.size_duration_secs, s.audio_duration_secs, s.audio_offset_secs), (10, 1, 3, 5));
+        assert_eq!((s.audio_min_overlap, s.allow_row_removal), (0.80, false), "removing rows is opt-in");
         assert!(!s.merge_options(false).remove_rows && s.merge_options(true).remove_rows);
     }
 
     #[test]
     fn saved_settings_come_back_snake_case_and_clamped() {
         let d = temp_dir("roundtrip");
-        let s = DupSettings { by_audio: true, keeper_rule: KeeperRule::Newest, plays_rule: PlaysRule::Sum, audio_threshold: 7.0, audio_offset_secs: 999, fingerprint_threads: 99, ..Default::default() };
+        let s = DupSettings { by_audio: true, keeper_rule: KeeperRule::Newest, plays_rule: PlaysRule::Sum, audio_threshold: 7.0, audio_offset_secs: 999, fingerprint_threads: 99, audio_min_overlap: 0.1, allow_row_removal: true, ..Default::default() };
         save(&d, &s).unwrap();
         let (back, warn) = load(&d);
         assert!(warn.is_none());
         assert_eq!((back.keeper_rule, back.plays_rule, back.by_audio), (KeeperRule::Newest, PlaysRule::Sum, true));
         assert_eq!((back.audio_threshold, back.audio_offset_secs, back.fingerprint_threads), (1.0, 30, 8));
+        assert_eq!((back.audio_min_overlap, back.allow_row_removal), (0.5, true));
         let raw: Value = serde_json::from_str(&std::fs::read_to_string(path(&d)).unwrap()).unwrap();
         assert_eq!(raw["keeper_rule"], "newest");
         assert_eq!(raw["plays_rule"], "sum");

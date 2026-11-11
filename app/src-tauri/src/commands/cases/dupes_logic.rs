@@ -105,23 +105,25 @@ pub fn normalise(text: &str, strip_feat: bool, ignore_brackets: bool, ignore_the
     words.join(" ")
 }
 
-/// Splits `(id, seconds)` into runs where neighbouring lengths differ by at most `tol`
-/// (`None`: no length check, everything is one run).
+/// Splits `(id, seconds)` into runs whose lengths all lie within `tol` of the run's shortest
+/// track, so no two tracks of a run are further apart than `tol` (`None`: no length check,
+/// everything is one run). Comparing with the neighbour instead would let 200 s, 207 s and 214 s
+/// chain into one set under a 10 s tolerance.
 fn runs_by_length(mut items: Vec<(i64, i64)>, tol: Option<i64>) -> Vec<Vec<i64>> {
     items.sort_by_key(|&(id, secs)| (secs, id));
     let mut runs: Vec<Vec<i64>> = Vec::new();
-    let mut last = i64::MIN;
+    let mut start = i64::MIN;
     for (id, secs) in items {
         let starts_new = match (tol, runs.last()) {
             (_, None) => true,
             (None, Some(_)) => false,
-            (Some(t), Some(_)) => secs - last > t,
+            (Some(t), Some(_)) => secs - start > t,
         };
         if starts_new {
             runs.push(Vec::new());
+            start = secs;
         }
         runs.last_mut().expect("a run exists").push(id);
-        last = secs;
     }
     runs
 }
@@ -193,7 +195,7 @@ pub fn audio_links(rows: &[&DupRow], fps: &HashMap<i64, &Fingerprint>, s: &DupSe
     for (i, a) in by_len.iter().enumerate() {
         for b in by_len[i + 1..].iter().take_while(|b| b.play_time_secs - a.play_time_secs <= tol) {
             let (fa, fb) = (fps[&a.track_id], fps[&b.track_id]);
-            if let Some(m) = fingerprint::similarity(fa, fb, max_offset, 0.8)
+            if let Some(m) = fingerprint::similarity(fa, fb, max_offset, s.audio_min_overlap)
                 && m.score >= s.audio_threshold
             {
                 links.push(Link { a: a.track_id, b: b.track_id, mode: Mode::Audio, score: Some(m.score), offset_secs: Some(m.offset_frames as f32 * fingerprint::HOP_SECS) });
@@ -351,6 +353,16 @@ mod tests {
     }
 
     #[test]
+    fn a_set_never_spreads_wider_than_the_length_tolerance() {
+        // 200, 207 and 214 s: each neighbour is within 10 s, but the ends are 14 s apart
+        let rows = vec![row(1, "Sample Artist", "Sample Title", 200), row(2, "Sample Artist", "Sample Title", 207), row(3, "Sample Artist", "Sample Title", 214)];
+        let s = DupSettings::default();
+        assert_eq!(pairs(&tag_links(&refs(&rows), &s).0), vec![(1, 2)], "214 s is 14 s from the shortest and starts its own run");
+        assert_eq!(runs_by_length(vec![(1, 200), (2, 207), (3, 214), (4, 215)], Some(10)), vec![vec![1, 2], vec![3, 4]]);
+        assert_eq!(runs_by_length(vec![(1, 200), (2, 207), (3, 214)], None), vec![vec![1, 2, 3]]);
+    }
+
+    #[test]
     fn size_links_need_the_same_nonzero_size() {
         let mut rows = vec![row(1, "", "", 200), row(2, "", "", 200), row(3, "", "", 230), row(4, "", "", 200), row(5, "", "", 200)];
         for (r, size) in rows.iter_mut().zip([5_000_000, 5_000_000, 5_000_000, 0, 0]) {
@@ -434,5 +446,22 @@ mod tests {
         // a threshold of 1.0 still accepts an exact copy; an impossible window finds nothing
         assert_eq!(audio_links(&refs(&rows), &fps, &DupSettings { audio_threshold: 1.0, ..Default::default() }).len(), 1);
         assert!(audio_links(&refs(&rows), &HashMap::new(), &DupSettings::default()).is_empty());
+    }
+
+    #[test]
+    fn the_overlap_a_sound_match_needs_is_a_setting() {
+        // b is 50 s of other sound followed by the first 50 s of a: only half of the shorter track lines up
+        let a = fp(1, 200);
+        let mut frames = fp(2, 100).frames;
+        frames.extend_from_slice(&a.frames[..100]);
+        let b = Fingerprint { frames };
+        let rows = vec![row(1, "", "", 100), row(2, "", "", 100)];
+        let fps: HashMap<i64, &Fingerprint> = [(1, &a), (2, &b)].into();
+        let base = DupSettings { audio_offset_secs: 60, ..Default::default() };
+        assert!(audio_links(&refs(&rows), &fps, &base).is_empty(), "80% of the shorter track must line up by default");
+        let loose = DupSettings { audio_min_overlap: 0.5, ..base };
+        let links = audio_links(&refs(&rows), &fps, &loose);
+        assert_eq!(pairs(&links), vec![(1, 2)], "half is enough when the setting says so");
+        assert_eq!(links[0].offset_secs, Some(50.0));
     }
 }

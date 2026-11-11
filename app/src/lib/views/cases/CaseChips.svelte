@@ -1,7 +1,9 @@
 <script lang="ts">
   // The cases that hold one track, as buttons that open the case. Used in the Tracks inspector.
   // It reads the library when the track changes and again when the case list changes (a track was
-  // added to or removed from a case, a case was renamed or deleted).
+  // added to or removed from a case, a case was renamed or deleted). The read waits a moment after
+  // each change: every read evaluates all smart cases over the whole library, so arrowing through a
+  // long list must cost one read, not one per row.
   import { casesHolding, type TrackHolding } from "$lib/api/cases";
   import { cases } from "$lib/state/cases.svelte";
   import { holders } from "$lib/state/holders.svelte";
@@ -11,6 +13,7 @@
   let { trackId }: { trackId: number } = $props();
 
   const SHOWN = 4;
+  const SETTLE_MS = 250;
   let holding = $state.raw<TrackHolding | null>(null);
   let failed = $state(false);
 
@@ -21,18 +24,21 @@
     void cases.smart;
     if (!root) return;
     let current = true;
-    casesHolding(root, [id])
-      .then((r) => {
-        if (current) {
-          holding = r[0] ?? null;
-          failed = false;
-        }
-      })
-      .catch(() => {
-        if (current) failed = true;
-      });
+    const timer = setTimeout(() => {
+      casesHolding(root, [id])
+        .then((r) => {
+          if (current) {
+            holding = r[0] ?? null;
+            failed = false;
+          }
+        })
+        .catch(() => {
+          if (current) failed = true;
+        });
+    }, SETTLE_MS);
     return () => {
       current = false;
+      clearTimeout(timer);
     };
   });
 

@@ -23,11 +23,13 @@ let settings: DupSettings = {
   audio_threshold: 0.9,
   audio_duration_secs: 3,
   audio_offset_secs: 5,
+  audio_min_overlap: 0.8,
   fingerprint_threads: 0,
   keeper_rule: "bitrate",
   move_cases: true,
   rating_rule: "max",
   plays_rule: "max",
+  allow_row_removal: false,
 };
 
 function row(id: number, over: Partial<Member>): Member {
@@ -83,6 +85,7 @@ const MIXED = new Set([203]);
 function plan(req: MergeRequest): MergePlan {
   if (req.groups.length === 0) throw "Pick at least one group to merge.";
   if (req.delete_files && !req.remove_rows) throw "Deleting the files needs the copies to be removed from the library as well: a track whose file is gone would stay in the library.";
+  if (req.remove_rows && !req.settings.allow_row_removal) throw "Removing copies from the library is switched off in the duplicate settings (deleting rows has not been tried on a real Pacemaker yet).";
   const labels: MergePlan["labels"] = [];
   const files: MergePlan["files"] = [];
   const out: GroupPlan[] = req.groups.map((g) => {
@@ -123,11 +126,20 @@ function plan(req: MergeRequest): MergePlan {
     };
   });
   const gone = files.filter((f) => f.exists && !f.kept_because);
+  const warnings = req.delete_files
+    ? out.flatMap((g) => {
+        const keeperGone = byId(g.keeper).file !== "present";
+        const loses = g.remove.some((r) => files.some((f) => f.track_id === r.track_id && f.kind === "audio" && f.exists && !f.kept_because));
+        const name = labels.find((l) => l.track_id === g.keeper)?.label;
+        return keeperGone && loses ? [`“${name}”, the track you keep, has no audio file on the Pacemaker, but a copy you are deleting does: after this there would be no playable file.`] : [];
+      })
+    : [];
   const p: MergePlan = {
     groups: out,
     labels,
     files,
     notes: out.flatMap((g) => g.blocked.map((b) => `“${labels.find((l) => l.track_id === b.track_id)?.label}” stays in the library: the mix ${b.mixes.map((m) => `“${m}”`).join(", ")} uses it. Its case places still move.`)),
+    warnings,
     totals: {
       groups: out.length,
       case_entries: out.reduce((s, g) => s + g.case_edits.reduce((n, e) => n + e.others.length, 0), 0),
@@ -137,7 +149,7 @@ function plan(req: MergeRequest): MergePlan {
     },
     digest: "",
   };
-  p.digest = String([...JSON.stringify([out, files])].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7));
+  p.digest = String([...JSON.stringify([out, files, warnings])].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7));
   return p;
 }
 

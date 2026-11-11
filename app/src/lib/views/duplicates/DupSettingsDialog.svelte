@@ -31,8 +31,8 @@
       <label><input type="checkbox" bind:checked={draft.ignore_brackets} /> Ignore text in brackets (otherwise “Original Mix” and “Extended Mix” are different tracks)</label>
       <label><input type="checkbox" bind:checked={draft.ignore_the} /> Ignore a leading “The” in the artist</label>
       <label class="fld">
-        Lengths may differ by
-        <input type="number" min="0" max="600" value={draft.tag_duration_secs} onchange={(e) => (draft.tag_duration_secs = num(e, 0, 600, 10))} /> seconds
+        Lengths may differ by up to
+        <input type="number" min="0" max="600" value={draft.tag_duration_secs} onchange={(e) => (draft.tag_duration_secs = num(e, 0, 600, 10))} /> seconds from the shortest of the set
         <span class="muted">(0 = do not compare lengths)</span>
       </label>
     </fieldset>
@@ -41,8 +41,8 @@
       <legend>File size and length</legend>
       <label><input type="checkbox" bind:checked={draft.by_size} /> Find copies with the same file size and length</label>
       <label class="fld">
-        Lengths may differ by
-        <input type="number" min="0" max="600" value={draft.size_duration_secs} onchange={(e) => (draft.size_duration_secs = num(e, 0, 600, 1))} /> seconds
+        Lengths may differ by up to
+        <input type="number" min="0" max="600" value={draft.size_duration_secs} onchange={(e) => (draft.size_duration_secs = num(e, 0, 600, 1))} /> seconds from the shortest of the set
       </label>
     </fieldset>
 
@@ -53,6 +53,11 @@
         At least
         <input type="number" min="50" max="100" value={Math.round(draft.audio_threshold * 100)} onchange={(e) => (draft.audio_threshold = num(e, 50, 100, 90) / 100)} /> % alike
         <span class="muted">(higher finds fewer, surer copies)</span>
+      </label>
+      <label class="fld">
+        At least
+        <input type="number" min="50" max="100" value={Math.round(draft.audio_min_overlap * 100)} onchange={(e) => (draft.audio_min_overlap = num(e, 50, 100, 80) / 100)} /> % of the shorter track must line up with the other
+        <span class="muted">(lower also matches a copy with a long intro or outro cut off)</span>
       </label>
       <label class="fld">
         Only compare tracks whose lengths differ by at most
@@ -96,7 +101,12 @@
           <option value="keeper">its own</option>
         </select>
       </label>
-      <p class="muted small">Removing the other copies from the library, and deleting their files, are asked for each time you merge; they are never switched on by a setting.</p>
+      <label>
+        <input type="checkbox" bind:checked={draft.allow_row_removal} />
+        Allow removing the other copies from the library when merging
+        <span class="muted">(off at first: deleting rows from <code>music.db</code> has not been tried on a real Pacemaker. The app copies <code>music.db</code> before the first write.)</span>
+      </label>
+      <p class="muted small">Whether to remove the copies, and whether to delete their files, is still asked for each merge; this setting only lets the first of the two be chosen.</p>
     </fieldset>
   </div>
 
