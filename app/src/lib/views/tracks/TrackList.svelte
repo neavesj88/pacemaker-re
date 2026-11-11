@@ -14,7 +14,7 @@
   import MiniWave from "./MiniWave.svelte";
   import { addToCase } from "./addToCase.svelte";
   import { analysis } from "$lib/state/analysis.svelte";
-  import { addToMix, editGrid, editMetadata, playTrack, rate, revealInExplorer } from "./trackActions";
+  import { addToMix, buildSet, editGrid, editMetadata, playTrack, rate, revealInExplorer } from "./trackActions";
   import { keyColour, parseKey } from "./trackLogic";
   import { tracksState } from "./tracksState.svelte";
 
@@ -205,6 +205,7 @@
       { label: one ? "Edit metadata…" : `Edit metadata of ${n} tracks…`, onclick: () => editMetadata(ids) },
       { label: one ? "Add to mix" : `Add ${n} tracks to mix`, onclick: () => addToMix(ids) },
       { label: one ? "Add to case…" : `Add ${n} tracks to case…`, onclick: () => addToCase.ask(ids) },
+      { label: one ? "Build a set…" : `Build a set from ${n} tracks…`, onclick: () => buildSet(ids), disabled: one },
       {
         label: allFav ? (one ? "Remove from favourites" : `Remove ${n} from favourites`) : one ? "Favourite" : `Favourite ${n} tracks`,
         onclick: () => tracksState.setFavourite(ids, !allFav),

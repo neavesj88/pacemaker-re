@@ -831,4 +831,7 @@ test("Trans can be created (no envelope, tempo kept), Volume never is, and the m
   assert.deepEqual(E.toolConflicts(d2.clips[0], d2.clips[0].processes.find((p) => p.id === "tr2")), ["tr"], "two Trans overlapping is refused like any tool");
 });
 
+// the set builder's solver and mix layout have their own test file; running it here keeps one entry point
+await import("../src/lib/views/setbuilder/solver.test.mjs");
+
 console.log(`\n${n} tests passed`);

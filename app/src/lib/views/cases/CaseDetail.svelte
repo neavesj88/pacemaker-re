@@ -7,6 +7,7 @@
   import { filters } from "$lib/state/filters.svelte";
   import { jobs } from "$lib/state/jobs.svelte";
   import { metadataEditor } from "$lib/state/metadata.svelte";
+  import { nav } from "$lib/state/nav.svelte";
   import { playback } from "$lib/state/playback.svelte";
   import { selection } from "$lib/state/selection.svelte";
   import { session } from "$lib/state/session.svelte";
@@ -226,6 +227,7 @@
       </Button>
       <Button onclick={() => nudge(-1)} disabled={!canReorder || selectedRows.length === 0} title="Move up (Alt+Up)">▲</Button>
       <Button onclick={() => nudge(1)} disabled={!canReorder || selectedRows.length === 0} title="Move down (Alt+Down)">▼</Button>
+      <Button onclick={() => nav.go("setbuilder", { "setbuilder.caseId": open.id })} disabled={all.filter((r) => r.t).length < 2} title="Order this case into a set by key and tempo">Build a set…</Button>
       <Button
         onclick={() => metadataEditor.edit(selectedRows.filter((r) => r.t).map((r) => r.id))}
         disabled={selectedRows.every((r) => !r.t)}

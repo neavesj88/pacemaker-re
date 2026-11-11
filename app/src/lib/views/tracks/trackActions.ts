@@ -20,6 +20,9 @@ export const addToMix = (ids: number[]) => nav.go("mixes", { "mixes.addTracks": 
 
 export const editGrid = (trackId: number) => nav.go("grid", { "grid.trackId": trackId, trackId });
 
+/** Opens the Set builder with these tracks (it orders them by key and tempo; nothing is written). */
+export const buildSet = (ids: number[]) => nav.go("setbuilder", { "setbuilder.trackIds": [...ids] });
+
 export async function revealInExplorer(trackId: number) {
   const root = session.library?.root;
   if (!root) return;
