@@ -162,7 +162,7 @@ pub fn render(
             }
             let vs = r(t.position.start + t.position.l_offset);
             let ve = r(t.position.start + t.position.length - t.position.r_offset);
-            (ve > vs && vs >= 0).then(|| Slot { track: t, vs, ve, fades: Vec::new(), stream: None, dead: false, finished: false })
+            (ve > vs && ve > 0).then(||Slot { track: t, vs, ve, fades: Vec::new(), stream: None, dead: false, finished: false })
         })
         .collect();
     if slots.is_empty() {

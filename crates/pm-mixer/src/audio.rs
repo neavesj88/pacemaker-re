@@ -29,6 +29,12 @@ pub struct Source {
     pub coarse: Vec<f32>,
 }
 
+impl std::fmt::Debug for Source {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Source({} frames)", self.l.len())
+    }
+}
+
 impl Source {
     pub fn new(l: Vec<f32>, r: Vec<f32>) -> Arc<Source> {
         let n = l.len() / COARSE;
