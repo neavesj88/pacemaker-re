@@ -2,8 +2,10 @@
 //! files, settings.dat and eject. The logic lives in `pm_formats::ops_device`; this file is the
 //! command layer. Reads are plain commands; anything that copies or deletes many files is a
 //! background job (`device-firmware`, `device-backup`, `device-cleanup`) so it shows progress and
-//! cannot overlap another write job. `space` is the free-space planner (archive and remove).
+//! cannot overlap another write job. `space` is the free-space planner (archive and remove);
+//! `relink` finds the audio of tracks whose file is missing and relinks or copies it back.
 
+pub mod relink;
 pub mod space;
 pub mod trust;
 pub mod undo;
@@ -343,6 +345,12 @@ macro_rules! device_commands {
                 $crate::commands::device::trust::device_verify_report,
                 $crate::commands::device::trust::device_fix_plan,
                 $crate::commands::device::trust::device_fix_remove_rows,
+                $crate::commands::device::relink::device_relink_settings,
+                $crate::commands::device::relink::device_relink_settings_set,
+                $crate::commands::device::relink::device_relink_scan,
+                $crate::commands::device::relink::device_relink_scan_cancel,
+                $crate::commands::device::relink::device_relink_inspect,
+                $crate::commands::device::relink::device_relink_run,
                 $crate::commands::device::undo::device_undo_list,
                 $crate::commands::device::undo::device_undo_preview,
                 $crate::commands::device::undo::device_undo_apply,

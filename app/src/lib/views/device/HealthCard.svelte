@@ -7,6 +7,9 @@
   import Card from "./Card.svelte";
   import { device } from "./device.svelte";
   import { bytes, plural } from "./format";
+  import JobProgress from "./JobProgress.svelte";
+  import { relink } from "./relink.svelte";
+  import { JOB_RELINK } from "$lib/api/device";
 
   let h = $derived(device.health);
   let needs = $derived(session.needs.size);
@@ -68,6 +71,7 @@
         </div>
         {#if h.missing_audio.length}
           <Button small onclick={showMissing}>Show tracks</Button>
+          <Button small disabled={device.blocked} onclick={() => relink.open()}>Find files…</Button>
           <Button small disabled={device.blocked} onclick={() => (device.fixOpen = true)}>Fix…</Button>
         {/if}
       </li>
@@ -105,6 +109,8 @@
       </li>
     </ul>
     {#each h.warnings as w (w)}<p class="note">{w}</p>{/each}
+    <JobProgress kind={JOB_RELINK} />
+    {#if device.results[JOB_RELINK]}<p class="note result">{device.results[JOB_RELINK]}</p>{/if}
   {/if}
 </Card>
 

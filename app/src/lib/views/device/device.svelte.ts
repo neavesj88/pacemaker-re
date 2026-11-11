@@ -8,6 +8,7 @@ import {
   deviceOverview,
   deviceSettings,
   deviceVerifyReport,
+  JOB_RELINK,
   JOB_VERIFY,
   type DeviceOverview,
   type Health,
@@ -33,6 +34,8 @@ class DeviceStore {
   cleanupOpen = $state(false);
   /** The Health card's "remove dead rows" dialog. */
   fixOpen = $state(false);
+  /** The Health card's "find missing audio" (relink) dialog. */
+  relinkOpen = $state(false);
   /** Bumped when the snapshot list may have changed (a restore), so the Restore card re-reads it. */
   snapshotTick = $state(0);
   /** The per-file result of the last finished backup verification. */
@@ -137,6 +140,11 @@ class DeviceStore {
     } else {
       this.results[ev.job] = ev.summary;
       toast.show(ev.summary, ev.failed > 0 ? "bad" : "ok", 8000);
+    }
+    if (ev.job === JOB_RELINK && this.#root && !this.isDetached(session.library)) {
+      // track locations changed: the open library and the Restore card's snapshot list are stale
+      await session.load(this.#root, true);
+      this.snapshotTick++;
     }
     if (ev.job === JOB_VERIFY) {
       // reads the backup folder only: the card did not change, so no new scan of it

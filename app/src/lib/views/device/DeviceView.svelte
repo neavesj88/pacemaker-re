@@ -9,6 +9,7 @@
   import FirmwareCard from "./FirmwareCard.svelte";
   import FixModal from "./FixModal.svelte";
   import HealthCard from "./HealthCard.svelte";
+  import RelinkModal from "./RelinkModal.svelte";
   import RestoreCard from "./RestoreCard.svelte";
   import SafetyCard from "./SafetyCard.svelte";
   import SettingsCard from "./SettingsCard.svelte";
@@ -61,6 +62,7 @@
   </div>
   <CleanupModal />
   {#if device.fixOpen}<FixModal />{/if}
+  {#if device.relinkOpen}<RelinkModal />{/if}
 {:else}
   <p class="muted pad">Open a Pacemaker drive to see its storage, firmware and settings.</p>
 {/if}

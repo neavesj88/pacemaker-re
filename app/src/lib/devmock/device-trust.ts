@@ -153,6 +153,16 @@ const kept: Dead[] = [dead(9, [], ["Demo Mix 1"])];
 /** The rows the Health card's "missing audio" line counts (used by device_health in device.ts). */
 export const missingAudioRows = () => [...deadRows, ...kept].map((d) => ({ track_id: d.track_id, location: d.location }));
 
+/** The tracks without audio, with their names (the relink mock searches for these). */
+export const missingMockTracks = () =>
+  [...deadRows, ...kept].map((d) => ({ track_id: d.track_id, label: d.label, location: d.location, in_mixes: [...d.in_mixes] }));
+
+/** A relink put these tracks' audio back: they stop being counted as missing. */
+export function restoreMockAudio(ids: number[]) {
+  deadRows = deadRows.filter((d) => !ids.includes(d.track_id));
+  for (let i = kept.length - 1; i >= 0; i--) if (ids.includes(kept[i].track_id)) kept.splice(i, 1);
+}
+
 const massMode = (root: unknown) => String(root ?? "").toLowerCase().includes("mass");
 
 function plan(root: unknown) {

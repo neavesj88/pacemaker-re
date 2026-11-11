@@ -513,7 +513,7 @@ pub fn install_pfw(
 // ---------------------------------------------------------------------------------------------
 // Library health and the unreferenced-file scan
 
-const AUDIO_EXTS: [&str; 11] = ["mp3", "flac", "wav", "m4a", "aac", "ogg", "opus", "aif", "aiff", "wma", "mp4"];
+pub(crate) const AUDIO_EXTS: [&str; 11] = ["mp3", "flac", "wav", "m4a", "aac", "ogg", "opus", "aif", "aiff", "wma", "mp4"];
 
 /// A file under `.Pacemaker/Music` that no track row refers to.
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]

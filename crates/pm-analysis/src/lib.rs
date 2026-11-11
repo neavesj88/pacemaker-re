@@ -12,6 +12,7 @@ pub mod ingest;
 pub mod key;
 pub mod onset;
 pub mod peaks;
+pub mod probe;
 pub mod tempo;
 
 use std::path::Path;

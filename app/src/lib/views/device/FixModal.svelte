@@ -7,6 +7,7 @@
   import Button from "$lib/ui/Button.svelte";
   import { device } from "./device.svelte";
   import { plural } from "./format";
+  import { relink } from "./relink.svelte";
   import { deadRowLine, massWarning, removalReport } from "./trustLogic";
   import WideModal from "./WideModal.svelte";
 
@@ -36,6 +37,12 @@
   const nothing = $derived(
     !!plan && plan.dead_rows.length === 0 && plan.kept_for_mixes.length === 0 && plan.grids.length === 0 && plan.unchecked.length === 0,
   );
+
+  /** The audio may still exist somewhere: look for it before giving up the rows. */
+  function findFiles() {
+    close();
+    void relink.open();
+  }
 
   function toggle(id: number) {
     const next = new Set(unticked);
@@ -115,6 +122,11 @@
         Ticked rows are removed from the library, and from the cases named beside them. The audio is already gone;
         nothing on the drive is deleted. A copy of music.db is saved first, so Restore from a snapshot brings the rows
         back.
+      </p>
+      <p class="muted">
+        If the files still exist somewhere (a backup, the folder they were added from), relinking is better than
+        removing the rows.
+        <Button small variant="link" disabled={device.blocked} onclick={findFiles}>Look for the files…</Button>
       </p>
       {#if warning}<p class="err" role="alert">{warning}</p>{/if}
       <ul class="list" aria-label="Rows to remove">
