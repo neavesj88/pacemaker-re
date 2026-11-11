@@ -3,7 +3,7 @@
 // cell is kept by bin ids, so it survives a re-bin after a setting changes (and goes away if its
 // row or column no longer exists).
 import { session } from "$lib/state/session.svelte";
-import { DEFAULT_SETTINGS, mergeSettings, type GapSettings, type MatrixId } from "./gapLogic";
+import { DEFAULT_SETTINGS, mergeSettings, settingNotice, type GapSettings, type MatrixId } from "./gapLogic";
 
 const STORAGE_KEY = "pm.insights.gap.v1";
 
@@ -22,12 +22,22 @@ class GapState {
   /** The picked cell, by row and column bin id. */
   picked = $state<{ row: string; col: string } | null>(null);
 
-  update(patch: Partial<GapSettings>) {
-    this.settings = mergeSettings({ ...this.settings, ...patch });
+  /** Says in words when the last change was not used as typed (clamped, or the range adjusted). */
+  notice = $state("");
+
+  /** Applies one edit; returns the settings now in effect so the caller can show them. */
+  update(patch: Partial<GapSettings>): GapSettings {
+    const edited = (Object.keys(patch) as (keyof GapSettings)[])[0];
+    const before = $state.snapshot(this.settings);
+    const next = mergeSettings({ ...before, ...patch }, edited);
+    this.notice = edited ? settingNotice(edited, patch[edited] as number, next, before) : "";
+    this.settings = next;
     this.save();
+    return next;
   }
 
   resetSettings() {
+    this.notice = "";
     this.settings = { ...DEFAULT_SETTINGS };
     this.save();
   }

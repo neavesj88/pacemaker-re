@@ -44,27 +44,72 @@ export const DEFAULT_SETTINGS: GapSettings = {
 const int = (v: unknown, lo: number, hi: number, fallback: number): number =>
   typeof v === "number" && Number.isFinite(v) ? Math.max(lo, Math.min(hi, Math.round(v))) : fallback;
 
+/** Allowed range of each numeric setting, as mergeSettings clamps it (and the form shows it). */
+export const SETTING_LIMITS = {
+  bpmMin: [20, 300],
+  bpmMax: [30, 400],
+  maxGenres: [3, 40],
+  thinBelow: [1, 20],
+  minRowTracks: [1, 500],
+} as const;
+
 /** Settings from anything (saved JSON, a half-typed form): unknown or out-of-range values fall
- *  back to the defaults, and the BPM range is trimmed so it holds a whole number of bands. */
-export function mergeSettings(raw: unknown): GapSettings {
+ *  back to the defaults, and the BPM range is trimmed so it holds a whole number of bands.
+ *  A range narrower than one band keeps the bound the user did not just change: `edited` names
+ *  the one that was (`bpmMin` is pulled down below the max, otherwise the max is pushed up above
+ *  the min, which is also what happens for a saved range or a changed band width). */
+export function mergeSettings(raw: unknown, edited?: keyof GapSettings): GapSettings {
   const s = raw && typeof raw === "object" ? (raw as Partial<GapSettings>) : {};
   const d = DEFAULT_SETTINGS;
+  const L = SETTING_LIMITS;
   const bandWidth = (BAND_WIDTHS as readonly number[]).includes(s.bandWidth as number) ? (s.bandWidth as number) : d.bandWidth;
-  let bpmMin = int(s.bpmMin, 20, 300, d.bpmMin);
-  let bpmMax = int(s.bpmMax, 30, 400, d.bpmMax);
+  let bpmMin = int(s.bpmMin, L.bpmMin[0], L.bpmMin[1], d.bpmMin);
+  let bpmMax = int(s.bpmMax, L.bpmMax[0], L.bpmMax[1], d.bpmMax);
   if (bpmMax - bpmMin < bandWidth) {
-    bpmMin = d.bpmMin;
-    bpmMax = d.bpmMax;
+    if (edited === "bpmMin") {
+      bpmMin = Math.max(L.bpmMin[0], bpmMax - bandWidth);
+      bpmMax = Math.max(bpmMax, bpmMin + bandWidth);
+    } else {
+      bpmMax = bpmMin + bandWidth;
+    }
   }
   bpmMax = bpmMin + Math.floor((bpmMax - bpmMin) / bandWidth) * bandWidth;
   return {
     bandWidth,
     bpmMin,
     bpmMax,
-    maxGenres: int(s.maxGenres, 3, 40, d.maxGenres),
-    thinBelow: int(s.thinBelow, 1, 20, d.thinBelow),
-    minRowTracks: int(s.minRowTracks, 1, 500, d.minRowTracks),
+    maxGenres: int(s.maxGenres, L.maxGenres[0], L.maxGenres[1], d.maxGenres),
+    thinBelow: int(s.thinBelow, L.thinBelow[0], L.thinBelow[1], d.thinBelow),
+    minRowTracks: int(s.minRowTracks, L.minRowTracks[0], L.minRowTracks[1], d.minRowTracks),
   };
+}
+
+const SETTING_LABEL: Record<keyof GapSettings, string> = {
+  bandWidth: "BPM band",
+  bpmMin: "BPM range from",
+  bpmMax: "BPM range up to",
+  maxGenres: "Genres shown",
+  thinBelow: "Thin limit",
+  minRowTracks: "Judge rows from",
+};
+
+/** Words for a setting change that was not used exactly as typed ("" when it was): a value
+ *  outside its allowed range, or a BPM range that had to move to stay at least one band wide and
+ *  a whole number of bands. `requested` is what was typed, `before` the settings it replaced. */
+export function settingNotice(edited: keyof GapSettings, requested: number, next: GapSettings, before: GapSettings): string {
+  if (edited !== "bandWidth") {
+    const [lo, hi] = SETTING_LIMITS[edited];
+    if (!Number.isFinite(requested) || Math.round(requested) < lo || Math.round(requested) > hi) {
+      return `${SETTING_LABEL[edited]} must be ${lo} to ${hi}; ${next[edited]} is used.`;
+    }
+  }
+  const wantMin = edited === "bpmMin" ? Math.round(requested) : before.bpmMin;
+  const wantMax = edited === "bpmMax" ? Math.round(requested) : before.bpmMax;
+  const touchesRange = edited === "bpmMin" || edited === "bpmMax" || edited === "bandWidth";
+  if (touchesRange && (next.bpmMin !== wantMin || next.bpmMax !== wantMax)) {
+    return `The BPM range is now ${next.bpmMin} to ${next.bpmMax}: it holds whole ${next.bandWidth} BPM bands, and at least one.`;
+  }
+  return "";
 }
 
 // ---- bins and matrices --------------------------------------------------------------------

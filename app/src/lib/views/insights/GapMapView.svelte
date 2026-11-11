@@ -10,7 +10,7 @@
   import { parseKey } from "../tracks/trackLogic";
   import { tracksState } from "../tracks/tracksState.svelte";
   import CellPanel from "./CellPanel.svelte";
-  import { anyEnergy, BAND_WIDTHS, buildMatrix, cellFilter, MATRIX_IDS, summarise, thinCellSet, type GapTrack, type KeyCode } from "./gapLogic";
+  import { anyEnergy, BAND_WIDTHS, buildMatrix, cellFilter, MATRIX_IDS, summarise, thinCellSet, type GapSettings, type GapTrack, type KeyCode } from "./gapLogic";
   import { gap } from "./gapState.svelte";
   import { cellName, plural, TAB_LABEL } from "./gapText";
   import Heatmap from "./Heatmap.svelte";
@@ -73,7 +73,14 @@
   }
 
   let settingsOpen = $state(false);
-  const num = (e: Event) => Number((e.currentTarget as HTMLInputElement).value);
+  /** Applies one edited setting, then puts the field back to the value now in effect: when the
+   *  setting was clamped back to what it already was, Svelte has nothing to rewrite and the typed
+   *  number would otherwise stay on screen. */
+  function change(e: Event, key: keyof GapSettings) {
+    const el = e.currentTarget as HTMLInputElement | HTMLSelectElement;
+    const next = gap.update({ [key]: Number(el.value) });
+    el.value = String(next[key]);
+  }
   const skippedTotal = $derived(matrix.skipped.reduce((n, s) => n + s.count, 0));
 </script>
 
@@ -89,34 +96,35 @@
   <div class="settings">
     <label>
       BPM band
-      <select value={gap.settings.bandWidth} onchange={(e) => gap.update({ bandWidth: num(e) })}>
+      <select value={gap.settings.bandWidth} onchange={(e) => change(e, "bandWidth")}>
         {#each BAND_WIDTHS as w (w)}<option value={w}>{w} BPM wide</option>{/each}
       </select>
     </label>
     <label>
       BPM range from
-      <input type="number" min="20" max="300" step="1" value={gap.settings.bpmMin} onchange={(e) => gap.update({ bpmMin: num(e) })} />
+      <input type="number" min="20" max="300" step="1" value={gap.settings.bpmMin} onchange={(e) => change(e, "bpmMin")} />
     </label>
     <label>
       up to
-      <input type="number" min="30" max="400" step="1" value={gap.settings.bpmMax} onchange={(e) => gap.update({ bpmMax: num(e) })} />
+      <input type="number" min="30" max="400" step="1" value={gap.settings.bpmMax} onchange={(e) => change(e, "bpmMax")} />
     </label>
     <label>
       Genres shown
-      <input type="number" min="3" max="40" step="1" value={gap.settings.maxGenres} onchange={(e) => gap.update({ maxGenres: num(e) })} />
+      <input type="number" min="3" max="40" step="1" value={gap.settings.maxGenres} onchange={(e) => change(e, "maxGenres")} />
     </label>
     <label>
       Thin means fewer than
-      <input type="number" min="1" max="20" step="1" value={gap.settings.thinBelow} onchange={(e) => gap.update({ thinBelow: num(e) })} />
+      <input type="number" min="1" max="20" step="1" value={gap.settings.thinBelow} onchange={(e) => change(e, "thinBelow")} />
       tracks
     </label>
     <label>
       Judge rows from
-      <input type="number" min="1" max="500" step="1" value={gap.settings.minRowTracks} onchange={(e) => gap.update({ minRowTracks: num(e) })} />
+      <input type="number" min="1" max="500" step="1" value={gap.settings.minRowTracks} onchange={(e) => change(e, "minRowTracks")} />
       tracks
     </label>
     <Button small variant="ghost" onclick={() => gap.resetSettings()}>Reset to defaults</Button>
     <span class="muted note">Saved on this computer. The range is trimmed to a whole number of bands.</span>
+    <span class="notice" role="status">{gap.notice}</span>
   </div>
 {/if}
 
@@ -215,8 +223,12 @@
   .settings input {
     width: 64px;
   }
-  .note {
+  .note,
+  .notice {
     font-size: 12px;
+  }
+  .notice {
+    color: var(--cue);
   }
   .tabs {
     display: flex;

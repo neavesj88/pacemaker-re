@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   anyEnergy, bandIndex, buildBpmGenre, buildBpmKey, buildKeyEnergy, buildMatrix, cellFilter, DEFAULT_SETTINGS, energyOf, hasBpm,
-  KEY_ORDER, mergeSettings, summarise, thinCellSet,
+  KEY_ORDER, mergeSettings, settingNotice, summarise, thinCellSet,
 } from "./gapLogic.ts";
 import { filterTracks, parseKey } from "../tracks/trackLogic.ts";
 
@@ -201,10 +201,37 @@ test("settings: defaults for junk, clamped, range holds whole bands", () => {
   assert.equal(s.maxGenres, 40);
   assert.equal(s.thinBelow, 1);
   assert.equal(s.minRowTracks, 1);
-  // a range narrower than one band is refused
-  const narrow = mergeSettings({ bandWidth: 20, bpmMin: 100, bpmMax: 110 });
-  assert.equal(narrow.bpmMin, DEFAULT_SETTINGS.bpmMin);
+  // a range narrower than one band keeps the bound that was not just edited
+  const base = { bandWidth: 20, bpmMin: 100, bpmMax: 200 };
+  const lowerMax = mergeSettings({ ...base, bpmMax: 110 }, "bpmMax");
+  assert.deepEqual([lowerMax.bpmMin, lowerMax.bpmMax], [100, 120]);
+  const raiseMin = mergeSettings({ ...base, bpmMin: 195 }, "bpmMin");
+  assert.deepEqual([raiseMin.bpmMin, raiseMin.bpmMax], [180, 200]);
+  const lowMax = mergeSettings({ bandWidth: 20, bpmMin: 150, bpmMax: 30 }, "bpmMax");
+  assert.deepEqual([lowMax.bpmMin, lowMax.bpmMax], [150, 170]);
+  const lowMin = mergeSettings({ bandWidth: 20, bpmMin: 300, bpmMax: 30 }, "bpmMin");
+  assert.deepEqual([lowMin.bpmMin, lowMin.bpmMax], [20, 40]);
+  // not an edit of either bound (saved settings, a wider band): the min stays, the max moves
+  const wider = mergeSettings({ bandWidth: 20, bpmMin: 100, bpmMax: 110 });
+  assert.deepEqual([wider.bpmMin, wider.bpmMax], [100, 120]);
   assert.deepEqual(mergeSettings(mergeSettings({ bandWidth: 5, bpmMin: 71, bpmMax: 188 })), mergeSettings({ bandWidth: 5, bpmMin: 71, bpmMax: 188 }));
+});
+
+test("settings notice: says so when a value was not used as typed", () => {
+  const D = DEFAULT_SETTINGS;
+  const apply = (patch, edited) => {
+    const next = mergeSettings({ ...D, ...patch }, edited);
+    return [next, settingNotice(edited, patch[edited], next, D)];
+  };
+  assert.equal(apply({ maxGenres: 20 }, "maxGenres")[1], "");
+  assert.match(apply({ maxGenres: 1000 }, "maxGenres")[1], /Genres shown must be 3 to 40; 40 is used/);
+  assert.match(apply({ thinBelow: 0 }, "thinBelow")[1], /Thin limit must be 1 to 20; 1 is used/);
+  assert.match(apply({ thinBelow: NaN }, "thinBelow")[1], /must be 1 to 20/);
+  assert.equal(apply({ bpmMin: 70 }, "bpmMin")[1], ""); // 70..200 is whole bands of 10
+  assert.match(apply({ bpmMax: 62 }, "bpmMax")[1], /BPM range is now 60 to 70/);
+  assert.match(apply({ bpmMin: 65 }, "bpmMin")[1], /now 65 to 195/); // max trimmed to whole bands
+  assert.equal(apply({ bandWidth: 20 }, "bandWidth")[1], "");
+  assert.match(apply({ bpmMin: 5 }, "bpmMin")[1], /must be 20 to 300/);
 });
 
 test("hasBpm follows the Tracks table: needs-analysis tracks have none", () => {
