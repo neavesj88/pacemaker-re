@@ -2,6 +2,7 @@
   import { untrack } from "svelte";
   import type { CaseMeta } from "$lib/api/cases";
   import { mmss } from "$lib/format";
+  import { caseExport } from "$lib/state/caseExport.svelte";
   import { cases } from "$lib/state/cases.svelte";
   import { filters } from "$lib/state/filters.svelte";
   import { jobs } from "$lib/state/jobs.svelte";
@@ -22,6 +23,7 @@
   import { CASE_COLUMNS, type CaseCol, type Row, copyName, plural, searchRows, sortRows, trackLabel } from "./caseLogic";
   import { caseView } from "./caseView.svelte";
   import ConfirmDialog from "./ConfirmDialog.svelte";
+  import { exportMenuItems } from "./exportMenu";
   import MergeDialog from "./MergeDialog.svelte";
   import NameDialog from "./NameDialog.svelte";
   import TransferDialog from "./TransferDialog.svelte";
@@ -248,11 +250,7 @@
     menu = {
       x: r.left,
       y: r.bottom + 2,
-      items: [
-        { label: "M3U8 playlist…", onclick: () => cases.exportOne(open, "m3u8"), disabled: none },
-        { label: "CSV list…", onclick: () => cases.exportOne(open, "csv"), disabled: none },
-        { label: "rekordbox XML…", onclick: () => cases.exportOne(open, "rekordbox"), disabled: none },
-      ],
+      items: exportMenuItems({ run: (f) => cases.exportOne(open, f), options: () => caseExport.show({ caseIds: [open.id], smartIds: [] }), disabled: none }),
     };
   }
 

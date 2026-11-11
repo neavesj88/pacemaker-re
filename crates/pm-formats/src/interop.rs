@@ -1165,6 +1165,16 @@ fn audio_path(lib: &Library, t: &Track) -> String {
     lib.track_paths(&t.location).map(|(a, _)| a.display().to_string()).unwrap_or_else(|| t.location.clone())
 }
 
+/// Where a list export says each track's audio file is: by track id, the text to write in place
+/// of the file's path on the volume (the app uses it for copies of the audio made beside the
+/// export, and for paths relative to the playlist). A track that is not in the map keeps its
+/// path on the volume.
+pub type PathMap = HashMap<i64, String>;
+
+fn audio_path_in(lib: &Library, t: &Track, paths: &PathMap) -> String {
+    paths.get(&t.track_id).cloned().unwrap_or_else(|| audio_path(lib, t))
+}
+
 fn one_line(s: &str) -> String {
     s.chars().map(|c| if c.is_control() { ' ' } else { c }).collect()
 }
@@ -1172,6 +1182,11 @@ fn one_line(s: &str) -> String {
 /// An extended M3U in UTF-8 (the `.m3u8` convention), one entry per track with its length and
 /// "artist - title", pointing at the audio files on the volume.
 pub fn export_m3u8(lib: &Library, tracks: &[Track]) -> String {
+    export_m3u8_with(lib, tracks, &PathMap::new())
+}
+
+/// [`export_m3u8`] with the audio paths in `paths` written instead of the paths on the volume.
+pub fn export_m3u8_with(lib: &Library, tracks: &[Track], paths: &PathMap) -> String {
     let mut s = String::from("#EXTM3U\n");
     for t in tracks {
         let label = match (t.artist.trim().is_empty(), t.title.trim().is_empty()) {
@@ -1180,7 +1195,7 @@ pub fn export_m3u8(lib: &Library, tracks: &[Track]) -> String {
             (false, true) => t.artist.clone(),
             (false, false) => format!("{} - {}", t.artist, t.title),
         };
-        s.push_str(&format!("#EXTINF:{},{}\n{}\n", t.play_time_secs.max(-1), one_line(&label), one_line(&audio_path(lib, t))));
+        s.push_str(&format!("#EXTINF:{},{}\n{}\n", t.play_time_secs.max(-1), one_line(&label), one_line(&audio_path_in(lib, t, paths))));
     }
     s
 }
@@ -1205,6 +1220,11 @@ fn csv_field(s: &str) -> String {
 /// RFC 4180 CSV (CRLF rows, quoted where needed) with a UTF-8 byte-order mark so spreadsheet
 /// programs read the accents correctly.
 pub fn export_csv(lib: &Library, tracks: &[Track]) -> String {
+    export_csv_with(lib, tracks, &PathMap::new())
+}
+
+/// [`export_csv`] with the audio paths in `paths` written instead of the paths on the volume.
+pub fn export_csv_with(lib: &Library, tracks: &[Track], paths: &PathMap) -> String {
     let mut s = String::from("\u{feff}Title,Artist,Album,Genre,BPM,Key,Rating,Duration (s),Format,File\r\n");
     for t in tracks {
         let row = [
@@ -1217,7 +1237,7 @@ pub fn export_csv(lib: &Library, tracks: &[Track]) -> String {
             t.rating.to_string(),
             t.play_time_secs.to_string(),
             csv_text(&t.format),
-            csv_text(&audio_path(lib, t)),
+            csv_text(&audio_path_in(lib, t, paths)),
         ];
         s.push_str(&row.join(","));
         s.push_str("\r\n");
@@ -1369,6 +1389,8 @@ pub struct XmlOptions {
     pub extra: Vec<ExtraPlaylist>,
     /// Put the extra playlists in a folder of this name instead of beside the cases.
     pub extra_folder: Option<String>,
+    /// Audio paths to write for these tracks instead of their paths on the volume.
+    pub paths: PathMap,
 }
 
 /// [`export_rekordbox`] with the choices in [`XmlOptions`].
@@ -1428,7 +1450,7 @@ pub fn export_rekordbox_with(lib: &Library, opts: &XmlOptions) -> Result<String,
             xml_escape(e.map_or("", |e| e.comments.as_str())),
             t.times_played,
             t.rating.clamp(0, 5) * 51,
-            xml_escape(&file_url(&audio_path(lib, t))),
+            xml_escape(&file_url(&audio_path_in(lib, t, &opts.paths))),
             xml_escape(e.map_or("", |e| e.label.as_str())),
             xml_escape(&t.key),
         ));
@@ -1982,6 +2004,26 @@ mod tests {
         let mid = lib.create_mix("Empty mix").unwrap();
         assert_eq!(scope_tracks(&lib, Scope::Mix(mid)).unwrap().1.len(), 0);
         assert!(scope_tracks(&lib, Scope::Case(9999)).is_err());
+        clean(lib, dirs);
+    }
+
+    #[test]
+    fn a_path_map_replaces_the_audio_path_in_every_list_format() {
+        let (lib, dirs, _) = library("pathmap", 2);
+        let tracks = lib.tracks().unwrap();
+        let mut paths = PathMap::new();
+        paths.insert(tracks[0].track_id, "Audio/copy one.mp3".to_string());
+        // a track that is not in the map keeps its path on the volume
+        let m3u = export_m3u8_with(&lib, &tracks, &paths);
+        let lines: Vec<&str> = m3u.lines().collect();
+        assert_eq!(lines[2], "Audio/copy one.mp3");
+        assert!(lines[4].contains(".Pacemaker"), "{}", lines[4]);
+        let csv = export_csv_with(&lib, &tracks, &paths);
+        assert!(csv.contains(",Audio/copy one.mp3\r\n"), "{csv}");
+        let xml = export_rekordbox_with(&lib, &XmlOptions { paths, ..Default::default() }).unwrap();
+        assert!(xml.contains("Location=\"file://localhost/Audio/copy%20one.mp3\""), "{xml}");
+        // the plain writers are the same as writers with an empty map
+        assert_eq!(export_m3u8(&lib, &tracks), export_m3u8_with(&lib, &tracks, &PathMap::new()));
         clean(lib, dirs);
     }
 

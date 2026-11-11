@@ -6,7 +6,14 @@
   import { cases } from "$lib/state/cases.svelte";
   import { session } from "$lib/state/session.svelte";
   import { smartRefresh } from "$lib/state/smartRefresh.svelte";
+  import { caseExport } from "$lib/state/caseExport.svelte";
+  import ExportDialog from "./ExportDialog.svelte";
   import SmartRefreshDialog from "./SmartRefreshDialog.svelte";
+
+  // the export dialog and the case menus read the remembered export folder and format
+  $effect(() => {
+    void caseExport.ensure();
+  });
 
   // Edits arrive in bursts (a reload, then the case list, then the smart list): one check after they settle.
   const SETTLE_MS = 700;
@@ -25,3 +32,4 @@
 </script>
 
 <SmartRefreshDialog />
+<ExportDialog />

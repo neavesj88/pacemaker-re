@@ -1,6 +1,7 @@
 // Case commands (src-tauri/src/commands/cases.rs). Argument keys are camelCase; fields inside an
 // object argument keep their Rust (snake_case) names.
 import { invoke } from "@tauri-apps/api/core";
+import { open } from "@tauri-apps/plugin-dialog";
 
 /** A case with the metadata the Editor's case table and dialog show. */
 export type CaseInfo = {
@@ -289,3 +290,96 @@ export type CaseExportFormat = "m3u8" | "csv" | "rekordbox";
 /** Writes one case to `dest` (a file outside the device volume) as M3U8, CSV or rekordbox XML. */
 export const exportCase = (root: string, caseId: number, format: CaseExportFormat, dest: string) =>
   invoke<{ path: string; tracks: number; notes?: string[] }>("cases_export", { root, caseId, format, dest });
+
+// ---- exporting several cases to a folder (commands/cases/export_bulk.rs) ------------------------
+
+export type AudioLayout = "shared" | "per_case";
+/** What to do with a file the export would write where one already exists. */
+export type ExportConflict = "skip" | "replace" | "number";
+/** How copied audio files are named: from the tags, or the short code the card gave the file. */
+export type AudioNames = "tags" | "device";
+
+/** The user's export choices, kept in the app's config (not on the device). */
+export type ExportPrefs = {
+  folder: string | null;
+  format: CaseExportFormat;
+  /** M3U8 only. */
+  relative_paths: boolean;
+  copy_audio: boolean;
+  audio_layout: AudioLayout;
+  audio_names: AudioNames;
+  conflict: ExportConflict;
+  /** Save the folder and format after each export. */
+  remember: boolean;
+};
+
+export type ExportPrefsState = { prefs: ExportPrefs; warning: string | null };
+
+export const getExportPrefs = () => invoke<ExportPrefsState>("cases_export_prefs_get");
+export const setExportPrefs = (prefs: ExportPrefs) => invoke<ExportPrefsState>("cases_export_prefs_set", { prefs });
+
+/** What the dialog asks for. */
+export type ExportRequest = {
+  folder: string;
+  format: CaseExportFormat;
+  case_ids: number[];
+  smart_ids: number[];
+  relative_paths: boolean;
+  copy_audio: boolean;
+  audio_layout: AudioLayout;
+  audio_names: AudioNames;
+  conflict: ExportConflict;
+};
+
+/** What will happen to one file. */
+export type ExportAction = "write" | "replace" | "renamed" | "skip" | "same" | "missing" | "blocked";
+
+export type ExportListEntry = {
+  name: string;
+  smart: boolean;
+  /** Inside the export folder, `/`-separated. */
+  file: string;
+  path: string;
+  tracks: number;
+  action: ExportAction;
+  /** For "renamed": the name the file would have had. */
+  wanted: string | null;
+};
+
+export type ExportAudioEntry = {
+  title: string;
+  file: string;
+  path: string;
+  size: number;
+  action: ExportAction;
+  wanted: string | null;
+  used_by: number;
+  problem: string | null;
+};
+
+/** Every file the export would write, with what happens to each. */
+export type ExportPlan = {
+  folder: string;
+  lists: ExportListEntry[];
+  audio: ExportAudioEntry[];
+  notes: string[];
+  copy_bytes: number;
+};
+
+/** The preview. Writes nothing; the export is made from the same plan. */
+export const planExport = (root: string, request: ExportRequest) => invoke<ExportPlan>("cases_export_plan", { root, request });
+
+/** Starts the export job ("cases-export" in the job events) and returns at once. */
+export const startExport = (root: string, request: ExportRequest) =>
+  invoke<{ folder: string; writes: number }>("cases_export_start", { root, request });
+
+/** Stops the running export before its next file; what was already written stays. */
+export const cancelExport = () => invoke<void>("cases_export_cancel");
+
+export const CASES_EXPORT_JOB = "cases-export";
+
+/** Where to export to: a native folder picker (null if cancelled). */
+export async function pickExportFolder(start: string | null): Promise<string | null> {
+  const dir = await open({ directory: true, title: "Choose the folder to export to (not on the Pacemaker)", ...(start ? { defaultPath: start } : {}) });
+  return typeof dir === "string" ? dir : null;
+}

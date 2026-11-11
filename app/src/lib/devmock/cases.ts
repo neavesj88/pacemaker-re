@@ -409,3 +409,13 @@ export const handlers: Handlers = {
     return { settings: { ...settings }, warning: null };
   },
 };
+
+/** For devmock/casesExport.ts: a saved smart case, what it matches now and the Pacemaker copy it owns. Throws the
+ *  sentence the real evaluation gives when a rule cannot run. */
+export function smartForExport(id: number): { name: string; ids: number[]; copy: number | null } | undefined {
+  const s = smartCases.find((x) => x.id === id);
+  if (!s) return undefined;
+  checkSmart(s.name, s);
+  const copy = s.device_case_id != null && cases.some((c) => c.id === s.device_case_id && c.name.startsWith(PREFIX)) ? s.device_case_id : null;
+  return { name: s.name.trim(), ids: matches(s).ids.filter(known), copy };
+}

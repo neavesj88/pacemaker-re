@@ -1,5 +1,6 @@
 //! Cases: list, create, rename, edit, delete, membership and order, favourites, duplicate, merge,
-//! copy / move between cases, bulk delete, export of one case, and smart cases.
+//! copy / move between cases, bulk delete, export of one case or of many to a folder (with the
+//! audio copied alongside; `cases/export_bulk.rs`), and smart cases.
 //!
 //! Every write goes through pm-formats `Library` (so `date_modified`, `play_time_secs` and the
 //! rest of a case row stay what the Editor and the device would write) and happens only on an
@@ -7,6 +8,8 @@
 //! device; see `cases/smart.rs`.
 
 mod export;
+mod export_bulk;
+mod export_prefs;
 mod smart;
 mod smart_export;
 mod smart_settings;
@@ -17,13 +20,22 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use pm_formats::library::{CaseInfo, CaseMeta, Error, Library, MergeDest, MergeDone, MergePlan, TransferDone, TransferNewDone, TransferPlan};
 use serde::Serialize;
-use tauri::Manager;
+use tauri::{Manager, State};
 
 use crate::error::AppResult;
+use crate::events::{self, JOB_PROGRESS};
+use crate::jobs::{spawn_job, JobOutcome, Progress};
+use crate::state::JobLock;
+use export_prefs::ExportPrefs;
 use smart::{Data, Eval, Query, SmartCase};
 use smart_settings::SmartSettings;
 
-pub fn setup(_app: &mut tauri::App) {}
+/// The `job` name of the bulk case export in `job-progress` / `job-done` events.
+pub const JOB_CASES_EXPORT: &str = export_bulk::JOB;
+
+pub fn setup(app: &mut tauri::App) {
+    app.manage(export_bulk::Cancel::default());
+}
 
 fn now_ms() -> i64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis() as i64).unwrap_or(0)
@@ -433,6 +445,95 @@ pub async fn smart_cases_export(app: tauri::AppHandle, root: String, id: u32, fo
     tauri::async_runtime::spawn_blocking(move || smart_export::export_one(&root, &dir, id, &format, &dest, now_ms())).await?
 }
 
+// ---- exporting several cases to a folder ---------------------------------------------------------
+
+#[derive(Serialize)]
+pub struct ExportPrefsState {
+    prefs: ExportPrefs,
+    /// Set when the choices file could not be fully read (the defaults are used for that part).
+    warning: Option<String>,
+}
+
+/// The export choices: last folder and format, relative paths, copying the audio, what to do
+/// with files already there. App preferences, not on the device.
+#[tauri::command]
+pub async fn cases_export_prefs_get(app: tauri::AppHandle) -> AppResult<ExportPrefsState> {
+    let dir = config_dir(&app)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let (prefs, warning) = export_prefs::load(&dir);
+        Ok(ExportPrefsState { prefs, warning })
+    })
+    .await?
+}
+
+/// Saves the export choices in the app's config dir.
+#[tauri::command]
+pub async fn cases_export_prefs_set(app: tauri::AppHandle, prefs: ExportPrefs) -> AppResult<ExportPrefsState> {
+    let dir = config_dir(&app)?;
+    tauri::async_runtime::spawn_blocking(move || -> AppResult<ExportPrefsState> {
+        export_prefs::save(&dir, &prefs)?;
+        let (prefs, warning) = export_prefs::load(&dir);
+        Ok(ExportPrefsState { prefs, warning })
+    })
+    .await?
+}
+
+/// Everything an export would do, file by file, without writing anything: the dialog's preview
+/// and the list the user confirms. The export runs from the same function.
+#[tauri::command]
+pub async fn cases_export_plan(app: tauri::AppHandle, root: String, request: export_bulk::Request) -> AppResult<export_bulk::Plan> {
+    let dir = config_dir(&app)?;
+    tauri::async_runtime::spawn_blocking(move || -> AppResult<export_bulk::Plan> {
+        let lib = Library::open_read_only(&PathBuf::from(&root))?;
+        Ok(export_bulk::build(&lib, &dir, &root, &request, now_ms())?.plan())
+    })
+    .await?
+}
+
+#[derive(Serialize)]
+pub struct ExportStarted {
+    folder: String,
+    /// Files the job will write (audio copies plus playlists): the progress total.
+    writes: usize,
+}
+
+/// Starts the export as a background job (it writes only into the chosen folder, never to the
+/// device) and returns at once; progress and the end arrive as `job-progress` / `job-done` events
+/// of job `cases-export`. A folder or selection that cannot work is an error here, before any file.
+#[tauri::command]
+pub async fn cases_export_start(app: tauri::AppHandle, lock: State<'_, JobLock>, root: String, request: export_bulk::Request) -> AppResult<ExportStarted> {
+    let dir = config_dir(&app)?;
+    let (d, r, q) = (dir.clone(), root.clone(), request.clone());
+    let writes = tauri::async_runtime::spawn_blocking(move || -> AppResult<usize> {
+        let lib = Library::open_read_only(&PathBuf::from(&r))?;
+        Ok(export_bulk::build(&lib, &d, &r, &q, now_ms())?.writes())
+    })
+    .await??;
+    let folder = request.folder.clone();
+    let shown = folder.clone();
+    spawn_job(app, &lock, JOB_CASES_EXPORT, move |app| {
+        // cleared only once this call owns the job lock, so a refused second start cannot un-cancel a running export
+        let cancel = &app.state::<export_bulk::Cancel>().0;
+        cancel.store(false, std::sync::atomic::Ordering::SeqCst);
+        let lib = Library::open_read_only(&PathBuf::from(&root))?;
+        let built = export_bulk::build(&lib, &dir, &root, &request, now_ms())?;
+        let out = export_bulk::execute(&lib, &built, cancel, &mut |s| {
+            let mut p = Progress::new(JOB_CASES_EXPORT, s.label, s.done, s.total, s.status);
+            p.error = s.error;
+            events::emit(app, JOB_PROGRESS, p);
+        });
+        Ok(JobOutcome { ok: out.lists_written + out.audio_copied, failed: out.failed.len(), summary: out.summary(&shown) })
+    })?;
+    Ok(ExportStarted { folder, writes })
+}
+
+/// Asks the running case export to stop. It ends before the next file (a copy stops within a
+/// block and removes its partial file); files already written stay. Does nothing when no export runs.
+#[tauri::command]
+pub fn cases_export_cancel(app: tauri::AppHandle) {
+    app.state::<export_bulk::Cancel>().0.store(true, std::sync::atomic::Ordering::SeqCst);
+}
+
 /// The library-wide rekordbox XML, smart cases included per the settings. For the Import view's
 /// "Export XML" (`import::interop_export`), so there is one library export. Blocking.
 pub fn library_xml(app: &tauri::AppHandle, root: &str) -> AppResult<smart_export::LibraryXml> {
@@ -478,6 +579,11 @@ macro_rules! cases_commands {
                 $crate::commands::cases::smart_cases_export,
                 $crate::commands::cases::smart_settings_get,
                 $crate::commands::cases::smart_settings_set,
+                $crate::commands::cases::cases_export_prefs_get,
+                $crate::commands::cases::cases_export_prefs_set,
+                $crate::commands::cases::cases_export_plan,
+                $crate::commands::cases::cases_export_start,
+                $crate::commands::cases::cases_export_cancel,
             ];
             $($rest),*
         }

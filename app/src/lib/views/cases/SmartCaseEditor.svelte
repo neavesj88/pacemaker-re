@@ -1,5 +1,6 @@
 <script lang="ts">
   import { evaluateRules, type Preview, type Query, type SmartCase, type SortField } from "$lib/api/cases";
+  import { caseExport } from "$lib/state/caseExport.svelte";
   import { cases } from "$lib/state/cases.svelte";
   import { jobs } from "$lib/state/jobs.svelte";
   import { session } from "$lib/state/session.svelte";
@@ -9,6 +10,7 @@
   import Button from "$lib/ui/Button.svelte";
   import ContextMenu, { type MenuItem } from "$lib/ui/ContextMenu.svelte";
   import ConfirmDialog from "./ConfirmDialog.svelte";
+  import { exportMenuItems, PLAIN_LABELS } from "./exportMenu";
   import SmartPreview from "./SmartPreview.svelte";
   import SmartRuleGroup from "./SmartRuleGroup.svelte";
 
@@ -115,11 +117,11 @@
     menu = {
       x: r.left,
       y: r.bottom + 2,
-      items: [
-        { label: "M3U8 playlist…", onclick: () => cases.exportSmart(target, "m3u8") },
-        { label: "CSV list…", onclick: () => cases.exportSmart(target, "csv") },
-        { label: "rekordbox XML (as a playlist)…", onclick: () => cases.exportSmart(target, "rekordbox") },
-      ],
+      items: exportMenuItems({
+        run: (f) => cases.exportSmart(target, f),
+        options: () => caseExport.show({ caseIds: [], smartIds: [id] }),
+        labels: { ...PLAIN_LABELS, rekordbox: "rekordbox XML (as a playlist)…" },
+      }),
     };
   }
 

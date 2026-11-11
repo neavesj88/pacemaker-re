@@ -42,6 +42,8 @@ import {
 import { pickSavePath } from "$lib/api/import";
 import type { Collection } from "$lib/api/types";
 import { baseName } from "$lib/format";
+import { caseExport } from "./caseExport.svelte";
+import { EXT, FORMAT_LABEL, saveSuggestion } from "./exportLogic";
 import { jobs } from "./jobs.svelte";
 import { session } from "./session.svelte";
 import { referencedCases } from "./smartRules";
@@ -271,13 +273,13 @@ class Cases {
   async exportOne(c: { id: number; name: string }, format: CaseExportFormat) {
     const root = this.#root();
     if (!root) return;
-    const safe = c.name.replace(/[\\/:*?"<>|]+/g, "_").trim() || "case";
-    const [ext, label] = format === "m3u8" ? ["m3u8", "M3U8 playlist"] : format === "csv" ? ["csv", "CSV list"] : ["xml", "rekordbox XML"];
     try {
-      const dest = await pickSavePath(`${safe}.${ext}`, label, ext);
+      await caseExport.ensure();
+      const dest = await pickSavePath(saveSuggestion(caseExport.saved, c.name, EXT[format]), FORMAT_LABEL[format], EXT[format]);
       if (!dest) return;
       const r = await exportCase(root, c.id, format, dest);
       toast.show(`Saved ${r.tracks} track${r.tracks === 1 ? "" : "s"} to ${baseName(r.path)}`, "ok");
+      void caseExport.rememberQuick(dest, format);
     } catch (e) {
       toast.show(`Could not export: ${e}`, "bad", 8000);
     }
@@ -288,13 +290,13 @@ class Cases {
   async exportSmart(s: { id: number; name: string }, format: CaseExportFormat) {
     const root = this.#root();
     if (!root) return;
-    const safe = s.name.replace(/[\\/:*?"<>|]+/g, "_").trim() || "smart case";
-    const [ext, label] = format === "m3u8" ? ["m3u8", "M3U8 playlist"] : format === "csv" ? ["csv", "CSV list"] : ["xml", "rekordbox XML"];
     try {
-      const dest = await pickSavePath(`${safe}.${ext}`, label, ext);
+      await caseExport.ensure();
+      const dest = await pickSavePath(saveSuggestion(caseExport.saved, s.name, EXT[format], "smart case"), FORMAT_LABEL[format], EXT[format]);
       if (!dest) return;
       const r = await exportSmartCase(root, s.id, format, dest);
       toast.show(`Saved ${r.tracks} track${r.tracks === 1 ? "" : "s"} that “${s.name}” matches now to ${baseName(r.path)}`, "ok", 6000);
+      void caseExport.rememberQuick(dest, format);
     } catch (e) {
       toast.show(`Could not export: ${e}`, "bad", 8000);
     }

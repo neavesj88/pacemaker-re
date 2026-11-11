@@ -14,8 +14,11 @@
   import ContextMenu, { type MenuItem } from "$lib/ui/ContextMenu.svelte";
   import Stars from "$lib/ui/Stars.svelte";
   import Table, { type Column } from "$lib/ui/Table.svelte";
+  import { caseExport } from "$lib/state/caseExport.svelte";
+  import { defaultSelection } from "$lib/state/exportLogic";
   import { copyName, plural } from "./caseLogic";
   import ConfirmDialog from "./ConfirmDialog.svelte";
+  import { exportMenuItems } from "./exportMenu";
   import MergeDialog from "./MergeDialog.svelte";
   import NameDialog from "./NameDialog.svelte";
   import SmartSettingsDialog from "./SmartSettingsDialog.svelte";
@@ -113,11 +116,19 @@
     },
   };
 
-  const exportItems = (c: CaseInfo): MenuItem[] => [
-    { label: "Export as M3U8…", onclick: () => cases.exportOne(c, "m3u8"), disabled: c.track_count === 0 },
-    { label: "Export as CSV…", onclick: () => cases.exportOne(c, "csv"), disabled: c.track_count === 0 },
-    { label: "Export as rekordbox XML…", onclick: () => cases.exportOne(c, "rekordbox"), disabled: c.track_count === 0 },
-  ];
+  const exportItems = (c: CaseInfo): MenuItem[] =>
+    exportMenuItems({
+      run: (f) => cases.exportOne(c, f),
+      options: () => caseExport.show({ caseIds: [c.id], smartIds: [] }),
+      disabled: c.track_count === 0,
+      labels: { m3u8: "Export as M3U8…", csv: "Export as CSV…", rekordbox: "Export as rekordbox XML…" },
+    });
+
+  // the ticked cases, or (nothing ticked) every case and smart case; the dialog shows what it will write
+  function exportMany() {
+    if (picked.size > 0) void caseExport.show({ caseIds: [...picked], smartIds: [] });
+    else void caseExport.show(defaultSelection(cases.infos, cases.smart));
+  }
 
   const menuItems = (c: CaseInfo): MenuItem[] => [
     { label: "Open", onclick: () => open(c) },
@@ -187,6 +198,11 @@
       title="Show what rewriting the Pacemaker copy of every smart case that is switched on would change, then do it if you agree"
     >Refresh smart cases…</Button>
   {/if}
+  <Button
+    disabled={cases.infos.length === 0 && cases.smart.length === 0}
+    onclick={exportMany}
+    title="Save several cases as playlist files in a folder, one file per case, with the audio copied alongside if you like"
+  >Export{picked.size > 0 ? ` ${picked.size} ticked` : " all"}…</Button>
   <Button onclick={() => (settingsOpen = true)} title="Whether the Pacemaker copies of smart cases refresh by themselves, and how smart cases are exported">Smart case settings…</Button>
   <span class="muted">Cases are the Pacemaker's own playlists; the order here is the order on the device.</span>
 </div>
