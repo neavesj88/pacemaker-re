@@ -2,7 +2,7 @@
 // export audio. Each asks the user the way it must (unsaved changes, naming what is deleted,
 // file dialogs) and reports the outcome with a toast.
 import { open, save } from "@tauri-apps/plugin-dialog";
-import { exportCancel, exportMixAudio } from "$lib/api/export";
+import { exportCancel, exportCueTarget, exportMixAudio } from "$lib/api/export";
 import { mixDelete, mixExportPmk, mixImportPmk, mixRename, type MixSummary } from "$lib/api/mixes";
 import { mixes } from "$lib/state/mixes.svelte";
 import { tracklist } from "$lib/state/tracklist.svelte";
@@ -164,16 +164,46 @@ export async function exportAudio() {
   }
   if (!dest) return;
   const format = dest.toLowerCase().endsWith(".wav") ? "wav" : "ogg";
+  tracklist.ensureLoaded();
+  let replaceCue = false;
+  if (tracklist.writeCue) {
+    // the save dialog only asked about the audio file: a .cue beside it is a second file
+    try {
+      const target = await exportCueTarget(dest);
+      if (target.exists) {
+        if (tracklist.cueIfExists === "replace") {
+          replaceCue = true;
+        } else {
+          const chosen = dest;
+          confirm.ask({
+            title: "Replace the CUE sheet",
+            message: `A CUE sheet with this name is already there. Exporting will replace it with the one of this mix once the render has finished.`,
+            items: [`Replace ${target.cuePath}`],
+            confirmLabel: "Replace it and export",
+            run: () => startExport(root, doc, chosen, format, true),
+          });
+          return;
+        }
+      }
+    } catch (e) {
+      toast.show(`Export failed: ${errText(e)}`, "bad", 12000);
+      return;
+    }
+  }
+  await startExport(root, doc, dest, format, replaceCue);
+}
+
+async function startExport(root: string, doc: NonNullable<typeof mixes.doc>, dest: string, format: "ogg" | "wav", replaceCue: boolean) {
+  if (mv.exporting) return;
   mv.exporting = true;
   mv.exportPct = 0;
   toast.show(`Rendering “${doc.name}” to ${format.toUpperCase()}…`, "info", 6000);
   try {
     // resolves when the job has started; init.ts reports the end from the job-done event
-    tracklist.ensureLoaded();
-    const started = await exportMixAudio(root, doc, dest, format, tracklist.writeCue ? tracklist.snapshot() : undefined);
+    const started = await exportMixAudio(root, doc, dest, format, tracklist.writeCue ? tracklist.snapshot() : undefined, replaceCue);
     if (started.cuePath) {
       const name = baseName(started.cuePath);
-      toast.show(started.cueReplaces ? `${name} is already there and will be replaced when the render finishes.` : `The CUE sheet ${name} is written when the render finishes.`, "info", 8000);
+      toast.show(started.cueReplaces ? `${name} will be replaced when the render finishes.` : `The CUE sheet ${name} is written when the render finishes.`, "info", 8000);
     }
   } catch (e) {
     mv.exporting = false;

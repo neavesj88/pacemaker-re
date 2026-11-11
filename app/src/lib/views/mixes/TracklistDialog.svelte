@@ -236,6 +236,13 @@
         <label class="check"><input type="checkbox" bind:checked={tracklist.options.includeUnavailable} onchange={changed} /> List tracks whose audio is not on the device (they are silent in the export)</label>
         <label class="check"><input type="checkbox" bind:checked={tracklist.options.csvBom} onchange={changed} /> CSV file starts with a byte-order mark (Excel needs it for accented names)</label>
         <label class="check"><input type="checkbox" bind:checked={tracklist.writeCue} onchange={changed} /> Write a CUE sheet next to every audio export</label>
+        <div class="grid">
+          <label for="tl-cueex">When that .cue file is already there</label>
+          <select id="tl-cueex" bind:value={tracklist.cueIfExists} onchange={changed} disabled={!tracklist.writeCue}>
+            <option value="ask">ask before replacing it</option>
+            <option value="replace">replace it without asking</option>
+          </select>
+        </div>
         <div class="muted small">These settings are kept on this computer. Lists are text you copy or save; nothing here is written to the device.</div>
       </details>
 

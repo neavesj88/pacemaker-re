@@ -13,10 +13,15 @@ export const DEFAULT_OPTIONS: TracklistOptions = {
   csvBom: true,
 };
 
+export type CueIfExists = "ask" | "replace";
+const CUE_IF_EXISTS: CueIfExists[] = ["ask", "replace"];
+
 export type TracklistPrefs = {
   options: TracklistOptions;
   /** Write a CUE sheet beside every audio export. */
   writeCue: boolean;
+  /** What an export does when its .cue already exists: ask first, or replace it. */
+  cueIfExists: CueIfExists;
   /** The format tab last used in the dialog. */
   format: TracklistFormat;
 };
@@ -34,7 +39,7 @@ const ROUNDINGS: Rounding[] = ["floor", "nearest"];
 const CLOSES: CloseEntries[] = ["merge", "drop"];
 
 export function defaultPrefs(): TracklistPrefs {
-  return { options: { ...DEFAULT_OPTIONS }, writeCue: false, format: "txt" };
+  return { options: { ...DEFAULT_OPTIONS }, writeCue: false, cueIfExists: "ask", format: "txt" };
 }
 
 /** Settings read back from storage: anything missing or of the wrong type falls back to the default. */
@@ -43,6 +48,7 @@ export function mergePrefs(saved: unknown): TracklistPrefs {
   if (!saved || typeof saved !== "object") return prefs;
   const s = saved as Record<string, unknown>;
   if (typeof s.writeCue === "boolean") prefs.writeCue = s.writeCue;
+  if (CUE_IF_EXISTS.includes(s.cueIfExists as CueIfExists)) prefs.cueIfExists = s.cueIfExists as CueIfExists;
   if (FORMATS.some((f) => f.id === s.format)) prefs.format = s.format as TracklistFormat;
   const o = (s.options && typeof s.options === "object" ? s.options : {}) as Record<string, unknown>;
   if (STAMPS.includes(o.stampAt as StampAt)) prefs.options.stampAt = o.stampAt as StampAt;

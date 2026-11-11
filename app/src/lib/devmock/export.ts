@@ -41,6 +41,11 @@ function clickWav(secs: number, bpm: number): Blob {
   return new Blob([buf], { type: "audio/wav" });
 }
 
+/** The .cue beside an audio file, and the fixture rule for "already there": a file name containing
+ * "existing" has a sheet next to it, so the replace prompt can be seen in the browser. */
+const cueFor = (audio: string) => audio.replace(/\.[^.\\/]*$/, "") + ".cue";
+const cueTaken = (cue: string) => /existing/i.test(cue.split(/[\\/]/).pop() ?? "");
+
 /** The real command refuses these before the job starts (render.rs `check_dest`). */
 function checkDest(dest: string, format: string) {
   if (/[\\/]$/.test(dest)) throw "The destination is a folder; choose a file name.";
@@ -196,12 +201,19 @@ export const handlers: Handlers = {
     mockTracklist(a.mix as MixDoc, withDefaults(a.options), String(a.audioFileName ?? ""));
     return String(a.dest); // nothing is written in the browser
   },
+  export_cue_target: (a) => {
+    const cuePath = cueFor(String(a.dest));
+    return { cuePath, exists: cueTaken(cuePath) };
+  },
   export_mix_audio: (a) => {
     const doc = a.mix as MixDoc;
     if (a.format !== "ogg" && a.format !== "wav") throw `Unknown audio format '${a.format}' (use ogg or wav).`;
     checkDest(String(a.dest), String(a.format));
     const cueSheet = a.cue ? mockTracklist(doc, withDefaults(a.cue), String(a.dest)) : null;
     if (cueSheet?.cueIssue) throw `Cannot write a CUE sheet: ${cueSheet.cueIssue}. Turn the CUE sheet off to export the audio.`;
+    const cuePath = cueSheet ? cueFor(String(a.dest)) : null;
+    const cueExists = !!cuePath && cueTaken(cuePath);
+    if (cueExists && !a.replaceCue) throw `${cuePath!.split(/[\\/]/).pop()} is already there and would be replaced. Confirm the replacement, or turn the CUE sheet off to export the audio only.`;
     if (jobLock.running) throw "Another job is still running.";
     if (!doc.clips.length) throw "the mix has no audible clips";
     // audible span (first audible frame to last clip end), like the Rust command
@@ -240,8 +252,7 @@ export const handlers: Handlers = {
         error: null,
       });
     })();
-    const cuePath = cueSheet ? String(a.dest).replace(/\.[^.\\/]*$/, "") + ".cue" : null;
-    return { path: String(a.dest), cuePath, cueReplaces: false };
+    return { path: String(a.dest), cuePath, cueReplaces: cueExists };
   },
   export_cancel: () => {
     cancelled = true;

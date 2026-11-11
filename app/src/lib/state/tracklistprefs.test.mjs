@@ -25,6 +25,12 @@ test("settings fall back to the defaults for anything missing or wrong", () => {
   assert.equal(p.options.includeUnavailable, false);
 });
 
+test("an existing .cue is asked about unless the user chose otherwise", () => {
+  assert.equal(P.defaultPrefs().cueIfExists, "ask");
+  assert.equal(P.mergePrefs({ cueIfExists: "replace" }).cueIfExists, "replace");
+  assert.equal(P.mergePrefs({ cueIfExists: "bogus" }).cueIfExists, "ask");
+});
+
 test("defaults are not shared between callers", () => {
   const a = P.defaultPrefs();
   a.options.numbered = false;

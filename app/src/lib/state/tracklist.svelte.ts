@@ -2,7 +2,7 @@
 // this browser's storage (like the track table's columns): they describe how the lists are written,
 // not anything on the device, and the dialog says so. The pure parts are in tracklistprefs.ts.
 import type { TracklistFormat, TracklistOptions } from "$lib/api/export";
-import { defaultPrefs, mergePrefs, type TracklistPrefs } from "./tracklistprefs";
+import { defaultPrefs, mergePrefs, type CueIfExists, type TracklistPrefs } from "./tracklistprefs";
 
 const STORAGE_KEY = "pacemaker-revival.tracklist";
 
@@ -21,6 +21,8 @@ class Tracklist {
   options = $state<TracklistOptions>(defaultPrefs().options);
   /** Write a CUE sheet beside every audio export of a mix. */
   writeCue = $state(false);
+  /** An export finds its .cue already there: ask first (default) or replace it. */
+  cueIfExists = $state<CueIfExists>("ask");
   format = $state<TracklistFormat>("txt");
   #loaded = false;
 
@@ -31,6 +33,7 @@ class Tracklist {
     const p = load();
     this.options = p.options;
     this.writeCue = p.writeCue;
+    this.cueIfExists = p.cueIfExists;
     this.format = p.format;
   }
 
@@ -41,7 +44,7 @@ class Tracklist {
 
   save() {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify({ options: this.options, writeCue: this.writeCue, format: this.format }));
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ options: this.options, writeCue: this.writeCue, cueIfExists: this.cueIfExists, format: this.format }));
     } catch {
       // private window, blocked or full storage: the settings still apply, they are just forgotten
     }

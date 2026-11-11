@@ -62,6 +62,28 @@ pub async fn export_render_preview(app: AppHandle, root: String, mix: MixDoc, fr
     Ok(out)
 }
 
+/// Where the CUE sheet of an audio export goes: beside the audio file, same name, `.cue`.
+fn cue_path_for(audio: &Path) -> std::path::PathBuf {
+    audio.with_extension("cue")
+}
+
+/// What `export_cue_target` tells the UI before an export.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CueTarget {
+    pub cue_path: String,
+    /// A file is already at `cue_path`.
+    pub exists: bool,
+}
+
+/// The CUE sheet an export to `dest` would write, and whether one is already there. Lets the UI
+/// ask before an existing sheet is replaced. Reads nothing but the file's existence.
+#[tauri::command]
+pub fn export_cue_target(dest: String) -> CueTarget {
+    let p = cue_path_for(Path::new(&dest));
+    CueTarget { cue_path: p.to_string_lossy().into_owned(), exists: p.exists() }
+}
+
 /// What `export_mix_audio` returns as soon as the job has started.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -70,7 +92,7 @@ pub struct ExportStarted {
     pub path: String,
     /// The CUE sheet that will be written beside it, when one was asked for.
     pub cue_path: Option<String>,
-    /// A file is already at `cue_path` and will be replaced.
+    /// A file was already at `cue_path` and will be replaced (only when the caller said it may).
     pub cue_replaces: bool,
 }
 
@@ -80,14 +102,15 @@ pub struct ExportStarted {
 /// be inside the device volume. Rendering starts at the first audible frame of the mix.
 ///
 /// `cue`: when given, a CUE sheet of the mix is written next to the audio file (same name, `.cue`,
-/// replacing one that is there) once the render has finished. It is the sheet the track list dialog
+/// replacing one that is there only when `replace_cue` is true, else the call is refused) once the
+/// render has finished. It is the sheet the track list dialog
 /// shows for the same options; it is built before the render starts, so a mix that cannot have one
 /// (more than 99 tracks) is refused up front instead of after minutes of rendering.
 #[tauri::command]
-pub fn export_mix_audio(app: AppHandle, lock: State<'_, JobLock>, root: String, mix: MixDoc, dest: String, format: String, cue: Option<TracklistOptions>) -> AppResult<ExportStarted> {
+pub fn export_mix_audio(app: AppHandle, lock: State<'_, JobLock>, root: String, mix: MixDoc, dest: String, format: String, cue: Option<TracklistOptions>, replace_cue: Option<bool>) -> AppResult<ExportStarted> {
     let plan = render::plan_export(Path::new(&root), &mix, &dest, &format)?;
     let cue_sheet = match &cue {
-        Some(opts) => Some(plan_cue(&plan, &mix, opts)?),
+        Some(opts) => Some(plan_cue(&plan, &mix, opts, replace_cue.unwrap_or(false))?),
         None => None,
     };
     let total = (plan.span_secs().ceil() as usize).max(1);
@@ -145,10 +168,13 @@ pub fn export_mix_audio(app: AppHandle, lock: State<'_, JobLock>, root: String, 
 
 /// The CUE sheet an export writes beside `plan.dest`: its path and bytes. Uses the library audio the
 /// render itself will find, so a clip the render leaves out is not in the sheet.
-fn plan_cue(plan: &render::ExportPlan, doc: &MixDoc, opts: &TracklistOptions) -> AppResult<(std::path::PathBuf, Vec<u8>)> {
-    let path = plan.dest.with_extension("cue");
+fn plan_cue(plan: &render::ExportPlan, doc: &MixDoc, opts: &TracklistOptions, replace: bool) -> AppResult<(std::path::PathBuf, Vec<u8>)> {
+    let path = cue_path_for(&plan.dest);
     if path.is_dir() {
         return Err(format!("Cannot write the CUE sheet: {} is a folder.", file_name(&path)).into());
+    }
+    if path.exists() && !replace {
+        return Err(format!("{} is already there and would be replaced. Confirm the replacement, or turn the CUE sheet off to export the audio only.", file_name(&path)).into());
     }
     let name = file_name(&plan.dest);
     let out = tracklist::render_all(doc, opts, &name, &|id| plan.res.has(id))?;
@@ -244,6 +270,7 @@ macro_rules! export_commands {
                 $crate::commands::export::export_cancel,
                 $crate::commands::export::export_tracklist,
                 $crate::commands::export::export_tracklist_save,
+                $crate::commands::export::export_cue_target,
             ];
             $($rest),*
         }

@@ -513,14 +513,22 @@ mod tests {
         assert!(onset(first_end).abs_diff(list.entries[1].start_frames as usize) < 100, "{} vs {}", onset(first_end), list.entries[1].start_frames);
 
         // the sheet an export writes beside the audio is the one the dialog shows
-        let (path, bytes) = crate::commands::export::plan_cue(&plan, &doc, &opts).unwrap();
+        let (path, bytes) = crate::commands::export::plan_cue(&plan, &doc, &opts, false).unwrap();
         assert_eq!(path, scratch.join("mix.cue"));
         assert_eq!(bytes, list.file_bytes(tracklist::Format::Cue, &opts));
         let text = String::from_utf8(bytes).unwrap();
         assert!(text.contains("FILE \"mix.wav\" WAVE") && text.contains("INDEX 01 00:03:00") && text.contains("INDEX 01 00:19:00"), "{text}");
         std::fs::create_dir(scratch.join("folder.cue")).unwrap();
         let in_the_way = plan_export(&vol, &doc, scratch.join("folder.wav").to_str().unwrap(), "wav").unwrap();
-        assert!(crate::commands::export::plan_cue(&in_the_way, &doc, &opts).unwrap_err().to_string().contains("is a folder"));
+        assert!(crate::commands::export::plan_cue(&in_the_way, &doc, &opts, true).unwrap_err().to_string().contains("is a folder"));
+        // a sheet that is already there is never replaced unless the caller said so
+        std::fs::write(&path, b"hand-edited").unwrap();
+        let err = crate::commands::export::plan_cue(&plan, &doc, &opts, false).unwrap_err().to_string();
+        assert!(err.contains("mix.cue is already there"), "{err}");
+        assert_eq!(std::fs::read(&path).unwrap(), b"hand-edited", "planning must not touch the file");
+        assert_eq!(crate::commands::export::plan_cue(&plan, &doc, &opts, true).unwrap().0, path);
+        let target = crate::commands::export::export_cue_target(plan.dest.to_string_lossy().into_owned());
+        assert!(target.exists && target.cue_path.ends_with("mix.cue"));
         std::fs::remove_dir_all(vol).unwrap();
         std::fs::remove_dir_all(scratch).unwrap();
     }

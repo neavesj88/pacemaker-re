@@ -29,9 +29,16 @@ export type MixExportStarted = {
   path: string;
   /** The CUE sheet that will be written beside the audio, when one was asked for. */
   cuePath: string | null;
-  /** A file is already at `cuePath` and will be replaced. */
+  /** A file was already at `cuePath` and will be replaced (only when `replaceCue` said it may). */
   cueReplaces: boolean;
 };
+
+/** Where the CUE sheet of an audio export to `dest` would go, and whether a file is already there. */
+export type CueTarget = { cuePath: string; exists: boolean };
+
+/** Asks before an export: the CUE sheet it would write beside `dest`, and whether one exists.
+ * Reads nothing but the file's existence. */
+export const exportCueTarget = (dest: string) => invoke<CueTarget>("export_cue_target", { dest });
 
 /** The `job` name of mix exports in the `job-progress` / `job-done` events. */
 export const MIX_EXPORT_JOB = "mix-export";
@@ -45,10 +52,12 @@ export const MIX_EXPORT_JOB = "mix-export";
  * starts at the mix's first audible frame.
  *
  * `cue`: pass the track list options to also write a CUE sheet beside the audio (same name,
- * `.cue`, replacing one that is there; `cueReplaces` in the result says so) when the render has
- * finished. Rejects up front when the mix cannot have one (more than 99 tracks). Omit for audio only. */
-export const exportMixAudio = (root: string, mix: MixDoc, dest: string, format: "ogg" | "wav", cue?: TracklistOptions) =>
-  invoke<MixExportStarted>("export_mix_audio", { root, mix, dest, format, cue: cue ?? null });
+ * `.cue`) when the render has finished. An existing `.cue` of that name is replaced only when
+ * `replaceCue` is true (`cueReplaces` in the result says it happened); otherwise the call rejects
+ * and nothing starts. Rejects up front when the mix cannot have one (more than 99 tracks). Omit
+ * `cue` for audio only. */
+export const exportMixAudio = (root: string, mix: MixDoc, dest: string, format: "ogg" | "wav", cue?: TracklistOptions, replaceCue = false) =>
+  invoke<MixExportStarted>("export_mix_audio", { root, mix, dest, format, cue: cue ?? null, replaceCue });
 
 /** Asks the running mix export to stop. The render ends at its next block, no file is left, and
  * the job reports `job-done` with a "cancelled" summary (not an error). Does nothing when no

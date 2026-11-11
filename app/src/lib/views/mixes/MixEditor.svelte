@@ -194,20 +194,18 @@
     </label>
     <Button small onclick={() => mv.fit(doc.length)} title="Show the whole mix">Fit</Button>
     <Button small active={mv.pickerOpen} onclick={() => (mv.pickerOpen = !mv.pickerOpen)}>Tracks</Button>
-    <span class="grow"></span>
-    {#if mixes.problems.length > 0}
-      <span class="problem" title={mixes.problems.join("\n")}>⚠ {mixes.problems.length} problem{mixes.problems.length === 1 ? "" : "s"} blocking save</span>
-    {/if}
-    <Button disabled={doc.clips.length === 0} onclick={() => (tracklist.open = true)} title="Start times of the tracks as text, CSV, YouTube chapters or a CUE sheet">Track list</Button>
-    <label class="ctl" title="Also write NAME.cue beside the audio file when it is exported (it replaces a .cue with that name that is already there)">
-      <input type="checkbox" bind:checked={tracklist.writeCue} onchange={() => tracklist.save()} /> with .cue
-    </label>
-    <Button disabled={mv.exporting || doc.clips.length === 0} onclick={() => void exportAudio()} title="Render the mix to an audio file">
-      {mv.exporting ? (mv.exportPct > 0 ? `Exporting ${Math.round(mv.exportPct * 100)}%` : "Exporting…") : "Export audio"}
-    </Button>
-    {#if mv.exporting}
-      <Button onclick={() => void cancelExport()} title="Stop rendering; no file is kept">Cancel export</Button>
-    {/if}
+    <div class="acts">
+      {#if mixes.problems.length > 0}
+        <span class="problem" title={mixes.problems.join("\n")}>⚠ {mixes.problems.length} problem{mixes.problems.length === 1 ? "" : "s"} blocking save</span>
+      {/if}
+      <Button disabled={doc.clips.length === 0} onclick={() => (tracklist.open = true)} title="Start times of the tracks as text, CSV, YouTube chapters or a CUE sheet. Its settings also say whether Export audio writes a .cue beside the audio.">Track list</Button>
+      <Button disabled={mv.exporting || doc.clips.length === 0} onclick={() => void exportAudio()} title="Render the mix to an audio file">
+        {mv.exporting ? (mv.exportPct > 0 ? `Exporting ${Math.round(mv.exportPct * 100)}%` : "Exporting…") : "Export audio"}
+      </Button>
+      {#if mv.exporting}
+        <Button onclick={() => void cancelExport()} title="Stop rendering; no file is kept">Cancel export</Button>
+      {/if}
+    </div>
   </div>
   {#if mv.exporting}<div class="progress" role="progressbar" aria-label="Exporting audio"><i></i></div>{/if}
 
@@ -274,8 +272,12 @@
     height: 20px;
     background: var(--line);
   }
-  .grow {
-    flex: 1;
+  /* the right-hand actions stay together: when the toolbar is too narrow they move to a second row as a group */
+  .acts {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-left: auto;
   }
   .ctl {
     display: inline-flex;
