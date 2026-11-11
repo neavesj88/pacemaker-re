@@ -48,6 +48,17 @@ function clickWav(secs: number, bpm: number, gainDb = 0): Blob {
 const cueFor = (audio: string) => audio.replace(/\.[^.\\/]*$/, "") + ".cue";
 const cueTaken = (cue: string) => /existing/i.test(cue.split(/[\\/]/).pop() ?? "");
 
+/** Likewise a file name containing "occupied" is an audio file that is already there. */
+const audioTaken = (audio: string) => /occupied/i.test(audio.split(/[\\/]/).pop() ?? "");
+
+/** The cover fixtures the real check tells apart: a name containing "missing" or "huge". */
+function coverProblem(path: string): string | null {
+  const name = path.split(/[\\/]/).pop() ?? path;
+  if (/missing/i.test(name)) return `The cover image ${name} cannot be read: file not found. Choose another image or remove the cover.`;
+  if (/huge/i.test(name)) return `The cover image ${name} is 12 MB; the most a tag takes is 8 MB. Use a smaller image.`;
+  return null;
+}
+
 /** The real command refuses these before the job starts (render.rs `check_dest`). */
 function checkDest(dest: string, format: string) {
   if (/[\\/]$/.test(dest)) throw "The destination is a folder; choose a file name.";
@@ -324,8 +335,9 @@ export const handlers: Handlers = {
   },
   export_cue_target: (a) => {
     const cuePath = cueFor(String(a.dest));
-    return { cuePath, exists: cueTaken(cuePath) };
+    return { cuePath, exists: cueTaken(cuePath), audioExists: audioTaken(String(a.dest)) };
   },
+  export_cover_check: (a) => coverProblem(String(a.path)),
   export_mix_audio: (a) => {
     const doc = a.mix as MixDoc;
     if (!["ogg", "wav", "flac", "mp3"].includes(String(a.format))) throw `Unknown audio format '${a.format}' (use ogg, wav, flac or mp3).`;
@@ -336,11 +348,13 @@ export const handlers: Handlers = {
     const enc = (a.encoding as Partial<EncodingSpec> | null) ?? {};
     if (enc.mp3?.kind === "cbr" && ![96, 112, 128, 160, 192, 224, 256, 320].includes(enc.mp3.kbps)) throw `${enc.mp3.kbps} kbit/s is not an MP3 bitrate here (use one of [96, 112, 128, 160, 192, 224, 256, 320]).`;
     if (enc.mp3?.kind === "vbr" && !(enc.mp3.quality >= 0 && enc.mp3.quality <= 9)) throw `MP3 variable-bitrate quality ${enc.mp3.quality} is out of range (0 is best, 9 smallest).`;
+    if (enc.mp3Effort !== undefined && !(Number.isInteger(enc.mp3Effort) && enc.mp3Effort >= 0 && enc.mp3Effort <= 9)) throw `MP3 encoder effort ${enc.mp3Effort} is out of range (0 is best and slowest, 9 fastest).`;
+    if (enc.oggQuality !== undefined && !(Number.isInteger(enc.oggQuality) && enc.oggQuality >= -1 && enc.oggQuality <= 10)) throw `Ogg quality ${enc.oggQuality} is out of range (use -1 to 10, in tenths).`;
     if (enc.flacBits !== undefined && enc.flacBits !== 16 && enc.flacBits !== 24) throw `${enc.flacBits} bits is not a FLAC sample size here (use 16 or 24).`;
     const tags = a.tags as TagSpec | null;
     const coverName = tags?.coverPath?.split(/[\\/]/).pop();
-    if (coverName && /missing/i.test(coverName)) throw `The cover image ${coverName} cannot be read: file not found. Choose another image or remove the cover.`;
-    if (coverName && /huge/i.test(coverName)) throw `The cover image ${coverName} is 12 MB; the most a tag takes is 8 MB. Use a smaller image.`;
+    const coverBad = tags?.coverPath ? coverProblem(tags.coverPath) : null;
+    if (coverBad) throw coverBad;
     const chapterCount = tags?.chapters ? mockTracklist(doc, withDefaults(tags.chapters), String(a.dest)).entries.length : 0;
     const noCover = a.format === "wav" && !!coverName;
     const cueSheet = a.cue ? mockTracklist(doc, withDefaults(a.cue), String(a.dest)) : null;

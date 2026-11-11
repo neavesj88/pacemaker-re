@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 
 use pm_formats::mix::{Mix, Position, Track};
 use pm_mixer::tags::{Chapter, Cover, Tags};
-use pm_mixer::{engine, Encoding, FlacLevel, Format, Mp3Rate, Options, RATE};
+use pm_mixer::{engine, Encoding, FlacLevel, Format, Mp3Rate, Mp3Stereo, Options, RATE};
 
 const SR: usize = RATE as usize;
 
@@ -236,6 +236,40 @@ fn mp3_vbr_quality_changes_the_size_and_writes_a_xing_frame() {
 }
 
 #[test]
+fn mp3_stereo_mode_and_effort_are_settings_and_every_combination_decodes() {
+    let d = dir("mp3-opts");
+    let n = put_sine(&d, "a.wav", 440.0, 3.0, 0.5);
+    let m = mix_of("a.wav", n);
+    for (stereo, effort) in [(Mp3Stereo::Joint, 2u8), (Mp3Stereo::Stereo, 2), (Mp3Stereo::Joint, 9), (Mp3Stereo::Stereo, 0)] {
+        let enc = Encoding { mp3: Mp3Rate::Cbr(192), mp3_stereo: stereo, mp3_effort: effort, ..Encoding::new(Format::Mp3) };
+        let (dest, _) = render(&d, &m, &enc, &format!("o-{stereo:?}-{effort}.mp3"));
+        check_audio(&dest, n, 0.5, 2400, &format!("mp3 {stereo:?} effort {effort}"));
+    }
+    // the first frame header says which mode was written: bits 7-6 of byte 3 (00 stereo, 01 joint)
+    let mode_of = |name: &str| {
+        let b = std::fs::read(d.join(name)).unwrap();
+        b[3] >> 6
+    };
+    assert_eq!(mode_of("o-Joint-2.mp3"), 1, "joint stereo");
+    assert_eq!(mode_of("o-Stereo-2.mp3"), 0, "plain stereo");
+}
+
+#[test]
+fn ogg_quality_is_a_setting_and_higher_is_larger() {
+    let d = dir("ogg-quality");
+    // several tones at once so the encoder has something to spend bits on
+    let n = put_sine(&d, "a.wav", 440.0, 6.0, 0.4);
+    let m = mix_of("a.wav", n);
+    let mut sizes = Vec::new();
+    for q in [-1i8, 10] {
+        let enc = Encoding { ogg_quality: q, ..Encoding::new(Format::Ogg) };
+        let (dest, _) = render(&d, &m, &enc, &format!("q{q}.ogg"));
+        sizes.push(std::fs::metadata(&dest).unwrap().len());
+    }
+    assert!(sizes[0] < sizes[1], "quality -1 is smaller than quality 10: {sizes:?}");
+}
+
+#[test]
 fn mp3_without_tags_has_no_id3_header_and_bad_settings_are_refused_before_any_file() {
     let d = dir("mp3-plain");
     let n = put_sine(&d, "a.wav", 440.0, 3.0, 0.5);
@@ -247,6 +281,9 @@ fn mp3_without_tags_has_no_id3_header_and_bad_settings_are_refused_before_any_fi
         Encoding { mp3: Mp3Rate::Cbr(100), ..Encoding::new(Format::Mp3) },
         Encoding { mp3: Mp3Rate::Vbr(10), ..Encoding::new(Format::Mp3) },
         Encoding { flac_bits: 20, ..Encoding::new(Format::Flac) },
+        Encoding { mp3_effort: 10, ..Encoding::new(Format::Mp3) },
+        Encoding { ogg_quality: 11, ..Encoding::new(Format::Ogg) },
+        Encoding { ogg_quality: -2, ..Encoding::new(Format::Ogg) },
     ] {
         let dest = d.join("bad.out");
         let e = pm_mixer::render_to_file_with(&m, &engine::dir_resolver(&d), &Options::default(), &enc, &dest, &mut |_| true);

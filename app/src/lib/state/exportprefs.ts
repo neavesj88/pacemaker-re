@@ -31,6 +31,13 @@ export const AUDIO_FORMATS: { id: AudioFormat; label: string; ext: string; hint:
   { id: "wav", label: "WAV (16-bit)", ext: "wav", hint: "Uncompressed" },
 ];
 
+/** Ogg Vorbis quality is chosen in tenths (the encoder takes -0.1 to 1.0), -1 smallest to 10 best;
+ * 6 is what exports have always used. LAME's algorithm quality ("effort") 2 is the one exports
+ * have always used; it changes speed and quality, not the bitrate. */
+export const OGG_QUALITY_RANGE = [-1, 10] as const;
+export const OGG_QUALITY_DEFAULT = 6;
+export const MP3_EFFORT_DEFAULT = 2;
+
 export const MP3_CBR_KBPS = [96, 112, 128, 160, 192, 224, 256, 320] as const;
 
 /** LAME's variable-bitrate qualities with the average bitrate its documentation gives for music
@@ -60,6 +67,33 @@ export const extOf = (f: AudioFormat): string => AUDIO_FORMATS.find((x) => x.id 
 export function resolveDest(path: string, chosen: AudioFormat): { path: string; format: AudioFormat } {
   const f = formatOfPath(path);
   return f ? { path, format: f } : { path: `${path.replace(/\.+$/, "")}.${extOf(chosen)}`, format: chosen };
+}
+
+/** Whether the export needs to look at what is already on disk before it starts: when the name
+ * was changed after the save window closed (its overwrite prompt never saw the final name), or a
+ * CUE sheet is written beside the file. */
+export const needsDiskCheck = (picked: string, dest: string, writeCue: boolean): boolean => dest !== picked || writeCue;
+
+/** What an export would replace that the save window did not ask about, given what
+ * `export_cue_target` found: the lines the confirm lists (empty = nothing to ask), and whether the
+ * CUE sheet is replaced. A CUE sheet is replaced without asking when the user's setting says so. */
+export function replacements(
+  picked: string,
+  dest: string,
+  format: AudioFormat,
+  writeCue: boolean,
+  cueIfExists: "replace" | "ask",
+  target: { cuePath: string; exists: boolean; audioExists: boolean } | null,
+): { items: string[]; replaceCue: boolean } {
+  const items: string[] = [];
+  let replaceCue = false;
+  if (!target) return { items, replaceCue };
+  if (dest !== picked && target.audioExists) items.push(`Replace ${dest} (the name got “.${extOf(format)}” added after the save window closed, so it never asked)`);
+  if (writeCue && target.exists) {
+    replaceCue = true;
+    if (cueIfExists !== "replace") items.push(`Replace ${target.cuePath} (the CUE sheet beside it)`);
+  }
+  return { items, replaceCue };
 }
 
 /** The save dialog's file type list with `selected` first (dialogs preselect the first). */
@@ -115,6 +149,9 @@ export type ExportPrefs = {
   mp3Mode: "cbr" | "vbr";
   mp3Kbps: number;
   mp3Quality: number;
+  mp3Stereo: "joint" | "stereo";
+  mp3Effort: number;
+  oggQuality: number;
   flacBits: 16 | 24;
   flacLevel: FlacLevel;
   // ---- the tags ----
@@ -149,6 +186,9 @@ export const DEFAULT_PREFS: ExportPrefs = {
   mp3Mode: "cbr",
   mp3Kbps: 192,
   mp3Quality: 2,
+  mp3Stereo: "joint",
+  mp3Effort: MP3_EFFORT_DEFAULT,
+  oggQuality: OGG_QUALITY_DEFAULT,
   flacBits: 16,
   flacLevel: "standard",
   writeTags: true,
@@ -186,6 +226,9 @@ export function mergePrefs(saved: unknown): ExportPrefs {
   if (s.mp3Mode === "cbr" || s.mp3Mode === "vbr") p.mp3Mode = s.mp3Mode;
   if ((MP3_CBR_KBPS as readonly unknown[]).includes(s.mp3Kbps)) p.mp3Kbps = s.mp3Kbps as number;
   if (Number.isInteger(s.mp3Quality) && inRange(s.mp3Quality, [0, 9])) p.mp3Quality = s.mp3Quality as number;
+  if (s.mp3Stereo === "joint" || s.mp3Stereo === "stereo") p.mp3Stereo = s.mp3Stereo;
+  if (Number.isInteger(s.mp3Effort) && inRange(s.mp3Effort, [0, 9])) p.mp3Effort = s.mp3Effort as number;
+  if (Number.isInteger(s.oggQuality) && inRange(s.oggQuality, OGG_QUALITY_RANGE)) p.oggQuality = s.oggQuality as number;
   if (s.flacBits === 16 || s.flacBits === 24) p.flacBits = s.flacBits;
   if (FLAC_LEVELS.some((l) => l.id === s.flacLevel)) p.flacLevel = s.flacLevel as FlacLevel;
   if (typeof s.writeTags === "boolean") p.writeTags = s.writeTags;
@@ -225,6 +268,9 @@ export const rangePrefsOf = (p: ExportPrefs): RangePrefs => ({ endAt: p.endAt, e
 export function encodingOf(p: ExportPrefs): EncodingSpec {
   return {
     mp3: p.mp3Mode === "vbr" ? { kind: "vbr", quality: p.mp3Quality } : { kind: "cbr", kbps: p.mp3Kbps },
+    mp3Stereo: p.mp3Stereo,
+    mp3Effort: p.mp3Effort,
+    oggQuality: p.oggQuality,
     flacBits: p.flacBits,
     flacLevel: p.flacLevel,
   };

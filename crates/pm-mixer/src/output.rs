@@ -65,6 +65,40 @@ impl Mp3Rate {
     }
 }
 
+/// How LAME codes the two channels: joint stereo shares what the channels have in common (smaller
+/// at the same quality), plain stereo codes them independently.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Mp3Stereo {
+    #[default]
+    Joint,
+    Stereo,
+}
+
+/// The default LAME algorithm quality (2, "near best"): 0 is the slowest and best, 9 the fastest.
+pub const MP3_EFFORT_DEFAULT: u8 = 2;
+
+/// The default Ogg Vorbis quality in tenths (0.6, about 192 kbit/s for music).
+pub const OGG_QUALITY_DEFAULT: i8 = 6;
+
+/// The Ogg Vorbis qualities offered, in tenths: -1 (smallest) to 10 (best).
+pub const OGG_QUALITY_RANGE: (i8, i8) = (-1, 10);
+
+/// LAME's quality level `q` (0 best and slowest, 9 fastest); anything above 9 is 9.
+fn lame_quality(q: u8) -> LameQuality {
+    match q {
+        0 => LameQuality::Best,
+        1 => LameQuality::SecondBest,
+        2 => LameQuality::NearBest,
+        3 => LameQuality::VeryNice,
+        4 => LameQuality::Nice,
+        5 => LameQuality::Good,
+        6 => LameQuality::Decent,
+        7 => LameQuality::Ok,
+        8 => LameQuality::SecondWorst,
+        _ => LameQuality::Worst,
+    }
+}
+
 /// How hard the FLAC encoder works for a smaller file. The audio is identical at every level.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum FlacLevel {
@@ -80,6 +114,11 @@ pub enum FlacLevel {
 pub struct Encoding {
     pub format: Format,
     pub mp3: Mp3Rate,
+    pub mp3_stereo: Mp3Stereo,
+    /// LAME's algorithm quality, 0 (best, slowest) to 9 (fastest); it does not change the bitrate.
+    pub mp3_effort: u8,
+    /// Ogg Vorbis quality in tenths, -1 to 10 (6 = 0.6).
+    pub ogg_quality: i8,
     /// FLAC sample size: 16 (dithered, like the WAV) or 24.
     pub flac_bits: u8,
     pub flac_level: FlacLevel,
@@ -88,11 +127,17 @@ pub struct Encoding {
 
 impl Encoding {
     pub fn new(format: Format) -> Encoding {
-        Encoding { format, mp3: Mp3Rate::default(), flac_bits: 16, flac_level: FlacLevel::default(), tags: None }
+        Encoding { format, mp3: Mp3Rate::default(), mp3_stereo: Mp3Stereo::default(), mp3_effort: MP3_EFFORT_DEFAULT, ogg_quality: OGG_QUALITY_DEFAULT, flac_bits: 16, flac_level: FlacLevel::default(), tags: None }
     }
 
     pub fn validate(&self) -> Result<(), Error> {
         self.mp3.validate()?;
+        if self.mp3_effort > 9 {
+            return Err(Error::Invalid(format!("MP3 encoder effort {} is out of range (0 is best and slowest, 9 fastest).", self.mp3_effort)));
+        }
+        if !(OGG_QUALITY_RANGE.0..=OGG_QUALITY_RANGE.1).contains(&self.ogg_quality) {
+            return Err(Error::Invalid(format!("Ogg quality {} is out of range (use {} to {}, in tenths).", self.ogg_quality, OGG_QUALITY_RANGE.0, OGG_QUALITY_RANGE.1)));
+        }
         if self.flac_bits != 16 && self.flac_bits != 24 {
             return Err(Error::Invalid(format!("{} bits is not a FLAC sample size here (use 16 or 24).", self.flac_bits)));
         }
@@ -257,8 +302,12 @@ fn write_mp3(mix: &pm_formats::mix::Mix, res: &dyn Resolver, opts: &Options, enc
     let mut b = LameBuilder::new().ok_or_else(|| Error::Encode("MP3: the encoder could not be created".into()))?;
     b.set_num_channels(2).map_err(lame)?;
     b.set_sample_rate(RATE).map_err(lame)?;
-    b.set_mode(LameMode::JointStereo).map_err(lame)?;
-    b.set_quality(LameQuality::NearBest).map_err(lame)?;
+    b.set_mode(match enc.mp3_stereo {
+        Mp3Stereo::Joint => LameMode::JointStereo,
+        Mp3Stereo::Stereo => LameMode::Stereo,
+    })
+    .map_err(lame)?;
+    b.set_quality(lame_quality(enc.mp3_effort)).map_err(lame)?;
     match enc.mp3 {
         Mp3Rate::Cbr(k) => {
             b.set_vbr_mode(VbrMode::Off).map_err(lame)?;
@@ -276,19 +325,7 @@ fn write_mp3(mix: &pm_formats::mix::Mix, res: &dyn Resolver, opts: &Options, enc
         }
         Mp3Rate::Vbr(q) => {
             b.set_vbr_mode(VbrMode::Mtrh).map_err(lame)?;
-            b.set_vbr_quality(match q {
-                0 => LameQuality::Best,
-                1 => LameQuality::SecondBest,
-                2 => LameQuality::NearBest,
-                3 => LameQuality::VeryNice,
-                4 => LameQuality::Nice,
-                5 => LameQuality::Good,
-                6 => LameQuality::Decent,
-                7 => LameQuality::Ok,
-                8 => LameQuality::SecondWorst,
-                _ => LameQuality::Worst,
-            })
-            .map_err(lame)?;
+            b.set_vbr_quality(lame_quality(q)).map_err(lame)?;
         }
     }
     // the Xing / Info frame carries the length and the encoder delay, so players seek and play
@@ -349,7 +386,7 @@ pub fn render_to_file_with(
                 let file = BufWriter::new(File::create(&tmp)?);
                 let enc_err = |e: vorbis_rs::VorbisError| Error::Encode(e.to_string());
                 let mut b = VorbisEncoderBuilder::new_with_serial(NonZeroU32::new(RATE).unwrap(), NonZeroU8::new(2).unwrap(), file, 0x5043_4D58);
-                b.bitrate_management_strategy(VorbisBitrateManagementStrategy::QualityVbr { target_quality: 0.6 });
+                b.bitrate_management_strategy(VorbisBitrateManagementStrategy::QualityVbr { target_quality: f32::from(enc.ogg_quality) / 10.0 });
                 match &enc.tags {
                     Some(t) => {
                         for (k, v) in tags::vorbis_fields(t) {

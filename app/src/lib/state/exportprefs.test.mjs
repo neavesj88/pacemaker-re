@@ -158,9 +158,35 @@ test("the format of a file name comes from its extension, and a name without one
 });
 
 test("the encoding settings become the backend's EncodingSpec", () => {
-  assert.deepEqual(P.encodingOf(P.defaultPrefs()), { mp3: { kind: "cbr", kbps: 192 }, flacBits: 16, flacLevel: "standard" });
-  const p = { ...P.defaultPrefs(), mp3Mode: "vbr", mp3Quality: 0, flacBits: 24, flacLevel: "best" };
-  assert.deepEqual(P.encodingOf(p), { mp3: { kind: "vbr", quality: 0 }, flacBits: 24, flacLevel: "best" });
+  assert.deepEqual(P.encodingOf(P.defaultPrefs()), { mp3: { kind: "cbr", kbps: 192 }, mp3Stereo: "joint", mp3Effort: 2, oggQuality: 6, flacBits: 16, flacLevel: "standard" });
+  const p = { ...P.defaultPrefs(), mp3Mode: "vbr", mp3Quality: 0, mp3Stereo: "stereo", mp3Effort: 9, oggQuality: -1, flacBits: 24, flacLevel: "best" };
+  assert.deepEqual(P.encodingOf(p), { mp3: { kind: "vbr", quality: 0 }, mp3Stereo: "stereo", mp3Effort: 9, oggQuality: -1, flacBits: 24, flacLevel: "best" });
+});
+
+test("an export asks about the files it would replace that the save window did not", () => {
+  const cue = { cuePath: "C:/Out/set.cue", exists: true, audioExists: true };
+  // a name that already ended in a known extension: the save window asked about it
+  assert.equal(P.needsDiskCheck("C:/Out/set.flac", "C:/Out/set.flac", false), false);
+  assert.equal(P.needsDiskCheck("C:/Out/set.flac", "C:/Out/set.flac", true), true, "a CUE sheet is a second file");
+  assert.equal(P.needsDiskCheck("C:/Out/set", "C:/Out/set.flac", false), true, "the extension was added afterwards");
+  assert.deepEqual(P.replacements("C:/Out/set.flac", "C:/Out/set.flac", "flac", false, "ask", null), { items: [], replaceCue: false });
+  // extension added, file there, no CUE sheet: one line naming the file
+  const a = P.replacements("C:/Out/set", "C:/Out/set.flac", "flac", false, "ask", { ...cue, exists: false });
+  assert.equal(a.items.length, 1);
+  assert.ok(a.items[0].startsWith("Replace C:/Out/set.flac "));
+  assert.equal(a.replaceCue, false);
+  // the audio file the save window already asked about is not asked again
+  assert.deepEqual(P.replacements("C:/Out/set.flac", "C:/Out/set.flac", "flac", false, "ask", cue).items, []);
+  // both: one list with both files
+  const both = P.replacements("C:/Out/set", "C:/Out/set.flac", "flac", true, "ask", cue);
+  assert.equal(both.items.length, 2);
+  assert.ok(both.items[1].startsWith("Replace C:/Out/set.cue "));
+  assert.equal(both.replaceCue, true);
+  // the user's "replace the CUE sheet without asking" setting still applies, and the audio file is still named
+  const silent = P.replacements("C:/Out/set", "C:/Out/set.flac", "flac", true, "replace", cue);
+  assert.equal(silent.items.length, 1);
+  assert.equal(silent.replaceCue, true);
+  assert.deepEqual(P.replacements("C:/Out/set.flac", "C:/Out/set.flac", "flac", true, "replace", cue), { items: [], replaceCue: true });
 });
 
 test("tags are off when asked, default the year, and carry the track list only when chaptered", () => {
@@ -184,6 +210,12 @@ test("file and tag settings read back from storage keep valid values and drop th
   const bad = P.mergePrefs({ format: "m4a", mp3Mode: "abr", mp3Kbps: 100, mp3Quality: 10, flacBits: 20, flacLevel: "x", writeTags: "yes", djName: 5, year: 2026 });
   assert.deepEqual(bad, P.defaultPrefs());
   assert.equal(P.mergePrefs({ mp3Quality: 2.5 }).mp3Quality, 2, "a fractional quality is not a quality");
+  const q = P.mergePrefs({ mp3Stereo: "stereo", mp3Effort: 0, oggQuality: 10 });
+  assert.deepEqual([q.mp3Stereo, q.mp3Effort, q.oggQuality], ["stereo", 0, 10]);
+  const qb = P.mergePrefs({ mp3Stereo: "mono", mp3Effort: 10, oggQuality: 11 });
+  assert.deepEqual([qb.mp3Stereo, qb.mp3Effort, qb.oggQuality], ["joint", 2, 6], "out-of-range encoder settings fall back to the defaults");
+  assert.equal(P.mergePrefs({ oggQuality: -1 }).oggQuality, -1, "the lowest Ogg quality is allowed");
+  assert.equal(P.mergePrefs({ oggQuality: -2 }).oggQuality, 6);
   assert.equal(P.mergePrefs({ djName: "x".repeat(900) }).djName.length, 250, "text is cut to the length the tag takes");
 });
 

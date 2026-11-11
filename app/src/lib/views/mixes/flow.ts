@@ -3,7 +3,7 @@
 // file dialogs) and reports the outcome with a toast.
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { exportCancel, exportCueTarget, exportMixAudio, type AudioFormat, type ExportExtras } from "$lib/api/export";
-import { extOf, resolveDest, saveFilters } from "$lib/state/exportprefs";
+import { extOf, needsDiskCheck, replacements, resolveDest, saveFilters } from "$lib/state/exportprefs";
 import { mixDelete, mixExportPmk, mixImportPmk, mixRename, type MixSummary } from "$lib/api/mixes";
 import { mixExport } from "$lib/state/mixexport.svelte";
 import { mixes } from "$lib/state/mixes.svelte";
@@ -178,30 +178,26 @@ export async function exportAudio() {
   // gets the chosen format's extension, so the file is never a different format than its name says
   const { path: dest, format } = resolveDest(picked, wanted);
   tracklist.ensureLoaded();
-  let replaceCue = false;
-  if (tracklist.writeCue) {
-    // the save dialog only asked about the audio file: a .cue beside it is a second file
-    try {
-      const target = await exportCueTarget(dest);
-      if (target.exists) {
-        if (tracklist.cueIfExists === "replace") {
-          replaceCue = true;
-        } else {
-          const chosen = dest;
-          confirm.ask({
-            title: "Replace the CUE sheet",
-            message: `A CUE sheet with this name is already there. Exporting will replace it with the one of this mix once the render has finished.`,
-            items: [`Replace ${target.cuePath}`],
-            confirmLabel: "Replace it and export",
-            run: () => startExport(root, doc, chosen, format, true, extras),
-          });
-          return;
-        }
-      }
-    } catch (e) {
-      toast.show(`Export failed: ${errText(e)}`, "bad", 12000);
-      return;
-    }
+  // What the save window did not ask about and an export would replace is asked here, once, in one
+  // list: the audio file when the extension was added after the window closed (its overwrite prompt
+  // never saw that name), and the .cue beside it.
+  let found: Awaited<ReturnType<typeof exportCueTarget>> | null = null;
+  try {
+    if (needsDiskCheck(picked, dest, tracklist.writeCue)) found = await exportCueTarget(dest);
+  } catch (e) {
+    toast.show(`Export failed: ${errText(e)}`, "bad", 12000);
+    return;
+  }
+  const { items, replaceCue } = replacements(picked, dest, format, tracklist.writeCue, tracklist.cueIfExists, found);
+  if (items.length > 0) {
+    confirm.ask({
+      title: items.length > 1 ? "Replace existing files" : "Replace an existing file",
+      message: "Exporting will replace what is listed once the render has finished.",
+      items,
+      confirmLabel: "Replace and export",
+      run: () => startExport(root, doc, dest, format, replaceCue, extras),
+    });
+    return;
   }
   await startExport(root, doc, dest, format, replaceCue, extras);
 }

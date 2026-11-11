@@ -91,14 +91,25 @@ pub struct CueTarget {
     pub cue_path: String,
     /// A file is already at `cue_path`.
     pub exists: bool,
+    /// A file is already at `dest` itself (the audio the export would replace).
+    pub audio_exists: bool,
 }
 
-/// The CUE sheet an export to `dest` would write, and whether one is already there. Lets the UI
-/// ask before an existing sheet is replaced. Reads nothing but the file's existence.
+/// The CUE sheet an export to `dest` would write, and whether one is already there; also whether
+/// `dest` itself exists. Lets the UI ask before an existing file is replaced. Reads nothing but
+/// existence.
 #[tauri::command]
 pub fn export_cue_target(dest: String) -> CueTarget {
     let p = cue_path_for(Path::new(&dest));
-    CueTarget { cue_path: p.to_string_lossy().into_owned(), exists: p.exists() }
+    CueTarget { cue_path: p.to_string_lossy().into_owned(), exists: p.exists(), audio_exists: Path::new(&dest).exists() }
+}
+
+/// Whether the cover image the export dialog remembers can still be used: `None` when it can, else
+/// the sentence the export would refuse with (the same `encoding::read_cover` runs). Reads the
+/// file (8 MB at most) and changes nothing.
+#[tauri::command]
+pub async fn export_cover_check(path: String) -> AppResult<Option<String>> {
+    tauri::async_runtime::spawn_blocking(move || encoding::read_cover(&path).err().map(|e| e.to_string())).await.map_err(|e| e.to_string().into())
 }
 
 /// What `export_mix_audio` returns as soon as the job has started.
@@ -409,6 +420,7 @@ macro_rules! export_commands {
                 $crate::commands::export::export_tracklist,
                 $crate::commands::export::export_tracklist_save,
                 $crate::commands::export::export_cue_target,
+                $crate::commands::export::export_cover_check,
                 $crate::commands::export::export_range_resolve,
                 $crate::commands::export::export_loudness_analyse,
             ];
@@ -427,6 +439,23 @@ mod tests {
         assert!(keep_going(&flag));
         flag.store(true, Ordering::SeqCst);
         assert!(!keep_going(&flag), "the progress callback returns false, which the engine reads as cancel");
+    }
+
+    #[test]
+    fn the_cue_target_says_whether_the_audio_file_and_the_sheet_exist() {
+        let d = std::env::temp_dir().join(format!("pmrev-cuetarget-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        let audio = d.join("set.flac");
+        let t = export_cue_target(audio.to_string_lossy().into_owned());
+        assert!(!t.audio_exists && !t.exists);
+        assert!(t.cue_path.ends_with("set.cue"));
+        std::fs::write(&audio, b"x").unwrap();
+        let t = export_cue_target(audio.to_string_lossy().into_owned());
+        assert!(t.audio_exists && !t.exists, "only the audio file is there");
+        std::fs::write(d.join("set.cue"), b"x").unwrap();
+        assert!(export_cue_target(audio.to_string_lossy().into_owned()).exists);
+        std::fs::remove_dir_all(&d).unwrap();
     }
 
     #[test]

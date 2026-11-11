@@ -38,12 +38,17 @@ export type MixExportStarted = {
   cueReplaces: boolean;
 };
 
-/** Where the CUE sheet of an audio export to `dest` would go, and whether a file is already there. */
-export type CueTarget = { cuePath: string; exists: boolean };
+/** Where the CUE sheet of an audio export to `dest` would go, and whether a file is already there
+ * (`audioExists`: also whether `dest` itself exists). */
+export type CueTarget = { cuePath: string; exists: boolean; /** A file is already at `dest` itself. */ audioExists: boolean };
 
 /** Asks before an export: the CUE sheet it would write beside `dest`, and whether one exists.
  * Reads nothing but the file's existence. */
 export const exportCueTarget = (dest: string) => invoke<CueTarget>("export_cue_target", { dest });
+
+/** Whether a cover image can still be used for the tags: null when it can, else the sentence the
+ * export would refuse with (the same check the export runs). Changes nothing. */
+export const exportCoverCheck = (path: string) => invoke<string | null>("export_cover_check", { path });
 
 /** The `job` name of mix exports in the `job-progress` / `job-done` events. */
 export const MIX_EXPORT_JOB = "mix-export";
@@ -60,7 +65,17 @@ export type FlacLevel = "fast" | "standard" | "best";
 
 /** The settings of the formats that have any; the ones of the format not being written are
  * ignored. `flacBits` is 16 (dithered, like the WAV) or 24. */
-export type EncodingSpec = { mp3: Mp3Spec; flacBits: 16 | 24; flacLevel: FlacLevel };
+export type EncodingSpec = {
+  mp3: Mp3Spec;
+  /** How the two channels are coded: "joint" shares what they have in common, "stereo" codes them separately. */
+  mp3Stereo: "joint" | "stereo";
+  /** LAME's algorithm quality, 0 (best, slowest) to 9 (fastest); the bitrate does not change. */
+  mp3Effort: number;
+  /** Ogg Vorbis quality in tenths, -1 (smallest) to 10 (best). */
+  oggQuality: number;
+  flacBits: 16 | 24;
+  flacLevel: FlacLevel;
+};
 
 /** The tags to write into the exported file (never into the device). Empty text is not written;
  * an empty `title` becomes the mix name. `coverPath` is a JPEG or PNG file up to 8 MB (read and

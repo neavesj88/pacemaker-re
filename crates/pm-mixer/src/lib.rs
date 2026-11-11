@@ -26,7 +26,7 @@ pub mod vocal;
 
 pub use engine::{render, render_to_vecs, DirResolver, Options, RenderLoudness, Rendered, Resolver};
 pub use fx::PeqMode;
-pub use output::{render_to_file, render_to_file_with, Encoding, FlacLevel, Format, Mp3Rate};
+pub use output::{render_to_file, render_to_file_with, Encoding, FlacLevel, Format, Mp3Rate, Mp3Stereo};
 
 /// The engine's sample rate; every position in a mix is a sample count at this rate.
 pub const RATE: u32 = 44_100;

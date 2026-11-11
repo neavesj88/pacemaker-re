@@ -5,7 +5,7 @@
   // measured and heard is what is written. The settings are kept on this computer; nothing here is
   // written to the device.
   import { open as openFile } from "@tauri-apps/plugin-dialog";
-  import { exportCancel } from "$lib/api/export";
+  import { exportCancel, exportCoverCheck } from "$lib/api/export";
   import {
     AUDIO_FORMATS,
     clockText,
@@ -15,7 +15,10 @@
     gainText,
     lufsText,
     MP3_CBR_KBPS,
+    MP3_EFFORT_DEFAULT,
     MP3_VBR_LEVELS,
+    OGG_QUALITY_DEFAULT,
+    OGG_QUALITY_RANGE,
     peakText,
     sizeText,
     TAG_LIMITS,
@@ -119,6 +122,22 @@
       toast.show(`Could not open the file dialog: ${errText(e)}`, "bad", 7000);
     }
   }
+
+  // the remembered cover may have moved or been deleted since: say so now, with the sentence the
+  // export would refuse with (the same check), not after the save window
+  let coverProblem = $state("");
+  $effect(() => {
+    const path = X.open && X.prefs.writeTags ? X.prefs.coverPath.trim() : "";
+    coverProblem = "";
+    if (!path) return;
+    let stale = false;
+    exportCoverCheck(path)
+      .then((m) => {
+        if (!stale) coverProblem = m ?? "";
+      })
+      .catch(() => {});
+    return () => (stale = true);
+  });
 
   function removeCover() {
     X.prefs.coverPath = "";
@@ -310,7 +329,17 @@
           </select>
           <span class="muted small">{fmt?.hint ?? ""}</span>
         </div>
-        {#if X.prefs.format === "mp3"}
+        {#if X.prefs.format === "ogg"}
+          <div class="row">
+            <label for="xf-ogg">Quality</label>
+            <select id="xf-ogg" bind:value={X.prefs.oggQuality} onchange={changed}>
+              {#each Array.from({ length: OGG_QUALITY_RANGE[1] - OGG_QUALITY_RANGE[0] + 1 }, (_, i) => OGG_QUALITY_RANGE[0] + i) as q (q)}
+                <option value={q}>{(q / 10).toFixed(1)}{q === OGG_QUALITY_DEFAULT ? " (default)" : q === OGG_QUALITY_RANGE[0] ? " (smallest)" : q === OGG_QUALITY_RANGE[1] ? " (best)" : ""}</option>
+              {/each}
+            </select>
+            <span class="muted small">higher is better and bigger</span>
+          </div>
+        {:else if X.prefs.format === "mp3"}
           <div class="row">
             <label for="xf-mode">Bitrate</label>
             <select id="xf-mode" bind:value={X.prefs.mp3Mode} onchange={changed}>
@@ -326,6 +355,19 @@
                 {#each MP3_VBR_LEVELS as l (l.quality)}<option value={l.quality}>V{l.quality}: about {l.kbps} kbit/s{l.quality === 0 ? " (best)" : l.quality === 9 ? " (smallest)" : ""}</option>{/each}
               </select>
             {/if}
+          </div>
+          <div class="row">
+            <label for="xf-stereo">Channels</label>
+            <select id="xf-stereo" bind:value={X.prefs.mp3Stereo} onchange={changed}>
+              <option value="joint">Joint stereo (smaller at the same quality)</option>
+              <option value="stereo">Stereo (each channel coded on its own)</option>
+            </select>
+            <label for="xf-effort">Encoder effort</label>
+            <select id="xf-effort" bind:value={X.prefs.mp3Effort} onchange={changed}>
+              {#each Array.from({ length: 10 }, (_, i) => i) as e (e)}
+                <option value={e}>{e}{e === MP3_EFFORT_DEFAULT ? " (default)" : e === 0 ? " (best, slowest)" : e === 9 ? " (fastest)" : ""}</option>
+              {/each}
+            </select>
           </div>
         {:else if X.prefs.format === "flac"}
           <div class="row">
@@ -373,6 +415,7 @@
             </span>
           </div>
           <label class="check"><input type="checkbox" bind:checked={X.prefs.chapters} onchange={changed} /> Put the track list in the file as chapters (the same list and times as the CUE sheet)</label>
+          {#if coverProblem}<div class="note-warn" role="alert">{coverProblem}</div>{/if}
           <div class="muted small">{tagNote(X.prefs.format)}</div>
         {/if}
         <div class="muted small">Tags are written into the exported file only; nothing is added to the device. These settings are kept on this computer.</div>

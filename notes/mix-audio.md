@@ -146,7 +146,7 @@ are replaced by zero before the limiter. The output is therefore never above 0.9
 - **Ogg Vorbis** (what the original Editor exports): `vorbis_rs` 0.5.6 (BSD-3, GPL-compatible),
   which builds the vendored aoTuV/Lancer libvorbis and libogg C sources with the `cc` crate: **no
   system libraries**, it compiled on Windows/MSVC next to the bundled SQLite. Quality VBR 0.6
-  (about 160 kbit/s for music), fixed stream serial (so the same mix gives the same file),
+  by default (about 160 kbit/s for music; the export dialog sets it from -0.1 to 1.0), fixed stream serial (so the same mix gives the same file),
   `TITLE` = mix name, `ENCODER` = Pacemaker Revival when no tags are given.
 - **FLAC** (16 or 24 bit, three effort levels): `flac-codec` 1.3.3 (MIT/Apache-2.0, pure Rust). 16-bit uses
   the same TPDF dither as the WAV; 24-bit is rounded. Streaming writer: STREAMINFO (length, MD5) is
@@ -154,7 +154,8 @@ are replaced by zero before the limiter. The output is therefore never above 0.9
   effort level (tested); only the size changes.
 - **MP3** (CBR 96-320 kbit/s or VBR V0-V9): `mp3lame-encoder` 0.3.0 (wrapper LGPL-3.0) which builds the
   vendored LAME 4.0 (LGPL) C sources with the `cc` crate: no system libraries, builds on Windows/MSVC.
-  Joint stereo, algorithm quality 2. LAME's Xing/Info frame (length and encoder delay, so players
+  Joint stereo and algorithm quality 2 by default; the dialog can switch to plain stereo and set the
+  algorithm quality 0-9 (speed against quality, the bitrate stays). LAME's Xing/Info frame (length and encoder delay, so players
   seek and play gaplessly) is reserved at the start of the stream and filled in once the stream is
   complete; the ID3v2 tag in front of it is written by this crate, not by LAME. The engine's limiter
   ceiling is -0.2 dBFS, but MP3 coding can overshoot it by a little: a decoder may clip those peaks.

@@ -7,7 +7,7 @@
 use std::path::Path;
 
 use pm_mixer::tags::{ms_of_frames, Chapter, Cover, Tags, MAX_COVER_BYTES};
-use pm_mixer::{Encoding, FlacLevel, Format, Mp3Rate};
+use pm_mixer::{Encoding, FlacLevel, Format, Mp3Rate, Mp3Stereo};
 use serde::Deserialize;
 
 use super::tracklist::{self, Tracklist, TracklistOptions};
@@ -30,6 +30,14 @@ impl Default for Mp3Spec {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
+pub enum Mp3StereoSpec {
+    #[default]
+    Joint,
+    Stereo,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
 pub enum FlacLevelSpec {
     Fast,
     #[default]
@@ -43,6 +51,12 @@ pub enum FlacLevelSpec {
 #[serde(rename_all = "camelCase", default)]
 pub struct EncodingSpec {
     pub mp3: Mp3Spec,
+    /// "joint" (default) or "stereo".
+    pub mp3_stereo: Mp3StereoSpec,
+    /// LAME's algorithm quality, 0 (best, slowest) to 9 (fastest); default 2.
+    pub mp3_effort: u8,
+    /// Ogg Vorbis quality in tenths, -1 to 10; default 6 (0.6).
+    pub ogg_quality: i8,
     /// FLAC sample size, 16 or 24.
     pub flac_bits: u8,
     pub flac_level: FlacLevelSpec,
@@ -50,7 +64,7 @@ pub struct EncodingSpec {
 
 impl Default for EncodingSpec {
     fn default() -> Self {
-        EncodingSpec { mp3: Mp3Spec::default(), flac_bits: 16, flac_level: FlacLevelSpec::default() }
+        EncodingSpec { mp3: Mp3Spec::default(), mp3_stereo: Mp3StereoSpec::default(), mp3_effort: pm_mixer::output::MP3_EFFORT_DEFAULT, ogg_quality: pm_mixer::output::OGG_QUALITY_DEFAULT, flac_bits: 16, flac_level: FlacLevelSpec::default() }
     }
 }
 
@@ -125,6 +139,12 @@ pub fn build_encoding(format: Format, spec: &EncodingSpec, tags: Option<Tags>) -
             Mp3Spec::Cbr { kbps } => Mp3Rate::Cbr(kbps),
             Mp3Spec::Vbr { quality } => Mp3Rate::Vbr(quality),
         },
+        mp3_stereo: match spec.mp3_stereo {
+            Mp3StereoSpec::Joint => Mp3Stereo::Joint,
+            Mp3StereoSpec::Stereo => Mp3Stereo::Stereo,
+        },
+        mp3_effort: spec.mp3_effort,
+        ogg_quality: spec.ogg_quality,
         flac_bits: spec.flac_bits,
         flac_level: match spec.flac_level {
             FlacLevelSpec::Fast => FlacLevel::Fast,
@@ -188,8 +208,12 @@ mod tests {
         let d: EncodingSpec = serde_json::from_str("{}").unwrap();
         assert_eq!(d, EncodingSpec::default());
         assert_eq!((d.mp3, d.flac_bits, d.flac_level), (Mp3Spec::Cbr { kbps: 192 }, 16, FlacLevelSpec::Standard));
-        let e: EncodingSpec = serde_json::from_str(r#"{"mp3":{"kind":"vbr","quality":2},"flacBits":24,"flacLevel":"best"}"#).unwrap();
+        assert_eq!((d.mp3_stereo, d.mp3_effort, d.ogg_quality), (Mp3StereoSpec::Joint, 2, 6), "the defaults are what exports always used");
+        let e: EncodingSpec = serde_json::from_str(r#"{"mp3":{"kind":"vbr","quality":2},"mp3Stereo":"stereo","mp3Effort":0,"oggQuality":-1,"flacBits":24,"flacLevel":"best"}"#).unwrap();
         assert_eq!((e.mp3, e.flac_bits, e.flac_level), (Mp3Spec::Vbr { quality: 2 }, 24, FlacLevelSpec::Best));
+        assert_eq!((e.mp3_stereo, e.mp3_effort, e.ogg_quality), (Mp3StereoSpec::Stereo, 0, -1));
+        let enc = build_encoding(Format::Mp3, &e, None).unwrap();
+        assert_eq!((enc.mp3_stereo, enc.mp3_effort, enc.ogg_quality), (Mp3Stereo::Stereo, 0, -1));
         let t: TagSpec = serde_json::from_str(r#"{"artist":"DJ Example","chapters":{"rounding":"nearest"}}"#).unwrap();
         assert_eq!(t.artist, "DJ Example");
         assert_eq!(t.chapters.unwrap().rounding, tracklist::Rounding::Nearest);
@@ -202,6 +226,9 @@ mod tests {
         assert!(bad(EncodingSpec { mp3: Mp3Spec::Cbr { kbps: 100 }, ..EncodingSpec::default() }).contains("100 kbit/s"));
         assert!(bad(EncodingSpec { mp3: Mp3Spec::Vbr { quality: 12 }, ..EncodingSpec::default() }).contains("out of range"));
         assert!(bad(EncodingSpec { flac_bits: 32, ..EncodingSpec::default() }).contains("32 bits"));
+        assert!(bad(EncodingSpec { mp3_effort: 10, ..EncodingSpec::default() }).contains("effort 10"));
+        assert!(bad(EncodingSpec { ogg_quality: 11, ..EncodingSpec::default() }).contains("Ogg quality 11"));
+        assert!(bad(EncodingSpec { ogg_quality: -2, ..EncodingSpec::default() }).contains("Ogg quality -2"));
         let ok = build_encoding(Format::Flac, &EncodingSpec { flac_bits: 24, flac_level: FlacLevelSpec::Best, ..EncodingSpec::default() }, None).unwrap();
         assert_eq!((ok.format, ok.flac_bits, ok.flac_level), (Format::Flac, 24, FlacLevel::Best));
     }

@@ -965,7 +965,7 @@ mod tests {
             cover_path: Some(cover.to_string_lossy().into_owned()),
             chapters: Some(TracklistOptions::default()),
         };
-        let encoding = EncodingSpec { mp3: Mp3Spec::Vbr { quality: 4 }, flac_bits: 24, flac_level: FlacLevelSpec::Fast };
+        let encoding = EncodingSpec { mp3: Mp3Spec::Vbr { quality: 4 }, flac_bits: 24, flac_level: FlacLevelSpec::Fast, ..EncodingSpec::default() };
         // the whole mix (First at 0:00, Second 24 s in) as FLAC, and a time range of 15 s .. 30 s of
         // it (First 5 s, Second 6 s) in the other formats; debug builds are slow, so not every
         // format is rendered twice
