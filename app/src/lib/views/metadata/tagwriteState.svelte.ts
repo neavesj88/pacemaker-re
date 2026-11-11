@@ -87,7 +87,8 @@ class TagWriteState {
     const names = items.map((it) => {
       const p = byId.get(it.track_id)!;
       const fields = p.changes.filter((c) => !this.unticked[tickKey(p.track_id, c.field)]).map((c) => fieldLabel(c.field));
-      return `${p.label}: ${p.file} (${p.format}): ${fields.join(", ")}`;
+      const notes = p.notes.length ? ` [${p.notes.join("; ")}]` : "";
+      return `${p.label}: ${p.file} (${p.format}): ${fields.join(", ")}${notes}`;
     });
     const n = items.length;
     const ok = jobs.ask({
@@ -97,7 +98,7 @@ class TagWriteState {
       names,
       title: `Write tags into ${plural(n, "audio file")} on ${root} ?`,
       description:
-        "Only each file's tag block is rewritten; the audio itself is not touched. Each file is rewritten as a copy that is checked and then swapped in, so a failure leaves the original as it was. The Pacemaker reads its own library, not these tags: they are for other software. These files are changed:",
+        "Only the ticked fields of each file's tag are replaced; the audio itself is not touched, and ratings, cover art, Sound Check data and other tag items stay. Each file is rewritten as a copy whose audio bytes and untouched tag items are compared with the original, and only then swapped in, so a failure leaves the original as it was. An ID3v2.2 tag is upgraded to 2.4 (marked in the list). The Pacemaker reads its own library, not these tags: they are for other software. These files are changed:",
       confirmLabel: `Write ${n}`,
       runningLabel: "Writing tags",
       doneLabel: "Tag write finished",

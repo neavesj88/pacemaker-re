@@ -8,6 +8,8 @@ use std::path::PathBuf;
 pub mod cleanup;
 /// Optional write-back of tags into the audio files themselves.
 pub mod tagwrite;
+/// Fingerprint of a file's audio payload (proves a tag rewrite left the audio alone).
+pub mod audiohash;
 
 use pm_formats::library::Library;
 use pm_formats::ops_metadata::{TrackDetail, TrackEdit};

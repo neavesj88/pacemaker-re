@@ -20,7 +20,43 @@
    "III",
    "IV"
   ],
+  "small_words": [
+   "a",
+   "an",
+   "the",
+   "and",
+   "but",
+   "or",
+   "nor",
+   "for",
+   "so",
+   "yet",
+   "as",
+   "at",
+   "by",
+   "in",
+   "of",
+   "on",
+   "to",
+   "up",
+   "via",
+   "vs",
+   "vs.",
+   "with",
+   "from",
+   "into",
+   "onto",
+   "per",
+   "feat",
+   "feat.",
+   "ft",
+   "ft.",
+   "featuring",
+   "if",
+   "off"
+  ],
   "strip_number": true,
+  "number_max_digits": 3,
   "number_space_only": false,
   "strip_promo": true,
   "promo_fields": [
@@ -135,6 +171,20 @@
   ],
   "artist_map_on": false,
   "artist_map": [],
+  "artist_separators": [
+   ",",
+   "&",
+   "/",
+   "feat.",
+   "feat",
+   "ft.",
+   "ft",
+   "featuring",
+   "vs.",
+   "vs",
+   "x",
+   "and"
+  ],
   "write_back": false,
   "write_fields": [
    "title",
@@ -827,6 +877,316 @@
     "title_case": true
    },
    "input": {},
+   "expect": {}
+  },
+  {
+   "name": "promo keeps dotted title words: Dance.With.Me",
+   "settings": {
+    "strip_promo": true
+   },
+   "input": {
+    "title": "Dance.With.Me"
+   },
+   "expect": {}
+  },
+  {
+   "name": "promo keeps dotted title words: Hello.It",
+   "settings": {
+    "strip_promo": true
+   },
+   "input": {
+    "title": "Hello.It"
+   },
+   "expect": {}
+  },
+  {
+   "name": "promo keeps dotted title words: Rock.It Up",
+   "settings": {
+    "strip_promo": true
+   },
+   "input": {
+    "title": "Rock.It Up"
+   },
+   "expect": {}
+  },
+  {
+   "name": "promo keeps dotted title words: Song feat.Me",
+   "settings": {
+    "strip_promo": true
+   },
+   "input": {
+    "title": "Song feat.Me"
+   },
+   "expect": {}
+  },
+  {
+   "name": "promo keeps dotted title words: Big Beat.Net",
+   "settings": {
+    "strip_promo": true
+   },
+   "input": {
+    "title": "Big Beat.Net"
+   },
+   "expect": {}
+  },
+  {
+   "name": "promo keeps dotted title words: St.Louis Blues",
+   "settings": {
+    "strip_promo": true
+   },
+   "input": {
+    "title": "St.Louis Blues"
+   },
+   "expect": {}
+  },
+  {
+   "name": "promo strips a lower case address",
+   "settings": {
+    "strip_promo": true
+   },
+   "input": {
+    "title": "Song djsite.com"
+   },
+   "expect": {
+    "title": "Song"
+   }
+  },
+  {
+   "name": "promo strips an address with a path",
+   "settings": {
+    "strip_promo": true
+   },
+   "input": {
+    "title": "Song music.example.com/page"
+   },
+   "expect": {
+    "title": "Song"
+   }
+  },
+  {
+   "name": "promo word-like domain in a bracket",
+   "settings": {
+    "strip_promo": true
+   },
+   "input": {
+    "title": "Song [djsite.me]"
+   },
+   "expect": {
+    "title": "Song"
+   }
+  },
+  {
+   "name": "promo word-like domain bare stays",
+   "settings": {
+    "strip_promo": true
+   },
+   "input": {
+    "title": "Song djsite.me"
+   },
+   "expect": {}
+  },
+  {
+   "name": "promo several dots need a path",
+   "settings": {
+    "strip_promo": true
+   },
+   "input": {
+    "title": "Song dance.with.me"
+   },
+   "expect": {}
+  },
+  {
+   "name": "promo per comment line",
+   "settings": {
+    "strip_promo": true
+   },
+   "input": {
+    "comments": "Ripped by me\nhttp://example.com/x\nGood one [Free DL]"
+   },
+   "expect": {
+    "comments": "Ripped by me\nGood one"
+   }
+  },
+  {
+   "name": "promo can empty a title (the preview blocks it)",
+   "settings": {
+    "strip_promo": true
+   },
+   "input": {
+    "title": "www.example.com"
+   },
+   "expect": {
+    "title": ""
+   }
+  },
+  {
+   "name": "trim keeps comment lines",
+   "settings": {
+    "trim": true
+   },
+   "input": {
+    "comments": "Line one\n  Line  two\n\nRipped by me"
+   },
+   "expect": {
+    "comments": "Line one\nLine two\n\nRipped by me"
+   }
+  },
+  {
+   "name": "trim cleans the ends of a comment",
+   "settings": {
+    "trim": true
+   },
+   "input": {
+    "comments": "\n\n  one \r\n two\r\n\n"
+   },
+   "expect": {
+    "comments": "one\ntwo"
+   }
+  },
+  {
+   "name": "trim keeps zero width joiners",
+   "settings": {
+    "trim": true
+   },
+   "input": {
+    "title": "Y‌Z  ‍"
+   },
+   "expect": {
+    "title": "Y‌Z ‍"
+   }
+  },
+  {
+   "name": "trim drops the byte order mark",
+   "settings": {
+    "trim": true
+   },
+   "input": {
+    "title": "﻿Song"
+   },
+   "expect": {
+    "title": "Song"
+   }
+  },
+  {
+   "name": "title case own small words",
+   "settings": {
+    "title_case": true,
+    "small_words": [
+     "the",
+     "art",
+     "OF"
+    ]
+   },
+   "input": {
+    "title": "the art of war"
+   },
+   "expect": {
+    "title": "The art of War"
+   }
+  },
+  {
+   "name": "title case no small words",
+   "settings": {
+    "title_case": true,
+    "small_words": []
+   },
+   "input": {
+    "title": "the art of war"
+   },
+   "expect": {
+    "title": "The Art Of War"
+   }
+  },
+  {
+   "name": "artist map custom separator",
+   "settings": {
+    "artist_map_on": true,
+    "artist_map": [
+     {
+      "from": "Old Name",
+      "to": "New Name"
+     }
+    ],
+    "artist_separators": [
+     ",",
+     "+"
+    ]
+   },
+   "input": {
+    "artist": "Other + Old Name"
+   },
+   "expect": {
+    "artist": "Other + New Name"
+   }
+  },
+  {
+   "name": "artist map unlisted separator",
+   "settings": {
+    "artist_map_on": true,
+    "artist_map": [
+     {
+      "from": "Old Name",
+      "to": "New Name"
+     }
+    ],
+    "artist_separators": [
+     ","
+    ]
+   },
+   "input": {
+    "artist": "Other + Old Name"
+   },
+   "expect": {}
+  },
+  {
+   "name": "artist map no separators",
+   "settings": {
+    "artist_map_on": true,
+    "artist_map": [
+     {
+      "from": "Old Name",
+      "to": "New Name"
+     }
+    ],
+    "artist_separators": []
+   },
+   "input": {
+    "artist": "Old Name & Other"
+   },
+   "expect": {}
+  },
+  {
+   "name": "number four digits by default stay",
+   "settings": {
+    "strip_number": true
+   },
+   "input": {
+    "title": "2020 - Vision"
+   },
+   "expect": {}
+  },
+  {
+   "name": "number four digits when allowed",
+   "settings": {
+    "strip_number": true,
+    "number_max_digits": 4
+   },
+   "input": {
+    "title": "2020 - Vision"
+   },
+   "expect": {
+    "title": "Vision"
+   }
+  },
+  {
+   "name": "number one digit only",
+   "settings": {
+    "strip_number": true,
+    "number_max_digits": 1
+   },
+   "input": {
+    "title": "01 - Song"
+   },
    "expect": {}
   }
  ]

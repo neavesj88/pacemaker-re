@@ -2,6 +2,7 @@
   import { FEAT_FORMS, type CleanupSettings } from "$lib/api/metacleanup";
   import { TEXT_FIELDS } from "$lib/api/metadata";
   import Button from "$lib/ui/Button.svelte";
+  import Modal from "$lib/ui/Modal.svelte";
   import { cleanup } from "./cleanupState.svelte";
   import { FIELD_LABELS } from "./draft";
   import TextListField from "./TextListField.svelte";
@@ -9,6 +10,23 @@
   // The recipes the user ticks, and the lists and maps behind them. Everything here is a saved
   // setting (app config dir): the tool starts the next time exactly as it was left.
   let s = $derived(cleanup.settings);
+
+  // "Reset to defaults" replaces hand-made lists and maps, so it asks first and names each one.
+  let confirmReset = $state(false);
+  const replaced = $derived(
+    s
+      ? [
+          ["Genre map", s.genre_map.length],
+          ["Artist map", s.artist_map.length],
+          ["Always upper case words", s.keep_upper.length],
+          ["Small words (Title Case)", s.small_words.length],
+          ["Artist separators", s.artist_separators.length],
+          ["Promo phrases", s.promo_phrases.length],
+          ["Remix words", s.remix_words.length],
+          ["Not a person words", s.remixer_ignore.length],
+        ] as [string, number][]
+      : [],
+  );
 
   function toggle(list: string[], f: string, on: boolean): string[] {
     const without = list.filter((x) => x !== f);
@@ -36,12 +54,32 @@
   <div class="grid">
     <section class="card">
       <label class="head"><input type="checkbox" bind:checked={s.trim} /> Trim and collapse white space</label>
-      <p class="muted">Removes spaces at the ends and turns runs of spaces into one, in every text field.</p>
+      <p class="muted">
+        Removes spaces at the ends and turns runs of spaces into one, in every text field. A comment keeps its line breaks. Zero-width
+        spaces are removed; joiners used by Persian, Indic and emoji text are kept.
+      </p>
     </section>
 
     <section class="card">
       <label class="head"><input type="checkbox" bind:checked={s.strip_number} /> Strip leading track numbers</label>
-      <p class="muted">“01 - Title”, “01. Title” and “1) Title” become “Title”.</p>
+      <p class="muted">“01 - Title”, “01. Title” and “1) Title” become “Title”. “2020 - Title” keeps its 2020: more digits than allowed.</p>
+      <label class="opt" class:off={!s.strip_number}>
+        A track number has up to
+        <input
+          class="num"
+          type="number"
+          min="1"
+          max="6"
+          step="1"
+          disabled={!s.strip_number}
+          value={s.number_max_digits}
+          oninput={(e) => {
+            const n = e.currentTarget.valueAsNumber;
+            if (Number.isFinite(n)) s!.number_max_digits = Math.min(6, Math.max(1, Math.trunc(n)));
+          }}
+        />
+        digits
+      </label>
       <label class="opt" class:off={!s.strip_number}>
         <input type="checkbox" disabled={!s.strip_number} bind:checked={s.number_space_only} />
         Also “01 Title” (a number and a space only). Off by default because a title can start with a number.
@@ -50,7 +88,11 @@
 
     <section class="card">
       <label class="head"><input type="checkbox" bind:checked={s.strip_promo} /> Strip URLs and promo text</label>
-      <p class="muted">Removes web addresses and bracketed promo such as “[www.example.test]” or “(Free Download)”.</p>
+      <p class="muted">
+        Removes web addresses and bracketed promo such as “[www.example.test]” or “(Free Download)”. A bare address like
+        “djsite.com” must be in lower case; “Dance.With.Me” and “Rock.It” are left alone. A result that would leave a title or
+        artist empty is listed as not applicable.
+      </p>
       {@render fields("promo_fields", s.strip_promo)}
       <div class:off={!s.strip_promo}>
         <TextListField
@@ -103,6 +145,14 @@
           onchange={(v) => (s!.keep_upper = v)}
           rows={4}
         />
+        <TextListField
+          kind="list"
+          label="Small words (one per line)"
+          hint="Kept in lower case inside a title; the first and last word and the word after a colon, dash or bracket are always capitalised."
+          value={s.small_words}
+          onchange={(v) => (s!.small_words = v)}
+          rows={5}
+        />
       </div>
     </section>
 
@@ -119,6 +169,14 @@
       <p class="muted">Replaces an artist (or one name in “A & B”, “A, B”, “A feat. B”) that matches the left side.</p>
       <div class:off={!s.artist_map_on}>
         <TextListField kind="map" label="Artist map (from -> to)" hint="One per line. Empty to start with." value={s.artist_map} onchange={(v) => (s!.artist_map = v)} rows={6} />
+        <TextListField
+          kind="list"
+          label="Separators between names (one per line)"
+          hint="A comma goes straight after a name (“A, B”); every other separator has a space on both sides (“A & B”, “A feat. B”, “A x B”)."
+          value={s.artist_separators}
+          onchange={(v) => (s!.artist_separators = v)}
+          rows={4}
+        />
       </div>
     </section>
 
@@ -133,11 +191,35 @@
   </div>
 
   <div class="foot">
-    <Button small onclick={() => cleanup.resetToDefaults()} title="Puts back the built-in recipes, lists and maps (your edits are replaced)">Reset to defaults</Button>
+    <Button small onclick={() => (confirmReset = true)} title="Puts back the built-in recipes, lists and maps (your edits are replaced)">Reset to defaults</Button>
     <span class="muted" role="status">
       {#if cleanup.saved === "saving"}Saving…{:else if cleanup.saved === "saved"}Saved on this computer{:else if cleanup.saved === "error"}Could not save: {cleanup.saveError}{:else}Saved automatically on this computer{/if}
     </span>
   </div>
+{/if}
+
+{#if confirmReset}
+  <Modal title="Reset the clean-up settings?" onclose={() => (confirmReset = false)}>
+    <p class="warn">
+      This puts back every built-in recipe setting, list and map. What you have now is replaced and cannot be brought back (the new
+      settings are saved at once):
+    </p>
+    <ul class="gone">
+      {#each replaced as [name, n] (name)}
+        <li>{name}: {n === 0 ? "empty now" : n === 1 ? "1 entry now" : `${n} entries now`}, replaced by the built-in list</li>
+      {/each}
+      <li>Every tick box, the “feat.” form, the fields and the number of digits go back to their defaults</li>
+    </ul>
+    {#snippet actions()}
+      <Button data-autofocus onclick={() => (confirmReset = false)}>Keep my settings</Button>
+      <Button
+        onclick={() => {
+          confirmReset = false;
+          void cleanup.resetToDefaults();
+        }}
+      >Replace them with the defaults</Button>
+    {/snippet}
+  </Modal>
 {/if}
 
 <style>
@@ -181,6 +263,23 @@
   }
   .opt select {
     padding: 2px 6px;
+  }
+  .num {
+    width: 3.5em;
+    padding: 2px 4px;
+  }
+  .warn {
+    margin: 0 0 8px;
+  }
+  .gone {
+    margin: 0 0 8px;
+    padding: 6px 6px 6px 22px;
+    font-size: 12px;
+    max-height: 240px;
+    overflow: auto;
+    background: var(--deep);
+    border: 1px solid var(--line);
+    border-radius: 4px;
   }
   input[type="checkbox"] {
     padding: 0;

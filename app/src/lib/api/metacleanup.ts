@@ -10,7 +10,11 @@ export type CleanupSettings = {
   title_case: boolean;
   case_fields: string[];
   keep_upper: string[];
+  /** Words Title Case keeps in lower case inside a title (a, of, the, feat., ...). */
+  small_words: string[];
   strip_number: boolean;
+  /** The most digits a leading number may have to count as a track number. */
+  number_max_digits: number;
   number_space_only: boolean;
   strip_promo: boolean;
   promo_fields: string[];
@@ -27,6 +31,8 @@ export type CleanupSettings = {
   genre_map: MapEntry[];
   artist_map_on: boolean;
   artist_map: MapEntry[];
+  /** What separates names in an artist field: "," goes straight after a name, the rest have a space either side. */
+  artist_separators: string[];
   /** Also write the changed fields into the audio files' own tags. Off unless asked for. */
   write_back: boolean;
   /** The fields the stand-alone "write library tags to files" tool starts with. */
@@ -82,6 +88,8 @@ export type TagPlan = {
   status: string;
   changes: TagChange[];
   unsupported_fields: string[];
+  /** Things to know before agreeing, e.g. that an ID3v2.2 tag is upgraded to 2.4. */
+  notes: string[];
   message: string;
 };
 

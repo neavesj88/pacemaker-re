@@ -46,6 +46,12 @@
     device, so it asks first and lists every file. A blank value in the library never erases a tag in the file.
   </p>
   <p class="muted">
+    Only the fields you tick are replaced. Everything else in the file’s tag stays as it is: ratings and play counts, cover art,
+    iTunes Sound Check and gapless data, private and custom frames, other credits. A comment is written to the plain comment only.
+    An ID3v2.3 tag stays 2.3 (an old ID3v2.2 tag is upgraded to 2.4, and the list says so). After every write the copy is checked
+    (same audio bytes, same tag version, untouched items still there) before it replaces the file.
+  </p>
+  <p class="muted">
     <Button variant="link" onclick={() => (showFormats = !showFormats)}>{showFormats ? "Hide" : "Show"} the file types it can write</Button>
     {#if showFormats}
       {#if tagWrite.formats.length}
@@ -117,6 +123,9 @@
                   {#if i === 0}
                     {p.label}
                     <div class="file">{p.file} · {p.format}</div>
+                    {#each p.notes as n (n)}
+                      <div class="file">Note: {n}</div>
+                    {/each}
                     {#if p.unsupported_fields.length}
                       <div class="file">This file type has no place for: {p.unsupported_fields.map(fieldLabel).join(", ")}</div>
                     {/if}

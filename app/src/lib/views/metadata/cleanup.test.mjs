@@ -7,7 +7,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { TEXT_FIELDS, cleanFields } from "../../devmock/cleanupEngine.ts";
+import { TEXT_FIELDS, cleanFields, problemOf, tidyField } from "../../devmock/cleanupEngine.ts";
 import {
   NUMERIC_TAG_FIELDS, acceptedOf, diffParts, fieldsByTrack, formatList, formatMap, idsOf, itemsFromDetails, itemsFromPlans, itemsOf, parseList, parseMap, tally, tickKey,
 } from "./cleanupLogic.ts";
@@ -25,6 +25,18 @@ test("every golden case gives the same answer as the Rust engine", () => {
     const changed = Object.fromEntries(TEXT_FIELDS.filter((f) => cur[f] !== now[f]).map((f) => [f, now[f]]));
     assert.deepEqual(changed, c.expect, `case: ${c.name}`);
   }
+});
+
+test("a comment keeps its lines, joiners are text, and a recipe cannot wipe a title or artist", () => {
+  assert.equal(tidyField("comments", "Line one\nLine two\n\nRipped by me"), "Line one\nLine two\n\nRipped by me");
+  assert.equal(tidyField("comments", "\n\n  one \r\n two\r\n\n"), "one\ntwo");
+  assert.equal(tidyField("title", "Two\nLines"), "Two Lines");
+  assert.equal(tidyField("title", "Y‌Z ‍"), "Y‌Z ‍");
+  assert.equal(problemOf("title", "www.example.com", ""), "title would be left empty");
+  assert.equal(problemOf("artist", "x", "  "), "artist would be left empty");
+  assert.equal(problemOf("title", "  ", ""), null);
+  assert.equal(problemOf("album", "Old", ""), null);
+  assert.match(problemOf("album", "a", "x".repeat(300)), /longer than 255/);
 });
 
 test("lists parse one entry per line without repeats", () => {

@@ -53,6 +53,10 @@ const sanitise = (s: CleanupSettings): CleanupSettings => {
       e.to = e.to.trim();
     }
   }
+  out.number_max_digits = Math.min(6, Math.max(1, Math.trunc(out.number_max_digits) || 3));
+  for (const key of ["keep_upper", "small_words", "artist_separators"] as const) {
+    out[key] = out[key].map((x) => x.replace(/\s+/g, " ").trim()).filter((x) => x);
+  }
   out.genre_map = out.genre_map.filter((e) => e.from && e.to);
   out.artist_map = out.artist_map.filter((e) => e.from && e.to);
   return out;
@@ -70,7 +74,7 @@ function preview(details: Record<string, any>[], s: CleanupSettings) {
       field: f as string,
       old: cur[f],
       new: now[f],
-      problem: problemOf(f, now[f]),
+      problem: problemOf(f, cur[f], now[f]),
     }));
     if (changes.length) rows.push({ track_id: d.track_id, artist: d.artist, title: d.title, changes });
   }
@@ -135,9 +139,9 @@ export const handlers: Handlers = {
       const id = item.track_id as number;
       const label = t ? `${t.artist} - ${t.title}` : `track ${id}`;
       const file = t ? t.location.replace("/pmdb_tracks/", "") : "";
-      if (!t) return { track_id: id, label, file: "", format: "", status: "error", changes: [], unsupported_fields: [], message: "that track is not in the library" };
+      if (!t) return { track_id: id, label, file: "", format: "", status: "error", changes: [], unsupported_fields: [], notes: [], message: "that track is not in the library" };
       if (unsupportedExt(id)) {
-        return { track_id: id, label, file: file.replace(/\.mp3$/, ".wma"), format: "", status: "unsupported", changes: [], unsupported_fields: [], message: "tags of this file type are not written" };
+        return { track_id: id, label, file: file.replace(/\.mp3$/, ".wma"), format: "", status: "unsupported", changes: [], unsupported_fields: [], notes: [], message: "tags of this file type are not written" };
       }
       const f = fmt(id);
       const changes: { field: string; old: string; new: string }[] = [];
@@ -161,6 +165,7 @@ export const handlers: Handlers = {
         status: changes.length ? "write" : "same",
         changes,
         unsupported_fields: unsupported,
+        notes: id % 5 === 0 && f.ext === "mp3" ? ["its ID3v2.2 tag is upgraded to ID3v2.4 (all frames kept)"] : [],
         message: changes.length ? "" : "the tags already match",
       };
     }),

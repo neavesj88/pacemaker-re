@@ -46,8 +46,15 @@ pub struct CleanupSettings {
     pub case_fields: Vec<String>,
     /// Words that are always written like this in Title Case (DJ, UK, VIP), matched ignoring case.
     pub keep_upper: Vec<String>,
+    /// Words Title Case keeps in lower case inside a title (a, of, the, feat., ...), matched
+    /// ignoring case; the first and last word, and the first word after a colon, dash or bracket,
+    /// are capitalised whatever this says.
+    pub small_words: Vec<String>,
     /// Strip a leading "01 - " / "01. " / "1)" from the title.
     pub strip_number: bool,
+    /// The most digits a leading number may have to count as a track number ("2020 Vision" has
+    /// four and is left alone with the default of 3).
+    pub number_max_digits: usize,
     /// Also strip "01 Title" (digits and a space only); off because "99 Luftballons" is a title.
     pub number_space_only: bool,
     /// Strip URLs and promo bracket text from `promo_fields`.
@@ -73,6 +80,10 @@ pub struct CleanupSettings {
     pub genre_map: Vec<MapEntry>,
     pub artist_map_on: bool,
     pub artist_map: Vec<MapEntry>,
+    /// What separates the names in an artist field, for the artist map to replace one name in
+    /// "A & B feat. C": a comma goes straight after a name ("A, B"), every other separator has a
+    /// space on both sides (" & ", " feat. ", " x "). Matched ignoring case.
+    pub artist_separators: Vec<String>,
     /// Also write the changed fields into the audio files' own tags (off by default).
     pub write_back: bool,
     /// The fields the stand-alone "write library tags to files" tool offers by default.
@@ -86,7 +97,13 @@ impl Default for CleanupSettings {
             title_case: false,
             case_fields: strings(&["title", "artist", "album"]),
             keep_upper: strings(&["DJ", "MC", "UK", "USA", "VIP", "EP", "LP", "TV", "II", "III", "IV"]),
+            small_words: strings(&[
+                "a", "an", "the", "and", "but", "or", "nor", "for", "so", "yet", "as", "at", "by", "in", "of", "on", "to",
+                "up", "via", "vs", "vs.", "with", "from", "into", "onto", "per", "feat", "feat.", "ft", "ft.", "featuring",
+                "if", "off",
+            ]),
             strip_number: true,
+            number_max_digits: 3,
             number_space_only: false,
             strip_promo: true,
             promo_fields: strings(&["title", "artist", "album", "comments"]),
@@ -137,6 +154,7 @@ impl Default for CleanupSettings {
             ]),
             artist_map_on: false,
             artist_map: Vec::new(),
+            artist_separators: strings(&[",", "&", "/", "feat.", "feat", "ft.", "ft", "featuring", "vs.", "vs", "x", "and"]),
             write_back: false,
             write_fields: strings(&[
                 "title", "artist", "album_artist", "album", "composer", "genre", "label", "remixer", "producer",
@@ -191,7 +209,10 @@ impl CleanupSettings {
             }
             v.retain(|s| !s.is_empty());
         };
+        self.number_max_digits = self.number_max_digits.clamp(1, 6);
         tidy(&mut self.keep_upper);
+        tidy(&mut self.small_words);
+        tidy(&mut self.artist_separators);
         tidy(&mut self.promo_phrases);
         tidy(&mut self.remix_words);
         tidy(&mut self.remixer_ignore);
@@ -212,12 +233,13 @@ fn is_ws(c: char) -> bool {
     c.is_whitespace()
 }
 
-/// Trims and collapses runs of white space to one space; zero-width characters are dropped.
+/// Trims and collapses runs of white space to one space. Only the zero-width space and the byte
+/// order mark are dropped: the zero-width (non-)joiners are part of Persian, Indic and emoji text.
 pub fn collapse_ws(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     let mut pending = false;
     for c in s.chars() {
-        if matches!(c, '\u{200b}' | '\u{feff}' | '\u{200c}' | '\u{200d}') {
+        if matches!(c, '\u{200b}' | '\u{feff}') {
             continue;
         }
         if is_ws(c) {
@@ -231,6 +253,22 @@ pub fn collapse_ws(s: &str) -> String {
         }
     }
     out
+}
+
+/// [`collapse_ws`] for one field: a comment may run over several lines, and those line breaks stay;
+/// each line is tidied on its own and blank lines at either end go. Every other field is one line.
+pub fn tidy_field(field: &str, s: &str) -> String {
+    if field != "comments" || !s.contains(['\n', '\r']) {
+        return collapse_ws(s);
+    }
+    let unified = s.replace("\r\n", "\n").replace('\r', "\n");
+    let lines: Vec<String> = unified.split('\n').map(collapse_ws).collect();
+    let first = lines.iter().position(|l| !l.is_empty());
+    let last = lines.iter().rposition(|l| !l.is_empty());
+    match (first, last) {
+        (Some(a), Some(b)) => lines[a..=b].join("\n"),
+        _ => String::new(),
+    }
 }
 
 fn is_word_char(c: char) -> bool {
@@ -260,10 +298,10 @@ fn trim_dangling(s: &str) -> String {
 /// "01 - Title", "01. Title", "01_Title", "1) Title" lose the number. Needs a separator after
 /// the digits unless `space_only`; keeps decimals ("1.5 Hours") and titles that are only
 /// numbers; the rest must have a letter.
-pub fn strip_track_number(s: &str, space_only: bool) -> String {
+pub fn strip_track_number(s: &str, space_only: bool, max_digits: usize) -> String {
     let t = s.trim_start();
     let digits: usize = t.chars().take_while(|c| c.is_ascii_digit()).count();
-    if digits == 0 || digits > 3 {
+    if digits == 0 || digits > max_digits {
         return s.to_string();
     }
     let after = &t[digits..];
@@ -297,24 +335,45 @@ const TLDS: [&str; 34] = [
     "fr", "it", "es", "pl", "se", "ch", "at", "be", "dk", "no", "fi", "jp", "cn", "br", "au", "nz",
 ];
 
-/// "www.x.com", "http://...", "x.net/path": text that is a web address.
-fn looks_like_url(token: &str) -> bool {
-    let t = token.trim_matches(|c: char| !c.is_alphanumeric() && c != '/' && c != '.').to_lowercase();
-    if t.starts_with("http://") || t.starts_with("https://") || t.starts_with("www.") || t.contains("://") {
+/// Top-level domains that are also ordinary words ("Hello.It", "Say.No"): a bare address ending in
+/// one of them counts only as the whole content of a bracket, where promo text lives.
+const WORD_TLDS: [&str; 8] = ["it", "me", "to", "us", "no", "at", "be", "es"];
+
+/// Is this one white-space-free token a web address?
+/// - "http://...", "https://...", anything with "://", and "www.x.y" always;
+/// - a bare "name.tld" or "name.tld/path" only when it is written in lower case, as addresses are
+///   ("Rock.It", "Dance.With.Me" and "Big Beat.Net" are titles, not addresses), has a name of at
+///   least three characters, a known top-level domain, and no more than one dot unless a path
+///   follows; a bare address on a word-like domain (`WORD_TLDS`) only counts `in_bracket` (the whole content
+///   of a bracket, such as "[djsite.me]").
+fn looks_like_url(token: &str, in_bracket: bool) -> bool {
+    let t = token.trim_matches(|c: char| !c.is_alphanumeric() && c != '/' && c != '.').trim_end_matches('.');
+    let lower = t.to_lowercase();
+    if lower.starts_with("http://") || lower.starts_with("https://") || lower.starts_with("www.") || lower.contains("://") {
         return true;
     }
-    let host = t.split('/').next().unwrap_or("");
+    if t != lower {
+        return false;
+    }
+    let (host, path) = match t.split_once('/') {
+        Some((h, p)) => (h, p),
+        None => (t, ""),
+    };
+    let has_path = path.chars().any(|c| c.is_alphanumeric());
     let parts: Vec<&str> = host.split('.').collect();
-    if parts.len() < 2 {
+    if parts.len() < 2 || parts.iter().any(|p| p.is_empty()) || (parts.len() > 2 && !has_path) {
         return false;
     }
     let tld = parts[parts.len() - 1];
     let label = parts[parts.len() - 2];
-    TLDS.contains(&tld) && label.chars().count() >= 3 && label.chars().all(|c| c.is_alphanumeric() || c == '-')
+    if !TLDS.contains(&tld) || label.chars().count() < 3 || !label.chars().all(|c| c.is_alphanumeric() || c == '-') {
+        return false;
+    }
+    has_path || in_bracket || !WORD_TLDS.contains(&tld)
 }
 
-fn contains_url(text: &str) -> bool {
-    text.split(is_ws).any(looks_like_url)
+fn contains_url(text: &str, in_bracket: bool) -> bool {
+    text.split(is_ws).any(|t| looks_like_url(t, in_bracket))
 }
 
 fn phrase_in(words: &[String], phrase: &[String]) -> bool {
@@ -323,7 +382,9 @@ fn phrase_in(words: &[String], phrase: &[String]) -> bool {
 
 /// Is the text inside a bracket promo: a URL, or a whole-word promo phrase?
 fn is_promo(content: &str, phrases: &[Vec<String>]) -> bool {
-    if contains_url(content) {
+    // a bracket holding nothing but one address ("[djsite.me]") is promo even on a word-like domain
+    let single = content.split(is_ws).filter(|t| !t.is_empty()).count() == 1;
+    if contains_url(content, single) {
         return true;
     }
     let words = words_lower(content);
@@ -392,12 +453,27 @@ fn strip_bracket_promo(s: &str, phrases: &[Vec<String>]) -> String {
 pub fn strip_promo(s: &str, phrases: &[String]) -> String {
     let phrases: Vec<Vec<String>> = phrases.iter().map(|p| words_lower(p)).filter(|p| !p.is_empty()).collect();
     let no_brackets = strip_bracket_promo(s, &phrases);
-    let kept: Vec<&str> = no_brackets.split(is_ws).filter(|t| !t.is_empty() && !looks_like_url(t)).collect();
+    let kept: Vec<&str> = no_brackets.split(is_ws).filter(|t| !t.is_empty() && !looks_like_url(t, false)).collect();
     let joined = kept.join(" ");
     if joined == collapse_ws(s) {
         return s.to_string();
     }
     trim_dangling(&joined)
+}
+
+/// [`strip_promo`] for one field. A comment is judged line by line, so its line breaks stay and a
+/// line that was nothing but promo disappears whole.
+pub fn strip_promo_field(field: &str, s: &str, phrases: &[String]) -> String {
+    if field != "comments" || !s.contains('\n') {
+        return strip_promo(s, phrases);
+    }
+    s.split('\n')
+        .filter_map(|line| {
+            let cleaned = strip_promo(line, phrases);
+            if cleaned.trim().is_empty() && !line.trim().is_empty() { None } else { Some(cleaned) }
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 // ---- 3. feat. forms ------------------------------------------------------------------------
@@ -546,14 +622,9 @@ pub fn extract_remixer(title: &str, remix_words: &[String], ignore: &[String]) -
 
 // ---- 5. Title Case -------------------------------------------------------------------------
 
-const SMALL_WORDS: [&str; 33] = [
-    "a", "an", "the", "and", "but", "or", "nor", "for", "so", "yet", "as", "at", "by", "in", "of", "on", "to", "up",
-    "via", "vs", "vs.", "with", "from", "into", "onto", "per", "feat", "feat.", "ft", "ft.", "featuring", "if", "off",
-];
-
-fn is_small_word(w: &str) -> bool {
+fn is_small_word(w: &str, small: &[String]) -> bool {
     let l = w.to_lowercase();
-    SMALL_WORDS.contains(&l.as_str())
+    small.iter().any(|s| s.to_lowercase() == l)
 }
 
 fn capitalise(w: &str) -> String {
@@ -605,9 +676,9 @@ fn shape(w: &str) -> Shape {
 
 /// Title Case. `keep_upper` spellings win. Words that already mix cases (McFly, iPhone) are left
 /// alone, and an upper-case word inside a mixed-case text is taken for an acronym; a text that is
-/// all upper case is converted. Small words (a, of, the, feat., ...) stay lower case except at
+/// all upper case is converted. Small words (`small_words`: a, of, the, feat., ...) stay lower case except at
 /// the start or end, after a colon, dash, opening bracket or sentence end.
-pub fn title_case(s: &str, keep_upper: &[String]) -> String {
+pub fn title_case(s: &str, keep_upper: &[String], small_words: &[String]) -> String {
     let keep: HashMap<String, &str> = keep_upper.iter().map(|k| (k.to_lowercase(), k.as_str())).collect();
     let all_upper = {
         let mut letters = s.chars().filter(|c| c.is_alphabetic()).peekable();
@@ -694,7 +765,7 @@ pub fn title_case(s: &str, keep_upper: &[String]) -> String {
             Shape::Upper if !all_upper && word.chars().filter(|c| c.is_alphabetic()).count() > 1 => word.to_string(),
             Shape::Upper if !all_upper => capitalise(word), // a lone capital letter is just a letter
             Shape::Upper | Shape::Lower | Shape::Capitalised => {
-                if !clause_start && is_small_word(word) { lowercase(word) } else if shape(word) == Shape::Capitalised { word.to_string() } else { capitalise(word) }
+                if !clause_start && is_small_word(word, small_words) { lowercase(word) } else if shape(word) == Shape::Capitalised { word.to_string() } else { capitalise(word) }
             }
         };
         out.push_str(&converted);
@@ -709,12 +780,25 @@ fn lookup<'a>(map: &'a [MapEntry], value: &str) -> Option<&'a str> {
     map.iter().find(|e| collapse_ws(&e.from).to_lowercase() == key).map(|e| e.to.as_str())
 }
 
-const ARTIST_SEPARATORS: [&str; 12] =
-    [", ", " & ", " / ", " feat. ", " feat ", " ft. ", " ft ", " featuring ", " vs. ", " vs ", " x ", " and "];
+/// The text each separator of the settings stands for, longest first: a comma (or semicolon) goes
+/// straight after a name, anything else has a space on both sides.
+fn separator_patterns(separators: &[String]) -> Vec<Vec<char>> {
+    let mut v: Vec<Vec<char>> = separators
+        .iter()
+        .filter(|s| !s.is_empty())
+        .map(|s| {
+            let s = s.to_lowercase();
+            if s == "," || s == ";" { format!("{s} ") } else { format!(" {s} ") }.chars().collect()
+        })
+        .collect();
+    v.sort_by_key(|p| std::cmp::Reverse(p.len()));
+    v
+}
 
 /// Splits "A & B feat. C" into [("A", " & "), ("B", " feat. "), ("C", "")] so a name can be
 /// replaced without touching the separators.
-fn split_artists(s: &str) -> Vec<(String, String)> {
+fn split_artists(s: &str, separators: &[String]) -> Vec<(String, String)> {
+    let patterns = separator_patterns(separators);
     let chars: Vec<char> = s.chars().collect();
     let lower: Vec<char> = s.to_lowercase().chars().collect();
     // lowercasing can change the length for a few characters; then do not split at all
@@ -726,8 +810,7 @@ fn split_artists(s: &str) -> Vec<(String, String)> {
     let mut i = 0;
     while i < chars.len() {
         let mut hit: Option<usize> = None;
-        for sep in ARTIST_SEPARATORS {
-            let sc: Vec<char> = sep.chars().collect();
+        for sc in &patterns {
             if i + sc.len() <= chars.len() && lower[i..i + sc.len()] == sc[..] {
                 hit = Some(sc.len());
                 break;
@@ -745,11 +828,11 @@ fn split_artists(s: &str) -> Vec<(String, String)> {
     parts
 }
 
-fn apply_artist_map(value: &str, map: &[MapEntry]) -> String {
+fn apply_artist_map(value: &str, map: &[MapEntry], separators: &[String]) -> String {
     if let Some(to) = lookup(map, value) {
         return to.to_string();
     }
-    let parts = split_artists(value);
+    let parts = split_artists(value, separators);
     if parts.len() == 1 {
         return value.to_string();
     }
@@ -790,24 +873,24 @@ pub fn clean_fields(cur: &Fields, s: &CleanupSettings) -> Fields {
     let edit = |w: &mut Fields, f: &str, new: String| {
         let old = get(w, f);
         if new != old {
-            put(w, f, collapse_ws(&new));
+            put(w, f, tidy_field(f, &new));
         }
     };
 
     if s.trim {
         for f in TEXT_FIELDS {
-            let v = collapse_ws(&get(&w, f));
+            let v = tidy_field(f, &get(&w, f));
             put(&mut w, f, v);
         }
     }
     if s.strip_promo {
         for f in &s.promo_fields {
-            let v = strip_promo(&get(&w, f), &s.promo_phrases);
+            let v = strip_promo_field(f, &get(&w, f), &s.promo_phrases);
             edit(&mut w, f, v);
         }
     }
     if s.strip_number {
-        let v = strip_track_number(&get(&w, "title"), s.number_space_only);
+        let v = strip_track_number(&get(&w, "title"), s.number_space_only, s.number_max_digits);
         edit(&mut w, "title", v);
     }
     if s.feat_normalise {
@@ -840,7 +923,7 @@ pub fn clean_fields(cur: &Fields, s: &CleanupSettings) -> Fields {
     }
     if s.title_case {
         for f in &s.case_fields {
-            let v = title_case(&get(&w, f), &s.keep_upper);
+            let v = title_case(&get(&w, f), &s.keep_upper, &s.small_words);
             edit(&mut w, f, v);
         }
     }
@@ -851,13 +934,13 @@ pub fn clean_fields(cur: &Fields, s: &CleanupSettings) -> Fields {
     }
     if s.artist_map_on {
         for f in ["artist", "album_artist"] {
-            let v = apply_artist_map(&get(&w, f), &s.artist_map);
+            let v = apply_artist_map(&get(&w, f), &s.artist_map, &s.artist_separators);
             edit(&mut w, f, v);
         }
     }
     if s.trim {
         for f in TEXT_FIELDS {
-            let v = collapse_ws(&get(&w, f));
+            let v = tidy_field(f, &get(&w, f));
             put(&mut w, f, v);
         }
     }
@@ -891,7 +974,12 @@ pub struct Preview {
     pub rows: Vec<Row>,
 }
 
-fn problem_of(field: &str, new: &str) -> Option<String> {
+/// Why a change cannot be applied, if it cannot: too long for the column, a NUL, or a title or
+/// artist that would be left empty (a recipe that wipes a name is a mistake in the recipe).
+fn problem_of(field: &str, old: &str, new: &str) -> Option<String> {
+    if matches!(field, "title" | "artist") && new.trim().is_empty() && !old.trim().is_empty() {
+        return Some(format!("{field} would be left empty"));
+    }
     if new.chars().count() > MAX_TEXT_CHARS {
         return Some(format!("{field} would be longer than {MAX_TEXT_CHARS} characters"));
     }
@@ -911,7 +999,7 @@ pub fn preview(details: &[TrackDetail], s: &CleanupSettings) -> Preview {
         for f in TEXT_FIELDS {
             let (old, now) = (&cur[f], &new[f]);
             if old != now {
-                changes.push(Change { field: f.to_string(), old: old.clone(), new: now.clone(), problem: problem_of(f, now) });
+                changes.push(Change { field: f.to_string(), old: old.clone(), new: now.clone(), problem: problem_of(f, old, now) });
             }
         }
         if !changes.is_empty() {
@@ -1137,26 +1225,83 @@ mod tests {
     fn whitespace_is_trimmed_and_collapsed() {
         assert_eq!(collapse_ws("  A \t B\u{a0}\u{a0}C \n"), "A B C");
         assert_eq!(collapse_ws("zero\u{200b}width"), "zerowidth");
+        assert_eq!(collapse_ws("\u{feff}bom"), "bom");
         assert_eq!(collapse_ws("   "), "");
     }
 
     #[test]
+    fn joiners_are_text_and_comments_keep_their_lines() {
+        // Persian half-space and emoji joiner sequences are not decoration
+        assert_eq!(collapse_ws("می\u{200c}خواهم"), "می\u{200c}خواهم");
+        assert_eq!(collapse_ws("\u{1f469}\u{200d}\u{1f4bb}"), "\u{1f469}\u{200d}\u{1f4bb}");
+        assert_eq!(tidy_field("title", "Y\u{200c}Z \u{200d}"), "Y\u{200c}Z \u{200d}");
+        // a comment keeps its line breaks; only the ends and the runs inside a line are tidied
+        assert_eq!(tidy_field("comments", "Line one\nLine two\n\nRipped by me"), "Line one\nLine two\n\nRipped by me");
+        assert_eq!(tidy_field("comments", "\n\n  Line  one \r\n Line two\r\n\n"), "Line one\nLine two");
+        assert_eq!(tidy_field("comments", "  one  line "), "one line");
+        assert_eq!(tidy_field("comments", " \n \n"), "");
+        assert_eq!(tidy_field("title", "Two\nLines"), "Two Lines", "other fields are one line");
+    }
+
+    #[test]
     fn track_numbers() {
-        assert_eq!(strip_track_number("01 - Title", false), "Title");
-        assert_eq!(strip_track_number("01. Title", false), "Title");
-        assert_eq!(strip_track_number("01_Title", false), "Title");
-        assert_eq!(strip_track_number("1) Title", false), "Title");
-        assert_eq!(strip_track_number("12-Title", false), "Title");
-        assert_eq!(strip_track_number("2-Step", false), "2-Step", "one digit glued to a word is not a number");
-        assert_eq!(strip_track_number("1.5 Hours", false), "1.5 Hours");
-        assert_eq!(strip_track_number("24-7", false), "24-7");
-        assert_eq!(strip_track_number("1999", false), "1999");
-        assert_eq!(strip_track_number("01 - 02", false), "01 - 02", "nothing but numbers stays");
-        assert_eq!(strip_track_number("99 Problems", false), "99 Problems");
-        assert_eq!(strip_track_number("01 Title", true), "Title");
-        assert_eq!(strip_track_number("2020 Vision", true), "2020 Vision");
-        assert_eq!(strip_track_number("Title 01", false), "Title 01");
-        assert_eq!(strip_track_number("01 - ", false), "01 - ");
+        assert_eq!(strip_track_number("01 - Title", false, 3), "Title");
+        assert_eq!(strip_track_number("01. Title", false, 3), "Title");
+        assert_eq!(strip_track_number("01_Title", false, 3), "Title");
+        assert_eq!(strip_track_number("1) Title", false, 3), "Title");
+        assert_eq!(strip_track_number("12-Title", false, 3), "Title");
+        assert_eq!(strip_track_number("2-Step", false, 3), "2-Step", "one digit glued to a word is not a number");
+        assert_eq!(strip_track_number("1.5 Hours", false, 3), "1.5 Hours");
+        assert_eq!(strip_track_number("24-7", false, 3), "24-7");
+        assert_eq!(strip_track_number("1999", false, 3), "1999");
+        assert_eq!(strip_track_number("01 - 02", false, 3), "01 - 02", "nothing but numbers stays");
+        assert_eq!(strip_track_number("99 Problems", false, 3), "99 Problems");
+        assert_eq!(strip_track_number("01 Title", true, 3), "Title");
+        assert_eq!(strip_track_number("2020 Vision", true, 3), "2020 Vision");
+        assert_eq!(strip_track_number("Title 01", false, 3), "Title 01");
+        assert_eq!(strip_track_number("01 - ", false, 3), "01 - ");
+    }
+
+    #[test]
+    fn ordinary_words_with_dots_are_not_web_addresses() {
+        let p = CleanupSettings::default().promo_phrases;
+        for title in ["Dance.With.Me", "Hello.It", "Rock.It Up", "Song feat.Me", "Big Beat.Net", "Say.No", "Mr.Me", "A.B.C", "St.Louis Blues", "Vol.2 Mix", "Go.To Hell", "Hey.Us All", "Beat.Co Remix"] {
+            assert_eq!(strip_promo(title, &p), title, "{title}");
+        }
+        // lower case addresses still go, bare or with a path or www.
+        assert_eq!(strip_promo("Song djsite.com", &p), "Song");
+        assert_eq!(strip_promo("Song - radio.fm", &p), "Song");
+        assert_eq!(strip_promo("Song music.example.com/page", &p), "Song");
+        assert_eq!(strip_promo("Song www.Example.Com", &p), "Song");
+        assert_eq!(strip_promo("Song example.com.", &p), "Song");
+        // a word-like domain counts only as the whole content of a bracket
+        assert_eq!(strip_promo("Song [djsite.me]", &p), "Song");
+        assert_eq!(strip_promo("Song djsite.me", &p), "Song djsite.me");
+        assert_eq!(strip_promo("Song (rock.it remix)", &p), "Song (rock.it remix)");
+        // more than one dot needs a path
+        assert_eq!(strip_promo("Song dance.with.me", &p), "Song dance.with.me");
+    }
+
+    #[test]
+    fn a_change_that_would_empty_a_title_or_artist_is_blocked() {
+        let mut st = CleanupSettings::none();
+        st.strip_promo = true;
+        let ds = vec![detail(1, "www.example.com", "Artist"), detail(2, "Plain", "[www.example.org]"), detail(3, "  ", "x")];
+        let pv = preview(&ds, &st);
+        let problem = |id: i64, f: &str| pv.rows.iter().find(|r| r.track_id == id).unwrap().changes.iter().find(|c| c.field == f).unwrap().problem.clone();
+        assert_eq!(problem(1, "title").as_deref(), Some("title would be left empty"));
+        assert_eq!(problem(2, "artist").as_deref(), Some("artist would be left empty"));
+        // a title that already was blank is not "emptied" by tidying it
+        assert_eq!(problem_of("title", "  ", ""), None);
+        assert_eq!(problem_of("album", "Old", ""), None, "other fields may be cleared");
+    }
+
+    #[test]
+    fn promo_in_a_comment_is_removed_line_by_line() {
+        let p = CleanupSettings::default().promo_phrases;
+        assert_eq!(strip_promo_field("comments", "Ripped by me\nhttp://example.com/x\nGood one [Free DL]", &p), "Ripped by me\nGood one");
+        assert_eq!(strip_promo_field("comments", "Plain\nlines", &p), "Plain\nlines");
+        assert_eq!(strip_promo_field("title", "A (Free Download)", &p), "A");
     }
 
     #[test]
@@ -1223,25 +1368,26 @@ mod tests {
     #[test]
     fn title_casing() {
         let k = CleanupSettings::default().keep_upper;
-        assert_eq!(title_case("the art of war", &k), "The Art of War");
-        assert_eq!(title_case("A SONG FOR THE DJ", &k), "A Song for the DJ");
-        assert_eq!(title_case("tech-house anthem", &k), "Tech-House Anthem");
-        assert_eq!(title_case("don't stop (club mix)", &k), "Don't Stop (Club Mix)");
-        assert_eq!(title_case("song feat. name", &k), "Song feat. Name");
-        assert_eq!(title_case("Song Ft. Name", &k), "Song ft. Name");
-        assert_eq!(title_case("McFly and iPhone", &k), "McFly and iPhone", "mixed case words are left");
-        assert_eq!(title_case("Live in the UK", &k), "Live in the UK", "an acronym in a mixed text stays");
-        assert_eq!(title_case("live in the uk", &k), "Live in the UK");
-        assert_eq!(title_case("dj's choice", &k), "DJ's Choice");
-        assert_eq!(title_case("one: the beginning", &k), "One: The Beginning");
-        assert_eq!(title_case("song - the remix", &k), "Song - The Remix");
-        assert_eq!(title_case("1st of 3", &k), "1st of 3");
-        assert_eq!(title_case("something to", &k), "Something To", "the last word is always capitalised");
-        assert_eq!(title_case("", &k), "");
-        assert_eq!(title_case("école de la nuit", &k), "École De La Nuit", "non-ASCII letters");
-        assert_eq!(title_case("ÉCOLE DE LA NUIT", &k), "École De La Nuit");
-        assert_eq!(title_case("rockin'", &k), "Rockin'");
-        assert_eq!(title_case("I LOVE IT", &[]), "I Love It");
+        let sw = CleanupSettings::default().small_words;
+        assert_eq!(title_case("the art of war", &k, &sw), "The Art of War");
+        assert_eq!(title_case("A SONG FOR THE DJ", &k, &sw), "A Song for the DJ");
+        assert_eq!(title_case("tech-house anthem", &k, &sw), "Tech-House Anthem");
+        assert_eq!(title_case("don't stop (club mix)", &k, &sw), "Don't Stop (Club Mix)");
+        assert_eq!(title_case("song feat. name", &k, &sw), "Song feat. Name");
+        assert_eq!(title_case("Song Ft. Name", &k, &sw), "Song ft. Name");
+        assert_eq!(title_case("McFly and iPhone", &k, &sw), "McFly and iPhone", "mixed case words are left");
+        assert_eq!(title_case("Live in the UK", &k, &sw), "Live in the UK", "an acronym in a mixed text stays");
+        assert_eq!(title_case("live in the uk", &k, &sw), "Live in the UK");
+        assert_eq!(title_case("dj's choice", &k, &sw), "DJ's Choice");
+        assert_eq!(title_case("one: the beginning", &k, &sw), "One: The Beginning");
+        assert_eq!(title_case("song - the remix", &k, &sw), "Song - The Remix");
+        assert_eq!(title_case("1st of 3", &k, &sw), "1st of 3");
+        assert_eq!(title_case("something to", &k, &sw), "Something To", "the last word is always capitalised");
+        assert_eq!(title_case("", &k, &sw), "");
+        assert_eq!(title_case("école de la nuit", &k, &sw), "École De La Nuit", "non-ASCII letters");
+        assert_eq!(title_case("ÉCOLE DE LA NUIT", &k, &sw), "École De La Nuit");
+        assert_eq!(title_case("rockin'", &k, &sw), "Rockin'");
+        assert_eq!(title_case("I LOVE IT", &[], &sw), "I Love It");
     }
 
     #[test]
@@ -1250,13 +1396,14 @@ mod tests {
         assert_eq!(lookup(&g, " tech-house "), Some("Tech House"));
         assert_eq!(lookup(&g, "DNB"), Some("Drum & Bass"));
         assert_eq!(lookup(&g, "House"), None);
+        let sep = CleanupSettings::default().artist_separators;
         let a = map(&[("Old Name", "New Name"), ("Earth, Wind & Fire", "Earth Wind & Fire")]);
-        assert_eq!(apply_artist_map("old name", &a), "New Name");
-        assert_eq!(apply_artist_map("Old Name & Other", &a), "New Name & Other");
-        assert_eq!(apply_artist_map("Other feat. Old Name", &a), "Other feat. New Name");
-        assert_eq!(apply_artist_map("Earth, Wind & Fire", &a), "Earth Wind & Fire", "the whole field wins over its parts");
-        assert_eq!(apply_artist_map("Nobody", &a), "Nobody");
-        assert_eq!(split_artists("A & B, C ft. D"), vec![
+        assert_eq!(apply_artist_map("old name", &a, &sep), "New Name");
+        assert_eq!(apply_artist_map("Old Name & Other", &a, &sep), "New Name & Other");
+        assert_eq!(apply_artist_map("Other feat. Old Name", &a, &sep), "Other feat. New Name");
+        assert_eq!(apply_artist_map("Earth, Wind & Fire", &a, &sep), "Earth Wind & Fire", "the whole field wins over its parts");
+        assert_eq!(apply_artist_map("Nobody", &a, &sep), "Nobody");
+        assert_eq!(split_artists("A & B, C ft. D", &sep), vec![
             ("A".to_string(), " & ".to_string()),
             ("B".to_string(), ", ".to_string()),
             ("C".to_string(), " ft. ".to_string()),
@@ -1308,6 +1455,35 @@ mod tests {
         assert_eq!(clean_fields(&cur, &st)["remixer"], "Old Name");
         st.overwrite_remixer = true;
         assert_eq!(clean_fields(&cur, &st)["remixer"], "New Name");
+    }
+
+    #[test]
+    fn small_words_and_separators_are_settings() {
+        let mut st = CleanupSettings::none();
+        st.title_case = true;
+        let cur = fields(&[("title", "the art of war")]);
+        assert_eq!(clean_fields(&cur, &st)["title"], "The Art of War");
+        st.small_words = s(&["the", "art", "OF"]);
+        assert_eq!(clean_fields(&cur, &st)["title"], "The art of War", "the list is the user's, matched ignoring case");
+        st.small_words.clear();
+        assert_eq!(clean_fields(&cur, &st)["title"], "The Art Of War");
+        // artist separators: a name next to a custom separator is replaced on its own
+        let mut st = CleanupSettings::none();
+        st.artist_map_on = true;
+        st.artist_map = map(&[("Old Name", "New Name")]);
+        let cur = fields(&[("artist", "Other + Old Name")]);
+        assert_eq!(clean_fields(&cur, &st)["artist"], "Other + Old Name", "'+' is not a separator yet");
+        st.artist_separators.push("+".into());
+        assert_eq!(clean_fields(&cur, &st)["artist"], "Other + New Name");
+        // the number of digits is a setting too
+        let mut st = CleanupSettings::none();
+        st.strip_number = true;
+        let cur = fields(&[("title", "2020 - Vision")]);
+        assert_eq!(clean_fields(&cur, &st)["title"], "2020 - Vision");
+        st.number_max_digits = 4;
+        assert_eq!(clean_fields(&cur, &st)["title"], "Vision");
+        let saved = CleanupSettings { number_max_digits: 99, artist_separators: s(&["", " + "]), small_words: s(&[" of "]), ..CleanupSettings::default() }.sanitised();
+        assert_eq!((saved.number_max_digits, saved.artist_separators, saved.small_words), (6, s(&["+"]), s(&["of"])));
     }
 
     #[test]

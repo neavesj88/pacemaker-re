@@ -22,12 +22,13 @@ const chars = (s: string) => Array.from(s);
 const hasLetter = (s: string) => chars(s).some(isAlpha);
 const isAsciiDigit = (c: string) => c >= "0" && c <= "9";
 
-/** Trims and collapses runs of white space to one space; zero-width characters are dropped. */
+/** Trims and collapses runs of white space to one space. Only the zero-width space and the byte order
+ *  mark are dropped: the zero-width (non-)joiners are part of Persian, Indic and emoji text. */
 export function collapseWs(s: string): string {
   let out = "";
   let pending = false;
   for (const c of s) {
-    if (c === "​" || c === "﻿" || c === "‌" || c === "‍") continue;
+    if (c === "\u200b" || c === "\ufeff") continue;
     if (isWs(c)) pending = true;
     else {
       if (pending && out) out += " ";
@@ -36,6 +37,19 @@ export function collapseWs(s: string): string {
     }
   }
   return out;
+}
+
+/** collapseWs for one field: a comment may run over several lines, and those line breaks stay; each
+ *  line is tidied on its own and blank lines at either end go. Every other field is one line. */
+export function tidyField(field: string, s: string): string {
+  if (field !== "comments" || !/[\n\r]/.test(s)) return collapseWs(s);
+  const lines = s.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n").map(collapseWs);
+  const first = lines.findIndex((l) => l !== "");
+  let last = -1;
+  lines.forEach((l, i) => {
+    if (l !== "") last = i;
+  });
+  return first < 0 ? "" : lines.slice(first, last + 1).join("\n");
 }
 
 const wordsLower = (s: string): string[] =>
@@ -55,11 +69,11 @@ function trimMatches(s: string, pred: (c: string) => boolean): string {
 const trimDangling = (s: string) => trimMatches(s, (c) => isWs(c) || isSepChar(c));
 
 // ---- 1. leading track number ----
-export function stripTrackNumber(s: string, spaceOnly: boolean): string {
+export function stripTrackNumber(s: string, spaceOnly: boolean, maxDigits: number): string {
   const t = chars(s.replace(/^\p{White_Space}+/u, ""));
   let digits = 0;
   while (digits < t.length && isAsciiDigit(t[digits])) digits++;
-  if (digits === 0 || digits > 3) return s;
+  if (digits === 0 || digits > maxDigits) return s;
   const after = t.slice(digits);
   let k = 0;
   while (k < after.length && isWs(after[k])) k++;
@@ -89,15 +103,31 @@ const TLDS = [
   "fr", "it", "es", "pl", "se", "ch", "at", "be", "dk", "no", "fi", "jp", "cn", "br", "au", "nz",
 ];
 
-function looksLikeUrl(token: string): boolean {
-  const t = trimMatches(token, (c) => !ALNUM.test(c) && c !== "/" && c !== ".").toLowerCase();
-  if (t.startsWith("http://") || t.startsWith("https://") || t.startsWith("www.") || t.includes("://")) return true;
-  const host = t.split("/")[0];
+/** Top-level domains that are also ordinary words ("Hello.It", "Say.No"): a bare address ending in one
+ *  of them counts only as the whole content of a bracket, where promo text lives. */
+const WORD_TLDS = ["it", "me", "to", "us", "no", "at", "be", "es"];
+
+/** Is this one white-space-free token a web address? "http://...", "https://...", anything with "://"
+ *  and "www.x.y" always; a bare "name.tld" or "name.tld/path" only when it is written in lower case, as
+ *  addresses are ("Rock.It", "Dance.With.Me" and "Big Beat.Net" are titles), has a name of at least
+ *  three characters, a known top-level domain and no more than one dot unless a path follows; a bare
+ *  address on a word-like domain only counts inBracket. */
+function looksLikeUrl(token: string, inBracket: boolean): boolean {
+  let t = trimMatches(token, (c) => !ALNUM.test(c) && c !== "/" && c !== ".");
+  while (t.endsWith(".")) t = t.slice(0, -1);
+  const lower = t.toLowerCase();
+  if (lower.startsWith("http://") || lower.startsWith("https://") || lower.startsWith("www.") || lower.includes("://")) return true;
+  if (t !== lower) return false;
+  const slash = t.indexOf("/");
+  const host = slash < 0 ? t : t.slice(0, slash);
+  const path = slash < 0 ? "" : t.slice(slash + 1);
+  const hasPath = chars(path).some((c) => ALNUM.test(c));
   const parts = host.split(".");
-  if (parts.length < 2) return false;
+  if (parts.length < 2 || parts.some((x) => x === "") || (parts.length > 2 && !hasPath)) return false;
   const tld = parts[parts.length - 1];
   const label = parts[parts.length - 2];
-  return TLDS.includes(tld) && chars(label).length >= 3 && chars(label).every((c) => ALNUM.test(c) || c === "-");
+  if (!TLDS.includes(tld) || chars(label).length < 3 || !chars(label).every((c) => ALNUM.test(c) || c === "-")) return false;
+  return hasPath || inBracket || !WORD_TLDS.includes(tld);
 }
 
 const splitWs = (s: string): string[] => {
@@ -113,7 +143,7 @@ const splitWs = (s: string): string[] => {
   return out;
 };
 
-const containsUrl = (text: string) => splitWs(text).some(looksLikeUrl);
+const containsUrl = (text: string, inBracket: boolean) => splitWs(text).some((t) => looksLikeUrl(t, inBracket));
 
 function phraseIn(words: string[], phrase: string[]): boolean {
   if (phrase.length === 0) return false;
@@ -124,7 +154,8 @@ function phraseIn(words: string[], phrase: string[]): boolean {
 }
 
 function isPromo(content: string, phrases: string[][]): boolean {
-  if (containsUrl(content)) return true;
+  // a bracket holding nothing but one address ("[djsite.me]") is promo even on a word-like domain
+  if (containsUrl(content, splitWs(content).length === 1)) return true;
   const words = wordsLower(content);
   return phrases.some((p) => phraseIn(words, p));
 }
@@ -176,10 +207,23 @@ function stripBracketPromo(s: string, phrases: string[][]): string {
 export function stripPromo(s: string, phraseList: string[]): string {
   const phrases = phraseList.map(wordsLower).filter((p) => p.length > 0);
   const noBrackets = stripBracketPromo(s, phrases);
-  const kept = splitWs(noBrackets).filter((t) => !looksLikeUrl(t));
+  const kept = splitWs(noBrackets).filter((t) => !looksLikeUrl(t, false));
   const joined = kept.join(" ");
   if (joined === collapseWs(s)) return s;
   return trimDangling(joined);
+}
+
+/** stripPromo for one field. A comment is judged line by line, so its line breaks stay and a line that
+ *  was nothing but promo disappears whole. */
+export function stripPromoField(field: string, s: string, phraseList: string[]): string {
+  if (field !== "comments" || !s.includes("\n")) return stripPromo(s, phraseList);
+  return s
+    .split("\n")
+    .flatMap((line) => {
+      const cleaned = stripPromo(line, phraseList);
+      return cleaned.trim() === "" && line.trim() !== "" ? [] : [cleaned];
+    })
+    .join("\n");
 }
 
 // ---- 3. feat. forms ----
@@ -297,11 +341,7 @@ export function extractRemixer(title: string, remixWords: string[], ignoreWords:
 }
 
 // ---- 5. Title Case ----
-const SMALL_WORDS = [
-  "a", "an", "the", "and", "but", "or", "nor", "for", "so", "yet", "as", "at", "by", "in", "of", "on", "to", "up",
-  "via", "vs", "vs.", "with", "from", "into", "onto", "per", "feat", "feat.", "ft", "ft.", "featuring", "if", "off",
-];
-const isSmallWord = (w: string) => SMALL_WORDS.includes(w.toLowerCase());
+const isSmallWord = (w: string, small: string[]) => small.some((x) => x.toLowerCase() === w.toLowerCase());
 
 function capitalise(w: string): string {
   let out = "";
@@ -328,7 +368,7 @@ function shape(w: string): Shape {
 
 const isApostrophe = (c: string) => c === "'" || c === "’";
 
-export function titleCase(s: string, keepUpper: string[]): string {
+export function titleCase(s: string, keepUpper: string[], smallWords: string[]): string {
   const keep = new Map(keepUpper.map((k) => [k.toLowerCase(), k] as const));
   const letters = chars(s).filter(isAlpha);
   const allUpper = letters.length > 0 && letters.every((c) => !LOWER.test(c));
@@ -409,7 +449,7 @@ export function titleCase(s: string, keepUpper: string[]): string {
     else if (sh === "none" || sh === "mixed") converted = text;
     else if (sh === "upper" && !allUpper && letterCount > 1) converted = text;
     else if (sh === "upper" && !allUpper) converted = capitalise(text);
-    else if (!clauseStart && isSmallWord(text)) converted = text.toLowerCase();
+    else if (!clauseStart && isSmallWord(text, smallWords)) converted = text.toLowerCase();
     else if (sh === "cap") converted = text;
     else converted = capitalise(text);
     out += converted;
@@ -424,9 +464,20 @@ function lookup(map: MapEntry[], value: string): string | null {
   return hit ? hit.to : null;
 }
 
-const ARTIST_SEPARATORS = [", ", " & ", " / ", " feat. ", " feat ", " ft. ", " ft ", " featuring ", " vs. ", " vs ", " x ", " and "];
+/** The text each separator of the settings stands for, longest first: a comma (or semicolon) goes
+ *  straight after a name, anything else has a space on both sides. */
+function separatorPatterns(separators: string[]): string[][] {
+  return separators
+    .filter((x) => x !== "")
+    .map((x) => {
+      const l = x.toLowerCase();
+      return chars(l === "," || l === ";" ? `${l} ` : ` ${l} `);
+    })
+    .sort((a, b) => b.length - a.length);
+}
 
-function splitArtists(s: string): [string, string][] {
+function splitArtists(s: string, separators: string[]): [string, string][] {
+  const patterns = separatorPatterns(separators);
   const cs = chars(s);
   const lower = chars(s.toLowerCase());
   if (lower.length !== cs.length) return [[s, ""]];
@@ -435,8 +486,7 @@ function splitArtists(s: string): [string, string][] {
   let i = 0;
   while (i < cs.length) {
     let hit = 0;
-    for (const sep of ARTIST_SEPARATORS) {
-      const sc = chars(sep);
+    for (const sc of patterns) {
       if (i + sc.length <= cs.length && sc.every((c, k) => lower[i + k] === c)) {
         hit = sc.length;
         break;
@@ -452,10 +502,10 @@ function splitArtists(s: string): [string, string][] {
   return parts;
 }
 
-function applyArtistMap(value: string, map: MapEntry[]): string {
+function applyArtistMap(value: string, map: MapEntry[], separators: string[]): string {
   const whole = lookup(map, value);
   if (whole !== null) return whole;
-  const parts = splitArtists(value);
+  const parts = splitArtists(value, separators);
   if (parts.length === 1) return value;
   return parts.map(([name, sep]) => (lookup(map, name) ?? name) + sep).join("");
 }
@@ -465,11 +515,11 @@ export function cleanFields(cur: Fields, s: CleanupSettings): Fields {
   const w: Fields = { ...cur };
   const get = (f: string) => w[f] ?? "";
   const edit = (f: string, v: string) => {
-    if (v !== get(f)) w[f] = collapseWs(v);
+    if (v !== get(f)) w[f] = tidyField(f, v);
   };
-  if (s.trim) for (const f of TEXT_FIELDS) w[f] = collapseWs(get(f));
-  if (s.strip_promo) for (const f of s.promo_fields) edit(f, stripPromo(get(f), s.promo_phrases));
-  if (s.strip_number) edit("title", stripTrackNumber(get("title"), s.number_space_only));
+  if (s.trim) for (const f of TEXT_FIELDS) w[f] = tidyField(f, get(f));
+  if (s.strip_promo) for (const f of s.promo_fields) edit(f, stripPromoField(f, get(f), s.promo_phrases));
+  if (s.strip_number) edit("title", stripTrackNumber(get("title"), s.number_space_only, s.number_max_digits));
   if (s.feat_normalise) for (const f of ["title", "artist", "album_artist"]) edit(f, normaliseFeat(get(f), s.feat_form));
   if (s.feat_to_artist) {
     const artist = get("artist");
@@ -487,18 +537,19 @@ export function cleanFields(cur: Fields, s: CleanupSettings): Fields {
     const name = extractRemixer(get("title"), s.remix_words, s.remixer_ignore);
     if (name !== null && (get("remixer") === "" || s.overwrite_remixer)) w.remixer = name;
   }
-  if (s.title_case) for (const f of s.case_fields) edit(f, titleCase(get(f), s.keep_upper));
+  if (s.title_case) for (const f of s.case_fields) edit(f, titleCase(get(f), s.keep_upper, s.small_words));
   if (s.genre_map_on) {
     const to = lookup(s.genre_map, get("genre"));
     if (to !== null) w.genre = to;
   }
-  if (s.artist_map_on) for (const f of ["artist", "album_artist"]) edit(f, applyArtistMap(get(f), s.artist_map));
-  if (s.trim) for (const f of TEXT_FIELDS) w[f] = collapseWs(get(f));
+  if (s.artist_map_on) for (const f of ["artist", "album_artist"]) edit(f, applyArtistMap(get(f), s.artist_map, s.artist_separators));
+  if (s.trim) for (const f of TEXT_FIELDS) w[f] = tidyField(f, get(f));
   return w;
 }
 
 export const MAX_TEXT_CHARS = 255;
-export const problemOf = (field: string, v: string): string | null => {
+export const problemOf = (field: string, old: string, v: string): string | null => {
+  if ((field === "title" || field === "artist") && v.trim() === "" && old.trim() !== "") return `${field} would be left empty`;
   if (chars(v).length > MAX_TEXT_CHARS) return `${field} would be longer than ${MAX_TEXT_CHARS} characters`;
   if (v.includes("\0")) return `${field} would contain a NUL character`;
   return null;
