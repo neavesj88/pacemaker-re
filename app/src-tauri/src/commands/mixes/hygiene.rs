@@ -536,6 +536,61 @@ mod tests {
         cleanup(lib, dirs);
     }
 
+    /// The Trans tool exactly as the editor's `newTool("Trans", ...)` builds it: class trans, no
+    /// automation params (a Trans has none to key), flat span.
+    fn trans_tool() -> super::super::doc::ProcessDoc {
+        serde_json::from_value(serde_json::json!({
+            "kind": "tool", "id": "trans-1", "toolType": "Trans", "name": "ToolProcess", "bypassed": false,
+            "effects": [{ "name": "Trans", "bypassed": false, "class": "trans", "startBpm": 128.0, "active": true }],
+            "params": {}, "start": 44100.0, "length": 88200.0, "trimStart": 0.0, "trimEnd": 0.0,
+            "limitSize": false, "startSec": 1.0, "lengthSec": 2.0
+        }))
+        .unwrap()
+    }
+
+    fn has_trans(mix: &Mix) -> bool {
+        mix.tracks.iter().flat_map(|t| &t.processes).any(|p| match p {
+            m::Process::Tool(t) => t.effects.iter().any(|e| matches!(e.kind, m::EffectKind::Trans { .. })),
+            _ => false,
+        })
+    }
+
+    #[test]
+    fn a_trans_tool_as_the_editor_makes_it_validates_saves_and_reads_back() {
+        let (mut lib, dirs, ids) = library("trans");
+        let id = lib.create_mix("Gate").unwrap();
+        lib.save_mix(id, &mix_over(&ids, "Gate")).unwrap();
+
+        let mut doc = open_in(&lib, id).unwrap();
+        // the shared fixture already carries a Trans of its own (with keyed params): drop it, so the
+        // only Trans left is the one in the editor's shape
+        for c in &mut doc.clips {
+            c.processes.retain(|p| !matches!(p, super::super::doc::ProcessDoc::Tool(t) if t.tool_type == "Trans"));
+        }
+        doc.refresh();
+        assert!(!has_trans(&doc.to_mix().unwrap()), "no Trans left before the editor's one is added");
+        doc.clips[0].processes.push(trans_tool());
+        doc.refresh();
+        assert!(doc.validate(None).is_empty(), "{:?}", doc.validate(None));
+        assert!(super::super::problems_in(&lib, &doc).unwrap().is_empty());
+        assert!(has_trans(&doc.to_mix().unwrap()));
+
+        // a normal save keeps it ...
+        save_in(&mut lib, id, &doc).unwrap();
+        assert!(has_trans(&lib.read_mix(id).unwrap()));
+        let reopened = open_in(&lib, id).unwrap();
+        assert!(reopened.clips[0].processes.iter().any(|p| matches!(p, super::super::doc::ProcessDoc::Tool(t) if t.tool_type == "Trans")));
+        assert!(reopened.validate(None).is_empty());
+
+        // ... and so does Save as, and a duplicate of the saved mix
+        let s = save_as_in(&mut lib, &doc, "Gate v2").unwrap();
+        assert!(has_trans(&lib.read_mix(s.id).unwrap()));
+        let d = duplicate_in(&mut lib, id, None).unwrap();
+        assert!(has_trans(&lib.read_mix(d.id).unwrap()));
+        assert!(lib.compatibility_problems().unwrap().is_empty());
+        cleanup(lib, dirs);
+    }
+
     #[test]
     fn bulk_delete_names_what_it_deletes_and_keeps_what_changed() {
         let (mut lib, dirs, ids) = library("del");

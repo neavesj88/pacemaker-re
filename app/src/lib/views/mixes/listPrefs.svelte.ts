@@ -32,9 +32,9 @@ export const listPrefs = new ListSettings();
 
 class ToolSettings {
   /** Offer the Trans tool in the editor's tool menu. Its file layout has not been checked on a
-   * real Pacemaker (notes/mix-format.md), so this is a choice, on by default because the Editor
-   * itself offers the tool. */
-  showTrans = $state(true);
+   * real Pacemaker (notes/mix-format.md: no document with a Trans tool has been seen), so it is
+   * opt-in: off until the person turns it on in the Mixes settings. */
+  showTrans = $state(false);
 
   constructor() {
     try {
