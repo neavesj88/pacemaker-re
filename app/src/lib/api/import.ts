@@ -1,7 +1,7 @@
 // Import commands (src-tauri/src/commands/import.rs) and the OS-level file pick / drop.
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
-import { open } from "@tauri-apps/plugin-dialog";
+import { open, save } from "@tauri-apps/plugin-dialog";
 
 export const AUDIO_EXTS = ["mp3", "flac", "wav", "m4a", "aac", "ogg", "aiff"];
 
@@ -32,3 +32,92 @@ export const onFileDrag = (cb: (s: DragState) => void) =>
     else if (t === "leave") cb({ type: "leave" });
     else if (t === "drop") cb({ type: "drop", paths: e.payload.paths });
   });
+
+// ---- other libraries: rekordbox XML, iTunes / Music Library.xml, M3U8 / CSV out ----
+
+export type InteropSource = "rekordbox" | "itunes";
+
+/** Which parts of a library file to apply. `playlist_indexes` null = every playlist. */
+export type ImportOptions = { ratings: boolean; playlists: boolean; playlist_indexes: number[] | null };
+
+export type RatingChange = { track_id: number; title: string; artist: string; from: number; to: number };
+export type PlannedTrack = { track_id: number; title: string; artist: string };
+export type CaseAction = "create" | "extend" | "unchanged" | "skip";
+export type CasePlan = {
+  index: number;
+  name: string;
+  action: CaseAction;
+  case_id: number | null;
+  /** Tracks this step adds, in playlist order. */
+  tracks: PlannedTrack[];
+  already_in: number;
+  unmatched: number;
+  selected: boolean;
+};
+export type CueNote = { track_id: number; title: string; artist: string; cue_secs: number };
+export type UnmatchedTrack = {
+  title: string;
+  artist: string;
+  path: string;
+  reason: string;
+  on_disk: boolean;
+  in_playlist: boolean;
+};
+
+/** Everything an import would change, computed without writing. */
+export type ImportPlan = {
+  source: InteropSource;
+  foreign_tracks: number;
+  matched: number;
+  matched_by_file: number;
+  matched_by_tags: number;
+  ratings: RatingChange[];
+  ratings_unchanged: number;
+  cases: CasePlan[];
+  cues_skipped: CueNote[];
+  unmatched_total: number;
+  /** The first 1000 unmatched tracks, those in playlists first. */
+  unmatched: UnmatchedTrack[];
+  /** Unmatched files that exist on this computer (what add-tracks could bring over). */
+  addable_paths: string[];
+};
+
+export type ExportFormat = "m3u8" | "csv" | "rekordbox";
+export type ExportScope = { scope: "library" } | { scope: "case" | "mix"; id: number };
+
+/** Read a library file and list what importing it would change. Writes nothing. */
+export const interopPreview = (root: string, path: string, options: ImportOptions) =>
+  invoke<ImportPlan>("interop_preview", { root, path, options });
+
+/** Apply the previewed import as a background job (`job-progress` / `job-done` with kind
+ *  "interop"). Returns when the job has started. */
+export const interopApply = (root: string, path: string, options: ImportOptions) =>
+  invoke<void>("interop_apply", { root, path, options });
+
+/** Write the whole library (rekordbox) or a case / mix / the library as a list (M3U8, CSV). */
+export const interopExport = (root: string, format: ExportFormat, where: ExportScope, dest: string) =>
+  invoke<{ path: string; tracks: number }>("interop_export", {
+    root,
+    format,
+    scope: where.scope,
+    id: "id" in where ? where.id : null,
+    dest,
+  });
+
+/** Pick a rekordbox XML or iTunes / Music Library.xml (null if cancelled). */
+export async function pickLibraryFile(title: string): Promise<string | null> {
+  const sel = await open({ multiple: false, title, filters: [{ name: "Library export (XML)", extensions: ["xml"] }] });
+  return typeof sel === "string" ? sel : null;
+}
+
+/** Where to save an export (null if cancelled). In the browser preview, which has no native
+ *  dialog for saving, a fixed placeholder path is returned. */
+export async function pickSavePath(defaultName: string, label: string, ext: string): Promise<string | null> {
+  try {
+    const p = await save({ title: `Save ${label}`, defaultPath: defaultName, filters: [{ name: label, extensions: [ext] }] });
+    return typeof p === "string" ? p : null;
+  } catch (e) {
+    if (String(e).includes("devmock")) return `C:\\Exports\\${defaultName}`;
+    throw e;
+  }
+}

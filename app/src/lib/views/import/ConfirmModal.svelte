@@ -4,7 +4,8 @@
   import Modal from "$lib/ui/Modal.svelte";
 
   // The confirmation naming the destination, shown before anything is written to the device.
-  // Generic: the wording comes from the JobRequest the owning area built.
+  // Generic: the wording comes from the JobRequest the owning area built. Every item is listed
+  // (the list scrolls, and is never cut short) so the user sees exactly what will be written.
 </script>
 
 {#if jobs.pending}
@@ -12,8 +13,7 @@
   <Modal title={p.title} onclose={() => jobs.cancel()}>
     <p class="muted">{p.description}</p>
     <ul class="names">
-      {#each p.names.slice(0, 6) as n}<li>{n}</li>{/each}
-      {#if p.names.length > 6}<li class="muted">…and {p.names.length - 6} more</li>{/if}
+      {#each p.names as n}<li>{n}</li>{/each}
     </ul>
     {#snippet actions()}
       <Button data-autofocus onclick={() => jobs.cancel()}>Cancel</Button>
@@ -26,7 +26,12 @@
   .names {
     margin: 8px 0 0;
     padding-left: 18px;
-    max-height: 140px;
-    overflow: hidden;
+    max-height: 260px;
+    overflow: auto;
+  }
+  /* thousands of rows stay cheap: off-screen ones are not laid out */
+  .names li {
+    content-visibility: auto;
+    contain-intrinsic-size: auto 1.4em;
   }
 </style>
