@@ -668,3 +668,28 @@ fn benchmark_stretched_mix_with_tools() {
     println!("rendered {audio:.0} s of audio in {el:.2} s = {:.1}x real time", audio / el);
     assert!(audio / el > 10.0, "slower than 10x real time");
 }
+
+/// The span that exports (and the track list / cue sheet of an export) are computed from is the
+/// span the renderer really produces, including trims, a bypassed clip and a fractional start.
+#[test]
+fn export_span_is_the_rendered_length_and_skips_what_the_engine_skips() {
+    let d = dir("span");
+    let src = sine(440.0, 2.0, 0.5);
+    let f = put(&d, "a.wav", &src);
+    let mut a = track(&f, src.len(), 120.0, 1.0, 1.5 * SR as f64 + 0.4);
+    a.position.l_offset = 0.25 * SR as f64;
+    let b = track(&f, src.len(), 120.0, 1.0, 5.0 * SR as f64);
+    let mut hidden = track(&f, src.len(), 120.0, 1.0, 0.0);
+    hidden.clip_bypassed = true;
+    let mut empty = track(&f, src.len(), 120.0, 1.0, 20.0 * SR as f64);
+    empty.position.r_offset = empty.position.length; // nothing audible
+    let m = mix_of(vec![hidden, a, empty, b]);
+
+    let audible = engine::audible_clips(&m);
+    assert_eq!(audible.iter().map(|c| c.index).collect::<Vec<_>>(), vec![1, 3], "bypassed and fully trimmed tracks are not audible");
+    let (from, to) = engine::export_span(&m).unwrap();
+    assert_eq!(from, (1.5 * SR as f64 + 0.4 + 0.25 * SR as f64).round() as i64);
+    let (l, _) = render(&d, &m, &Options { skip_leading_silence: true, ..Options::default() });
+    assert_eq!((to - from) as usize, l.len(), "the audio file is exactly the span");
+    assert!(engine::export_span(&mix_of(vec![])).is_none());
+}

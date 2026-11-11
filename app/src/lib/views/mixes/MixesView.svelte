@@ -14,6 +14,7 @@
   import MixEditor from "./MixEditor.svelte";
   import MixList from "./MixList.svelte";
   import NameDialog from "./NameDialog.svelte";
+  import TracklistDialog from "./TracklistDialog.svelte";
   import UnsavedDialog from "./UnsavedDialog.svelte";
   import { preview } from "./preview.svelte";
   import { mv } from "./view.svelte";
@@ -65,6 +66,7 @@
 <ConfirmDialog />
 <NameDialog />
 <UnsavedDialog />
+<TracklistDialog />
 
 <style>
   .mixes {

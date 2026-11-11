@@ -3,6 +3,7 @@
   import { tick } from "svelte";
   import * as E from "$lib/state/mixedit";
   import { mixes } from "$lib/state/mixes.svelte";
+  import { tracklist } from "$lib/state/tracklist.svelte";
   import { toast } from "$lib/state/toast.svelte";
   import Button from "$lib/ui/Button.svelte";
   import { describe, duplicateSelection, errText, pasteAtPlayhead } from "./actions";
@@ -17,6 +18,7 @@
 
   const doc = $derived(mixes.doc!);
   let saving = $state(false);
+  tracklist.ensureLoaded();
 
   // fit a mix to the window when it is opened
   let fittedFor = -1;
@@ -196,6 +198,10 @@
     {#if mixes.problems.length > 0}
       <span class="problem" title={mixes.problems.join("\n")}>⚠ {mixes.problems.length} problem{mixes.problems.length === 1 ? "" : "s"} blocking save</span>
     {/if}
+    <Button disabled={doc.clips.length === 0} onclick={() => (tracklist.open = true)} title="Start times of the tracks as text, CSV, YouTube chapters or a CUE sheet">Track list</Button>
+    <label class="ctl" title="Also write NAME.cue beside the audio file when it is exported (it replaces a .cue with that name that is already there)">
+      <input type="checkbox" bind:checked={tracklist.writeCue} onchange={() => tracklist.save()} /> with .cue
+    </label>
     <Button disabled={mv.exporting || doc.clips.length === 0} onclick={() => void exportAudio()} title="Render the mix to an audio file">
       {mv.exporting ? (mv.exportPct > 0 ? `Exporting ${Math.round(mv.exportPct * 100)}%` : "Exporting…") : "Export audio"}
     </Button>

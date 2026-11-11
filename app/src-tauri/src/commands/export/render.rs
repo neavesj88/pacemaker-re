@@ -91,6 +91,12 @@ impl LibResolver {
         Ok(LibResolver { paths })
     }
 
+    /// Whether the engine will find audio for this library track id (false for a removed track or
+    /// a file that is not on the volume: the engine leaves such a clip out of the render).
+    pub fn has(&self, track_id: i64) -> bool {
+        self.paths.contains_key(&track_id)
+    }
+
     #[cfg(test)]
     pub fn from_paths(paths: HashMap<i64, PathBuf>) -> LibResolver {
         LibResolver { paths }
@@ -185,10 +191,14 @@ pub fn parse_format(s: &str) -> AppResult<Format> {
 /// Refuses destinations that would put a file inside the device volume (untracked audio there
 /// would confuse the device) or that cannot be written.
 pub fn check_dest(root: &Path, dest: &Path, format: Format) -> AppResult<()> {
+    check_dest_ext(root, dest, format.extension())
+}
+
+/// [`check_dest`] for any file type: `want` is the extension the name must end in (no dot).
+pub fn check_dest_ext(root: &Path, dest: &Path, want: &str) -> AppResult<()> {
     if dest.is_dir() {
         return Err("The destination is a folder; choose a file name.".into());
     }
-    let want = format.extension();
     if !dest.extension().is_some_and(|e| e.eq_ignore_ascii_case(want)) {
         return Err(format!("The file name must end in .{want} to match the chosen format.").into());
     }
@@ -217,9 +227,7 @@ impl ExportPlan {
     /// audible clip (what the engine does with `skip_leading_silence`), so progress reaches its
     /// total.
     pub fn span_secs(&self) -> f64 {
-        let audible = self.mix.tracks.iter().filter(|t| !t.clip_bypassed).map(|t| (t.position.start + t.position.l_offset, t.position.start + t.position.length - t.position.r_offset)).filter(|(a, b)| b > a);
-        let (lo, hi) = audible.fold((f64::MAX, 0.0_f64), |(lo, hi), (a, b)| (lo.min(a), hi.max(b)));
-        if hi > lo { (hi - lo) / f64::from(pm_mixer::RATE) } else { 0.0 }
+        pm_mixer::engine::export_span(&self.mix).map_or(0.0, |(from, to)| (to - from) as f64 / f64::from(pm_mixer::RATE))
     }
 }
 
@@ -458,6 +466,61 @@ mod tests {
         let r = render_preview(&vol, &doc, 0.0, 2.0, &dest).unwrap();
         assert_eq!(r.warnings.len(), 1);
         assert!(r.warnings[0].contains("removed from the library"), "{:?}", r.warnings);
+        std::fs::remove_dir_all(vol).unwrap();
+        std::fs::remove_dir_all(scratch).unwrap();
+    }
+
+    /// The track list says what the file contains: the second clip starts in the rendered audio
+    /// where the list (and the CUE sheet written by an export) says, a clip the render leaves out
+    /// is not listed, and the file is exactly as long as the list believes.
+    #[test]
+    fn tracklist_times_are_the_times_in_the_rendered_file() {
+        use crate::commands::export::tracklist::{self, TracklistOptions};
+        let (vol, scratch, id, frames) = library("tracklist");
+        let mut doc = doc_for(id, frames, 1.0);
+        doc.clips[0].span.start = 4.0 * 44100.0;
+        let mut second = doc.clips[0].clone();
+        second.id = "b".repeat(32);
+        second.span.start = 20.0 * 44100.0;
+        second.fuzzy_id.title = "Second".into();
+        doc.clips[0].fuzzy_id.title = "First".into();
+        // a clip whose track was removed from the library: silent, not listed, but the file
+        // starts at it (the engine counts its slot), so every other time is relative to 1.0 s
+        let mut ghost = doc.clips[0].clone();
+        ghost.id = "c".repeat(32);
+        ghost.track_id = -5;
+        ghost.span.start = 1.0 * 44100.0;
+        ghost.span.length = 1.0 * 44100.0;
+        doc.clips.extend([second, ghost]);
+        doc.refresh();
+
+        let out = scratch.join("mix.wav");
+        let plan = plan_export(&vol, &doc, out.to_str().unwrap(), "wav").unwrap();
+        run_export(&plan, &mut |_| true).unwrap();
+        let rendered = pm_mixer::audio::load(&out).unwrap();
+
+        let opts = TracklistOptions::default();
+        let list = tracklist::render_all(&doc, &opts, "mix.wav", &|id| plan.res.has(id)).unwrap();
+        assert_eq!(list.entries.iter().map(|e| e.title.as_str()).collect::<Vec<_>>(), ["First", "Second"]);
+        assert!(list.warnings.iter().any(|w| w.contains("left out")), "{:?}", list.warnings);
+        assert_eq!(list.entries[0].start_frames, 3 * 44100, "4.0 s on the timeline, the file starts at 1.0 s");
+        assert_eq!(list.entries[1].start_frames, 19 * 44100);
+        assert_eq!(list.duration_secs, rendered.len() as f64 / 44100.0, "the list's length is the file's");
+        // where the sound really starts in the file
+        let onset = |from: usize| from + rendered.l[from..].iter().position(|x| x.abs() > 0.05).unwrap();
+        let first_end = list.entries[0].start_frames as usize + 6 * 44100;
+        assert!(onset(2 * 44100).abs_diff(list.entries[0].start_frames as usize) < 100);
+        assert!(onset(first_end).abs_diff(list.entries[1].start_frames as usize) < 100, "{} vs {}", onset(first_end), list.entries[1].start_frames);
+
+        // the sheet an export writes beside the audio is the one the dialog shows
+        let (path, bytes) = crate::commands::export::plan_cue(&plan, &doc, &opts).unwrap();
+        assert_eq!(path, scratch.join("mix.cue"));
+        assert_eq!(bytes, list.file_bytes(tracklist::Format::Cue, &opts));
+        let text = String::from_utf8(bytes).unwrap();
+        assert!(text.contains("FILE \"mix.wav\" WAVE") && text.contains("INDEX 01 00:03:00") && text.contains("INDEX 01 00:19:00"), "{text}");
+        std::fs::create_dir(scratch.join("folder.cue")).unwrap();
+        let in_the_way = plan_export(&vol, &doc, scratch.join("folder.wav").to_str().unwrap(), "wav").unwrap();
+        assert!(crate::commands::export::plan_cue(&in_the_way, &doc, &opts).unwrap_err().to_string().contains("is a folder"));
         std::fs::remove_dir_all(vol).unwrap();
         std::fs::remove_dir_all(scratch).unwrap();
     }

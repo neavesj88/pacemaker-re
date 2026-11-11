@@ -80,6 +80,44 @@ fn r(x: f64) -> i64 {
     x.round() as i64
 }
 
+/// The audible part of one mix track on the timeline, in frames at [`crate::RATE`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AudibleClip {
+    /// Index into `mix.tracks`.
+    pub index: usize,
+    /// First audible frame (`start + LOffset`, rounded).
+    pub start: i64,
+    /// End of the audible part, exclusive (`start + length - ROffset`, rounded).
+    pub end: i64,
+}
+
+/// The tracks the engine renders, in document order: not bypassed, with a non-empty audible
+/// range that ends after frame 0. [`render`] builds its clips from this list, and anything that
+/// has to agree with a render (the track list and cue sheet of an export, its length) reads it
+/// too, so the two cannot disagree about where a clip starts.
+pub fn audible_clips(mix: &Mix) -> Vec<AudibleClip> {
+    mix.tracks
+        .iter()
+        .enumerate()
+        .filter_map(|(index, t)| {
+            if t.clip_bypassed {
+                return None;
+            }
+            let start = r(t.position.start + t.position.l_offset);
+            let end = r(t.position.start + t.position.length - t.position.r_offset);
+            (end > start && end > 0).then_some(AudibleClip { index, start, end })
+        })
+        .collect()
+}
+
+/// The timeline frames `[from, to)` a render with `skip_leading_silence` (every export) covers:
+/// the audio file is `to - from` frames long and its frame 0 is timeline frame `from`. `None`
+/// when no clip is audible.
+pub fn export_span(mix: &Mix) -> Option<(i64, i64)> {
+    let a = audible_clips(mix);
+    Some((a.iter().map(|c| c.start).min()?, a.iter().map(|c| c.end).max()?))
+}
+
 /// A clip as the engine sees it.
 struct Slot<'a> {
     track: &'a Track,
@@ -161,17 +199,9 @@ pub fn render(
     sink: &mut Sink,
 ) -> Result<Rendered, Error> {
     let mut warnings = Vec::new();
-    let mut slots: Vec<Slot> = mix
-        .tracks
-        .iter()
-        .filter_map(|t| {
-            if t.clip_bypassed {
-                return None;
-            }
-            let vs = r(t.position.start + t.position.l_offset);
-            let ve = r(t.position.start + t.position.length - t.position.r_offset);
-            (ve > vs && ve > 0).then(||Slot { track: t, vs, ve, fades: Vec::new(), stream: None, dead: false, finished: false })
-        })
+    let mut slots: Vec<Slot> = audible_clips(mix)
+        .into_iter()
+        .map(|a| Slot { track: &mix.tracks[a.index], vs: a.start, ve: a.end, fades: Vec::new(), stream: None, dead: false, finished: false })
         .collect();
     if slots.is_empty() {
         return Err(Error::Invalid("the mix has no audible clips".into()));

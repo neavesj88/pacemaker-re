@@ -5,6 +5,8 @@ import { open, save } from "@tauri-apps/plugin-dialog";
 import { exportCancel, exportMixAudio } from "$lib/api/export";
 import { mixDelete, mixExportPmk, mixImportPmk, mixRename, type MixSummary } from "$lib/api/mixes";
 import { mixes } from "$lib/state/mixes.svelte";
+import { tracklist } from "$lib/state/tracklist.svelte";
+import { baseName } from "$lib/state/tracklistprefs";
 import { toast } from "$lib/state/toast.svelte";
 import { errText } from "./actions";
 import { confirm, guard, namer } from "./confirm.svelte";
@@ -167,7 +169,12 @@ export async function exportAudio() {
   toast.show(`Rendering “${doc.name}” to ${format.toUpperCase()}…`, "info", 6000);
   try {
     // resolves when the job has started; init.ts reports the end from the job-done event
-    await exportMixAudio(root, doc, dest, format);
+    tracklist.ensureLoaded();
+    const started = await exportMixAudio(root, doc, dest, format, tracklist.writeCue ? tracklist.snapshot() : undefined);
+    if (started.cuePath) {
+      const name = baseName(started.cuePath);
+      toast.show(started.cueReplaces ? `${name} is already there and will be replaced when the render finishes.` : `The CUE sheet ${name} is written when the render finishes.`, "info", 8000);
+    }
   } catch (e) {
     mv.exporting = false;
     toast.show(`Export failed: ${errText(e)}`, "bad", 12000);
