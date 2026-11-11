@@ -35,6 +35,7 @@
     const f = runFlags(conf.mode);
     device.begin(JOB_SPACE, f.archive ? "Starting the archive" : "Starting the removal");
     try {
+      await space.flushSettings();
       await deviceSpaceRun(lib.root, conf.ids, {
         archive_dir: f.archive ? space.settings.archive_dir : null,
         include_grids: space.settings.include_grids,

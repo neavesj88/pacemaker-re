@@ -104,6 +104,14 @@ class SpaceStore {
     this.replanSoon();
   }
 
+  /** Saves a pending settings edit now, so the backend reads the same settings the run was confirmed with. */
+  async flushSettings() {
+    if (this.#saveTimer === undefined) return;
+    clearTimeout(this.#saveTimer);
+    this.#saveTimer = undefined;
+    await this.save();
+  }
+
   async save() {
     try {
       // the fields clamp what is typed, and the backend clamps again on its side

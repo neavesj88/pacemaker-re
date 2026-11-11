@@ -236,6 +236,10 @@ pub struct Plan {
     pub missing_audio: usize,
     /// Tracks whose stored location is not a plain path under the Music folder.
     pub unchecked: usize,
+    /// No track in the library has a play count or a play date. The Pacemaker may not record
+    /// plays at all (the notes show 0 / -1 on every track of a real card), so "never played" and
+    /// "not played for N months" say nothing in that case.
+    pub no_play_history: bool,
     pub warnings: Vec<String>,
 }
 
@@ -244,6 +248,13 @@ struct Row<'a> {
     audio_len: u64,
     grid_len: u64,
     added_ms: i64,
+}
+
+/// `date_added` as Unix milliseconds. The Editor writes milliseconds (notes/FINDINGS.md); whether
+/// the device writes the same unit is unverified, so a value too small to be a millisecond date
+/// (before 1973) is read as seconds instead of making the "new track" protection miss it.
+fn added_to_ms(v: i64) -> i64 {
+    if v > 0 && v < 100_000_000_000 { v * 1000 } else { v }
 }
 
 fn plural(n: i64, one: &str) -> String {
@@ -274,8 +285,9 @@ fn hash_cached(path: &Path, len: u64) -> Result<String, Error> {
 }
 
 /// Groups of rows (indices) whose audio files are byte-identical. Files are compared by size
-/// first and hashed only when another file has the same size.
-fn duplicate_groups(rows: &[Row], root: &Path, warnings: &mut Vec<String>) -> Vec<Vec<usize>> {
+/// first and hashed only when another file has the same size. `cancel` is polled before each file
+/// is read; a stop abandons the scan (the hashes already computed stay cached).
+fn duplicate_groups(rows: &[Row], root: &Path, warnings: &mut Vec<String>, cancel: &dyn Fn() -> bool) -> Result<Vec<Vec<usize>>, Error> {
     let mut by_len: BTreeMap<u64, Vec<usize>> = BTreeMap::new();
     for (i, r) in rows.iter().enumerate() {
         if r.audio_len > 0 {
@@ -287,6 +299,9 @@ fn duplicate_groups(rows: &[Row], root: &Path, warnings: &mut Vec<String>) -> Ve
     for same_len in by_len.values().filter(|v| v.len() > 1) {
         let mut by_hash: HashMap<String, Vec<usize>> = HashMap::new();
         for &i in same_len {
+            if cancel() {
+                return Err(Error::Invalid(SCAN_STOPPED.into()));
+            }
             let Some((audio, _)) = checked_track_paths(root, &rows[i].t.location) else { continue };
             match hash_cached(&audio, rows[i].audio_len) {
                 Ok(h) => by_hash.entry(h).or_default().push(i),
@@ -300,12 +315,21 @@ fn duplicate_groups(rows: &[Row], root: &Path, warnings: &mut Vec<String>) -> Ve
     }
     groups.iter_mut().for_each(|g| g.sort_unstable());
     groups.sort();
-    groups
+    Ok(groups)
 }
+
+/// The message of a scan that was stopped because the caller no longer wants its result.
+pub const SCAN_STOPPED: &str = "the scan was stopped";
 
 /// Lists the tracks the rules nominate, in the order the planner would take them. Read-only.
 /// `storage` and `now_ms` are parameters so the same plan can be reproduced exactly in a test.
 pub fn plan(lib: &Library, rules: &Rules, goal: &Goal, storage: &Storage, now_ms: i64) -> Result<Plan, Error> {
+    plan_cancellable(lib, rules, goal, storage, now_ms, &|| false)
+}
+
+/// [`plan`] that polls `cancel` while it reads files for the duplicate check (the slow part on a
+/// big card); a stop returns an error whose text is [`SCAN_STOPPED`].
+pub fn plan_cancellable(lib: &Library, rules: &Rules, goal: &Goal, storage: &Storage, now_ms: i64, cancel: &dyn Fn() -> bool) -> Result<Plan, Error> {
     let rules = rules.clone().clamped();
     let need_bytes = bytes_to_free(goal, storage)?;
     let root = lib.root();
@@ -319,11 +343,18 @@ pub fn plan(lib: &Library, rules: &Rules, goal: &Goal, storage: &Storage, now_ms
         let rows = st.query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, f64>(1)?)))?;
         for r in rows {
             let (id, ms) = r?;
-            added.insert(id, ms as i64);
+            added.insert(id, added_to_ms(ms as i64));
         }
     }
 
     let mut warnings = Vec::new();
+    let no_play_history = !tracks.is_empty() && tracks.iter().all(|t| t.times_played <= 0 && t.last_played <= 0);
+    if no_play_history && (rules.never_played || rules.stale_months > 0) {
+        warnings.push(
+            "This library has no play history (the Pacemaker may not record it), so \"Never played\" matches every track and \"Not played for N months\" can never match. Turn \"Never played\" off, or ask for two reasons, so the list is not just everything outside a case and a mix."
+                .into(),
+        );
+    }
     let mut missing_audio = 0usize;
     let mut unchecked = 0usize;
     let mut rows: Vec<Row> = Vec::new();
@@ -346,7 +377,7 @@ pub fn plan(lib: &Library, rules: &Rules, goal: &Goal, storage: &Storage, now_ms
     // duplicates: which row repeats which, with the most used one of a group kept
     let mut dup_of: HashMap<usize, usize> = HashMap::new();
     if rules.duplicates {
-        for g in duplicate_groups(&rows, root, &mut warnings) {
+        for g in duplicate_groups(&rows, root, &mut warnings, cancel)? {
             let keep_key = |&i: &usize| {
                 let t = rows[i].t;
                 (
@@ -379,11 +410,13 @@ pub fn plan(lib: &Library, rules: &Rules, goal: &Goal, storage: &Storage, now_ms
                 continue;
             }
             let mut reasons: Vec<Reason> = Vec::new();
-            let never = t.times_played <= 0 && t.last_played < 0;
+            // last_played is -1 on a device row and 0 on a case row: neither is a date
+            let never = t.times_played <= 0 && t.last_played <= 0;
             if rules.never_played && never {
-                reasons.push(Reason { kind: ReasonKind::NeverPlayed, text: "Never played".into() });
+                let text = if no_play_history { "Never played (no play history on this card)" } else { "Never played" };
+                reasons.push(Reason { kind: ReasonKind::NeverPlayed, text: text.into() });
             }
-            if rules.stale_months > 0 && t.last_played >= 0 && now_ms - t.last_played > i64::from(rules.stale_months) * MONTH_MS {
+            if rules.stale_months > 0 && t.last_played > 0 && now_ms - t.last_played > i64::from(rules.stale_months) * MONTH_MS {
                 let months = (now_ms - t.last_played) / MONTH_MS;
                 reasons.push(Reason { kind: ReasonKind::NotPlayedRecently, text: format!("Not played for {}", plural(months, "month")) });
             }
@@ -433,7 +466,7 @@ pub fn plan(lib: &Library, rules: &Rules, goal: &Goal, storage: &Storage, now_ms
                 play_time_secs: t.play_time_secs,
                 rating: t.rating,
                 times_played: t.times_played,
-                last_played_ms: (t.last_played >= 0).then_some(t.last_played),
+                last_played_ms: (t.last_played > 0).then_some(t.last_played),
                 added_ms: (row.added_ms > 0).then_some(row.added_ms),
                 blocked: (!in_mixes.is_empty()).then(|| format!("Used by the mix {}: it can be archived but not removed", in_mixes.join(", "))),
                 in_cases,
@@ -501,6 +534,7 @@ pub fn plan(lib: &Library, rules: &Rules, goal: &Goal, storage: &Storage, now_ms
         hidden,
         missing_audio,
         unchecked,
+        no_play_history,
         warnings,
     })
 }
@@ -656,9 +690,18 @@ pub fn plan_run(lib: &Library, ids: &[i64], opts: &RunOptions) -> Result<RunPlan
             let ext = ext_of(&t.location);
             let stem = safe_stem(&label);
             let mut name = if ext.is_empty() { stem.clone() } else { format!("{stem}.{ext}") };
-            if !used_names.insert(name.to_lowercase()) {
-                name = if ext.is_empty() { format!("{stem} ({id})") } else { format!("{stem} ({id}).{ext}") };
-                used_names.insert(name.to_lowercase());
+            // the grid is written as "<stem>.str", so two formats of one song ("A.mp3", "A.wav")
+            // share a grid name even though their audio names differ: both names are reserved
+            let grid_of = |stem: &str| format!("{stem}.str").to_lowercase();
+            let clash = used_names.contains(&name.to_lowercase()) || (opts.include_grids && used_names.contains(&grid_of(&stem)));
+            let mut used_stem = stem.clone();
+            if clash {
+                used_stem = format!("{stem} ({id})");
+                name = if ext.is_empty() { used_stem.clone() } else { format!("{used_stem}.{ext}") };
+            }
+            used_names.insert(name.to_lowercase());
+            if opts.include_grids {
+                used_names.insert(grid_of(&used_stem));
             }
             name
         });
@@ -725,6 +768,7 @@ fn archive_items(
     let mut ok = Vec::new();
     let mut failed = Vec::new();
     let mut cancelled = false;
+    let mut grid_names: HashSet<String> = HashSet::new();
     for (i, it) in items.iter().enumerate() {
         if cancel() {
             cancelled = true;
@@ -750,6 +794,13 @@ fn archive_items(
         if include_grids && it.sidecar.is_file() {
             let stem = name.rfind('.').map_or(name.as_str(), |p| &name[..p]);
             let gname = format!("{stem}.str");
+            // plan_run keeps grid names apart; this is the backstop, so a grid already written
+            // in this run is never replaced (a rename would silently overwrite it)
+            if !grid_names.insert(gname.to_lowercase()) {
+                failed.push(format!("{}: the audio was archived but its beat grid was not (another grid is already archived as {gname})", it.label));
+                ok.push(Archived { track_id: it.track_id, name, sum, bytes, grid: None });
+                continue;
+            }
             let gpart = folder.join(format!("{gname}.part"));
             let r = copy_hashed(&it.sidecar, &gpart).and_then(|r| {
                 fs::rename(&gpart, folder.join(&gname))?;
@@ -1348,11 +1399,87 @@ mod tests {
         let p = plan(&fx.lib, &only(|r| r.never_played = true), &goal(), &fx.storage(0), NOW).unwrap();
         assert_eq!((p.missing_audio, p.unchecked), (1, 1));
         assert_eq!(p.items.iter().map(|i| i.track_id).collect::<Vec<_>>(), [ids[2]]);
-        assert!(p.warnings.is_empty(), "{:?}", p.warnings);
+        assert!(!p.warnings.iter().any(|w| w.contains("not fully mounted")), "{:?}", p.warnings);
         // most of the library gone: probably a card that is not fully mounted
         fs::remove_file(fx.paths(ids[2]).0).unwrap();
         let p = plan(&fx.lib, &only(|r| r.never_played = true), &goal(), &fx.storage(0), NOW).unwrap();
         assert!(p.warnings.iter().any(|w| w.contains("not fully mounted")), "{:?}", p.warnings);
+    }
+
+    #[test]
+    fn a_library_with_no_play_history_says_so_and_a_zero_date_is_not_a_play() {
+        let fx = fixture("noplays", 3);
+        let ids = fx.ids.clone();
+        for &i in &ids {
+            fx.old(i);
+        }
+        let st = fx.storage(0);
+        let rules = only(|r| {
+            r.never_played = true;
+            r.stale_months = 6;
+        });
+        let p = plan(&fx.lib, &rules, &goal(), &st, NOW).unwrap();
+        assert!(p.no_play_history);
+        assert!(p.warnings.iter().any(|w| w.contains("no play history")), "{:?}", p.warnings);
+        assert!(p.items.iter().all(|i| i.reasons[0].text.contains("no play history on this card")), "the reason does not claim more than the data shows");
+        // with the reasons off there is nothing to warn about
+        let quiet = plan(&fx.lib, &only(|r| r.low_rating_max = 2), &goal(), &st, NOW).unwrap();
+        assert!(quiet.no_play_history && !quiet.warnings.iter().any(|w| w.contains("no play history")));
+
+        // one real play anywhere: the data exists, so the plain reason comes back
+        fx.set(ids[0], 3, NOW - DAY_MS, 0, NOW - 400 * DAY_MS);
+        let p = plan(&fx.lib, &rules, &goal(), &st, NOW).unwrap();
+        assert!(!p.no_play_history && !p.warnings.iter().any(|w| w.contains("no play history")));
+        assert!(p.items.iter().all(|i| i.reasons[0].text == "Never played"), "{:?}", p.items.iter().map(|i| &i.reasons).collect::<Vec<_>>());
+
+        // last_played 0 (the value a case row holds) is no date: not "650 months ago", just never played
+        fx.set(ids[1], 0, 0, 0, NOW - 400 * DAY_MS);
+        let p = plan(&fx.lib, &rules, &goal(), &st, NOW).unwrap();
+        let it = p.items.iter().find(|i| i.track_id == ids[1]).unwrap();
+        assert_eq!(it.reasons[0].kind, ReasonKind::NeverPlayed);
+        assert_eq!(it.last_played_ms, None);
+    }
+
+    #[test]
+    fn a_stopped_scan_reads_no_more_files() {
+        let fx = fixture("stop", 3);
+        // all three share a size, so the duplicate check has to read them
+        let dup = fx.paths(fx.ids[0]).0;
+        for &i in &fx.ids[1..] {
+            fs::copy(&dup, fx.paths(i).0).unwrap();
+        }
+        let rules = Rules { duplicates: true, ..only(|r| r.never_played = true) };
+        let st = fx.storage(0);
+        let polled = std::cell::Cell::new(0usize);
+        let e = plan_cancellable(&fx.lib, &rules, &goal(), &st, NOW, &|| {
+            polled.set(polled.get() + 1);
+            polled.get() > 1
+        })
+        .unwrap_err()
+        .to_string();
+        assert!(e.contains(SCAN_STOPPED), "{e}");
+        assert_eq!(polled.get(), 2, "it stopped at the first poll that said so");
+        // not stopped: the same call finishes and finds the copies
+        let p = plan_cancellable(&fx.lib, &rules, &goal(), &st, NOW, &|| false).unwrap();
+        assert_eq!(p.items.iter().filter(|i| i.duplicate_of.is_some()).count(), 2);
+    }
+
+    #[test]
+    fn date_added_in_seconds_still_protects_a_new_track() {
+        let fx = fixture("seconds", 2);
+        let ids = fx.ids.clone();
+        let rules = only(|r| {
+            r.never_played = true;
+            r.protect_new_days = 30;
+        });
+        // two days old, written in seconds and in milliseconds
+        fx.set(ids[0], 0, -1, 0, (NOW - 2 * DAY_MS) / 1000);
+        fx.set(ids[1], 0, -1, 0, NOW - 2 * DAY_MS);
+        let p = plan(&fx.lib, &rules, &goal(), &fx.storage(0), NOW).unwrap();
+        assert!(p.items.is_empty() && p.hidden.new_tracks == 2, "{:?} {:?}", p.items.len(), p.hidden);
+        assert_eq!(added_to_ms(0), 0);
+        assert_eq!(added_to_ms(1_700_000_000), 1_700_000_000_000);
+        assert_eq!(added_to_ms(1_700_000_000_000), 1_700_000_000_000);
     }
 
     fn opts(dir: &Path, remove: bool) -> RunOptions {
@@ -1407,6 +1534,44 @@ mod tests {
         names.sort();
         assert_eq!(names, [ARCHIVE_LIST_NAME.to_string(), MANIFEST_NAME.to_string(), "Same - Same (2).mp3".to_string(), "Same - Same.mp3".to_string()]);
         assert_eq!(verify_manifest(&folder).unwrap().len(), 0);
+    }
+
+    #[test]
+    fn two_formats_of_one_song_keep_two_beat_grids() {
+        let mut fx = fixture("formats", 1);
+        let analysis = strfile::Analysis {
+            normalize_factor: 1.0,
+            beat_start_offset: 0,
+            beats: (0..8).map(|i| strfile::Beat { pos: i * 20000, bpm: 128.0 }).collect(),
+            first_downbeat: Some(0),
+        };
+        // the same song as a WAV, with a grid of its own (a different tempo, so the two differ)
+        let wav = fx.base.join("src").join("synthetic wav.wav");
+        fs::write(&wav, vec![9u8; 12_345]).unwrap();
+        let meta = TrackMeta { title: "Title".into(), artist: "Artist".into(), format: "WAV".into(), play_time_secs: 100, ..Default::default() };
+        let other = strfile::Analysis { beats: (0..8).map(|i| strfile::Beat { pos: i * 20000, bpm: 90.0 }).collect(), ..analysis };
+        let wav_id = fx.lib.add_track(&wav, &meta, &other).unwrap();
+        let mp3_id = fx.ids[0];
+        fx.lib.con.execute("UPDATE tracks SET artist = 'Same', title = 'Same'", []).unwrap();
+        fx.ids.push(wav_id);
+        let dest = fx.base.join("pc");
+        fs::create_dir_all(&dest).unwrap();
+
+        let preview = plan_run(&fx.lib, &[mp3_id, wav_id], &opts(&dest, false)).unwrap();
+        let names: Vec<String> = preview.items.iter().map(|i| i.archive_name.clone().unwrap()).collect();
+        assert_eq!(names, ["Same - Same.mp3".to_string(), format!("Same - Same ({wav_id}).wav")], "the clash is seen from the grid name too");
+
+        let rep = run_all(&fx, &[mp3_id, wav_id], &opts(&dest, false)).unwrap();
+        assert_eq!((rep.archived, rep.failed.len()), (2, 0), "{:?}", rep.failed);
+        let folder = PathBuf::from(rep.archive_folder.unwrap());
+        let mut grids: Vec<String> =
+            fs::read_dir(&folder).unwrap().map(|e| e.unwrap().file_name().to_string_lossy().into_owned()).filter(|n| n.ends_with(".str")).collect();
+        grids.sort();
+        assert_eq!(grids, [format!("Same - Same ({wav_id}).str"), "Same - Same.str".to_string()]);
+        assert_ne!(fs::read(folder.join(&grids[0])).unwrap(), fs::read(folder.join(&grids[1])).unwrap(), "each track keeps its own grid");
+        let manifest = fs::read_to_string(folder.join(MANIFEST_NAME)).unwrap();
+        assert_eq!(manifest.matches(".str").count(), 2, "{manifest}");
+        assert_eq!(verify_manifest(&folder).unwrap(), Vec::<String>::new());
     }
 
     #[test]

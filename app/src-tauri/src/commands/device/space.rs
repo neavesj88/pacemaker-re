@@ -10,6 +10,7 @@
 //! preview shows on the database as it is at that moment.
 
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use pm_formats::library::Library;
 use pm_formats::ops_device::{self, SNAPSHOTS_KEPT};
@@ -157,6 +158,9 @@ pub fn device_space_settings_set(app: AppHandle, settings: SpaceSettings) -> App
 
 // ---- plan and preview -----------------------------------------------------------------------
 
+/// Counts the plan requests; a plan whose number is no longer the latest is stopped.
+static PLAN_GENERATION: AtomicU64 = AtomicU64::new(0);
+
 fn now_ms() -> i64 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as i64).unwrap_or(0)
 }
@@ -167,11 +171,14 @@ fn now_ms() -> i64 {
 #[tauri::command]
 pub async fn device_space_plan(root: String, settings: SpaceSettings) -> AppResult<Plan> {
     let settings = settings.clamped();
+    // a newer request (a setting was edited) stops this one's file reading instead of letting two
+    // scans run side by side; the stopped one returns an error the frontend discards
+    let mine = PLAN_GENERATION.fetch_add(1, Ordering::SeqCst) + 1;
     tauri::async_runtime::spawn_blocking(move || -> AppResult<Plan> {
         let root = Path::new(&root);
         let storage = ops_device::storage(root)?;
         let lib = Library::open_read_only(root)?;
-        Ok(ops_space::plan(&lib, &settings.rules, &settings.goal(), &storage, now_ms())?)
+        Ok(ops_space::plan_cancellable(&lib, &settings.rules, &settings.goal(), &storage, now_ms(), &|| PLAN_GENERATION.load(Ordering::SeqCst) != mine)?)
     })
     .await?
 }
@@ -222,6 +229,18 @@ pub struct RunArgs {
     pub require_archive: bool,
 }
 
+/// Refuses a run that asks for nothing, or that removes without an archive while the user's
+/// "archive before removing" setting is on.
+fn check_run_request(opts: &RunOptions, require_archive: bool) -> Result<(), String> {
+    if opts.archive_dir.is_none() && !opts.remove {
+        return Err("Choose an archive folder, remove from the card, or both.".into());
+    }
+    if opts.remove && opts.archive_dir.is_none() && require_archive {
+        return Err("Removing needs an archive copy first. Choose an archive folder, or turn off \"Archive before removing\" in the planner's settings.".into());
+    }
+    Ok(())
+}
+
 /// Job `device-space`: archives the ticked tracks to `archive_dir` (each file read back and
 /// checked), then removes those that may go (not in a mix, and archived when an archive was
 /// asked for) from the card: rows first, then audio and beat grid. `require_archive` is the
@@ -233,12 +252,11 @@ pub fn device_space_run(app: AppHandle, lock: State<'_, JobLock>, root: String, 
         return Err("No tracks are ticked.".into());
     }
     let opts = options(args.archive_dir, args.include_grids, args.remove);
-    if opts.archive_dir.is_none() && !opts.remove {
-        return Err("Choose an archive folder, remove from the card, or both.".into());
-    }
-    if opts.remove && opts.archive_dir.is_none() && args.require_archive {
-        return Err("Removing needs an archive copy first. Choose an archive folder, or turn off \"Archive before removing\" in the planner's settings.".into());
-    }
+    // the setting is read from the stored file too, so it holds for any caller: the frontend's
+    // flag can only make the rule stricter, never switch a stored "on" off. (A corrupt settings
+    // file reads as the defaults, which have it on.)
+    let stored = load_settings(&config_dir(&app)?).0.require_archive;
+    check_run_request(&opts, stored || args.require_archive)?;
     spawn_job(app, &lock, JOB_SPACE, move |app| {
         super::start_job_cancel(app);
         // removing is a device write: refused during an eject, backup or firmware copy, and the
@@ -373,6 +391,24 @@ mod tests {
         let a: RunArgs = serde_json::from_str(r#"{"archive_dir":"/x/archive","include_grids":false,"remove":false,"require_archive":true}"#).unwrap();
         assert_eq!(a.archive_dir.as_deref(), Some("/x/archive"));
         assert!(serde_json::from_str::<RunArgs>(r#"{"remove":true}"#).is_err(), "a missing field is an error, not a silent default");
+    }
+
+    #[test]
+    fn removing_without_an_archive_is_refused_while_the_setting_is_on() {
+        let remove_only = options(None, true, true);
+        assert!(check_run_request(&remove_only, true).unwrap_err().contains("archive copy first"));
+        assert!(check_run_request(&remove_only, false).is_ok(), "the user turned the setting off");
+        assert!(check_run_request(&options(Some("/x/a".into()), true, true), true).is_ok(), "with an archive the setting is met");
+        assert!(check_run_request(&options(None, true, false), false).unwrap_err().contains("Choose an archive folder"));
+        // the stored setting wins over a caller that sends false
+        let dir = temp("enforce");
+        save_settings(&dir, &SpaceSettings { require_archive: true, ..SpaceSettings::default() }).unwrap();
+        let stored = load_settings(&dir).0.require_archive;
+        assert!(check_run_request(&remove_only, stored || false).is_err());
+        save_settings(&dir, &SpaceSettings { require_archive: false, ..SpaceSettings::default() }).unwrap();
+        let stored = load_settings(&dir).0.require_archive;
+        assert!(check_run_request(&remove_only, stored || false).is_ok());
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

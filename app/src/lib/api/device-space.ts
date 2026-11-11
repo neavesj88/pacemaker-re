@@ -91,6 +91,8 @@ export type SpacePlan = {
   hidden: SpaceHidden;
   missing_audio: number;
   unchecked: number;
+  /** No track has a play count or date: the device may not record plays, so the play reasons say nothing. */
+  no_play_history: boolean;
   warnings: string[];
 };
 

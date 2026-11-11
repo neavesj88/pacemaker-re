@@ -132,7 +132,8 @@ function plan() {
     rules_on: rulesOn, total_tracks: 24 + pool.length, need_bytes: need, free_bytes: STORAGE.free, total_bytes: STORAGE.total,
     library_bytes: STORAGE.library, usable_bytes: settings.goal_kind === "card" ? usable() : null, items,
     candidate_bytes: items.reduce((n, i) => n + i.bytes, 0), removable_bytes: removable, suggested_count: count, suggested_bytes: got,
-    reachable: removable >= need, hidden, missing_audio: 0, unchecked: 0, warnings: [] as string[],
+    reachable: removable >= need, hidden, missing_audio: 0, unchecked: 0,
+    no_play_history: pool.every((b) => b.plays === 0 && b.daysAgo === null), warnings: [] as string[],
   };
 }
 

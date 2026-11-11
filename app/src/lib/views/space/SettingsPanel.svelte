@@ -93,6 +93,13 @@
       <input type="checkbox" checked={r.never_played} onchange={(e) => space.update((x) => (x.rules.never_played = e.currentTarget.checked))} />
       were never played
     </label>
+    {#if space.plan?.no_play_history && (r.never_played || isOn(r.stale_months))}
+      <p class="hint warn">
+        No track in this library has a play count or date (the Pacemaker may not record plays), so "never played" matches
+        every track and "not played for" can never match.
+        {#if r.never_played}<button class="link" onclick={() => space.update((x) => (x.rules.never_played = false))}>Turn "never played" off</button>{/if}
+      </p>
+    {/if}
     <label class="line">
       <input
         type="checkbox"
@@ -326,6 +333,15 @@
   .warn {
     color: var(--bad-text);
     margin: 0;
+  }
+  .link {
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--accent);
+    text-decoration: underline;
+    cursor: pointer;
+    font: inherit;
   }
   select {
     width: 100%;
