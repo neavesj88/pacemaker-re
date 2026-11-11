@@ -155,6 +155,7 @@ test("the confirmation names the mode, the counts and what happens to each track
   assert.equal(runButton(p, "both"), "Archive 2 and remove 1");
   assert.equal(runLine(p.items[0]), "archived as One.mp3; removed from the card");
   assert.equal(runLine(p.items[1]), "archived as Two.mp3; stays on the card: the mix Demo Mix 1 uses it");
+  assert.equal(runLine({ ...p.items[0], grid_name: "One.str" }), "archived as One.mp3 with beat grid One.str; removed from the card");
   const removeOnly = run({ items: [{ track_id: 1, label: "One", bytes: 10 * MB, archive_name: null, remove: true, note: null }] });
   assert.equal(runTitle(removeOnly, "remove"), "Remove 1 track from the card?");
   assert.equal(runButton(removeOnly, "remove"), "Remove 1 track (10.0 MB)");

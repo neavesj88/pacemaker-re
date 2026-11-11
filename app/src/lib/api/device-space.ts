@@ -102,6 +102,8 @@ export type SpaceRunItem = {
   bytes: number;
   /** The file name in the archive folder, when an archive is made. */
   archive_name: string | null;
+  /** The beat grid's file name in the archive folder, when grids are archived and the track has one. */
+  grid_name: string | null;
   /** The track and its files are removed from the card. */
   remove: boolean;
   /** Why it is not removed, in words. */

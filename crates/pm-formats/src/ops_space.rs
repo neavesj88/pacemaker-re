@@ -284,6 +284,11 @@ fn hash_cached(path: &Path, len: u64) -> Result<String, Error> {
     Ok(sum)
 }
 
+/// A path as a comparison key: the card is FAT/exFAT, where names are case-insensitive.
+fn path_key(p: &Path) -> String {
+    p.to_string_lossy().replace('\\', "/").to_lowercase()
+}
+
 /// Groups of rows (indices) whose audio files are byte-identical. Files are compared by size
 /// first and hashed only when another file has the same size. `cancel` is polled before each file
 /// is read; a stop abandons the scan (the hashes already computed stay cached).
@@ -292,6 +297,14 @@ fn duplicate_groups(rows: &[Row], root: &Path, warnings: &mut Vec<String>, cance
     for (i, r) in rows.iter().enumerate() {
         if r.audio_len > 0 {
             by_len.entry(r.audio_len).or_default().push(i);
+        }
+    }
+    // two rows may name the same file (the schema has no UNIQUE on location): they are one file,
+    // not a duplicate, and removing either must not take the file the other still uses
+    let mut path_users: HashMap<String, usize> = HashMap::new();
+    for r in rows {
+        if let Some((audio, _)) = checked_track_paths(root, &r.t.location) {
+            *path_users.entry(path_key(&audio)).or_default() += 1;
         }
     }
     let mut groups = Vec::new();
@@ -303,6 +316,9 @@ fn duplicate_groups(rows: &[Row], root: &Path, warnings: &mut Vec<String>, cance
                 return Err(Error::Invalid(SCAN_STOPPED.into()));
             }
             let Some((audio, _)) = checked_track_paths(root, &rows[i].t.location) else { continue };
+            if path_users.get(&path_key(&audio)).is_some_and(|&n| n > 1) {
+                continue;
+            }
             match hash_cached(&audio, rows[i].audio_len) {
                 Ok(h) => by_hash.entry(h).or_default().push(i),
                 Err(_) => unread += 1,
@@ -320,6 +336,12 @@ fn duplicate_groups(rows: &[Row], root: &Path, warnings: &mut Vec<String>, cance
 
 /// The message of a scan that was stopped because the caller no longer wants its result.
 pub const SCAN_STOPPED: &str = "the scan was stopped";
+
+/// The item's only real reason (conditions like "in no case" do not count) is "never played".
+fn only_never_played(it: &Item) -> bool {
+    let mut real = it.reasons.iter().filter(|r| !matches!(r.kind, ReasonKind::NoCase | ReasonKind::NoMix)).peekable();
+    real.peek().is_some() && real.all(|r| matches!(r.kind, ReasonKind::NeverPlayed))
+}
 
 /// Lists the tracks the rules nominate, in the order the planner would take them. Read-only.
 /// `storage` and `now_ms` are parameters so the same plan can be reproduced exactly in a test.
@@ -351,7 +373,7 @@ pub fn plan_cancellable(lib: &Library, rules: &Rules, goal: &Goal, storage: &Sto
     let no_play_history = !tracks.is_empty() && tracks.iter().all(|t| t.times_played <= 0 && t.last_played <= 0);
     if no_play_history && (rules.never_played || rules.stale_months > 0) {
         warnings.push(
-            "This library has no play history (the Pacemaker may not record it), so \"Never played\" matches every track and \"Not played for N months\" can never match. Turn \"Never played\" off, or ask for two reasons, so the list is not just everything outside a case and a mix."
+            "This library has no play history (the Pacemaker may not record it), so \"Never played\" matches every track and \"Not played for N months\" can never match. Turn \"Never played\" off, or ask for two reasons, so the list is not just everything outside a case and a mix. Tracks whose only reason is \"Never played\" are listed but not ticked for you."
                 .into(),
         );
     }
@@ -504,6 +526,11 @@ pub fn plan_cancellable(lib: &Library, rules: &Rules, goal: &Goal, storage: &Sto
         if it.duplicate_of.is_some_and(|k| suggested_ids.contains(&k)) || keepers_with_a_suggested_copy.contains(&it.track_id) {
             continue;
         }
+        // on a card that records no plays, "never played" is true of every track and says nothing:
+        // a row with no other real reason stays listed (the user can tick it) but is not ticked
+        if no_play_history && only_never_played(it) {
+            continue;
+        }
         it.suggested = true;
         suggested_bytes += it.bytes;
         suggested_count += 1;
@@ -593,6 +620,8 @@ pub struct RunItem {
     pub bytes: u64,
     /// The name of the archive file, when an archive is made.
     pub archive_name: Option<String>,
+    /// The name of the beat grid in the archive folder, when grids are archived and the track has one.
+    pub grid_name: Option<String>,
     /// The track and its files are removed from the card.
     pub remove: bool,
     /// Why it is not archived or not removed, in words.
@@ -686,6 +715,7 @@ pub fn plan_run(lib: &Library, ids: &[i64], opts: &RunOptions) -> Result<RunPlan
                 note = Some(format!("stays on the card: the mix {} uses it", m.join(", ")));
             }
         }
+        let mut grid_name = None;
         let archive_name = opts.archive_dir.as_ref().map(|_| {
             let ext = ext_of(&t.location);
             let stem = safe_stem(&label);
@@ -702,6 +732,9 @@ pub fn plan_run(lib: &Library, ids: &[i64], opts: &RunOptions) -> Result<RunPlan
             used_names.insert(name.to_lowercase());
             if opts.include_grids {
                 used_names.insert(grid_of(&used_stem));
+                if grid_len > 0 {
+                    grid_name = Some(format!("{used_stem}.str"));
+                }
             }
             name
         });
@@ -710,7 +743,7 @@ pub fn plan_run(lib: &Library, ids: &[i64], opts: &RunOptions) -> Result<RunPlan
         if remove {
             plan.remove_bytes += audio_len + grid_len;
         }
-        plan.items.push(RunItem { track_id: id, label, bytes: audio_len + grid_len, archive_name, remove, note, audio, sidecar, track: Some(t.clone()) });
+        plan.items.push(RunItem { track_id: id, label, bytes: audio_len + grid_len, archive_name, grid_name, remove, note, audio, sidecar, track: Some(t.clone()) });
     }
     if let Some(dir) = &opts.archive_dir {
         if dir.is_dir() {
@@ -751,6 +784,9 @@ struct Archived {
     sum: String,
     bytes: u64,
     grid: Option<String>,
+    /// Everything asked for is archived and verified. False when grids are archived, the track has
+    /// one and it was not copied: the audio copy stays, but the track must not be removed.
+    complete: bool,
 }
 
 /// Copies the audio (and grid) of each item into `folder` and verifies the copy. Returns the
@@ -791,14 +827,18 @@ fn archive_items(
             }
         };
         let mut grid = None;
+        let mut complete = true;
         if include_grids && it.sidecar.is_file() {
-            let stem = name.rfind('.').map_or(name.as_str(), |p| &name[..p]);
-            let gname = format!("{stem}.str");
+            // the name plan_run reserved, so the preview and the action agree
+            let gname = it.grid_name.clone().unwrap_or_else(|| {
+                let stem = name.rfind('.').map_or(name.as_str(), |p| &name[..p]);
+                format!("{stem}.str")
+            });
             // plan_run keeps grid names apart; this is the backstop, so a grid already written
             // in this run is never replaced (a rename would silently overwrite it)
             if !grid_names.insert(gname.to_lowercase()) {
                 failed.push(format!("{}: the audio was archived but its beat grid was not (another grid is already archived as {gname})", it.label));
-                ok.push(Archived { track_id: it.track_id, name, sum, bytes, grid: None });
+                ok.push(Archived { track_id: it.track_id, name, sum, bytes, grid: None, complete: false });
                 continue;
             }
             let gpart = folder.join(format!("{gname}.part"));
@@ -811,10 +851,11 @@ fn archive_items(
                 Err(e) => {
                     let _ = fs::remove_file(&gpart);
                     failed.push(format!("{}: the audio was archived but its beat grid was not ({e})", it.label));
+                    complete = false;
                 }
             }
         }
-        ok.push(Archived { track_id: it.track_id, name, sum, bytes, grid });
+        ok.push(Archived { track_id: it.track_id, name, sum, bytes, grid, complete });
     }
     (ok, failed, cancelled)
 }
@@ -914,6 +955,7 @@ pub fn run(
 
     // ---- archive: a verified copy of every ticked track, before anything is removed
     let mut archived_ids: HashSet<i64> = HashSet::new();
+    let mut audio_only_ids: HashSet<i64> = HashSet::new();
     if let (Some(dir), false) = (&opts.archive_dir, to_archive.is_empty()) {
         let secs = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
         let folder = dir.join(format!("{ARCHIVE_PREFIX}{}", utc_stamp(secs)));
@@ -931,7 +973,8 @@ pub fn run(
             report.archive_folder = Some(folder.display().to_string());
             report.archived = ok.len();
             report.archived_bytes = ok.iter().map(|a| a.bytes).sum();
-            archived_ids = ok.iter().map(|a| a.track_id).collect();
+            archived_ids = ok.iter().filter(|a| a.complete).map(|a| a.track_id).collect();
+            audio_only_ids = ok.iter().filter(|a| !a.complete).map(|a| a.track_id).collect();
         }
         if cancelled {
             report.cancelled = true;
@@ -944,7 +987,9 @@ pub fn run(
     let archiving = opts.archive_dir.is_some();
     let mut removable: Vec<i64> = Vec::new();
     for it in plan.items.iter().filter(|i| i.remove) {
-        if archiving && !archived_ids.contains(&it.track_id) {
+        if archiving && audio_only_ids.contains(&it.track_id) {
+            report.skipped.push(format!("{}: stays on the card because its beat grid was not archived", it.label));
+        } else if archiving && !archived_ids.contains(&it.track_id) {
             report.skipped.push(format!("{}: stays on the card because its archive copy was not made", it.label));
         } else {
             removable.push(it.track_id);
@@ -977,6 +1022,16 @@ pub fn run(
     }
     report.skipped.extend(fresh.skipped.iter().cloned());
     let ids: Vec<i64> = doomed.iter().map(|d| d.track_id).collect();
+    // files that a row which stays still names (two rows may share a location, and "A.mp3" and
+    // "A.wav" share one grid name) are not deleted with the rows that go
+    let going: HashSet<i64> = ids.iter().copied().collect();
+    let mut still_used: HashSet<String> = HashSet::new();
+    for t in lib.tracks()?.iter().filter(|t| !going.contains(&t.track_id)) {
+        if let Some((a, g)) = checked_track_paths(root, &t.location) {
+            still_used.insert(path_key(&a));
+            still_used.insert(path_key(&g));
+        }
+    }
     delete_track_rows(&mut lib.con, &ids)?;
     drop(lib);
     // the rows are gone; now the files. Not cancellable: stopping half way would leave files
@@ -985,6 +1040,11 @@ pub fn run(
         progress(to_archive.len() + i, total, &format!("Removing {}", d.label));
         let mut freed = 0u64;
         for p in [&d.audio, &d.sidecar] {
+            if still_used.contains(&path_key(p)) {
+                let name = p.file_name().map_or_else(String::new, |n| n.to_string_lossy().into_owned());
+                report.skipped.push(format!("{}: {name} was kept because another track in the library still uses it", d.label));
+                continue;
+            }
             let len = fs::metadata(p).ok().filter(|m| m.is_file()).map(|m| m.len());
             match fs::remove_file(p) {
                 Ok(()) => freed += len.unwrap_or(0),
@@ -1748,6 +1808,132 @@ mod tests {
         assert_eq!(hash_cached(&f, 19).unwrap(), crate::ops_device::sha256_hex(b"longer contents now"));
         assert!(hash_cached(&dir.join("missing.mp3"), 1).is_err());
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_track_whose_beat_grid_was_not_archived_stays_with_its_grid() {
+        let fx = fixture("gridfail", 2);
+        let ids = fx.ids.clone();
+        let dest = fx.base.join("pc");
+        fs::create_dir_all(&dest).unwrap();
+        let (audio0, grid0) = fx.paths(ids[0]);
+        let (audio1, grid1) = fx.paths(ids[1]);
+        assert!(grid0.is_file() && grid1.is_file());
+        let grid0_bytes = fs::read(&grid0).unwrap();
+        // while the first track is being archived, a folder takes the name its grid copy needs,
+        // so the grid copy cannot be renamed into place
+        let dest2 = dest.clone();
+        let mut sabotaged = false;
+        let mut progress = move |_: usize, _: usize, label: &str| {
+            if !sabotaged && label == "Archiving Artist 0 - Title 0" {
+                sabotaged = true;
+                let folder = fs::read_dir(&dest2).unwrap().map(|e| e.unwrap().path()).find(|p| p.is_dir()).unwrap();
+                fs::create_dir(folder.join("Artist 0 - Title 0.str")).unwrap();
+            }
+        };
+        let rep = run(fx.lib.root(), &ids, &opts(&dest, true), &Fx::snapshot_ok(), &mut progress, &|| false).unwrap();
+        assert!(rep.failed.iter().any(|f| f.contains("beat grid was not")), "{:?}", rep.failed);
+        assert_eq!(rep.archived, 2, "both audio files are archived and verified");
+        assert_eq!(rep.removed, 1, "only the track whose audio and grid are both archived goes");
+        assert!(rep.skipped.iter().any(|s| s.contains("Artist 0 - Title 0") && s.contains("beat grid was not archived")), "{:?}", rep.skipped);
+        let left: Vec<i64> = fx.lib.tracks().unwrap().into_iter().map(|t| t.track_id).collect();
+        assert_eq!(left, [ids[0]]);
+        assert!(audio0.is_file() && grid0.is_file(), "the track and its grid are still on the card");
+        assert_eq!(fs::read(&grid0).unwrap(), grid0_bytes);
+        assert!(!audio1.exists() && !grid1.exists());
+    }
+
+    #[test]
+    fn two_rows_naming_one_file_are_not_duplicates_and_removing_one_keeps_the_file() {
+        let fx = fixture("sharedpath", 3);
+        let ids = fx.ids.clone();
+        for &i in &ids {
+            fx.old(i);
+        }
+        // rows 0 and 1 name the same file (nothing in the schema forbids it)
+        let loc: String = fx.lib.con.query_row("SELECT location FROM tracks WHERE track_id = ?1", [ids[0]], |r| r.get(0)).unwrap();
+        fx.lib.con.execute("UPDATE tracks SET location = ?2 WHERE track_id = ?1", rusqlite::params![ids[1], loc]).unwrap();
+        let (audio, grid) = fx.paths(ids[0]);
+        let rules = Rules { duplicates: true, ..only(|r| r.duplicates = true) };
+        let p = plan(&fx.lib, &rules, &goal(), &fx.storage(0), NOW).unwrap();
+        assert!(p.items.is_empty(), "one file is not a copy of itself: {:?}", p.items.iter().map(|i| &i.reasons).collect::<Vec<_>>());
+
+        // a row that goes while the other stays leaves the file alone and says so
+        let rep = run(fx.lib.root(), &[ids[1]], &RunOptions { remove: true, ..RunOptions::default() }, &Fx::snapshot_ok(), &mut |_, _, _| {}, &|| false).unwrap();
+        assert_eq!(rep.removed, 1);
+        assert_eq!(rep.freed_bytes, 0, "nothing was deleted");
+        assert!(audio.is_file() && grid.is_file(), "the file the other row names is still there");
+        assert!(rep.skipped.iter().any(|s| s.contains("still uses it")), "{:?}", rep.skipped);
+        let left: Vec<i64> = fx.lib.tracks().unwrap().into_iter().map(|t| t.track_id).collect();
+        assert_eq!(left, [ids[0], ids[2]]);
+        // with no other row on the file, removing it takes the file as before
+        let rep = run(fx.lib.root(), &[ids[0]], &RunOptions { remove: true, ..RunOptions::default() }, &Fx::snapshot_ok(), &mut |_, _, _| {}, &|| false).unwrap();
+        assert_eq!(rep.removed, 1);
+        assert!(!audio.exists() && !grid.exists());
+    }
+
+    #[test]
+    fn on_a_card_with_no_play_history_a_never_played_row_is_listed_but_not_ticked() {
+        let fx = fixture("noticks", 3);
+        let ids = fx.ids.clone();
+        for &i in &ids {
+            fx.old(i);
+        }
+        fx.set(ids[2], 0, -1, 1, NOW - 400 * DAY_MS);
+        let want = Goal::Free { bytes: 1 << 40 };
+        let st = fx.storage(0);
+        // never played alone says nothing here: all three are listed, none is ticked
+        let p = plan(&fx.lib, &only(|r| r.never_played = true), &want, &st, NOW).unwrap();
+        assert!(p.no_play_history);
+        assert_eq!(p.items.len(), 3);
+        assert!(p.items.iter().all(|i| !i.suggested) && p.suggested_count == 0, "{:?}", p.items.iter().map(|i| i.suggested).collect::<Vec<_>>());
+        // a second, real reason (a low rating) makes the row worth ticking again
+        let p = plan(&fx.lib, &only(|r| {
+            r.never_played = true;
+            r.low_rating_max = 1;
+        }), &want, &st, NOW).unwrap();
+        let ticked: Vec<i64> = p.items.iter().filter(|i| i.suggested).map(|i| i.track_id).collect();
+        assert_eq!(ticked, [ids[2]], "{:?}", p.items.iter().map(|i| (i.track_id, &i.reasons)).collect::<Vec<_>>());
+        // the user's own conditions are a reason: the list from "in no case" alone is still ticked
+        let p = plan(&fx.lib, &only(|r| r.only_no_case = true), &want, &st, NOW).unwrap();
+        assert_eq!(p.items.iter().filter(|i| i.suggested).count(), 3);
+    }
+
+    #[test]
+    fn the_grid_of_a_file_without_an_extension_keeps_a_dot_in_its_stem() {
+        let fx = fixture("nodot", 2);
+        let ids = fx.ids.clone();
+        // two tracks whose location has no extension and whose label has a dot: "Mr. X - Same"
+        for &id in &ids {
+            let (audio, old_grid) = fx.paths(id);
+            // the file loses its extension
+            let bare = audio.with_extension("");
+            fs::rename(&audio, &bare).unwrap();
+            let loc: String = fx.lib.con.query_row("SELECT location FROM tracks WHERE track_id = ?1", [id], |r| r.get(0)).unwrap();
+            let loc = loc.rsplit_once('.').unwrap().0.to_string();
+            fx.lib.con.execute("UPDATE tracks SET location = ?2, artist = 'Mr. X', title = 'Same' WHERE track_id = ?1", rusqlite::params![id, loc]).unwrap();
+            // naming::str_path cuts at the last dot of the whole path, so an extension-less file's grid
+            // resolves to a name next to ".Pacemaker" (a file the device never writes); put a grid
+            // where the code looks, so the test exercises the naming and not that
+            let (_, grid) = fx.paths(id);
+            if !grid.exists() {
+                fs::copy(&old_grid, &grid).unwrap();
+            }
+        }
+        let dest = fx.base.join("pc");
+        fs::create_dir_all(&dest).unwrap();
+        let preview = plan_run(&fx.lib, &ids, &opts(&dest, false)).unwrap();
+        assert!(preview.skipped.is_empty(), "{:?}", preview.skipped);
+        let grids: Vec<String> = preview.items.iter().map(|i| i.grid_name.clone().unwrap()).collect();
+        assert_eq!(grids, ["Mr. X - Same.str".to_string(), format!("Mr. X - Same ({}).str", ids[1])], "the preview names the grids");
+        let rep = run_all(&fx, &ids, &opts(&dest, false)).unwrap();
+        assert_eq!((rep.archived, rep.failed.len()), (2, 0), "{:?}", rep.failed);
+        let folder = PathBuf::from(rep.archive_folder.unwrap());
+        for it in &preview.items {
+            assert!(folder.join(it.archive_name.as_ref().unwrap()).is_file());
+            assert!(folder.join(it.grid_name.as_ref().unwrap()).is_file(), "{:?}", it.grid_name);
+        }
+        assert_eq!(verify_manifest(&folder).unwrap(), Vec::<String>::new());
     }
 
     #[test]

@@ -111,6 +111,7 @@ function plan() {
       suggested: false,
     });
   }
+  const noHistory = pool.every((b) => b.plays === 0 && b.daysAgo === null);
   const certain = (i: Record<string, any>) => i.reasons.filter((x: any) => x.kind !== "no_case" && x.kind !== "no_mix").length;
   items.sort((a, b) => {
     if (!!a.blocked !== !!b.blocked) return a.blocked ? 1 : -1;
@@ -123,6 +124,9 @@ function plan() {
   for (const i of items.filter((x) => !x.blocked)) {
     if (got >= need) break;
     if ((i.duplicate_of !== null && picked.has(i.duplicate_of)) || keepersWithCopy.has(i.track_id)) continue;
+    // no play history on the card: a row whose only real reason is "never played" is listed, not ticked
+    const real = i.reasons.filter((x: any) => x.kind !== "no_case" && x.kind !== "no_mix");
+    if (noHistory && real.length > 0 && real.every((x: any) => x.kind === "never_played")) continue;
     i.suggested = true; got += i.bytes; count++;
     picked.add(i.track_id);
     if (i.duplicate_of !== null) keepersWithCopy.add(i.duplicate_of);
@@ -133,7 +137,7 @@ function plan() {
     library_bytes: STORAGE.library, usable_bytes: settings.goal_kind === "card" ? usable() : null, items,
     candidate_bytes: items.reduce((n, i) => n + i.bytes, 0), removable_bytes: removable, suggested_count: count, suggested_bytes: got,
     reachable: removable >= need, hidden, missing_audio: 0, unchecked: 0,
-    no_play_history: pool.every((b) => b.plays === 0 && b.daysAgo === null), warnings: [] as string[],
+    no_play_history: noHistory, warnings: [] as string[],
   };
 }
 
@@ -149,7 +153,7 @@ function preview(ids: number[], dir: string | null, grids: boolean, remove: bool
     if (!b) { skipped.push(`track ${id}: not in the library any more`); continue; }
     const stays = remove && b.mixes.length > 0;
     items.push({
-      track_id: id, label: labelOf(b), bytes: bytesOf(b), archive_name: dir ? `${labelOf(b)}.flac` : null,
+      track_id: id, label: labelOf(b), bytes: bytesOf(b), archive_name: dir ? `${labelOf(b)}.flac` : null, grid_name: dir && grids ? `${labelOf(b)}.str` : null,
       remove: remove && !stays, note: stays ? `stays on the card: the mix ${b.mixes.join(", ")} uses it` : null,
     });
   }

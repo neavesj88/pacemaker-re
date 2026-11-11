@@ -182,7 +182,7 @@ export function runButton(plan: SpaceRunPlan, mode: RunMode): string {
 /** What one line of the confirmation says will happen to the track. */
 export function runLine(i: SpaceRunItem): string {
   const parts: string[] = [];
-  if (i.archive_name) parts.push(`archived as ${i.archive_name}`);
+  if (i.archive_name) parts.push(`archived as ${i.archive_name}${i.grid_name ? ` with beat grid ${i.grid_name}` : ""}`);
   if (i.remove) parts.push("removed from the card");
   else if (i.note) parts.push(i.note);
   return parts.join("; ") || "nothing";
