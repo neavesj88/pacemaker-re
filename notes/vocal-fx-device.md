@@ -229,3 +229,28 @@ Six coordinated instruction patches versus one data word. Reusing the Wah slot i
 4. Relabel the .lang strings in the image build; document removal (stock `.pfw`, or kill-switch file).
 5. Only if the time-domain result is judged too weak: prototype an offline STFT centre mask in the Editor/Rust first
    (`app/` is being edited by another workflow, so not touched here), measure on real tracks, then decide on-device.
+
+## 10. Status: built and tested off-device (11 Nov 2026)
+
+Code, build, tests and install text are in `device/vocalfx/` (README there). Changes to the plan above, all from a
+second reading of the decompile (`work/vfx/dc1/004f524c.c`, `004afab8.c`, `004ae168.c`) and from measurement:
+
+- **Peq is the second FX in the chain, so it is always called with `in == out`** (`StreamedAudioProcess::process`
+  passes `(param_2, param_2)` from the second process on). `copyFrom(x, x)` is a no-op, and the silent-flag event pump of
+  section 4 is safe: set `in[4]`, call the original, restore `in[4]`. For `in != out` (not the live chain) the library
+  calls the original untouched, because with a silent input `copyFrom` does not copy audio into `out` and does not set
+  its frame count.
+- The stock process also tests a byte at `this+4` (skip when set) and stores the value at `this+0x80`, which is the
+  value the library reads (no virtual call, no extra lock).
+- **"Subtract the band-passed centre" does not cut**: any band-pass has phase, measured -2.4 dB on a voice and -7 dB at
+  1 kHz (HP2 150 Hz + LP4 4 kHz). The DSP is therefore a phase-coherent three-band split (LR4 crossovers at 150 Hz and
+  4 kHz, all-pass on the low band and on the side signal) with per-band gains: -48 dB at 1 kHz for a full cut, no notches
+  at partial settings. 11 biquads per frame instead of the 3 estimated in section 5; estimate 1.5 - 2.5 % of the block
+  time per deck (unmeasured on the device, the library logs it).
+- `PeqAudioProcess` objects: the vtable symbol, `process`, both destructors and `m_sampleRate` are exported by name in
+  the player's `.dynsym` (checked in `work/vfx/allsyms.txt`), and the vtable words at 0x877e48 were re-read from the
+  ELF: `[2] = 0x4f5730`, `[3] = 0x4f58d8`, `[7] (+0x1c) = 0x4f524c`. The library checks all of them before it writes.
+- The preload library must be linked against the device's own libs: the compiler's default `_TIME_BITS=64` makes
+  references glibc 2.4 does not have; `build.sh` removes it and audits every undefined symbol version (all `GLIBC_2.4`).
+- Not yet done: any run on the device. The first boot is observer-only (flag file absent) so the hook, the 512-frame
+  call size and the stock Wah cost can be read from `revival-vocal.log` before the DSP is enabled.

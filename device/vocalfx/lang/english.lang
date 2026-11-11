@@ -1,0 +1,361 @@
+English language file
+
+//locale
+0 "en_US"
+
+//Strings
+1 "Volume"
+2 "Profile"
+3 "Playback"
+4 "Normalize"
+5 "Autocue"
+6 "Loop travel"
+7 "Repeat"
+8 "Shuffle"
+10 "Track time"
+11 "Display"
+12 "End alert"
+13 "Screen"
+14 "Intensity"
+15 "Timeout"
+16 "Buttons"
+17 "Nightlight"
+18 "Buttons blink"
+21 "Headphones"
+22 "Range"
+23 "Volume limit"
+25 "BPM"
+26 "Case"
+27 "Label"
+28 "Genre"
+29 "Artist"
+30 "Album"
+31 "Mix" 
+32 "Power"
+33 "Standby"
+36 "Alerts"
+37 "Lineout warning"
+39 "About"
+40 "Status"
+41 "Battery (%)"
+42 "Available (GB)"
+43 "Used (GB)"
+44 "Mixes"
+45 "Tracks"
+46 "Version"
+47 "Serial no"
+48 "Model"
+49 "© Tonium"
+50 "Firmware"
+51 "Software"
+52 "Support"
+53 "Legal notice"
+55 "Restore all"
+56 "Settings"
+57 "Play mode"
+58 "Mix mode"
+59 "Shutdown"
+60 "Phones x-fader"
+63 "Save"
+64 "Lock"
+65 "Unlock"
+68 "Normal"
+69 "Relative"
+70 "On"
+71 "Off"
+72 "On"      // used to be "Auto", for "buttons blink"
+73 "Off"     // used to be "Light off", for "buttons blink"
+74 "Played"
+75 "Left"
+76 "One"
+78 "All"
+79 "Low"
+80 "Medium"
+81 "Bright"
+82 "Low imp"
+83 "High imp"
+85 "1 min"
+86 "5 min"
+87 "10 sec"
+88 "30 sec"
+89 "-1 sec"
+90 "0 sec"
+91 "2 sec"
+92 "4 sec"
+93 "6 sec"
+94 "8 sec"
+96 "Language"
+
+//English
+97 "English"
+//Korean
+98 "한국어"
+//Japanese
+101 "日本語"
+
+104 "Bass" 
+105 "Mid"
+106 "Treble"
+107 "Gain"
+108 "Hi-lo cut"
+109 "Echo"
+110 "Dry/Wet"
+111 "Roll"
+112 "Reverb"
+113 "Phones"
+114 "Phones 1"
+115 "Phones 2"
+116 "Vol. limit"
+117 "Menu"
+118 "No filter"
+119 "Unknown"
+
+//Sentence which consists of two strings
+121 "An unexpected error"
+122 "has occurred"
+
+123 "Not available"
+
+//Sentence which consists of two strings
+124 "Conflicting audio effect"
+125 "already activated"
+
+126 "Locked"
+
+//Sentence which consists of two strings
+127 "Unlock from"
+128 "settings"
+
+//Mix save options
+129 "Mix save"
+130 "Halt"
+131 "Continue"
+132 "New"
+
+133 "Track"
+134 "Rec"
+136 "Mix saved as"
+137 "Save mix?"
+138 "Discard"
+139 "Cancel"
+140 "Unlock?"
+142 "Sorry friend" 
+
+//Sentence which consists of two strings
+143 "Hard drive space"
+144 "running low"
+
+145 "Really discard?"
+150 "dB"
+151 "Warning!"
+
+//Sentence which consists of two strings
+152 "Potentially damaging"
+153 "disconnection"
+
+154 "Do not disconnect!"
+
+//Sentence which consists of two strings
+155 "Before pulling the plug"
+156 "eject from computer"
+
+157 "Please wait!"
+
+//Sentence which consists of two strings
+158 "Firmware upgrade"
+159 "in progress"
+     
+//Sentence which consists of two strings
+160 "Checking hard drive"
+161 "for problems"
+       
+162 "Sorry friend..."
+
+//Sentence which consists of two strings
+163 "Hard drive needs"
+164 "to be restored"
+   
+165 "Restoring hard drive"
+166 "Sorry friend..."
+
+//Sentence which consists of two strings
+167 "Hard drive needs"
+168 "checking"
+
+//Sentence which consists of two strings      
+169 "No problem"
+170 "Let's mix!"
+
+171 "Check hard drive?"
+172 "Check"
+173 "Restore hard drive?"
+174 "Restore"  
+175 "charged"    
+176 "Charging"
+
+//Mix save failure
+177 "Mix save failed!"
+
+//Disrupt lineout
+178 "Disrupt line out?"
+179 "Disrupt"
+        
+//No tracks in db
+180 "No tracks available"
+181 "Return"
+
+182 "Restore"
+183 "Really restore all?"
+184 "Really shutdown?"
+
+185 "Loading"
+186 "FX KILLED"
+
+//Disk is empty
+187 "Hard drive restored"
+
+//Sentence which consists of two strings      
+188 "Please upgrade"
+189 "firmware"
+
+190 "Mix discarded"
+191 "New mix?"
+
+//FX time
+192 "Time"
+//General continue option 
+193 "Continue"
+
+//database incompatible
+194 "Database error"
+
+// FX Config
+195 "FX Config"
+196 "Edit"
+197 "Restore"
+198 "P-up/North"
+199 "P-up/East"
+200 "P-up/South"
+201 "P-up/West"
+202 "North"
+203 "East"
+204 "South"
+205 "West"
+
+// Track list context menu
+206 "Track list menu"
+207 "Add to case"
+208 "Add all to case"
+209 "Remove"
+210 "My cases"
+211 "Create case"
+212 "Created" // As in "created case 3"
+213 "Added to case"
+214 "Remove from case?"
+215 "Remove"
+216 "Removed from case"
+
+217 "Mix control" // Settings folder name
+218 "Audio"  // Settings folder name
+219 "Lineout"  // Settings folder name
+220 "Phones EQ"  // Settings folder name
+221 "Configure"  // Settings folder name
+222 "Track list filters"  // Settings folder name
+223 "FX layout"  // Settings folder name
+224 "Edit"  // Settings folder name
+
+// Track list layout
+225 "Track list"
+226 "Linked"
+227 "Split"
+
+//Debug menu strings used when device enter security mode
+//These strings should not be translated, 
+//they will be located in flash, i.e. no other languages than English is supported
+228 "Debug menu"
+229 "Check FS"
+230 "Clean FS"
+231 "Restore HDD"
+232 "Enter DFU"
+233 "Reboot"
+
+// New FX
+234 "Crush"
+235 "Trans"
+236 "Vocal"
+237 "Delay"
+
+238 "Effect x-fader"
+239 "Off"
+240 "Bass"
+241 "Filter"
+
+242 "Time stretch"
+243 "Beat graph"
+244 "Auto"
+245 "Lineout EQ"   // Settings folder name
+
+246 "Key"
+247 "Transpose"
+248 "Tune"
+
+// New filters
+249 "Year"
+250 "Added"
+251 "Rating"
+252 "Type"
+253 "Bitrate"
+254 "Remix"
+
+255 "Vinyl mode"
+
+// FX Config restoration
+256 "Really restore?"
+257 "Restore"
+258 "Cancel"
+
+
+//DFU
+259 "Firmware restored"
+
+// Mix and Case default names
+260 "New Case"
+261 "D"
+262 "New Mix"
+263 "D"
+
+264 "Size"  // Reverb FX parameter
+
+//Sentence which consists of two strings
+265 "Switch on time stretch"
+266 "to enable this effect"
+
+//fw upgrade error
+267 "FW Error"
+268 "Invalid file"
+
+269 "Digital"
+
+270 "Fixed loop length"
+271 "Snap loops"
+272 "Beat jump length"
+273 "1/64"
+274 "1/32"
+275 "1/16"
+276 "1/8"
+277 "1/4"
+278 "1/2"
+279 "1"
+280 "2"
+281 "4"
+282 "8"
+283 "16"
+284 "32"
+285 "64"
+
+// BeatJump
+286 "BeatJump"
+287 "Sorry friend..."
+288 "BeatJump isn't"
+289 "enabled for track"
+290 "BeatJump enabled."
