@@ -3,7 +3,7 @@
 // (crates/pm-formats/src/library/case_bulk_tests.rs), and tests the case table's pure logic.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { parseTrackIds, planMerge, planTransfer } from "../../state/casePlan.ts";
+import { planMerge, planTransfer } from "../../state/casePlan.ts";
 import { sortTracks } from "../tracks/trackLogic.ts";
 import {
   CASE_COLUMNS, copyName, defaultCasePrefs, mergeCasePrefs, mergeSummary, plural, searchRows, sortRows, trackLabel, transferLine,
@@ -37,12 +37,6 @@ test("transfer plan: add, already there, remove, not in source, missing", () => 
   const copy = planTransfer([1, 2], [1, 2], [], false, known);
   assert.deepEqual([copy.to_add, copy.to_remove], [[1, 2], []]);
   assert.deepEqual(planTransfer([7], null, [], false, known).to_add, [7]);
-});
-
-test("drag payloads: only integer arrays are accepted, repeats dropped", () => {
-  assert.deepEqual(parseTrackIds("[3,1,3,2]"), [3, 1, 2]);
-  for (const bad of ["", "nope", "{}", "\"3\"", "null"]) assert.deepEqual(parseTrackIds(bad), [], bad);
-  assert.deepEqual(parseTrackIds("[1,\"2\",2.5,null,4]"), [1, 4]);
 });
 
 test("the case table offers the Tracks view's columns; title and heart are always on", () => {

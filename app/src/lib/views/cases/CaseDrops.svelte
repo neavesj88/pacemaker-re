@@ -6,12 +6,10 @@
   import { cases } from "$lib/state/cases.svelte";
   import { jobs } from "$lib/state/jobs.svelte";
   import { toast } from "$lib/state/toast.svelte";
-  import { endTrackDrag, hasTrackDrag, readTrackDrag, trackDrag } from "$lib/state/trackDrag.svelte";
+  import { trackDrag, trackDropTarget } from "$lib/state/trackDrag.svelte";
   import { plural } from "./caseLogic";
   import NameDialog from "./NameDialog.svelte";
 
-  let over = $state<number | "new" | null>(null);
-  let lastOver = Date.now();
   let newFrom = $state<number[] | null>(null);
 
   // the device copy of a smart case is rewritten from its rules on every refresh, so tracks
@@ -19,46 +17,17 @@
   const list = $derived(cases.infos.filter((c) => !cases.smart.some((s) => s.device_case_id === c.id)));
   const openId = $derived(cases.open?.id ?? null);
 
-  function allow(e: DragEvent, target: number | "new") {
-    if (!hasTrackDrag(e) || !jobs.canWrite) return;
-    e.preventDefault();
-    if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
-    over = target;
-  }
+  const canDrop = () => jobs.canWrite;
 
-  async function drop(e: DragEvent, target: number | "new") {
-    over = null;
-    const ids = readTrackDrag(e);
-    endTrackDrag();
+  async function drop(ids: number[], target: number | "new") {
     if (ids.length === 0 || !jobs.canWrite) return;
-    e.preventDefault();
     if (target === "new") newFrom = ids;
     else {
       const c = list.find((x) => x.id === target);
       if (c) await cases.dropTracks(c.id, c.name, ids);
     }
   }
-
-  // A drag that ends where nothing reports it (its row was scrolled away, the window lost it)
-  // would leave the strip up: dragover fires all the time during a drag, so silence ends it.
-  $effect(() => {
-    if (!trackDrag.active) return;
-    lastOver = Date.now();
-    const watchdog = setInterval(() => {
-      if (Date.now() - lastOver > 2500) endTrackDrag();
-    }, 1000);
-    return () => clearInterval(watchdog);
-  });
 </script>
-
-<svelte:window
-  ondragover={() => (lastOver = Date.now())}
-  ondragend={endTrackDrag}
-  ondrop={() => {
-    over = null;
-    endTrackDrag();
-  }}
-/>
 
 {#if trackDrag.active}
   <div class="strip" role="group" aria-label="Drop the tracks on a case">
@@ -67,20 +36,12 @@
       <p class="muted pad">Cases can't be changed right now (a job is running or the library is read-only).</p>
     {:else}
       <div class="list">
-        <!-- svelte-ignore a11y_no_static_element_interactions -->
-        <div class="item new" class:over={over === "new"} ondragenter={(e) => allow(e, "new")} ondragover={(e) => allow(e, "new")} ondragleave={() => (over = null)} ondrop={(e) => drop(e, "new")}>
-          + New case…
-        </div>
+        <div class="item new" use:trackDropTarget={{ accept: canDrop, ondrop: (ids) => drop(ids, "new") }}>+ New case…</div>
         {#each list as c (c.id)}
-          <!-- svelte-ignore a11y_no_static_element_interactions -->
           <div
             class="item"
-            class:over={over === c.id}
-            class:self={c.id === openId}
-            ondragenter={(e) => allow(e, c.id)}
-            ondragover={(e) => allow(e, c.id)}
-            ondragleave={() => (over = null)}
-            ondrop={(e) => drop(e, c.id)}
+            class:self={c.id === openId && trackDrag.from === `case:${c.id}`}
+            use:trackDropTarget={{ accept: () => canDrop() && trackDrag.from !== `case:${c.id}`, ondrop: (ids) => drop(ids, c.id) }}
             title={c.id === openId ? "The case that is open" : c.name}
           >
             <span class="name">{c.name}</span>
@@ -142,7 +103,7 @@
     border-radius: 4px;
     border: 1px dashed transparent;
   }
-  .item.over {
+  .item:global([data-drop-over]) {
     background: var(--accent-soft);
     border-color: var(--accent);
     color: var(--accent);

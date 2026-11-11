@@ -44,13 +44,3 @@ export function planTransfer(
   }
   return plan;
 }
-
-/** A JSON array of integers; anything else gives []. Repeats are dropped. */
-export function parseTrackIds(raw: string): number[] {
-  try {
-    const v = JSON.parse(raw);
-    return Array.isArray(v) ? [...new Set(v.filter((x): x is number => Number.isInteger(x)))] : [];
-  } catch {
-    return [];
-  }
-}

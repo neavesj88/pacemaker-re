@@ -7,7 +7,7 @@
   import { selection } from "$lib/state/selection.svelte";
   import { session } from "$lib/state/session.svelte";
   import { toast } from "$lib/state/toast.svelte";
-  import { hasTrackDrag, readTrackDrag } from "$lib/state/trackDrag.svelte";
+  import { trackDropTarget } from "$lib/state/trackDrag.svelte";
   import Button from "$lib/ui/Button.svelte";
   import ContextMenu, { type MenuItem } from "$lib/ui/ContextMenu.svelte";
   import Stars from "$lib/ui/Stars.svelte";
@@ -78,10 +78,11 @@
   }
 
   // The shared Table has no row hooks, so find the row from the event.
-  const rowOf = (e: Event) => {
-    const tr = (e.target as HTMLElement).closest("tbody tr") as HTMLTableRowElement | null;
+  const rowAt = (el: Element) => {
+    const tr = el.closest("tbody tr") as HTMLTableRowElement | null;
     return tr ? rows[tr.sectionRowIndex] : undefined;
   };
+  const rowOf = (e: Event) => rowAt(e.target as HTMLElement);
 
   function rowMenu(e: MouseEvent) {
     const c = rowOf(e);
@@ -90,25 +91,19 @@
     menu = { x: e.clientX, y: e.clientY, c };
   }
 
-  function dragOver(e: DragEvent) {
-    const c = rowOf(e);
-    if (!c || !jobs.canWrite || !hasTrackDrag(e) || smartOf(c)) {
-      dropId = null;
-      return;
-    }
-    e.preventDefault();
-    if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
-    dropId = c.id;
-  }
-
-  async function drop(e: DragEvent) {
-    dropId = null;
-    const c = rowOf(e);
-    const ids = readTrackDrag(e);
-    if (!c || ids.length === 0 || !jobs.canWrite || smartOf(c)) return;
-    e.preventDefault();
-    await cases.dropTracks(c.id, c.name, ids);
-  }
+  // Tracks dragged from a table (state/trackDrag.svelte.ts) land on the case row under the pointer.
+  const dropTarget = (hit: Element) => {
+    const c = rowAt(hit);
+    return c && jobs.canWrite && !smartOf(c) ? c : undefined;
+  };
+  const dropOptions = {
+    accept: (hit: Element) => !!dropTarget(hit),
+    onhover: (hit: Element | null) => (dropId = (hit && dropTarget(hit)?.id) ?? null),
+    ondrop: (ids: number[], hit: Element) => {
+      const c = dropTarget(hit);
+      if (c && ids.length > 0) void cases.dropTracks(c.id, c.name, ids);
+    },
+  };
 
   const exportItems = (c: CaseInfo): MenuItem[] => [
     { label: "Export as M3U8…", onclick: () => cases.exportOne(c, "m3u8"), disabled: c.track_count === 0 },
@@ -189,11 +184,11 @@
     {#if picked.size > 0}{plural(picked.size, "case")} ticked ·{/if}
     <Button small variant="link" onclick={() => (picked = new Set(rows.map((c) => c.id)))}>Tick all {rows.length === cases.infos.length ? "" : "shown "}</Button>
     {#if picked.size > 0}<Button small variant="link" onclick={() => (picked = new Set())}>Clear ticks</Button>{/if}
-    · Drag tracks onto a case to add them, or use Add to case… in the Tracks view (not onto a smart case's copy: its rules rewrite it)
+    · Drag tracks from the Tracks view onto a case to add them, or use Add to case… there (not onto a smart case's copy: its rules rewrite it)
   </div>
 {/if}
 
-<div class="wrap" role="presentation" oncontextmenu={rowMenu} ondragover={dragOver} ondragleave={() => (dropId = null)} ondrop={drop}>
+<div class="wrap" role="presentation" oncontextmenu={rowMenu} use:trackDropTarget={dropOptions}>
   <Table {columns} {rows} rowKey={(c) => c.id} onrowclick={open} {sortKey} {sortAsc} onsort={sortBy} rowClass={(c) => (c.id === dropId ? "drop" : "")}>
     {#snippet cell(c, col)}
       {#if col.key === "pick"}

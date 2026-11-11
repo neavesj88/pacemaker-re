@@ -17,6 +17,7 @@
 
   const list = $derived(cases.infos);
   // not offered as a destination: a smart case's device copy is rewritten from its rules on refresh
+  const smartOf = (id: number) => cases.smart.find((s) => s.device_case_id === id);
   const destinations = $derived(list.filter((c) => !cases.smart.some((s) => s.device_case_id === c.id)));
   let sources = $state<Set<number>>(new Set(untrack(() => initial)));
   let mode = $state<"new" | "existing">("new");
@@ -123,7 +124,7 @@
       <ul>
         {#each picked as c (c.id)}
           <li>
-            “{c.name}” ({plural(c.track_count, "track")}){c.name === "Favourites" ? " – the case the heart on a track uses" : ""}
+            “{c.name}” ({plural(c.track_count, "track")}){c.name === "Favourites" ? " – the case the heart on a track uses" : ""}{smartOf(c.id) ? ` – the Pacemaker copy of the smart case “${smartOf(c.id)?.name}”, which will be made again the next time you refresh` : ""}
           </li>
         {/each}
       </ul>

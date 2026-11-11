@@ -10,7 +10,7 @@
   import { selection } from "$lib/state/selection.svelte";
   import { toast } from "$lib/state/toast.svelte";
   import { session } from "$lib/state/session.svelte";
-  import { endTrackDrag, hasTrackDrag, readTrackDrag, startTrackDrag } from "$lib/state/trackDrag.svelte";
+  import { armTrackDrag, trackDrag, trackDropTarget } from "$lib/state/trackDrag.svelte";
   import Button from "$lib/ui/Button.svelte";
   import ContextMenu, { type MenuItem } from "$lib/ui/ContextMenu.svelte";
   import Stars from "$lib/ui/Stars.svelte";
@@ -115,46 +115,51 @@
 
   let drag = $state<{ ids: Set<number>; over: number; after: boolean } | null>(null);
 
-  // Tracks dragged in from a table (see state/trackDrag.svelte.ts) are appended to this case.
+  // Tracks dragged in from a table (see state/trackDrag.svelte.ts) are appended to this case. A
+  // drag that started on a row of this very table is never dropped back here.
   let dropping = $state(false);
-  // true while a drag that started in this table is running: dropping it back here is a reorder
-  // (or nothing), never "add these tracks"
-  let selfDrag = false;
+  const dropOptions = {
+    accept: () => jobs.canWrite && trackDrag.from !== `case:${open.id}`,
+    onhover: (hit: Element | null) => (dropping = !!hit),
+    ondrop: (ids: number[]) => {
+      if (ids.length > 0) void cases.dropTracks(open.id, open.name, ids);
+    },
+  };
 
-  function externalOver(e: DragEvent) {
-    if (selfDrag || !jobs.canWrite || !hasTrackDrag(e)) return;
-    e.preventDefault();
-    if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
-    dropping = true;
+  // A drag from a row carries the selected tracks of THIS case (the selection is shared with the
+  // Tracks view and can hold tracks that are not here), or just the row's own track. Read when
+  // the drag starts, after the press has made its selection.
+  function rowDrag(i: number) {
+    const r = rows[i];
+    if (!r?.t) return { ids: [] };
+    if (!selected.has(r.id)) {
+      selection.trackIds = [r.id];
+      anchor = i;
+      return { ids: [r.id] };
+    }
+    return { ids: all.filter((x) => selected.has(x.id) && x.t).map((x) => x.id) };
   }
 
-  async function externalDrop(e: DragEvent) {
-    dropping = false;
-    if (selfDrag) return;
-    const ids = readTrackDrag(e);
-    if (ids.length === 0) return;
-    e.preventDefault();
-    await cases.dropTracks(open.id, open.name, ids);
-  }
-
+  // Reordering inside the table is HTML5 drag and drop from the grip cell (it only works where the
+  // webview delivers in-page drag events); dragging a row anywhere else carries tracks to another
+  // case with the pointer.
   function dragStart(e: DragEvent, i: number) {
     const id = rows[i].id;
-    const ids = selected.has(id) ? selection.trackIds.filter((x) => byId.has(x)) : [id];
-    if (!selected.has(id)) selection.trackIds = [id];
-    // the ids go on the drag for a case (sidebar strip: copy to another case); reordering inside
-    // this table is separate and only when the order can be edited
-    selfDrag = true;
-    startTrackDrag(e, ids, ids.map((x) => byId.get(x)?.title ?? ""));
-    if (canReorder) {
-      drag = { ids: new Set(selection.trackIds), over: i, after: false };
-      if (e.dataTransfer) e.dataTransfer.effectAllowed = "copyMove";
+    if (!selected.has(id)) {
+      selection.trackIds = [id];
+      anchor = i;
+    }
+    const ids = new Set(all.filter((r) => r.id === id || selected.has(r.id)).map((r) => r.id));
+    drag = { ids, over: i, after: false };
+    if (e.dataTransfer) {
+      e.dataTransfer.effectAllowed = "move";
+      e.dataTransfer.setData("text/plain", "");
+      e.dataTransfer.setDragImage(e.currentTarget as HTMLElement, 0, 0);
     }
   }
 
   function dragEnd() {
-    selfDrag = false;
     drag = null;
-    endTrackDrag();
   }
 
   function dragOver(e: DragEvent, i: number) {
@@ -363,9 +368,7 @@
       tabindex="0"
       role="region"
       aria-label="Tracks in the case"
-      ondragover={externalOver}
-      ondragleave={() => (dropping = false)}
-      ondrop={externalDrop}
+      use:trackDropTarget={dropOptions}
     >
       <table role="grid" aria-multiselectable="true" aria-label="Tracks in the case">
         <thead>
@@ -399,7 +402,6 @@
               tabindex={i === Math.min(focusIdx, rows.length - 1) ? 0 : -1}
               aria-selected={selected.has(r.id)}
               onkeydown={(e) => rowKey(e, i)}
-              draggable={!!r.t}
               class:sel={selected.has(r.id)}
               class:dim={!r.t || session.needs.has(r.id)}
               class:before={drag && drag.over === i && !drag.after && !drag.ids.has(r.id)}
@@ -409,12 +411,13 @@
               onclick={(e) => pick(i, e)}
               ondblclick={() => r.t && play(r.id)}
               oncontextmenu={(e) => rowMenu(e, i)}
+              onpointerdown={(e) => armTrackDrag(e, `case:${open.id}`, () => rowDrag(i))}
               ondragstart={(e) => dragStart(e, i)}
               ondragover={(e) => dragOver(e, i)}
               ondrop={drop}
               ondragend={dragEnd}
             >
-              <td class="grip muted">{canReorder ? "≡ " : ""}{position.get(r.id)}</td>
+              <td class="grip muted" draggable={canReorder} data-no-drag={canReorder ? "" : undefined} title={canReorder ? "Drag to reorder" : undefined}>{canReorder ? "≡ " : ""}{position.get(r.id)}</td>
               {#each cols as c (c.key)}
                 {#if c.key === "fav"}
                   <td class="heart">
@@ -469,7 +472,7 @@
       {/if}
     </div>
     <div class="hintbar muted">
-      Drag rows to reorder (in case order) · drag rows onto a case in the sidebar to copy them there · click a column to sort the view · the order is the order on the Pacemaker
+      Drag the ≡ number to reorder (in case order) · drag a row onto a case in the sidebar to copy it there · click a column to sort the view · the order is the order on the Pacemaker
     </div>
   </div>
 
@@ -754,7 +757,7 @@
   tr.after {
     box-shadow: inset 0 -2px 0 var(--accent);
   }
-  tr.reorder[draggable="true"] {
+  td.grip[draggable="true"] {
     cursor: grab;
   }
   .fav {
