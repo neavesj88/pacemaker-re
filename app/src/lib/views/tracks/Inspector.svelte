@@ -4,7 +4,10 @@
   import type { Peak } from "$lib/api/analysis";
   import type { Track } from "$lib/api/types";
   import { mmss } from "$lib/format";
+  import { suspectKinds } from "$lib/state/batchLogic";
   import { analysis } from "$lib/state/analysis.svelte";
+  import { gridBatch } from "$lib/state/gridBatch.svelte";
+  import { suspects } from "$lib/state/gridSuspects.svelte";
   import { jobs } from "$lib/state/jobs.svelte";
   import { playback } from "$lib/state/playback.svelte";
   import { session } from "$lib/state/session.svelte";
@@ -31,6 +34,9 @@
     /** Select a track from the matching list. */
     onpick: (id: number) => void;
   } = $props();
+
+  /** Why the grid area's rules flag this track, when they do. */
+  const suspect = $derived(track ? suspects.byId.get(track.track_id) : undefined);
 
   const OVERVIEW_COLUMNS = 400;
   const MATCH_LIMIT = 8;
@@ -103,6 +109,18 @@
         >Edit</Button>
       </span>
     </div>
+    {#if suspect}
+      <div class="field">
+        <span class="label">Grid</span>
+        <span>
+          <span class="chip warn" title={suspect.reasons.join("\n")}>suspect</span>
+          {suspectKinds(suspect)}
+          <Button variant="ghost" small onclick={() => gridBatch.open([suspect.track_id], suspect.fix ? "suggested" : "reanalyse")} title={suspect.reasons.join("; ")}>
+            {suspect.fix ? "Preview fix…" : "Preview re-analysis…"}
+          </Button>
+        </span>
+      </div>
+    {/if}
     <div class="field">
       <span class="label">Key</span>
       <span>

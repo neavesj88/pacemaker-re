@@ -18,6 +18,8 @@ class TracksState {
   /** "", "compat:8A" or "is:8A" (see trackLogic.KeyFilter). */
   keyFilter = $state("");
   onlyAnalysed = $state(false);
+  /** Only tracks flagged by the suspect-grid rules (state/gridSuspects.svelte.ts). */
+  onlySuspect = $state(false);
 
   /** Tracks in the "Favourites" case. */
   favourites = new SvelteSet<number>();
@@ -64,6 +66,7 @@ class TracksState {
     this.bpmMax = "";
     this.keyFilter = "";
     this.onlyAnalysed = false;
+    this.onlySuspect = false;
   }
 
   /** A different library was opened. */

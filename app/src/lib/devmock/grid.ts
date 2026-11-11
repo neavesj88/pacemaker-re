@@ -8,26 +8,26 @@ import { mixNamesUsing } from "./mixes";
 import type { Handlers } from "./types";
 
 type Beat = { pos: number; bpm: number };
-type Doc = { normalize_factor: number; beat_start_offset: number; beats: Beat[]; first_downbeat: number | null };
+export type Doc = { normalize_factor: number; beat_start_offset: number; beats: Beat[]; first_downbeat: number | null };
 
-const SR = 44100;
-const saved = new Map<number, Doc>();
+export const SR = 44100;
+export const saved = new Map<number, Doc>();
 const cues = new Map<number, number | null>();
 
-function constantGrid(bpm: number, first: number, total: number, fd: number | null): Doc {
+export function constantGrid(bpm: number, first: number, total: number, fd: number | null): Doc {
   const period = (SR * 60) / bpm;
   const n = Math.floor((total - first) / period) + 1;
   const beats = Array.from({ length: n }, (_, i) => ({ pos: first + Math.round(i * period), bpm }));
   return { normalize_factor: 1, beat_start_offset: first, beats, first_downbeat: fd };
 }
 
-const trackOf = (id: number) => {
+export const trackOf = (id: number) => {
   const t = tracks.find((x) => x.track_id === id);
   if (!t) throw `no track ${id}`;
   return t;
 };
 
-function demoGrid(id: number): Doc {
+export function demoGrid(id: number): Doc {
   const t = trackOf(id);
   return constantGrid(t.bpm, 3000 + ((id * 7919) % 20000), t.play_time_secs * SR, id % 4);
 }
@@ -52,7 +52,7 @@ function finish(old: Doc, beats: Beat[], fd: number | null): Doc {
   };
 }
 
-function applyEdit(doc: Doc, edit: any, sr: number, total: number | null): Doc {
+export function applyEdit(doc: Doc, edit: any, sr: number, total: number | null): Doc {
   const period = (bpm: number) => (sr * 60) / bpm;
   switch (edit.kind) {
     case "nudge": {
@@ -135,7 +135,7 @@ function applyEdit(doc: Doc, edit: any, sr: number, total: number | null): Doc {
 type PlanRow = { track_id: number; label: string; before: number | null; after: number | null; skip: string | null };
 
 /** Median local tempo of a grid: what the real backend stores in `tracks.bpm`. */
-function medianBpm(doc: Doc): number {
+export function medianBpm(doc: Doc): number {
   const v = doc.beats.map((b) => b.bpm).sort((a, b) => a - b);
   return v[Math.floor(v.length / 2)] ?? 0;
 }

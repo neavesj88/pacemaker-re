@@ -5,6 +5,7 @@
   import { onMount, tick } from "svelte";
   import type { Track } from "$lib/api/types";
   import { mmss } from "$lib/format";
+  import { gridBatch } from "$lib/state/gridBatch.svelte";
   import { jobs } from "$lib/state/jobs.svelte";
   import { playback } from "$lib/state/playback.svelte";
   import { selection } from "$lib/state/selection.svelte";
@@ -193,7 +194,7 @@
       anchorId = t.track_id;
       select([t.track_id], t.track_id);
     }
-    menu = { x: Math.max(0, Math.min(e.clientX, innerWidth - 230)), y: Math.max(0, Math.min(e.clientY, innerHeight - 400)), ids: [...selection.trackIds] };
+    menu = { x: Math.max(0, Math.min(e.clientX, innerWidth - 230)), y: Math.max(0, Math.min(e.clientY, innerHeight - 430)), ids: [...selection.trackIds] };
   }
 
   const menuItems = $derived.by(() => {
@@ -218,6 +219,7 @@
       { label: one ? "BPM: halve…" : `BPM: halve ${n} tracks…`, onclick: () => tempo.askHalve(ids) },
       { label: one ? "BPM: double…" : `BPM: double ${n} tracks…`, onclick: () => tempo.askDouble(ids) },
       { label: one ? "Re-analyse beat grid…" : `Re-analyse ${n} tracks…`, onclick: () => jobs.askReanalyse(ids) },
+      { label: one ? "Beat grid tools (preview)…" : `Beat grid tools for ${n} tracks (preview)…`, onclick: () => gridBatch.open(ids) },
       { label: "Edit grid", onclick: () => editGrid(ids[0]), disabled: !one },
       { label: "Show in Explorer", onclick: () => revealInExplorer(ids[0]), disabled: !one },
     ];

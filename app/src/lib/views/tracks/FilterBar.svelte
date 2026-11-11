@@ -1,6 +1,8 @@
 <script lang="ts">
   // The toolbar above the table: genre, BPM range, key, analysed / missing, column chooser.
   import { filters } from "$lib/state/filters.svelte";
+  import { gridBatch } from "$lib/state/gridBatch.svelte";
+  import { suspects } from "$lib/state/gridSuspects.svelte";
   import Button from "$lib/ui/Button.svelte";
   import { COLUMNS } from "./columns";
   import { ALL_CAMELOT, filterIsActive, type Camelot } from "./trackLogic";
@@ -12,7 +14,10 @@
     shown,
     total,
     selected,
+    suspectIds = [],
   }: {
+    /** Flagged tracks among the rows now shown: what "Review" opens the batch grid tools for. */
+    suspectIds?: number[];
     genres: string[];
     /** Camelot key of the track the inspector shows, for "compatible with ...". */
     focusKey: Camelot | null;
@@ -32,7 +37,7 @@
   });
 
   const anyFilter = $derived(
-    filterIsActive({ ...tracksState.filter }) || filters.onlyNeeds || !!filters.query,
+    filterIsActive({ ...tracksState.filter }) || filters.onlyNeeds || !!filters.query || tracksState.onlySuspect,
   );
 
   // Analysed and Missing are opposites; pressing one releases the other, pressing it again clears it.
@@ -44,6 +49,19 @@
     filters.onlyNeeds = !filters.onlyNeeds;
     if (filters.onlyNeeds) tracksState.onlyAnalysed = false;
   }
+  function toggleSuspect() {
+    tracksState.onlySuspect = !tracksState.onlySuspect;
+    if (tracksState.onlySuspect) void suspects.ensure();
+  }
+  const suspectTitle = $derived(
+    suspects.checking
+      ? "Checking the beat grids…"
+      : suspects.error
+        ? suspects.error
+        : suspects.report
+          ? `Tracks whose tempo looks like half or double time for their genre, or whose beat grid looks poorly analysed (${suspects.report.checked} grids checked)`
+          : "Check the beat grids for tracks that look half or double tempo, or poorly analysed",
+  );
   function clearAll() {
     tracksState.clearFilters();
     filters.onlyNeeds = false;
@@ -75,6 +93,18 @@
 
   <Button small active={tracksState.onlyAnalysed} onclick={toggleAnalysed} title="Only tracks with a beat grid">Analysed</Button>
   <Button small active={filters.onlyNeeds} onclick={toggleMissing} title="Only tracks whose beat grid (.str) is missing or unreadable">Missing</Button>
+  <Button small active={tracksState.onlySuspect} onclick={toggleSuspect} title={suspectTitle}>
+    Suspect grid{suspects.checking ? " …" : suspects.report ? ` (${suspects.count})` : ""}
+  </Button>
+  {#if tracksState.onlySuspect}
+    <Button
+      small
+      disabled={suspectIds.length === 0}
+      onclick={() => gridBatch.open(suspectIds, "suggested")}
+      title="Preview the half / double fix for the {suspectIds.length} suspect tracks shown; nothing is changed until you confirm"
+    >Review {suspectIds.length}…</Button>
+    <Button small variant="ghost" onclick={() => (suspects.editing = true)} title="The genre tempo windows and the confidence floor">Rules…</Button>
+  {/if}
   {#if anyFilter}<Button small variant="link" onclick={clearAll}>Clear filters</Button>{/if}
 
   <span class="spacer"></span>

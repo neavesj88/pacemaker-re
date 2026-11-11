@@ -6,6 +6,8 @@
 
 use std::path::Path;
 
+pub mod batch;
+pub mod suspect;
 pub mod tempo;
 
 use pm_formats::library::Library;
@@ -16,7 +18,9 @@ use tauri::AppHandle;
 use crate::error::{AppResult, IntoApp};
 
 /// Managed state private to this area goes here (`app.manage(..)`).
-pub fn setup(_app: &mut tauri::App) {}
+pub fn setup(app: &mut tauri::App) {
+    batch::setup(app);
+}
 
 /// Reads a track's grid, cue and audio facts. Read-only.
 #[tauri::command]
@@ -128,6 +132,13 @@ macro_rules! grid_commands {
                 $crate::commands::grid::grid_save,
                 $crate::commands::grid::tempo::grid_tempo_plan,
                 $crate::commands::grid::tempo::grid_tempo_apply,
+                $crate::commands::grid::suspect::grid_suspects,
+                $crate::commands::grid::batch::grid_batch_plan,
+                $crate::commands::grid::batch::grid_batch_analyse,
+                $crate::commands::grid::batch::grid_batch_result,
+                $crate::commands::grid::batch::grid_batch_cancel,
+                $crate::commands::grid::batch::grid_batch_diff,
+                $crate::commands::grid::batch::grid_batch_apply,
             ];
             $($rest),*
         }
