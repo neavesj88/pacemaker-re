@@ -16,5 +16,6 @@ pub mod ops_device;
 pub mod ops_grid;
 pub mod ops_history;
 pub mod ops_metadata;
+pub mod ops_tagfile;
 pub mod pfw;
 pub mod strfile;

@@ -28,6 +28,7 @@ tauri-plugin-dialog = "2"
 pm-formats = { version = "0.1.0", path = "../../crates/pm-formats" }
 pm-analysis = { version = "0.1.0", path = "../../crates/pm-analysis" }
 pm-mixer = { version = "0.1.0", path = "../../crates/pm-mixer" }
+lofty = "0.25.5"
 
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration

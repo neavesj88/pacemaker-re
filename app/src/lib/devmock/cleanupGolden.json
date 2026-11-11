@@ -1,0 +1,833 @@
+{
+ "defaults": {
+  "trim": true,
+  "title_case": false,
+  "case_fields": [
+   "title",
+   "artist",
+   "album"
+  ],
+  "keep_upper": [
+   "DJ",
+   "MC",
+   "UK",
+   "USA",
+   "VIP",
+   "EP",
+   "LP",
+   "TV",
+   "II",
+   "III",
+   "IV"
+  ],
+  "strip_number": true,
+  "number_space_only": false,
+  "strip_promo": true,
+  "promo_fields": [
+   "title",
+   "artist",
+   "album",
+   "comments"
+  ],
+  "promo_phrases": [
+   "free download",
+   "free dl",
+   "free track",
+   "out now",
+   "premiere",
+   "download",
+   "buy",
+   "buy now",
+   "exclusive",
+   "official video",
+   "official audio",
+   "official music video",
+   "lyric video",
+   "music video",
+   "youtube",
+   "soundcloud",
+   "bandcamp",
+   "beatport",
+   "hd",
+   "hq"
+  ],
+  "feat_normalise": true,
+  "feat_form": "feat.",
+  "feat_to_artist": false,
+  "extract_remixer": false,
+  "remix_words": [
+   "remix",
+   "edit",
+   "rework",
+   "bootleg",
+   "flip",
+   "refix",
+   "re-edit",
+   "mashup"
+  ],
+  "remixer_ignore": [
+   "original",
+   "radio",
+   "extended",
+   "club",
+   "dub",
+   "single",
+   "album",
+   "short",
+   "instrumental",
+   "vocal",
+   "acapella",
+   "a",
+   "cappella",
+   "clean",
+   "dirty",
+   "explicit",
+   "main",
+   "full",
+   "long",
+   "the",
+   "new",
+   "official",
+   "remastered",
+   "video",
+   "version",
+   "vip"
+  ],
+  "overwrite_remixer": false,
+  "genre_map_on": false,
+  "genre_map": [
+   {
+    "from": "Tech-House",
+    "to": "Tech House"
+   },
+   {
+    "from": "Deep-House",
+    "to": "Deep House"
+   },
+   {
+    "from": "Progressive-House",
+    "to": "Progressive House"
+   },
+   {
+    "from": "Drum and Bass",
+    "to": "Drum & Bass"
+   },
+   {
+    "from": "Drum n Bass",
+    "to": "Drum & Bass"
+   },
+   {
+    "from": "DnB",
+    "to": "Drum & Bass"
+   },
+   {
+    "from": "Hip-Hop",
+    "to": "Hip Hop"
+   },
+   {
+    "from": "Hiphop",
+    "to": "Hip Hop"
+   },
+   {
+    "from": "Electronica",
+    "to": "Electronic"
+   }
+  ],
+  "artist_map_on": false,
+  "artist_map": [],
+  "write_back": false,
+  "write_fields": [
+   "title",
+   "artist",
+   "album_artist",
+   "album",
+   "composer",
+   "genre",
+   "label",
+   "remixer",
+   "producer",
+   "comments",
+   "year"
+  ]
+ },
+ "cases": [
+  {
+   "name": "trim collapses runs",
+   "settings": {
+    "trim": true
+   },
+   "input": {
+    "title": "  A   B  ",
+    "artist": "x"
+   },
+   "expect": {
+    "title": "A B"
+   }
+  },
+  {
+   "name": "trim handles nbsp and zero width",
+   "settings": {
+    "trim": true
+   },
+   "input": {
+    "album": "A  B​C"
+   },
+   "expect": {
+    "album": "A BC"
+   }
+  },
+  {
+   "name": "trim off leaves white space",
+   "settings": {},
+   "input": {
+    "title": " A "
+   },
+   "expect": {}
+  },
+  {
+   "name": "number dash",
+   "settings": {
+    "strip_number": true
+   },
+   "input": {
+    "title": "01 - Song"
+   },
+   "expect": {
+    "title": "Song"
+   }
+  },
+  {
+   "name": "number dot",
+   "settings": {
+    "strip_number": true
+   },
+   "input": {
+    "title": "02. Song"
+   },
+   "expect": {
+    "title": "Song"
+   }
+  },
+  {
+   "name": "number underscore",
+   "settings": {
+    "strip_number": true
+   },
+   "input": {
+    "title": "03_Song"
+   },
+   "expect": {
+    "title": "Song"
+   }
+  },
+  {
+   "name": "number paren",
+   "settings": {
+    "strip_number": true
+   },
+   "input": {
+    "title": "4) Song"
+   },
+   "expect": {
+    "title": "Song"
+   }
+  },
+  {
+   "name": "number keeps 2-Step",
+   "settings": {
+    "strip_number": true
+   },
+   "input": {
+    "title": "2-Step"
+   },
+   "expect": {}
+  },
+  {
+   "name": "number keeps decimals",
+   "settings": {
+    "strip_number": true
+   },
+   "input": {
+    "title": "1.5 Hours"
+   },
+   "expect": {}
+  },
+  {
+   "name": "number keeps all-number titles",
+   "settings": {
+    "strip_number": true
+   },
+   "input": {
+    "title": "01 - 02"
+   },
+   "expect": {}
+  },
+  {
+   "name": "number space only on",
+   "settings": {
+    "strip_number": true,
+    "number_space_only": true
+   },
+   "input": {
+    "title": "07 Song"
+   },
+   "expect": {
+    "title": "Song"
+   }
+  },
+  {
+   "name": "number space only off",
+   "settings": {
+    "strip_number": true
+   },
+   "input": {
+    "title": "07 Song"
+   },
+   "expect": {}
+  },
+  {
+   "name": "promo bracket url",
+   "settings": {
+    "strip_promo": true
+   },
+   "input": {
+    "title": "Song [www.example.com]"
+   },
+   "expect": {
+    "title": "Song"
+   }
+  },
+  {
+   "name": "promo phrase",
+   "settings": {
+    "strip_promo": true
+   },
+   "input": {
+    "title": "Song (Free Download)"
+   },
+   "expect": {
+    "title": "Song"
+   }
+  },
+  {
+   "name": "promo keeps edit",
+   "settings": {
+    "strip_promo": true
+   },
+   "input": {
+    "title": "Song (Radio Edit) [Free DL]"
+   },
+   "expect": {
+    "title": "Song (Radio Edit)"
+   }
+  },
+  {
+   "name": "promo bare url in comments",
+   "settings": {
+    "strip_promo": true
+   },
+   "input": {
+    "comments": "Visit www.example.com now"
+   },
+   "expect": {
+    "comments": "Visit now"
+   }
+  },
+  {
+   "name": "promo only in chosen fields",
+   "settings": {
+    "strip_promo": true,
+    "promo_fields": [
+     "title"
+    ]
+   },
+   "input": {
+    "artist": "Name (Free Download)"
+   },
+   "expect": {}
+  },
+  {
+   "name": "promo nested",
+   "settings": {
+    "strip_promo": true
+   },
+   "input": {
+    "title": "Song (Mix [www.example.org])"
+   },
+   "expect": {
+    "title": "Song (Mix)"
+   }
+  },
+  {
+   "name": "promo whole words only",
+   "settings": {
+    "strip_promo": true
+   },
+   "input": {
+    "title": "Song (Buyer's Remix)"
+   },
+   "expect": {}
+  },
+  {
+   "name": "feat to default form",
+   "settings": {
+    "feat_normalise": true
+   },
+   "input": {
+    "title": "Song ft. Name"
+   },
+   "expect": {
+    "title": "Song feat. Name"
+   }
+  },
+  {
+   "name": "feat to featuring",
+   "settings": {
+    "feat_normalise": true,
+    "feat_form": "featuring"
+   },
+   "input": {
+    "artist": "A feat. B"
+   },
+   "expect": {
+    "artist": "A featuring B"
+   }
+  },
+  {
+   "name": "feat in brackets",
+   "settings": {
+    "feat_normalise": true
+   },
+   "input": {
+    "title": "Song (Featuring Name)"
+   },
+   "expect": {
+    "title": "Song (feat. Name)"
+   }
+  },
+  {
+   "name": "feat is a whole word",
+   "settings": {
+    "feat_normalise": true
+   },
+   "input": {
+    "title": "Soft Landing"
+   },
+   "expect": {}
+  },
+  {
+   "name": "feat moves to artist",
+   "settings": {
+    "feat_to_artist": true
+   },
+   "input": {
+    "title": "Song (feat. Guest)",
+    "artist": "Main"
+   },
+   "expect": {
+    "title": "Song",
+    "artist": "Main feat. Guest"
+   }
+  },
+  {
+   "name": "feat moves after normalising",
+   "settings": {
+    "feat_to_artist": true,
+    "feat_normalise": true,
+    "feat_form": "ft."
+   },
+   "input": {
+    "title": "Song feat. Guest (Radio Edit)",
+    "artist": "Main"
+   },
+   "expect": {
+    "title": "Song (Radio Edit)",
+    "artist": "Main ft. Guest"
+   }
+  },
+  {
+   "name": "feat already in artist",
+   "settings": {
+    "feat_to_artist": true
+   },
+   "input": {
+    "title": "Song (feat. Guest)",
+    "artist": "Main feat. guest"
+   },
+   "expect": {
+    "title": "Song"
+   }
+  },
+  {
+   "name": "feat with no artist stays",
+   "settings": {
+    "feat_to_artist": true
+   },
+   "input": {
+    "title": "Song (feat. Guest)"
+   },
+   "expect": {}
+  },
+  {
+   "name": "remixer from remix",
+   "settings": {
+    "extract_remixer": true
+   },
+   "input": {
+    "title": "Song (Name Remix)"
+   },
+   "expect": {
+    "remixer": "Name"
+   }
+  },
+  {
+   "name": "remixer ignores radio edit",
+   "settings": {
+    "extract_remixer": true
+   },
+   "input": {
+    "title": "Song (Radio Edit)"
+   },
+   "expect": {}
+  },
+  {
+   "name": "remixer keeps existing",
+   "settings": {
+    "extract_remixer": true
+   },
+   "input": {
+    "title": "Song (Other Remix)",
+    "remixer": "Old"
+   },
+   "expect": {}
+  },
+  {
+   "name": "remixer overwrite",
+   "settings": {
+    "extract_remixer": true,
+    "overwrite_remixer": true
+   },
+   "input": {
+    "title": "Song (Other Remix)",
+    "remixer": "Old"
+   },
+   "expect": {
+    "remixer": "Other"
+   }
+  },
+  {
+   "name": "remixer drops modifiers",
+   "settings": {
+    "extract_remixer": true
+   },
+   "input": {
+    "title": "Song (Name Extended Remix)"
+   },
+   "expect": {
+    "remixer": "Name"
+   }
+  },
+  {
+   "name": "title case basic",
+   "settings": {
+    "title_case": true
+   },
+   "input": {
+    "title": "the art of war",
+    "artist": "dj example"
+   },
+   "expect": {
+    "title": "The Art of War",
+    "artist": "DJ Example"
+   }
+  },
+  {
+   "name": "title case all caps",
+   "settings": {
+    "title_case": true
+   },
+   "input": {
+    "title": "A SONG FOR THE DJ"
+   },
+   "expect": {
+    "title": "A Song for the DJ"
+   }
+  },
+  {
+   "name": "title case keeps mixed case",
+   "settings": {
+    "title_case": true
+   },
+   "input": {
+    "title": "McFly and iPhone"
+   },
+   "expect": {}
+  },
+  {
+   "name": "title case keeps digit words",
+   "settings": {
+    "title_case": true
+   },
+   "input": {
+    "title": "1st of 3"
+   },
+   "expect": {}
+  },
+  {
+   "name": "title case brackets and apostrophes",
+   "settings": {
+    "title_case": true
+   },
+   "input": {
+    "title": "don't stop (club mix)"
+   },
+   "expect": {
+    "title": "Don't Stop (Club Mix)"
+   }
+  },
+  {
+   "name": "title case own keep list",
+   "settings": {
+    "title_case": true,
+    "keep_upper": [
+     "EDM"
+    ]
+   },
+   "input": {
+    "title": "an edm night"
+   },
+   "expect": {
+    "title": "An EDM Night"
+   }
+  },
+  {
+   "name": "title case chosen fields",
+   "settings": {
+    "title_case": true,
+    "case_fields": [
+     "genre"
+    ]
+   },
+   "input": {
+    "genre": "deep house",
+    "title": "lower case"
+   },
+   "expect": {
+    "genre": "Deep House"
+   }
+  },
+  {
+   "name": "title case unicode",
+   "settings": {
+    "title_case": true
+   },
+   "input": {
+    "title": "école de la nuit"
+   },
+   "expect": {
+    "title": "École De La Nuit"
+   }
+  },
+  {
+   "name": "title case hyphen compound",
+   "settings": {
+    "title_case": true
+   },
+   "input": {
+    "title": "tech-house anthem"
+   },
+   "expect": {
+    "title": "Tech-House Anthem"
+   }
+  },
+  {
+   "name": "genre map",
+   "settings": {
+    "genre_map_on": true
+   },
+   "input": {
+    "genre": "Tech-House"
+   },
+   "expect": {
+    "genre": "Tech House"
+   }
+  },
+  {
+   "name": "genre map ignores case and white space",
+   "settings": {
+    "genre_map_on": true
+   },
+   "input": {
+    "genre": " drum and bass "
+   },
+   "expect": {
+    "genre": "Drum & Bass"
+   }
+  },
+  {
+   "name": "genre map off",
+   "settings": {},
+   "input": {
+    "genre": "Tech-House"
+   },
+   "expect": {}
+  },
+  {
+   "name": "genre map own entries",
+   "settings": {
+    "genre_map_on": true,
+    "genre_map": [
+     {
+      "from": "Trance",
+      "to": "Trance Music"
+     }
+    ]
+   },
+   "input": {
+    "genre": "trance"
+   },
+   "expect": {
+    "genre": "Trance Music"
+   }
+  },
+  {
+   "name": "artist map parts",
+   "settings": {
+    "artist_map_on": true,
+    "artist_map": [
+     {
+      "from": "Old Name",
+      "to": "New Name"
+     }
+    ]
+   },
+   "input": {
+    "artist": "old name & Other",
+    "album_artist": "OLD NAME"
+   },
+   "expect": {
+    "artist": "New Name & Other",
+    "album_artist": "New Name"
+   }
+  },
+  {
+   "name": "artist map after feat",
+   "settings": {
+    "artist_map_on": true,
+    "artist_map": [
+     {
+      "from": "Old Name",
+      "to": "New Name"
+     }
+    ]
+   },
+   "input": {
+    "artist": "Other feat. Old Name"
+   },
+   "expect": {
+    "artist": "Other feat. New Name"
+   }
+  },
+  {
+   "name": "artist map and",
+   "settings": {
+    "artist_map_on": true,
+    "artist_map": [
+     {
+      "from": "Simon",
+      "to": "Paul"
+     }
+    ]
+   },
+   "input": {
+    "artist": "Simon and Friend"
+   },
+   "expect": {
+    "artist": "Paul and Friend"
+   }
+  },
+  {
+   "name": "artist map whole field wins",
+   "settings": {
+    "artist_map_on": true,
+    "artist_map": [
+     {
+      "from": "Earth, Wind & Fire",
+      "to": "Earth Wind & Fire"
+     },
+     {
+      "from": "Wind",
+      "to": "Air"
+     }
+    ]
+   },
+   "input": {
+    "artist": "Earth, Wind & Fire"
+   },
+   "expect": {
+    "artist": "Earth Wind & Fire"
+   }
+  },
+  {
+   "name": "full pipeline",
+   "settings": {
+    "trim": true,
+    "strip_number": true,
+    "strip_promo": true,
+    "feat_normalise": true,
+    "feat_to_artist": true,
+    "extract_remixer": true,
+    "title_case": true,
+    "genre_map_on": true,
+    "artist_map_on": true,
+    "artist_map": [
+     {
+      "from": "example artist",
+      "to": "Example Artist"
+     }
+    ]
+   },
+   "input": {
+    "title": "  03 -  some  song (ft. guest one) (Remixer Name Remix) [www.example.com] ",
+    "artist": "example artist",
+    "genre": "tech-house"
+   },
+   "expect": {
+    "title": "Some Song (Remixer Name Remix)",
+    "artist": "Example Artist feat. Guest One",
+    "remixer": "Remixer Name",
+    "genre": "Tech House"
+   }
+  },
+  {
+   "name": "clean data is left alone",
+   "settings": {
+    "trim": true,
+    "strip_number": true,
+    "strip_promo": true,
+    "feat_normalise": true,
+    "feat_to_artist": true,
+    "extract_remixer": true,
+    "title_case": true,
+    "genre_map_on": true
+   },
+   "input": {
+    "title": "Song (Original Mix)",
+    "artist": "Name",
+    "genre": "House"
+   },
+   "expect": {}
+  },
+  {
+   "name": "empty fields stay empty",
+   "settings": {
+    "trim": true,
+    "strip_number": true,
+    "strip_promo": true,
+    "title_case": true
+   },
+   "input": {},
+   "expect": {}
+  }
+ ]
+}
