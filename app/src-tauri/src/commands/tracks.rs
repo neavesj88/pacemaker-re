@@ -38,12 +38,23 @@ pub fn reanalyse_tracks(app: AppHandle, lock: State<'_, JobLock>, root: String, 
                 location: t.location,
             })
             .collect();
-        let total = items.len();
+        // Re-analysis reads the audio at `location`, so only plain relative locations below the
+        // music folder go to it (the check playback uses); any other is reported as failed here.
+        let (items, refused): (Vec<Existing>, Vec<Existing>) =
+            items.into_iter().partition(|t| super::analysis::audio_path(lib.root(), &t.location).is_ok());
+        let total = items.len() + refused.len();
         let mut done = 0;
-        Ok(ingest::reanalyse(&mut lib, &items, |ev| {
+        for t in &refused {
+            done += 1;
+            let ev = ingest::Event { label: t.label.clone(), outcome: ingest::Outcome::Failed("track location is not valid".into()) };
+            events::emit(app, JOB_PROGRESS, progress_of("reanalyse", &ev, done, total));
+        }
+        let mut summary = ingest::reanalyse(&mut lib, &items, |ev| {
             done += 1;
             events::emit(app, JOB_PROGRESS, progress_of("reanalyse", ev, done, total));
-        }).into())
+        });
+        summary.failed += refused.len();
+        Ok(summary.into())
     })
 }
 

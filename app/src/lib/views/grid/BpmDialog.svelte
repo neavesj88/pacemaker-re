@@ -25,7 +25,7 @@
 
   function go() {
     touched = true;
-    if ("bpm" in parsed && !same) tempo.continueSet(trackId, parsed.bpm);
+    if ("bpm" in parsed && !error) tempo.continueSet(trackId, parsed.bpm);
   }
 </script>
 
@@ -46,7 +46,7 @@
       </span>
     </label>
     {#if touched && error}<p class="err" role="alert">{error}</p>{/if}
-    {#if same}<p class="muted">That is the tempo it has now.</p>{/if}
+    {#if same}<p class="muted">That is the tempo it has now. If its tempo varies, this still makes the grid even; if the grid is already like that, nothing is changed.</p>{/if}
     <p class="muted">
       The beat grid is replaced by an even grid at this tempo, starting at the track's first beat, and the BPM is stored with
       it. Tempo changes inside the track are lost. To halve or double a track and keep its own beat lines, use Halve BPM or
@@ -55,7 +55,7 @@
   {/if}
   {#snippet actions()}
     <Button onclick={() => tempo.closeDialog()}>Cancel</Button>
-    <Button variant="primary" disabled={!!error || same} onclick={go}>Continue…</Button>
+    <Button variant="primary" disabled={!!error} onclick={go}>Continue…</Button>
   {/snippet}
 </Modal>
 

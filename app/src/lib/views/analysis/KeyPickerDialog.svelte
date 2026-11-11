@@ -6,6 +6,7 @@
   import { canonicalKeyName, PICKER_KEYS, pickerKeyOf, spellings, trackLabel } from "$lib/state/keyLogic";
   import Button from "$lib/ui/Button.svelte";
   import Modal from "$lib/ui/Modal.svelte";
+  import { keyColour } from "$lib/views/tracks/trackLogic";
 
   let { ids }: { ids: number[] } = $props();
 
@@ -18,9 +19,6 @@
   const typedBad = $derived(typed.trim() !== "" && canonicalKeyName(typed) === null);
   const minor = PICKER_KEYS.filter((k) => k.minor);
   const major = PICKER_KEYS.filter((k) => !k.minor);
-
-  // the same hue per Camelot number as the key chips in the table (views/tracks/trackLogic.keyColour)
-  const hue = (n: number) => `hsl(${(n * 30 + 300) % 360} 70% 62%)`;
 
   function pick(name: string) {
     choice = name;
@@ -59,7 +57,7 @@
           class:on={choice === k.name}
           aria-pressed={choice === k.name}
           title={spellings(k)}
-          style:--hue={hue(k.camelotNumber)}
+          style:--hue={keyColour({ num: k.camelotNumber, letter: k.minor ? "A" : "B", code: k.camelot })}
           onclick={() => pick(k.name)}
         >
           <span class="code">{k.camelot}</span>
