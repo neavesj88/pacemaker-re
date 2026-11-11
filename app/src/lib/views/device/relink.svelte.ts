@@ -22,7 +22,7 @@ import {
 import { session } from "$lib/state/session.svelte";
 import { toast } from "$lib/state/toast.svelte";
 import { device } from "./device.svelte";
-import { cardMusicFolder, isPreselected, sortRows, totals } from "./relinkLogic";
+import { cardMusicFolder, isPreselected, sortRows, tickAfterBulk, totals } from "./relinkLogic";
 
 export type Stage = "choose" | "scanning" | "review" | "confirm";
 
@@ -164,10 +164,11 @@ class RelinkStore {
     s.ticked = true;
   }
 
+  /** The "Tick ..." buttons only add ticks; "Untick all" clears every row. */
   tickWhere(mode: "none" | "sure" | "likely") {
     for (const r of this.rows) {
       const s = this.sel[r.track_id];
-      if (s) s.ticked = !!this.candidate(r) && isPreselected(this.candidate(r), mode);
+      if (s) s.ticked = tickAfterBulk(s.ticked, this.candidate(r), mode);
     }
   }
 

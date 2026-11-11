@@ -35,6 +35,10 @@ const MAX_LOCATION: usize = 255;
 /// Free space kept back on the card after a copy, in bytes.
 const FREE_MARGIN: u64 = 8 << 20;
 
+/// A measured length within this many seconds of the recorded one is rounding, not a different
+/// length: the recorded value stays.
+const LENGTH_NOISE_SECS: i64 = 1;
+
 /// How many other files to offer per track besides the best one.
 const MAX_ALTERNATIVES: usize = 4;
 
@@ -96,39 +100,61 @@ pub struct Wanted {
     pub location: String,
     pub file_size: u64,
     pub play_time_secs: i64,
+    /// `tracks.format` as recorded (`MP3`, `WAV`, ...).
+    pub format: String,
     pub title: String,
     pub artist: String,
     /// Mixes the track is in (they keep working: a mix refers to the track, not to the path).
     pub in_mixes: Vec<String>,
 }
 
-/// The tracks whose stored location is a plain path under Music and whose file is not there. Empty
-/// when the Music folder itself is missing (a card that is not fully mounted, not a library of
-/// missing files). The same classification the Health card's fix uses.
-pub fn missing_tracks(lib: &Library) -> Result<Vec<Wanted>, Error> {
+/// What the library lists as missing, and what is left out of that list.
+#[derive(Debug, Default)]
+pub struct Missing {
+    pub wanted: Vec<Wanted>,
+    /// Tracks whose location starts like a card path but is not a plain path under Music (`..`,
+    /// a drive letter, ...). Health counts them; they are never followed here.
+    pub skipped_locations: usize,
+    /// The Music folder itself is gone, so every track with a plain location is missing. Copying a
+    /// file back creates the folder again.
+    pub music_missing: bool,
+}
+
+/// The tracks whose stored location is a plain path under Music and whose file is not there, with
+/// the number of tracks that were left out because their location is not a plain path. The same
+/// classification the Health card's fix uses ([`checked_track_paths`]).
+pub fn missing_report(lib: &Library) -> Result<Missing, Error> {
     let root = lib.root();
-    if !music_dir(root).is_dir() {
-        return Ok(Vec::new());
-    }
     let mixes = membership(lib, "SELECT t.track_id, m.name FROM mixtracks t JOIN mixes m ON m.mix_id = t.mix_id WHERE m.mix_id >= 0 ORDER BY m.name")?;
-    let mut out = Vec::new();
+    let mut out = Missing { music_missing: !music_dir(root).is_dir(), ..Missing::default() };
     for t in lib.tracks()? {
-        let Some((audio, _)) = checked_track_paths(root, &t.location) else { continue };
+        let Some((audio, _)) = checked_track_paths(root, &t.location) else {
+            if t.location.starts_with(naming::LOCATION_PREFIX) {
+                out.skipped_locations += 1;
+            }
+            continue;
+        };
         if audio.is_file() {
             continue;
         }
-        out.push(Wanted {
+        out.wanted.push(Wanted {
             track_id: t.track_id,
             label: track_label(&t.artist, &t.title, &t.location),
             location: t.location.clone(),
             file_size: t.file_size.max(0) as u64,
             play_time_secs: t.play_time_secs,
+            format: t.format.clone(),
             title: t.title.clone(),
             artist: t.artist.clone(),
             in_mixes: mixes.get(&t.track_id).cloned().unwrap_or_default(),
         });
     }
     Ok(out)
+}
+
+/// [`missing_report`] without the counts.
+pub fn missing_tracks(lib: &Library) -> Result<Vec<Wanted>, Error> {
+    Ok(missing_report(lib)?.wanted)
 }
 
 /// Lower-cased path under Music (`a/b/c.mp3`) -> the track that uses it, for every track.
@@ -289,7 +315,9 @@ fn stem_hex(stem: &str) -> String {
     format!("{:x}", naming::oaat(stem))
 }
 
-/// `(stem hash, lower-case extension)` of a stored location's file name.
+/// `(stem, lower-case extension)` of a stored location's file name. For a location in the shape
+/// this app generates the stem is the hash of the original file name; for any other (a track that
+/// was pointed at a file under its own name) it is the name itself, see [`stem_matches`].
 fn location_name(location: &str) -> Option<(String, String)> {
     let rel = location.strip_prefix(naming::LOCATION_PREFIX)?;
     let file = rel.rsplit('/').next()?;
@@ -297,8 +325,28 @@ fn location_name(location: &str) -> Option<(String, String)> {
     Some((stem.to_string(), ext.trim_start_matches('.').to_ascii_lowercase()))
 }
 
+/// Is the stored location one in the shape this app generates (`h/h/hash.ext`)?
+fn standard_location(location: &str) -> bool {
+    location.strip_prefix(naming::LOCATION_PREFIX).is_some_and(is_standard_rel)
+}
+
+/// Does a candidate file name (`stem`) belong to a stored location whose file name has the stem
+/// `lstem`? A standard location holds the hash of the original name; a track that an earlier
+/// relink pointed at a file with another path holds that file's own name.
+fn stem_matches(location: &str, lstem: &str, stem: &str) -> bool {
+    if standard_location(location) {
+        stem_hex(stem) == lstem
+    } else {
+        stem.eq_ignore_ascii_case(lstem)
+    }
+}
+
 fn norm(s: &str) -> String {
     s.split_whitespace().collect::<Vec<_>>().join(" ").to_lowercase()
+}
+
+fn plural_tracks(n: usize) -> String {
+    format!("{n} {}", if n == 1 { "track" } else { "tracks" })
 }
 
 fn secs_text(s: f64) -> String {
@@ -331,7 +379,19 @@ pub fn classify(w: &Wanted, f: &Found, read_tags: &mut dyn FnMut() -> Option<Tag
     let (stem, ext) = split_name(&f.name);
     let ext = ext.trim_start_matches('.').to_ascii_lowercase();
     if let Some((lstem, lext)) = location_name(&w.location) {
-        if stem_hex(stem) == lstem && ext == lext {
+        if stem_matches(&w.location, &lstem, stem) && ext == lext {
+            if !size_differs {
+                // the name belongs to this track's location and the size is the recorded one; this
+                // is reached when the location is not what the name and size would generate now
+                return Some(Verdict {
+                    kind: Kind::Exact,
+                    confidence: Confidence::Sure,
+                    score: 100,
+                    notes: vec!["Same file name and size as the library records.".into()],
+                    duration_secs: None,
+                    size_differs,
+                });
+            }
             let tags = if o.use_tags { read_tags() } else { None };
             let fit = length_fits(w, tags.as_ref(), o.duration_tolerance_secs);
             let mut notes = vec![format!(
@@ -438,6 +498,13 @@ pub struct Planned {
     pub new_location: String,
     /// A file already sits at the destination (an unused file with the same size).
     pub dest_exists: bool,
+    /// The track will point at a path that is not in the shape the app generates; whether the
+    /// device follows it is not verified on hardware.
+    pub non_standard: bool,
+    /// `tracks.format` becomes this (the picked file's extension differs from the recorded format).
+    pub new_format: Option<String>,
+    /// `tracks.play_time_secs` becomes this (the picked file's measured length differs).
+    pub new_play_time_secs: Option<i64>,
     pub notes: Vec<String>,
 }
 
@@ -463,7 +530,7 @@ fn is_standard_rel(rel: &str) -> bool {
 
 /// What taking `f` for `w` would do, or why it cannot be done. Nothing is written. `used` maps
 /// lower-cased paths under Music to the track that uses them.
-pub fn plan_action(root: &Path, w: &Wanted, f: &Found, used: &HashMap<String, i64>, o: &MatchOpts) -> Result<Planned, String> {
+pub fn plan_action(root: &Path, w: &Wanted, f: &Found, v: &Verdict, used: &HashMap<String, i64>, o: &MatchOpts) -> Result<Planned, String> {
     let music = music_dir(root);
     let in_music = rel_in_music(&music, &f.path);
     let mut notes = Vec::new();
@@ -475,9 +542,11 @@ pub fn plan_action(root: &Path, w: &Wanted, f: &Found, used: &HashMap<String, i6
         }
     }
     let standard = naming::device_paths(&f.name, f.size);
+    let mut non_standard = false;
     let (action, dest_rel) = match &in_music {
         Some(rel) if o.card_files == CardFiles::Reuse || rel.eq_ignore_ascii_case(&standard.0) => {
             if !is_standard_rel(rel) {
+                non_standard = true;
                 notes.push("Its path under Music is not one this app generated. The device should follow any plain path there, but that has not been checked on hardware; \"copy to the standard name\" in the options avoids the question.".into());
             }
             (ActionKind::Point, rel.clone())
@@ -506,7 +575,22 @@ pub fn plan_action(root: &Path, w: &Wanted, f: &Found, used: &HashMap<String, i6
             notes.push("A file of the same size is already at the destination; it is compared byte for byte before anything is copied.".into());
         }
     }
-    Ok(Planned { action, dest_rel, new_location, dest_exists, notes })
+    // the row describes the file it now points at: format and length follow it, bit rate and
+    // sample rate are not read from the file and stay as recorded
+    let (_, ext) = split_name(&f.name);
+    let ext = ext.trim_start_matches('.');
+    let new_format = (!ext.is_empty() && !w.format.eq_ignore_ascii_case(ext)).then(|| ext.to_ascii_uppercase());
+    let new_play_time_secs = v.duration_secs.map(|d| d.round() as i64).filter(|&d| d > 0 && (d - w.play_time_secs).abs() > LENGTH_NOISE_SECS);
+    if let Some(nf) = &new_format {
+        notes.push(format!("The track's format changes from {} to {nf}.", if w.format.is_empty() { "(none)" } else { &w.format }));
+    }
+    if let Some(n) = new_play_time_secs {
+        notes.push(format!("The track's recorded length changes from {} to {}.", secs_text(w.play_time_secs as f64), secs_text(n as f64)));
+    }
+    if v.size_differs {
+        notes.push("Its bit rate and sample rate stay as recorded; they are not read from the file.".into());
+    }
+    Ok(Planned { action, dest_rel, new_location, dest_exists, non_standard, new_format, new_play_time_secs, notes })
 }
 
 // ---- the plan -------------------------------------------------------------------------------
@@ -528,6 +612,8 @@ pub struct Candidate {
     pub new_location: String,
     /// The file is already under Music on the card.
     pub on_card: bool,
+    /// The track would point at a path the app did not generate (not verified on hardware).
+    pub non_standard: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -552,6 +638,14 @@ pub struct Plan {
     pub tag_limit_hit: bool,
     pub rows: Vec<Row>,
     pub warnings: Vec<String>,
+    /// Tracks left out because their location is not a plain path under Music.
+    pub skipped_locations: usize,
+    /// The card has no Music folder: every track is missing, and copying creates the folder.
+    pub music_missing: bool,
+    /// Files whose tags were read but gave no length (typical for an MP3 without a length header).
+    pub tags_without_length: usize,
+    /// Some file the plan would use is pointed at a path the app did not generate.
+    pub non_standard: bool,
 }
 
 struct Pair {
@@ -575,6 +669,7 @@ fn make_candidate(f: &Found, v: &Verdict, p: &Planned, on_card: bool) -> Candida
         dest: p.dest_rel.clone(),
         new_location: p.new_location.clone(),
         on_card,
+        non_standard: p.non_standard,
     }
 }
 
@@ -593,7 +688,7 @@ pub fn inspect_pick(lib: &Library, track_id: i64, path: &Path, o: &MatchOpts, re
     let cache: RefCell<Option<Option<Tags>>> = RefCell::new(None);
     let mut read = || cache.borrow_mut().get_or_insert_with(|| read_tags(&f.path)).clone();
     let verdict = inspect(&w, &f, &mut read, o);
-    let planned = plan_action(lib.root(), &w, &f, &used_files(lib)?, o).map_err(Error::Invalid)?;
+    let planned = plan_action(lib.root(), &w, &f, &verdict, &used_files(lib)?, o).map_err(Error::Invalid)?;
     let on_card = rel_in_music(&music_dir(lib.root()), &f.path).is_some();
     Ok(make_candidate(&f, &verdict, &planned, on_card))
 }
@@ -610,11 +705,28 @@ pub fn plan(
     progress: &mut dyn FnMut(u8, usize, usize, &str),
     cancel: &dyn Fn() -> bool,
 ) -> Result<Plan, Error> {
-    let wanted = missing_tracks(lib)?;
-    let mut plan = Plan { folder: folder.display().to_string(), total_missing: wanted.len(), ..Plan::default() };
+    let missing = missing_report(lib)?;
+    let wanted = missing.wanted;
+    let mut plan = Plan {
+        folder: folder.display().to_string(),
+        total_missing: wanted.len(),
+        skipped_locations: missing.skipped_locations,
+        music_missing: missing.music_missing,
+        ..Plan::default()
+    };
+    if missing.skipped_locations > 0 {
+        plan.warnings.push(format!(
+            "{} not counted here: {} location is not a plain path under the card's Music folder, so it is not followed. Health lists it.",
+            plural_tracks(missing.skipped_locations),
+            if missing.skipped_locations == 1 { "its" } else { "their" }
+        ));
+    }
     if wanted.is_empty() {
         plan.warnings.push("No track is missing its audio file.".into());
         return Ok(plan);
+    }
+    if missing.music_missing {
+        plan.warnings.push("The card has no .Pacemaker/Music folder, so every track is missing its file. Copying a file back creates the folder again.".into());
     }
     let walked = walk_audio(folder, scan, &mut |n, dir| progress(0, n, 0, dir), cancel)?;
     plan.files_seen = walked.files.len();
@@ -630,8 +742,9 @@ pub fn plan(
     let mut by_tags: HashMap<(String, String), Vec<usize>> = HashMap::new();
     for (i, w) in wanted.iter().enumerate() {
         by_loc.entry(w.location.to_lowercase()).or_default().push(i);
-        if let Some(k) = location_name(&w.location) {
-            by_stem.entry(k).or_default().push(i);
+        if let Some((lstem, lext)) = location_name(&w.location) {
+            // a standard location holds a hash (already lower case); another holds the file's own name
+            by_stem.entry((lstem.to_lowercase(), lext)).or_default().push(i);
         }
         if !norm(&w.title).is_empty() && !norm(&w.artist).is_empty() {
             by_tags.entry((norm(&w.title), norm(&w.artist))).or_default().push(i);
@@ -641,6 +754,7 @@ pub fn plan(
     let used = used_files(lib)?;
     let reads = Cell::new(0usize);
     let limit_hit = Cell::new(false);
+    let no_length = Cell::new(0usize);
     let mut pairs: Vec<Pair> = Vec::new();
     let mut rejected: BTreeMap<usize, Vec<String>> = BTreeMap::new();
     let total = walked.files.len();
@@ -661,7 +775,11 @@ pub fn plan(
                         return None;
                     }
                     reads.set(reads.get() + 1);
-                    read_tags(&f.path)
+                    let t = read_tags(&f.path);
+                    if t.as_ref().is_some_and(|t| t.duration_secs.is_none()) {
+                        no_length.set(no_length.get() + 1);
+                    }
+                    t
                 })
                 .clone()
         };
@@ -670,7 +788,8 @@ pub fn plan(
         hits.extend(by_loc.get(&loc.to_lowercase()).into_iter().flatten());
         let (stem, ext) = split_name(&f.name);
         let ext_l = ext.trim_start_matches('.').to_ascii_lowercase();
-        hits.extend(by_stem.get(&(stem_hex(stem), ext_l)).into_iter().flatten());
+        hits.extend(by_stem.get(&(stem_hex(stem), ext_l.clone())).into_iter().flatten());
+        hits.extend(by_stem.get(&(stem.to_lowercase(), ext_l)).into_iter().flatten());
         hits.sort_unstable();
         hits.dedup();
         let mut verdicts: Vec<(usize, Verdict)> = hits.iter().filter_map(|&wi| classify(&wanted[wi], f, &mut read, o).map(|v| (wi, v))).collect();
@@ -682,7 +801,7 @@ pub fn plan(
             }
         }
         for (wi, verdict) in verdicts {
-            match plan_action(lib.root(), &wanted[wi], f, &used, o) {
+            match plan_action(lib.root(), &wanted[wi], f, &verdict, &used, o) {
                 Ok(planned) => {
                     let on_card = rel_in_music(&music_dir(lib.root()), &f.path).is_some();
                     pairs.push(Pair { w: wi, f: fi, verdict, planned, on_card });
@@ -693,6 +812,13 @@ pub fn plan(
     }
     plan.tag_reads = reads.get();
     plan.tag_limit_hit = limit_hit.get();
+    plan.tags_without_length = no_length.get();
+    if plan.tags_without_length > 0 {
+        plan.warnings.push(format!(
+            "{} of the files whose tags were read gave no length (common for an MP3 without a length header). Such a file can only match by its file name, or be picked by hand; it cannot match by title and artist.",
+            plan.tags_without_length
+        ));
+    }
     if plan.tag_limit_hit {
         plan.warnings.push(format!("Tags were read from {} files and then the limit was reached, so the rest were matched by file name only. Raise the limit in the options, or search a narrower folder.", o.max_tag_reads));
     }
@@ -711,6 +837,10 @@ pub fn plan(
         }
         primary.insert(p.w, pi);
         file_taken.insert(p.f);
+    }
+    plan.non_standard = primary.values().any(|&pi| pairs[pi].planned.non_standard);
+    if plan.non_standard {
+        plan.warnings.push("Some matches are files already on the card under a path this app did not generate. The track will point at that path, and whether the Pacemaker plays a track from such a path has not been checked on hardware. To avoid the question, set \"A match already on the card\" to copy it to the name this app gives new files.".into());
     }
     let candidate = |p: &Pair| make_candidate(&walked.files[p.f], &p.verdict, &p.planned, p.on_card);
     for (wi, w) in wanted.iter().enumerate() {
@@ -889,12 +1019,13 @@ fn execute(lib: &mut Library, r: &Ready) -> Result<Done, String> {
         }
     }
 
-    let row_changed = p.new_location != w.location || f.size != w.file_size;
+    let row_changed = p.new_location != w.location || f.size != w.file_size || p.new_format.is_some() || p.new_play_time_secs.is_some();
     if row_changed {
         let res = lib.con.execute(
-            "UPDATE tracks SET location = ?1, file_size = ?2, date_modified = ?3, modified_by_ed = ?4
+            "UPDATE tracks SET location = ?1, file_size = ?2, date_modified = ?3, modified_by_ed = ?4,
+                 format = COALESCE(?7, format), play_time_secs = COALESCE(?8, play_time_secs)
              WHERE track_id = ?5 AND track_id >= 0 AND location = ?6",
-            params![p.new_location, f.size as i64, now_ms(), library::EDITOR_ID, w.track_id, w.location],
+            params![p.new_location, f.size as i64, now_ms(), library::EDITOR_ID, w.track_id, w.location, p.new_format, p.new_play_time_secs],
         );
         match res {
             Ok(1) => {}
@@ -953,12 +1084,11 @@ pub fn run(
         }
         let cache: RefCell<Option<Option<Tags>>> = RefCell::new(None);
         let mut read = || cache.borrow_mut().get_or_insert_with(|| read_tags(&f.path)).clone();
-        let verdict = if pick.manual { Some(inspect(w, &f, &mut read, o)) } else { classify(w, &f, &mut read, o) };
-        if verdict.is_none() {
+        let Some(verdict) = (if pick.manual { Some(inspect(w, &f, &mut read, o)) } else { classify(w, &f, &mut read, o) }) else {
             rep.skipped.push(format!("{}: {} no longer matches this track", w.label, f.name));
             continue;
-        }
-        match plan_action(lib.root(), w, &f, &used, o) {
+        };
+        match plan_action(lib.root(), w, &f, &verdict, &used, o) {
             Ok(p) if p.new_location == pick.expect_location => {
                 used.insert(p.dest_rel.to_lowercase(), w.track_id);
                 ready.push(Ready { w: w.clone(), f, p });
@@ -1139,6 +1269,8 @@ mod tests {
         assert_eq!((c.kind, c.confidence, c.action, c.on_card), (Kind::Tags, Confidence::Sure, ActionKind::Point, true));
         assert_eq!(c.dest, "misc/moved audio.mp3");
         assert!(c.notes.iter().any(|n| n.contains("not one this app generated")), "{:?}", c.notes);
+        assert!(c.non_standard && p.non_standard, "the candidate and the plan say so");
+        assert_eq!(p.warnings.iter().filter(|w| w.contains("not been checked on hardware")).count(), 1, "said once for the plan: {:?}", p.warnings);
         assert_eq!(p.tag_reads, 2, "the other, still present file is read too");
 
         let rep = run_picks(&mut fx, &[pick_of(row, 0)], &o, &tags);
@@ -1257,7 +1389,8 @@ mod tests {
         let w = missing_tracks(&fx.lib).unwrap().remove(0);
         let f = Found::of(&audio_of(&fx, ids[1])).unwrap();
         let used = used_files(&fx.lib).unwrap();
-        let e = plan_action(fx.lib.root(), &w, &f, &used, &MatchOpts::default()).unwrap_err();
+        let v = inspect(&w, &f, &mut || None, &MatchOpts::default());
+        let e = plan_action(fx.lib.root(), &w, &f, &v, &used, &MatchOpts::default()).unwrap_err();
         assert!(e.contains("already used by another track"), "{e}");
         // and via a pick: skipped, nothing written
         let rep = run_picks(&mut fx, &[Pick { track_id: ids[0], path: f.path.clone(), manual: true, expect_location: t1.location }], &MatchOpts::default(), &no_tags);
@@ -1302,7 +1435,8 @@ mod tests {
         std::fs::write(&dest, vec![0xEEu8; 1699]).unwrap();
         let w = missing_tracks(&fx.lib).unwrap().remove(0);
         let f = Found::of(&fx.base.join("pc/synthetic 0.mp3")).unwrap();
-        let e = plan_action(fx.lib.root(), &w, &f, &used_files(&fx.lib).unwrap(), &o).unwrap_err();
+        let v = inspect(&w, &f, &mut || None, &o);
+        let e = plan_action(fx.lib.root(), &w, &f, &v, &used_files(&fx.lib).unwrap(), &o).unwrap_err();
         assert!(e.contains("1699 bytes"), "{e}");
     }
 
@@ -1361,13 +1495,17 @@ mod tests {
         let text = v.notes.join(" ");
         assert!(text.contains("Size 2222") && text.contains("Something else") && text.contains("9:15"), "{text}");
         let used = used_files(&fx.lib).unwrap();
-        let p = plan_action(fx.lib.root(), &w, &f, &used, &o).unwrap();
+        let p = plan_action(fx.lib.root(), &w, &f, &v, &used, &o).unwrap();
         assert_eq!(p.action, ActionKind::Copy);
+        assert_eq!(p.new_format.as_deref(), Some("WAV"), "the recorded format follows the picked file");
+        assert_eq!(p.new_play_time_secs, Some(555), "and so does the measured length");
+        assert!(p.notes.iter().any(|n| n.contains("format changes from MP3 to WAV")) && p.notes.iter().any(|n| n.contains("1:41 to 9:15")), "{:?}", p.notes);
         // run it: classify would reject this file, but the user picked it
         let rep = run_picks(&mut fx, &[Pick { track_id: ids[1], path: odd.clone(), manual: true, expect_location: p.new_location.clone() }], &o, &no_tags);
         assert_eq!(rep.relinked.len(), 1, "{rep:?}");
         assert_eq!(track(&fx, ids[1]).location, p.new_location);
         assert_eq!(track(&fx, ids[1]).file_size, 2222);
+        assert_eq!(track(&fx, ids[1]).format, "WAV");
         // and the same pick not marked manual is refused
         let mut fx = fixture("manual2", 2);
         let ids = fx.ids.clone();
@@ -1431,8 +1569,132 @@ mod tests {
         kill(&fx, fx.ids[0]);
         let e = plan(&fx.lib, &fx.base.join("nope"), &ScanOpts::default(), &MatchOpts::default(), &no_tags, &mut |_, _, _, _| {}, &|| false).unwrap_err();
         assert!(e.to_string().contains("not a folder"));
+    }
+
+    #[test]
+    fn a_card_without_its_music_folder_lists_every_track_and_a_copy_makes_the_folder_again() {
+        let mut fx = fixture("nomusic", 2);
+        let ids = fx.ids.clone();
+        let old = [track(&fx, ids[0]).location, track(&fx, ids[1]).location];
         std::fs::remove_dir_all(music_dir(fx.lib.root())).unwrap();
-        assert!(missing_tracks(&fx.lib).unwrap().is_empty(), "no Music folder: a card that is not mounted, not missing tracks");
+        let m = missing_report(&fx.lib).unwrap();
+        assert!(m.music_missing && m.wanted.len() == 2, "{m:?}");
+        let pc = fx.base.join("pc");
+        std::fs::create_dir_all(&pc).unwrap();
+        std::fs::copy(fx.src.join("synthetic 0.mp3"), pc.join("synthetic 0.mp3")).unwrap();
+        let o = MatchOpts { use_tags: false, ..Default::default() };
+        let p = scan(&fx, &pc, &o, &no_tags);
+        assert!(p.music_missing && p.total_missing == 2);
+        assert!(p.warnings.iter().any(|w| w.contains("no .Pacemaker/Music folder")), "{:?}", p.warnings);
+        let r0 = p.rows.iter().find(|r| r.track.track_id == ids[0]).unwrap();
+        assert_eq!((r0.candidates[0].kind, r0.candidates[0].action), (Kind::Exact, ActionKind::Copy));
+        let rep = run_picks(&mut fx, &[pick_of(r0, 0)], &o, &no_tags);
+        assert_eq!((rep.relinked.len(), rep.failed.len()), (1, 0), "{rep:?}");
+        assert_eq!(track(&fx, ids[0]).location, old[0]);
+        assert!(audio_of(&fx, ids[0]).is_file(), "the folder and the file are back");
+        assert!(!audio_of(&fx, ids[1]).is_file(), "the other track is still missing");
+    }
+
+    #[test]
+    fn locations_that_are_not_plain_paths_are_counted_not_silently_dropped() {
+        let fx = fixture("skipped", 3);
+        let ids = fx.ids.clone();
+        kill(&fx, ids[0]);
+        fx.lib.con.execute("UPDATE tracks SET location = '/pmdb_tracks/../x.mp3' WHERE track_id = ?1", [ids[1]]).unwrap();
+        let m = missing_report(&fx.lib).unwrap();
+        assert_eq!((m.wanted.len(), m.skipped_locations), (1, 1));
+        let pc = fx.base.join("pc");
+        std::fs::create_dir_all(&pc).unwrap();
+        let p = scan(&fx, &pc, &MatchOpts::default(), &no_tags);
+        assert_eq!(p.skipped_locations, 1);
+        assert!(p.warnings.iter().any(|w| w.contains("1 track not counted here") && w.contains("its location")), "{:?}", p.warnings);
+        // nothing else missing: the skipped one is still said
+        let fx = fixture("skipped2", 1);
+        fx.lib.con.execute("UPDATE tracks SET location = '/pmdb_tracks/a/../x.mp3'", []).unwrap();
+        let p = scan(&fx, &fx.base.join("whatever"), &MatchOpts::default(), &no_tags);
+        assert!(p.rows.is_empty() && p.warnings.len() == 2 && p.warnings[1].contains("No track is missing"), "{:?}", p.warnings);
+    }
+
+    #[test]
+    fn the_row_follows_the_file_it_now_points_at_in_format_and_length_only_where_they_differ() {
+        let (mut fx, pick, _dest, o) = same_name_scene("rowdata");
+        let id = fx.ids[0];
+        // the file is read again at the run; its length is 30 s longer than recorded (100 s)
+        let tags = |_: &Path| Some(Tags { title: "x".into(), artist: "y".into(), duration_secs: Some(130.2) });
+        let o = MatchOpts { use_tags: true, ..o };
+        let rep = run_picks(&mut fx, &[pick], &o, &tags);
+        assert_eq!(rep.relinked.len(), 1, "{rep:?}");
+        let t = track(&fx, id);
+        assert_eq!((t.play_time_secs, t.format.as_str()), (130, "MP3"), "the length follows, the format is the same extension");
+
+        // a length within a second of the recorded one is rounding: kept
+        let (mut fx, pick, _d, o) = same_name_scene("rowdata2");
+        let id = fx.ids[0];
+        let o = MatchOpts { use_tags: true, ..o };
+        let near = |_: &Path| Some(Tags { title: "x".into(), artist: "y".into(), duration_secs: Some(100.6) });
+        let rep = run_picks(&mut fx, &[pick], &o, &near);
+        assert_eq!(rep.relinked.len(), 1, "{rep:?}");
+        assert_eq!(track(&fx, id).play_time_secs, 100);
+
+        // another container: the format follows, and the preview says so in words
+        let fx = fixture("rowdata3", 1);
+        let id = fx.ids[0];
+        kill(&fx, id);
+        let pc = fx.base.join("pc");
+        std::fs::create_dir_all(&pc).unwrap();
+        std::fs::write(pc.join("synthetic 0.flac"), vec![3u8; 2000]).unwrap();
+        let c = inspect_pick(&fx.lib, id, &pc.join("synthetic 0.flac"), &MatchOpts::default(), &no_tags).unwrap();
+        assert!(c.notes.iter().any(|n| n.contains("format changes from MP3 to FLAC")), "{:?}", c.notes);
+        assert!(c.notes.iter().any(|n| n.contains("bit rate and sample rate stay as recorded")), "{:?}", c.notes);
+    }
+
+    #[test]
+    fn a_track_pointed_at_another_name_is_found_by_that_name_when_it_goes_missing_again() {
+        let mut fx = fixture("renamed", 2);
+        let ids = fx.ids.clone();
+        let music = music_dir(fx.lib.root());
+        std::fs::create_dir_all(music.join("misc")).unwrap();
+        // an earlier relink left this row on a file with its own name; the file is gone again
+        kill(&fx, ids[0]);
+        fx.lib
+            .con
+            .execute("UPDATE tracks SET location = '/pmdb_tracks/misc/moved audio.mp3', file_size = 1800 WHERE track_id = ?1", [ids[0]])
+            .unwrap();
+        let pc = fx.base.join("pc");
+        let pc2 = fx.base.join("pc2");
+        std::fs::create_dir_all(&pc).unwrap();
+        std::fs::create_dir_all(&pc2).unwrap();
+        std::fs::write(pc.join("moved audio.mp3"), vec![4u8; 1800]).unwrap();
+        std::fs::write(pc2.join("Moved Audio.MP3"), vec![4u8; 1900]).unwrap();
+        let o = MatchOpts { use_tags: false, ..Default::default() };
+        let p = scan(&fx, &pc, &o, &no_tags);
+        let c = &p.rows.iter().find(|r| r.track.track_id == ids[0]).unwrap().candidates;
+        assert_eq!((c[0].kind, c[0].confidence), (Kind::Exact, Confidence::Sure), "same name and same size");
+        let p2 = scan(&fx, &pc2, &o, &no_tags);
+        let c2 = &p2.rows.iter().find(|r| r.track.track_id == ids[0]).unwrap().candidates;
+        assert_eq!((c2[0].kind, c2[0].confidence), (Kind::SameName, Confidence::Likely), "the name is compared without case");
+        // and a file with a different name is not taken for it by the name rule
+        std::fs::write(pc.join("another.mp3"), vec![4u8; 1800]).unwrap();
+        let p3 = scan(&fx, &pc, &o, &no_tags);
+        assert_eq!(p3.rows.iter().find(|r| r.track.track_id == ids[0]).unwrap().candidates.len(), 1);
+        // the run copies it to the app's naming and the row follows
+        let rep = run_picks(&mut fx, &[pick_of(p.rows.iter().find(|r| r.track.track_id == ids[0]).unwrap(), 0)], &o, &no_tags);
+        assert_eq!(rep.relinked.len(), 1, "{rep:?}");
+        assert!(is_standard_rel(track(&fx, ids[0]).location.strip_prefix(naming::LOCATION_PREFIX).unwrap()));
+    }
+
+    #[test]
+    fn tags_without_a_length_are_counted_and_said() {
+        let fx = fixture("nolength", 1);
+        kill(&fx, fx.ids[0]);
+        let pc = fx.base.join("pc");
+        std::fs::create_dir_all(&pc).unwrap();
+        std::fs::write(pc.join("renamed.mp3"), vec![8u8; 1777]).unwrap();
+        let tags = |_: &Path| Some(Tags { title: "Title 0".into(), artist: "Artist 0".into(), duration_secs: None });
+        let p = scan(&fx, &pc, &MatchOpts::default(), &tags);
+        assert_eq!(p.tags_without_length, 1);
+        assert!(p.rows[0].candidates.is_empty(), "a re-tagged file whose length is unknown cannot match by tags");
+        assert!(p.warnings.iter().any(|w| w.contains("no length") && w.contains("picked by hand")), "{:?}", p.warnings);
     }
 
     #[test]

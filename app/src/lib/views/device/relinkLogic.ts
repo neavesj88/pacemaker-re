@@ -15,6 +15,7 @@ export type Cand = {
   dest: string;
   new_location: string;
   on_card: boolean;
+  non_standard?: boolean;
 };
 
 const KB = 1024;
@@ -137,4 +138,21 @@ export function cardMusicFolder(root: string): string {
 /** Rows with a match first, in library order within each group. */
 export function sortRows<T extends { candidates: unknown[]; track_id: number }>(rows: T[]): T[] {
   return [...rows].sort((a, b) => Number(b.candidates.length > 0) - Number(a.candidates.length > 0) || a.track_id - b.track_id);
+}
+
+/** A row's tick after a bulk button. "Tick ..." only adds ticks (a row the user ticked, a hand-picked
+ *  file included, stays ticked); "Untick all" clears every row. */
+export function tickAfterBulk(current: boolean, c: Pick<Cand, "confidence" | "kind"> | undefined, mode: Preselect): boolean {
+  if (!c) return false;
+  if (mode === "none") return false;
+  return current || isPreselected(c, mode);
+}
+
+/** One line for the confirmation when some chosen file keeps a path the app did not generate:
+ *  the track will point at it and whether the device follows it is not verified on hardware.
+ *  Empty when none does. */
+export function nonStandardNote(chosen: { non_standard?: boolean }[]): string {
+  const n = chosen.filter((c) => c.non_standard).length;
+  if (n === 0) return "";
+  return `${plural(n, "track")} will point at a path under Music that this app did not generate. The Pacemaker playing a track from such a path has not been checked on hardware. To be safe, go back and set "A match already on the card" to copy it to the name this app gives new files.`;
 }

@@ -24,7 +24,7 @@ let settings: Settings = {
 
 type Cand = {
   path: string; name: string; size: number; kind: "exact" | "same_name" | "tags" | "manual"; confidence: "sure" | "likely" | "check";
-  notes: string[]; duration_secs: number | null; action: "point" | "copy"; dest: string; new_location: string; on_card: boolean;
+  notes: string[]; duration_secs: number | null; action: "point" | "copy"; dest: string; new_location: string; on_card: boolean; non_standard: boolean;
 };
 
 const PREFIX = "/pmdb_tracks/";
@@ -37,7 +37,7 @@ const relOf = (location: string) => location.startsWith(PREFIX) ? location.slice
 function copyCand(path: string, size: number, kind: Cand["kind"], confidence: Cand["confidence"], notes: string[], location: string): Cand {
   return {
     path, name: fileName(path), size, kind, confidence, notes, duration_secs: 200, action: "copy",
-    dest: relOf(location), new_location: location, on_card: false,
+    dest: relOf(location), new_location: location, on_card: false, non_standard: false,
   };
 }
 
@@ -85,7 +85,7 @@ export const handlers: Handlers = {
           candidates.push({
             path: `${folder}\\misc\\renamed demo ${m.track_id}.mp3`, name: `renamed demo ${m.track_id}.mp3`, size: 8_041_000, kind: "tags", confidence: "sure",
             notes: ["Same title and artist in its tags.", "Same length and same size.", "Its path under Music is not one this app generated. The device should follow any plain path there, but that has not been checked on hardware; \"copy to the standard name\" in the options avoids the question."],
-            duration_secs: 201, action: "point", dest: `misc/renamed demo ${m.track_id}.mp3`, new_location: `${PREFIX}misc/renamed demo ${m.track_id}.mp3`, on_card: true,
+            duration_secs: 201, action: "point", dest: `misc/renamed demo ${m.track_id}.mp3`, new_location: `${PREFIX}misc/renamed demo ${m.track_id}.mp3`, on_card: true, non_standard: true,
           });
         } else if (!onCard && i === 0) {
           candidates.push(copyCand(`C:\\Music\\Demo\\Sets\\demo${m.track_id}.mp3`, 8_012_345, "exact", "sure", ["Same file name and size as when the track was added."], m.location));
@@ -105,7 +105,7 @@ export const handlers: Handlers = {
         }
       }
       return {
-        track_id: m.track_id, label: m.label, location: m.location, file_size: 8_012_345, play_time_secs: 200,
+        track_id: m.track_id, label: m.label, location: m.location, file_size: 8_012_345, play_time_secs: 200, format: "MP3",
         title: `Demo Track ${m.track_id}`, artist: "Example Artist", in_mixes: m.in_mixes, candidates, notes,
       };
     });
@@ -118,9 +118,14 @@ export const handlers: Handlers = {
       truncated: big,
       tag_limit_hit: false,
       rows,
-      warnings: big
-        ? ["The folder holds more than 100000 audio files; only the first 100000 were looked at. Choose a narrower folder to be sure of finding everything."]
-        : [],
+      warnings: [
+        ...(big ? ["The folder holds more than 100000 audio files; only the first 100000 were looked at. Choose a narrower folder to be sure of finding everything."] : []),
+        ...(onCard && !empty ? ["Some matches are files already on the card under a path this app did not generate. The track will point at that path, and whether the Pacemaker plays a track from such a path has not been checked on hardware. To avoid the question, set \"A match already on the card\" to copy it to the name this app gives new files."] : []),
+      ],
+      skipped_locations: 0,
+      music_missing: false,
+      tags_without_length: 0,
+      non_standard: onCard && !empty,
     };
   },
   device_relink_scan_cancel: () => {
@@ -141,7 +146,7 @@ export const handlers: Handlers = {
         "Its length is 3:05, the track's is 3:20.",
         "The beat grid is kept as it is; if this is a different recording it will not line up, so re-analyse the track afterwards.",
       ],
-      duration_secs: 185, action: "copy", dest: `7/d/${m.track_id}beef01.mp3`, new_location: `${PREFIX}7/d/${m.track_id}beef01.mp3`, on_card: false,
+      duration_secs: 185, action: "copy", dest: `7/d/${m.track_id}beef01.mp3`, new_location: `${PREFIX}7/d/${m.track_id}beef01.mp3`, on_card: false, non_standard: false,
     } satisfies Cand;
   },
 

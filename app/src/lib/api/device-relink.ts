@@ -55,6 +55,8 @@ export type RelinkCandidate = {
   new_location: string;
   /** The file is already under .Pacemaker/Music. */
   on_card: boolean;
+  /** The track would point at a path the app did not generate (not verified on hardware). */
+  non_standard: boolean;
 };
 
 export type RelinkRow = {
@@ -64,6 +66,8 @@ export type RelinkRow = {
   location: string;
   file_size: number;
   play_time_secs: number;
+  /** tracks.format as recorded. */
+  format: string;
   title: string;
   artist: string;
   in_mixes: string[];
@@ -82,6 +86,14 @@ export type RelinkPlan = {
   tag_limit_hit: boolean;
   rows: RelinkRow[];
   warnings: string[];
+  /** Tracks left out because their location is not a plain path under Music. */
+  skipped_locations: number;
+  /** The card has no Music folder: every track is missing, copying creates it. */
+  music_missing: boolean;
+  /** Files whose tags were read but gave no length. */
+  tags_without_length: number;
+  /** Some match points at a path the app did not generate. */
+  non_standard: boolean;
 };
 
 /** One ticked match. `expect_location` is the candidate's `new_location` from the preview. */

@@ -13,6 +13,7 @@
     kindLabel,
     locationLine,
     matchSummary,
+    nonStandardNote,
     scanLine,
     scanPercent,
     sizeText,
@@ -36,6 +37,7 @@
   const free = $derived(device.overview?.storage.free_bytes);
   const spaceProblem = $derived(freeSpaceProblem(tot.copyBytes, free));
   const chosen = $derived(relink.chosen);
+  const oddPaths = $derived(nonStandardNote(chosen.map((c) => c.cand)));
   const pct = $derived(scanPercent(relink.progress));
 
   onMount(() => {
@@ -59,8 +61,9 @@
     <p>
       {plural(missing, "track")} {missing === 1 ? "is" : "are"} listed in the library without an audio file on the card.
       Choose a folder that may hold them, on this PC or on the card. The files are matched by name and size, and, when
-      you allow it, by the title, artist and length in their tags. Nothing changes until you have looked at the matches
-      and confirmed.
+      you allow it, by the title, artist and length in their tags (a file whose length cannot be read, such as an MP3
+      without a length header, can then only match by its name or be picked by hand). Nothing changes until you have
+      looked at the matches and confirmed.
     </p>
     {#if s}
       <div class="folder">
@@ -215,9 +218,10 @@
     <p>
       Relink {plural(chosen.length, "track")}? Nothing is deleted or overwritten. A copy of music.db is saved first, so
       Restore from a snapshot puts the library rows back; files copied onto the card stay and then show up under unused
-      files.
+      files. A track's format and length are updated where the file it now uses differs; its bit rate and sample rate stay as recorded.
     </p>
     <p class="sum">{totalsLine(tot)}</p>
+    {#if oddPaths}<p class="note">{oddPaths}</p>{/if}
     {#if spaceProblem}<p class="err" role="alert">{spaceProblem}</p>{/if}
     <ul class="rows plain" aria-label="Tracks to relink">
       {#each chosen as c (c.row.track_id)}

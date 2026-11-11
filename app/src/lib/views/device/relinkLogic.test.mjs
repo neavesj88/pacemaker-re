@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   actionLine, cardMusicFolder, confidenceLabel, confirmLine, freeSpaceProblem, isPreselected, kindLabel, locationLine, matchSummary, scanLine,
-  scanPercent, sizeText, sortRows, totals, totalsLine,
+  scanPercent, sizeText, sortRows, tickAfterBulk, nonStandardNote, totals, totalsLine,
 } from "./relinkLogic.ts";
 
 const MB = 1024 * 1024;
@@ -110,4 +110,26 @@ test("rows with a match come first, each group in library order", () => {
   ];
   assert.deepEqual(sortRows(rows).map((r) => r.track_id), [3, 15, 7, 9]);
   assert.deepEqual(rows.map((r) => r.track_id), [9, 15, 7, 3], "the input is not reordered");
+});
+
+test("the Tick buttons only add ticks, so a hand-picked or hand-ticked row is never unticked by them", () => {
+  const sure = { confidence: "sure", kind: "exact" };
+  const likely = { confidence: "likely", kind: "same_name" };
+  const manual = { confidence: "check", kind: "manual" };
+  assert.equal(tickAfterBulk(true, manual, "sure"), true, "a hand pick stays ticked");
+  assert.equal(tickAfterBulk(true, manual, "likely"), true);
+  assert.equal(tickAfterBulk(true, likely, "sure"), true, "ticked by hand: kept");
+  assert.equal(tickAfterBulk(false, likely, "sure"), false);
+  assert.equal(tickAfterBulk(false, likely, "likely"), true);
+  assert.equal(tickAfterBulk(false, sure, "sure"), true);
+  assert.equal(tickAfterBulk(false, manual, "likely"), false, "a hand pick is never ticked by a bulk button");
+  assert.equal(tickAfterBulk(true, sure, "none"), false, "Untick all clears every row, hand picks too");
+  assert.equal(tickAfterBulk(true, manual, "none"), false);
+  assert.equal(tickAfterBulk(true, undefined, "sure"), false, "a row without a file has nothing to tick");
+});
+
+test("the paths the app did not generate are said once, with the count", () => {
+  assert.equal(nonStandardNote([{ non_standard: false }, {}]), "");
+  assert.match(nonStandardNote([{ non_standard: true }, { non_standard: false }]), /^1 track will point at a path under Music that this app did not generate\..*not been checked on hardware/);
+  assert.match(nonStandardNote([{ non_standard: true }, { non_standard: true }]), /^2 tracks will point/);
 });
