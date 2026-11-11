@@ -84,7 +84,9 @@ impl LibResolver {
         let ids: Vec<i64> = mix.library_ids();
         let mut paths = HashMap::new();
         for s in lib.mix_track_sources(&ids)? {
-            if let Some((audio, _)) = lib.track_paths(&s.location)
+            // The validated helper: a stored location that climbs out of the music folder is
+            // treated as "not on the volume", exactly as a missing file is.
+            if let Ok(audio) = crate::commands::tracks::audio_in_volume(&lib, &s.location)
                 && audio.is_file()
             {
                 paths.insert(s.track_id, audio);

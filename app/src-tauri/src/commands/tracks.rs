@@ -50,7 +50,7 @@ pub fn reanalyse_tracks(app: AppHandle, lock: State<'_, JobLock>, root: String, 
 /// The audio file for a stored `location`, which must lie inside the volume's music folder. A
 /// location whose part after `/pmdb_tracks/` is absolute, has a drive prefix or climbs with `..`
 /// would make `join` leave the volume, so anything but plain names is refused.
-fn audio_in_volume(lib: &Library, location: &str) -> AppResult<PathBuf> {
+pub(crate) fn audio_in_volume(lib: &Library, location: &str) -> AppResult<PathBuf> {
     let (audio, _) = lib.track_paths(location).ok_or("This track has no file on the device.")?;
     let music = lib.root().join(pm_formats::naming::MUSIC_DIR);
     let inside = audio.strip_prefix(&music).is_ok_and(|rel| rel.components().all(|c| matches!(c, Component::Normal(_))));

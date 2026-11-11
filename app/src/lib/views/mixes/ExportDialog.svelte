@@ -47,11 +47,33 @@
     return () => (mv.rangeBand = null);
   });
 
+  /** The stretch covered by the clips selected in the editor (seconds), or null when none is heard. */
+  const selectedSpan = $derived.by(() => {
+    const picked = heard.filter((c) => mixes.selected.includes(c.id));
+    if (picked.length === 0) return null;
+    return { from: Math.min(...picked.map((c) => c.visibleStartSec)), to: Math.max(...picked.map((c) => c.visibleEndSec)) };
+  });
+
+  function takeMarked() {
+    if (!mv.marked) return;
+    X.fromText = clockText(mv.marked.from / SR);
+    X.toText = clockText(mv.marked.to / SR);
+  }
+
+  function takeSelected() {
+    if (!selectedSpan) return;
+    X.fromText = clockText(selectedSpan.from);
+    X.toText = clockText(selectedSpan.to);
+  }
+
   function pickMode(m: "whole" | "time" | "clips") {
     X.mode = m;
     if (m === "time" && !X.fromText) {
-      X.fromText = clockText(mv.playhead / SR);
-      X.toText = clockText(doc?.lengthSec ?? 0);
+      if (mv.marked) takeMarked();
+      else {
+        X.fromText = clockText(mv.playhead / SR);
+        X.toText = clockText(doc?.lengthSec ?? 0);
+      }
     }
     if (m === "clips" && (!X.clipA || !X.clipB) && heard.length > 0) {
       X.clipA = heard[0].id;
@@ -108,6 +130,11 @@
             <Button small onclick={() => (X.toText = clockText(mv.playhead / SR))} title="Use the playhead position">playhead</Button>
             <span class="muted small">times on the ruler, like 12:05.5</span>
           </div>
+          <div class="row indent">
+            <Button small onclick={takeMarked} disabled={!mv.marked} title="Use the stretch marked by Shift-dragging the ruler">use the marked stretch</Button>
+            <Button small onclick={takeSelected} disabled={!selectedSpan} title="Use the stretch from the start of the first selected track to the end of the last">use the selected tracks</Button>
+            <span class="muted small">close this window and Shift-drag on the ruler to mark a stretch, or select tracks in the editor</span>
+          </div>
         {/if}
         <label class="opt"><input type="radio" name="xr-mode" checked={X.mode === "clips"} onchange={() => pickMode("clips")} /> From one track to another</label>
         {#if X.mode === "clips"}
@@ -139,6 +166,7 @@
             {:else}
               Exports {clockText(X.info.fromSecs)} to {clockText(X.info.toSecs)} of the mix ({durationText(X.info.durationSecs)}), {X.info.clipIds.length} track{X.info.clipIds.length === 1 ? "" : "s"} heard:
               {X.info.clipIds.map(titleOf).join(", ")}.
+              <div class="muted small">Effects start fresh at the cut: the tail of a reverb or echo from before the start is not in this part, and a tool already running at the start begins from its start.</div>
             {/if}
           </div>
         {/if}
@@ -198,6 +226,7 @@
                 <tr><td>After the limiter</td><td class="n num">{lufsText(r.afterLimiter?.lufs)}</td><td class="n num">{peakText(r.afterLimiter?.truePeakDb)}</td></tr>
               </tbody>
             </table>
+            <div class="muted small">True peak is read at 4 times the sample rate and is accurate to about 0.3 dB.</div>
             <div class="gain">
               {#if r.targetLufs !== null}
                 Master gain <b>{gainText(r.masterGainDb)}</b> to reach {lufsText(r.targetLufs)}.
@@ -260,6 +289,7 @@
             <label for="xs-ceil">Ceiling</label>
             <span><input id="xs-ceil" class="num-in" type="number" step="0.5" min="-20" max="0" bind:value={X.prefs.peakCeilingDb} onchange={changed} /> dBTP</span>
           </div>
+          <div class="muted small">The true-peak reading is accurate to about 0.3 dB, so leave that much room under the ceiling you need.</div>
         {/if}
         <div class="muted small">These settings are kept on this computer. They change how the audio file is made; nothing is written to the device.</div>
       </details>
