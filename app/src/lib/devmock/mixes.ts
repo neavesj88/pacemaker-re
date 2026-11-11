@@ -16,6 +16,12 @@ const SR = E.SR;
 export const mixes: { id: number; name: string; play_time_secs: number; track_count: number }[] = [];
 
 const docs = new Map<number, MixDoc>();
+
+/** Names of the mixes that have any of these tracks in a clip (mock of the library's mix membership). */
+export function mixNamesUsing(trackIds: number[]): string[] {
+  const want = new Set(trackIds);
+  return [...docs.values()].filter((d) => d.clips.some((c) => want.has(c.trackId))).map((d) => d.name).sort((a, b) => a.localeCompare(b));
+}
 let nextId = 2;
 
 function grid(bpm: number, durationSecs: number, id: number): BeatGrid {

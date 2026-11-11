@@ -53,8 +53,9 @@ pub const EXCLUSIVE_WAIT: Duration = Duration::from_secs(5);
 struct GateState {
     /// Writes that hold a [`WriteTicket`] right now (quick writes and the body of write jobs).
     active: usize,
-    /// An exclusive operation (eject, backup, firmware install) is running or waiting to start.
-    exclusive: bool,
+    /// What the exclusive operation (eject, backup, firmware install) is doing, while one is
+    /// running or waiting to start ("being ejected"): quoted in the refusal a write gets.
+    exclusive: Option<&'static str>,
 }
 
 #[derive(Default)]
@@ -64,7 +65,7 @@ struct GateInner {
     /// Libraries (volume roots) whose `music.db` was already snapshotted in this app session. The
     /// lock is held across the copy, so two first writes do not both copy, and the second waits
     /// for the first one's snapshot.
-    snapshotted: Mutex<HashSet<PathBuf>>,
+    snapshotted: Mutex<HashSet<String>>,
 }
 
 fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -99,7 +100,7 @@ pub struct ExclusiveGuard(Arc<GateInner>);
 
 impl Drop for ExclusiveGuard {
     fn drop(&mut self) {
-        lock(&self.0.state).exclusive = false;
+        lock(&self.0.state).exclusive = None;
         self.0.changed.notify_all();
     }
 }
@@ -112,17 +113,18 @@ impl WriteGate {
     pub fn begin_write_with(&self, root: &Path, snapshot: impl FnOnce() -> Result<(), String>) -> Result<WriteTicket, String> {
         {
             let mut st = lock(&self.0.state);
-            if st.exclusive {
-                return Err("The device is being ejected, backed up or updated. Try again when that has finished.".into());
+            if let Some(what) = st.exclusive {
+                return Err(format!("The device is {what}, so nothing can be written to it right now. Try again when that has finished."));
             }
             st.active += 1;
         }
         // from here on the ticket owns the count, so every early return decrements it
         let ticket = WriteTicket(self.0.clone());
+        let key = volume_key(root);
         let mut done = lock(&self.0.snapshotted);
-        if !done.contains(root) {
+        if !done.contains(&key) {
             snapshot().map_err(|e| format!("Nothing was written: the safety copy of music.db failed ({e})."))?;
-            done.insert(root.to_path_buf());
+            done.insert(key);
         }
         Ok(ticket)
     }
@@ -135,12 +137,12 @@ impl WriteGate {
     /// Takes the gate for an operation that must not overlap any write. New writes are refused
     /// from this moment; writes in flight get up to `wait` to finish, then the call fails with
     /// the gate released again.
-    pub fn exclusive(&self, wait: Duration) -> Result<ExclusiveGuard, String> {
+    pub fn exclusive(&self, what: &'static str, wait: Duration) -> Result<ExclusiveGuard, String> {
         let mut st = lock(&self.0.state);
-        if st.exclusive {
+        if st.exclusive.is_some() {
             return Err("Another device operation (eject, backup or firmware) is already running.".into());
         }
-        st.exclusive = true;
+        st.exclusive = Some(what);
         let guard = ExclusiveGuard(self.0.clone());
         let deadline = Instant::now() + wait;
         while st.active > 0 {
@@ -158,7 +160,7 @@ impl WriteGate {
     /// Forget that `root` was snapshotted (after an eject, a different device may come back under
     /// the same drive letter, and its first write deserves its own snapshot).
     pub fn forget(&self, root: &Path) {
-        lock(&self.0.snapshotted).remove(root);
+        lock(&self.0.snapshotted).remove(&volume_key(root));
     }
 
     #[cfg(test)]
@@ -167,13 +169,35 @@ impl WriteGate {
     }
 }
 
+/// One name for one volume however the frontend spells it: `E:` and `E:\` are the same library,
+/// so are `/mnt/usb` and `/mnt/usb/`. Separators are unified, trailing ones dropped, and on
+/// Windows (case-insensitive paths) the case folded.
+pub fn volume_key(root: &Path) -> String {
+    let s = root.to_string_lossy().replace('\\', "/");
+    let s = s.trim_end_matches('/');
+    if cfg!(windows) { s.to_lowercase() } else { s.to_string() }
+}
+
 /// The folder holding the automatic snapshots of the library at `root`:
-/// `<app data dir>/snapshots/<root made filename-safe>`. Never on the device.
+/// `<app data dir>/snapshots/<root made filename-safe>-<hash>`. Never on the device. Making a
+/// path filename-safe is lossy (`/mnt/a-b` and `/mnt/a_b` look alike), so a hash of the
+/// normalised path keeps two volumes out of one folder (and out of one 10-snapshot cap).
 pub fn snapshots_dir(app: &AppHandle, root: &Path) -> AppResult<PathBuf> {
-    let key: String = root.to_string_lossy().chars().map(|c| if c.is_ascii_alphanumeric() { c } else { '_' }).collect();
-    let key = key.trim_matches('_');
-    let key = if key.is_empty() { "library" } else { key };
-    Ok(app.path().app_local_data_dir()?.join("snapshots").join(key))
+    Ok(app.path().app_local_data_dir()?.join("snapshots").join(snapshot_folder_name(root)))
+}
+
+fn snapshot_folder_name(root: &Path) -> String {
+    let norm = volume_key(root);
+    let readable: String = norm.chars().map(|c| if c.is_ascii_alphanumeric() { c } else { '_' }).collect();
+    let readable = readable.trim_matches('_');
+    let readable = if readable.is_empty() { "library" } else { readable };
+    // FNV-1a: stable across Rust versions and runs, unlike the std hasher
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    for b in norm.bytes() {
+        h ^= u64::from(b);
+        h = h.wrapping_mul(0x0100_0000_01b3);
+    }
+    format!("{readable}-{:08x}", h as u32)
 }
 
 /// Starts a write to the library at `root` (snapshot first, once per session; see
@@ -199,13 +223,42 @@ pub async fn quick_write<T: Send + 'static>(
     .await?
 }
 
-/// Takes the gate for eject / backup / firmware: refused at once while a background job runs,
-/// otherwise waits briefly for quick writes to finish (see [`WriteGate::exclusive`]).
-pub fn take_exclusive(app: &AppHandle, what: &str) -> AppResult<ExclusiveGuard> {
+/// Takes the gate for backup / firmware, which then run as a job under the job lock (so the
+/// lock is not taken here): refused at once while a background job runs, otherwise waits briefly
+/// for quick writes to finish (see [`WriteGate::exclusive`]). `what` starts the refusal ("Back
+/// up when it has finished"), `busy` is what the device is doing meanwhile ("being backed up").
+pub fn take_exclusive(app: &AppHandle, what: &str, busy: &'static str) -> AppResult<ExclusiveGuard> {
     if app.state::<JobLock>().is_held() {
         return Err(format!("A job is still running. {what} when it has finished.").into());
     }
-    app.state::<WriteGate>().exclusive(EXCLUSIVE_WAIT).map_err(AppError::from)
+    app.state::<WriteGate>().exclusive(busy, EXCLUSIVE_WAIT).map_err(AppError::from)
+}
+
+/// Like [`take_exclusive`] for an operation that is not a job (eject): it takes the job lock
+/// itself and keeps it until the returned guard drops, so no job (clean-up, export, add) can
+/// start under it, and waits for quick writes. Blocking.
+pub fn take_exclusive_locked(app: &AppHandle, what: &str, busy: &'static str) -> AppResult<LockedExclusive> {
+    if !app.state::<JobLock>().try_acquire() {
+        return Err(format!("A job is still running. {what} when it has finished.").into());
+    }
+    // from here the job lock is ours; release it on every path
+    let job = JobRelease(app.clone());
+    let gate = app.state::<WriteGate>().exclusive(busy, EXCLUSIVE_WAIT).map_err(AppError::from)?;
+    Ok(LockedExclusive { _gate: gate, _job: job })
+}
+
+struct JobRelease(AppHandle);
+
+impl Drop for JobRelease {
+    fn drop(&mut self) {
+        self.0.state::<JobLock>().0.store(false, Ordering::SeqCst);
+    }
+}
+
+/// The write gate and the job lock, held together; both are released on drop.
+pub struct LockedExclusive {
+    _gate: ExclusiveGuard,
+    _job: JobRelease,
 }
 
 pub fn setup(app: &mut App) {
@@ -292,12 +345,32 @@ mod tests {
     }
 
     #[test]
+    fn one_volume_has_one_key_and_one_snapshot_folder_however_it_is_spelled() {
+        assert_eq!(volume_key(Path::new("/mnt/usb")), volume_key(Path::new("/mnt/usb/")));
+        assert_eq!(volume_key(Path::new("E:")), volume_key(Path::new("E:\\")));
+        assert_eq!(snapshot_folder_name(Path::new("E:")), snapshot_folder_name(Path::new("E:\\")));
+        assert_ne!(snapshot_folder_name(Path::new("/mnt/a-b")), snapshot_folder_name(Path::new("/mnt/a_b")));
+        let gate = WriteGate::default();
+        let calls = Cell::new(0);
+        let snap = || {
+            calls.set(calls.get() + 1);
+            Ok(())
+        };
+        drop(gate.begin_write_with(Path::new("E:"), snap).unwrap());
+        drop(gate.begin_write_with(Path::new("E:\\"), snap).unwrap());
+        assert_eq!(calls.get(), 1, "E: and E:\\ are one library: one snapshot");
+        gate.forget(Path::new("E:\\"));
+        drop(gate.begin_write_with(Path::new("E:"), snap).unwrap());
+        assert_eq!(calls.get(), 2);
+    }
+
+    #[test]
     fn exclusive_refuses_new_writes_and_lets_them_resume() {
         let gate = WriteGate::default();
-        let x = gate.exclusive(Duration::from_millis(50)).unwrap();
+        let x = gate.exclusive("being ejected", Duration::from_millis(50)).unwrap();
         let err = gate.begin_write_with(&root("a"), || Ok(())).err().unwrap();
-        assert!(err.contains("ejected"), "{err}");
-        assert!(gate.exclusive(Duration::from_millis(50)).is_err(), "only one exclusive operation");
+        assert!(err.contains("being ejected"), "{err}");
+        assert!(gate.exclusive("being ejected", Duration::from_millis(50)).is_err(), "only one exclusive operation");
         drop(x);
         assert!(gate.begin_write_with(&root("a"), || Ok(())).is_ok());
     }
@@ -315,7 +388,7 @@ mod tests {
             drop(g2);
         });
         let started = Instant::now();
-        let x = gate.exclusive(Duration::from_secs(5)).unwrap();
+        let x = gate.exclusive("being ejected", Duration::from_secs(5)).unwrap();
         assert_eq!(finished.load(Ordering::SeqCst), 1, "the operation started only after the write ended");
         assert!(started.elapsed() >= Duration::from_millis(100));
         drop(x);
@@ -326,7 +399,7 @@ mod tests {
     fn exclusive_gives_up_on_a_stuck_write_and_releases_the_gate() {
         let gate = WriteGate::default();
         let _long = gate.begin_write_with(&root("a"), || Ok(())).unwrap();
-        let err = gate.exclusive(Duration::from_millis(80)).err().unwrap();
+        let err = gate.exclusive("being ejected", Duration::from_millis(80)).err().unwrap();
         assert!(err.contains("still in progress"), "{err}");
         // the failed attempt must not leave the gate closed
         assert!(gate.begin_write_with(&root("a"), || Ok(())).is_ok());

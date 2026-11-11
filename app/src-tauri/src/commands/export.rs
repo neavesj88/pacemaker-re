@@ -72,10 +72,12 @@ pub fn export_mix_audio(app: AppHandle, lock: State<'_, JobLock>, root: String, 
     let total = (plan.span_secs().ceil() as usize).max(1);
     let label = if mix.name.trim().is_empty() { "mix".to_string() } else { mix.name.clone() };
     let out_path = plan.dest.to_string_lossy().into_owned();
-    app.state::<ExportCancel>().0.store(false, Ordering::SeqCst);
     spawn_job(app, &lock, JOB_MIX_EXPORT, move |app| {
         let mut last = Instant::now() - Duration::from_secs(1);
         let cancel = &app.state::<ExportCancel>().0;
+        // cleared only once this call owns the job lock: a rejected second call must not
+        // un-cancel the export that is already running
+        cancel.store(false, Ordering::SeqCst);
         let rendered = render::run_export(&plan, &mut |p| {
             if last.elapsed() >= Duration::from_millis(250) {
                 last = Instant::now();
@@ -85,7 +87,9 @@ pub fn export_mix_audio(app: AppHandle, lock: State<'_, JobLock>, root: String, 
             keep_going(cancel)
         });
         // the engine stops at the next block and removes its `.partial` file: no file is left
-        if cancel.load(Ordering::SeqCst) && rendered.is_err() {
+        // only the engine's own cancel error counts: any other failure after a cancel request is a failure
+        let was_cancelled = matches!(&rendered, Err(e) if e.to_string() == pm_mixer::Error::Cancelled.to_string());
+        if was_cancelled {
             return Ok(JobOutcome { ok: 0, failed: 0, summary: format!("Export of {label} was cancelled. No file was written.") });
         }
         let result = rendered?;

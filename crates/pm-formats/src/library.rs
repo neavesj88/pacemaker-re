@@ -180,10 +180,34 @@ pub(crate) fn temp_sibling(dest: &Path) -> PathBuf {
     dest.with_file_name(name)
 }
 
+/// A temp file this old belongs to a write that never finished (an unplug between create and
+/// rename); a live writer renames its temp within seconds.
+const STALE_TEMP_AGE: Duration = Duration::from_secs(600);
+
+/// Removes the leftovers of earlier writes of `dest` (`<name>.<n>.tmp` beside it, older than
+/// [`STALE_TEMP_AGE`]). Temp names carry a per-process counter, so without this a temp left by an
+/// unplug would stay forever, in folders (like `.Pacemaker`) no clean-up scan looks at.
+fn remove_stale_temps(dest: &Path) {
+    let (Some(dir), Some(name)) = (dest.parent(), dest.file_name()) else { return };
+    let prefix = format!("{}.", name.to_string_lossy());
+    for e in std::fs::read_dir(dir).into_iter().flatten().flatten() {
+        let fname = e.file_name().to_string_lossy().into_owned();
+        let Some(mid) = fname.strip_prefix(&prefix).and_then(|r| r.strip_suffix(".tmp")) else { continue };
+        if mid.is_empty() || !mid.bytes().all(|b| b.is_ascii_digit()) {
+            continue;
+        }
+        let old = e.metadata().and_then(|m| m.modified()).ok().and_then(|t| t.elapsed().ok()).is_some_and(|age| age >= STALE_TEMP_AGE);
+        if old {
+            let _ = std::fs::remove_file(e.path());
+        }
+    }
+}
+
 /// Writes `dest` atomically: `fill` writes a temp file beside it, which is fsynced and renamed
 /// over `dest` only when `fill` succeeded. On any failure the temp file is removed and `dest` is
 /// untouched, so an unplug or an error mid-write never leaves a truncated file under the real name.
 pub(crate) fn atomic_write_with(dest: &Path, fill: impl FnOnce(&mut File) -> std::io::Result<()>) -> std::io::Result<()> {
+    remove_stale_temps(dest);
     let tmp = temp_sibling(dest);
     let res = (|| {
         let mut f = File::create(&tmp)?;
@@ -440,15 +464,30 @@ impl Library {
         let (_, sidecar) = self.track_paths(location).ok_or_else(|| {
             Error::Io(std::io::Error::new(std::io::ErrorKind::InvalidInput, "track is not stored under /pmdb_tracks/"))
         })?;
+        // the file and the row must describe the same grid: keep the old file's bytes so that a row
+        // update that fails (busy timeout, unplug) puts the old grid back instead of leaving the
+        // new .str next to the old bpm / flags
+        let previous = match std::fs::read(&sidecar) {
+            Ok(b) => Some(b),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+            Err(e) => return Err(e.into()),
+        };
         atomic_write(&sidecar, strfile::encode(analysis, strfile::Newline::Crlf).as_bytes())?;
         let bpm = track_bpm(analysis);
         let ind_bpm = ind_bpm_of(bpm);
-        self.con.execute(
+        let updated = self.con.execute(
             "UPDATE tracks SET bpm = ?1, ind_bpm = ?2, track_flags = IFNULL(track_flags,0) | 2,
                     date_modified = ?3, modified_by_ed = ?4, analyzed_by_ed = ?4, analysis_ver = 1
              WHERE track_id = ?5",
             params![bpm, ind_bpm, now_ms(), EDITOR_ID, track_id],
-        )?;
+        );
+        if let Err(e) = updated {
+            let _ = match previous {
+                Some(old) => atomic_write(&sidecar, &old),
+                None => std::fs::remove_file(&sidecar),
+            };
+            return Err(e.into());
+        }
         Ok(())
     }
 
@@ -1298,6 +1337,60 @@ mod tests {
         drop(lib);
         std::fs::remove_dir_all(&vol).unwrap();
         std::fs::remove_dir_all(&src_dir).unwrap();
+    }
+
+    #[test]
+    fn a_failed_row_update_puts_the_old_grid_file_back() {
+        let vol = temp_dir("rollback-vol");
+        let src_dir = temp_dir("rollback-src");
+        let src = src_dir.join("Roll.mp3");
+        std::fs::write(&src, vec![0u8; 2222]).unwrap();
+        let old = variable_tempo();
+        let mut lib = Library::create(&vol).unwrap();
+        let id = lib.add_track(&src, &TrackMeta { title: "r".into(), format: "MP3".into(), ..Default::default() }, &old).unwrap();
+        let location: String = lib.con.query_row("SELECT location FROM tracks", [], |r| r.get(0)).unwrap();
+        let (_, sidecar) = lib.track_paths(&location).unwrap();
+        let before = std::fs::read(&sidecar).unwrap();
+        let row_before: (f64, i64) = lib.con.query_row("SELECT bpm, ind_bpm FROM tracks", [], |r| Ok((r.get(0)?, r.get(1)?))).unwrap();
+
+        // the row update fails (as a busy timeout or an unplug would make it)
+        lib.con.execute_batch("CREATE TRIGGER refuse BEFORE UPDATE ON tracks BEGIN SELECT RAISE(ABORT, 'locked'); END;").unwrap();
+        let mut new = variable_tempo();
+        new.beats.iter_mut().for_each(|b| b.bpm = 100.0);
+        assert!(lib.store_analysis(id, &location, &new).is_err());
+        assert_eq!(std::fs::read(&sidecar).unwrap(), before, "the .str still holds the grid the row describes");
+        let row_after: (f64, i64) = lib.con.query_row("SELECT bpm, ind_bpm FROM tracks", [], |r| Ok((r.get(0)?, r.get(1)?))).unwrap();
+        assert_eq!(row_after, row_before);
+        assert!(tmp_files(&vol).is_empty(), "{:?}", tmp_files(&vol));
+
+        // a track with no .str yet: the failed update leaves none behind
+        std::fs::remove_file(&sidecar).unwrap();
+        assert!(lib.store_analysis(id, &location, &new).is_err());
+        assert!(!sidecar.exists());
+
+        drop(lib);
+        std::fs::remove_dir_all(&vol).unwrap();
+        std::fs::remove_dir_all(&src_dir).unwrap();
+    }
+
+    #[test]
+    fn a_temp_left_by_an_unplug_is_removed_by_the_next_write_of_that_file_only() {
+        let dir = temp_dir("stale-tmp");
+        let dest = dir.join("settings.dat");
+        let stale = dir.join("settings.dat.7.tmp");
+        let fresh = dir.join("settings.dat.8.tmp");
+        let other = dir.join("other.dat.9.tmp");
+        for p in [&stale, &fresh, &other] {
+            std::fs::write(p, b"x").unwrap();
+        }
+        let long_ago = SystemTime::now() - STALE_TEMP_AGE - Duration::from_secs(60);
+        File::options().write(true).open(&stale).unwrap().set_modified(long_ago).unwrap();
+        File::options().write(true).open(&other).unwrap().set_modified(long_ago).unwrap();
+        atomic_write(&dest, b"new").unwrap();
+        assert!(!stale.exists(), "an old temp of this file is cleaned up");
+        assert!(fresh.exists(), "a recent one may belong to a writer still running");
+        assert!(other.exists(), "another file's temp is not touched");
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

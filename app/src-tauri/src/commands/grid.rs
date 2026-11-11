@@ -90,6 +90,11 @@ pub async fn grid_save(
     let path = root.clone();
     crate::state::quick_write(app, root, move || {
         let mut lib = Library::open(Path::new(&path))?;
+        // refuse before touching anything: a library the device cannot read must not get a new .str
+        let problems = lib.compatibility_problems()?;
+        if !problems.is_empty() {
+            return Err(format!("music.db is not device-compatible, nothing was saved: {}", problems.join("; ")).into());
+        }
         let mut saved = GridSaved { wrote_grid: false, wrote_cue: false };
         if let Some(doc) = doc {
             lib.save_grid(track_id, &doc)?;

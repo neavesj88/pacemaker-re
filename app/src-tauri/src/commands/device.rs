@@ -108,7 +108,7 @@ pub async fn device_firmware_inspect(path: String) -> AppResult<PfwInfo> {
 #[tauri::command]
 pub async fn device_firmware_install(app: AppHandle, lock: State<'_, JobLock>, root: String, path: String) -> AppResult<()> {
     // waits for (or refuses on) writes in progress, and keeps new ones out while it copies
-    let exclusive = exclusive_gate(&app, "Install the firmware").await?;
+    let exclusive = exclusive_gate(&app, "Install the firmware", "being updated").await?;
     spawn_job(app, &lock, "device-firmware", move |app| {
         let _exclusive = exclusive;
         start_job_cancel(app);
@@ -136,7 +136,7 @@ pub async fn device_firmware_install(app: AppHandle, lock: State<'_, JobLock>, r
 #[tauri::command]
 pub async fn device_backup(app: AppHandle, lock: State<'_, JobLock>, root: String, dest: String, include_audio: bool) -> AppResult<()> {
     // music.db must not change under the copy: new writes are held off until the backup ends
-    let exclusive = exclusive_gate(&app, "Back up").await?;
+    let exclusive = exclusive_gate(&app, "Back up", "being backed up").await?;
     spawn_job(app, &lock, "device-backup", move |app| {
         let _exclusive = exclusive;
         start_job_cancel(app);
@@ -171,6 +171,9 @@ pub fn device_cleanup(app: AppHandle, lock: State<'_, JobLock>, root: String, fi
         return Err("No files to delete.".into());
     }
     spawn_job(app, &lock, "device-cleanup", move |app| {
+        // deleting audio is a device write: refused during an eject, backup or firmware copy, and
+        // the first write of the session gets its safety copy
+        let _ticket = crate::state::begin_write(app, Path::new(&root))?;
         start_job_cancel(app);
         let rep = ops_device::delete_unreferenced(
             Path::new(&root),
@@ -201,9 +204,10 @@ pub fn device_cleanup(app: AppHandle, lock: State<'_, JobLock>, root: String, fi
 pub async fn device_eject(app: AppHandle, root: String) -> AppResult<bool> {
     // ejecting under a running copy or a quick write would cut it off half-written: refuse while
     // a job runs, wait briefly for quick writes, and hold new writes off until the eject returns
-    let exclusive = exclusive_gate(&app, "Eject").await?;
     tauri::async_runtime::spawn_blocking(move || -> AppResult<bool> {
-        let _exclusive = exclusive;
+        // the job lock too: a clean-up or export that starts under the eject would read or delete
+        // files while the volume goes away
+        let _exclusive = crate::state::take_exclusive_locked(&app, "Eject", "being ejected")?;
         let ejected = ops_device::eject(Path::new(&root))?;
         if ejected {
             // a different device may come back under this drive letter: it gets its own snapshot
@@ -216,9 +220,9 @@ pub async fn device_eject(app: AppHandle, root: String) -> AppResult<bool> {
 
 /// Takes the write gate for an operation that must not overlap any device write (the wait for
 /// quick writes in flight blocks, so it runs off the async threads).
-async fn exclusive_gate(app: &AppHandle, what: &'static str) -> AppResult<ExclusiveGuard> {
+async fn exclusive_gate(app: &AppHandle, what: &'static str, busy: &'static str) -> AppResult<ExclusiveGuard> {
     let app = app.clone();
-    tauri::async_runtime::spawn_blocking(move || crate::state::take_exclusive(&app, what)).await?
+    tauri::async_runtime::spawn_blocking(move || crate::state::take_exclusive(&app, what, busy)).await?
 }
 
 /// Where the automatic `music.db` snapshots of this library go and what is in there now.

@@ -1,6 +1,7 @@
 // Mock of src-tauri/src/commands/tracks.rs.
 import { needs, tracks } from "./db";
 import { jobLock, runJob } from "./jobs";
+import { mixNamesUsing } from "./mixes";
 import type { Handlers } from "./types";
 
 // `?tracks=5000` on the dev URL pads the shared fixture with synthetic tracks, to check that the
@@ -30,6 +31,7 @@ if (extra > tracks.length) {
 }
 
 export const handlers: Handlers = {
+  tracks_mixes_using: (a) => mixNamesUsing(a.trackIds as number[]),
   reanalyse_tracks: (a) => {
     if (jobLock.running) throw "Another job is still running.";
     const ids = a.trackIds as number[];

@@ -215,7 +215,8 @@ and `music.db` always has a safety copy from before the session's first change.
 | --- | --- | --- |
 | Quick write | rating, tags, cases, smart-case device copy, mix new / save / rename / delete / import, history "save as case", grid save, `settings.dat` | `state::quick_write(app, root, \|\| ...)` on a blocking thread |
 | Write job | add tracks, re-analyse, key detection, library import | `jobs::spawn_write_job(app, &lock, kind, root, \|app\| ...)`: `JobLock` (one job at a time) plus a write ticket for the body |
-| Exclusive operation | Eject, backup, firmware install | `state::take_exclusive` (inside `device.rs`), held until the operation ends |
+| Exclusive operation | Eject, backup, firmware install | `state::take_exclusive` (backup, firmware: a job, so `spawn_job` holds the `JobLock`) or `state::take_exclusive_locked` (Eject: takes the `JobLock` itself), held until the operation ends |
+| Device-deleting job | Device clean-up | `spawn_job` plus a `WriteTicket` inside the job, so it is refused during an eject / backup and gets the session snapshot |
 | Not a device write | mix audio export, M3U / CSV out, preview render | `spawn_job` with the `JobLock` only |
 
 Rules:
@@ -228,21 +229,30 @@ Rules:
 2. An exclusive operation sets a flag first (new writes are refused at once with a clear message),
    then waits up to 5 s for tickets already out to be returned, then runs. If a write job holds
    `JobLock`, Eject and the others refuse immediately ("a job is still running"); if a quick write
-   is stuck past 5 s they give up and release the gate. Backup is exclusive so that `music.db` is
-   not copied mid-write.
+   is stuck past 5 s they give up and release the gate. Eject also holds the `JobLock` until it
+   returns, so no job (clean-up, export, add) can start under it. Backup is exclusive so that
+   `music.db` and the `.str` files are not copied mid-write: for the whole backup (minutes with
+   audio included) every quick write is refused with "the device is being backed up", not
+   queued. That is deliberate (a rating saved mid-copy would leave the backup describing a state
+   the device never had); the message names the operation so the user knows to wait.
 3. `WriteGate::begin_write` also makes the safety copy: before the first write of the session to a
    library (keyed by volume root) it copies `music.db`, `music.db-journal` if present and
    `settings.dat` to `<app local data>/snapshots/<volume>/music-db-<UTC stamp>/` (never onto the
    device), read back and checksummed, and keeps the newest 10 per library
-   (`pm_formats::ops_device::snapshot_library`). If the copy fails the write is refused with the
+   (`pm_formats::ops_device::snapshot_library`; the volume key ignores a trailing separator and, on
+   Windows, case, so `E:` and `E:\` are one library, and the folder name carries a hash of the
+   key so `/mnt/a-b` and `/mnt/a_b` never share one). If the copy fails the write is refused with the
    reason, and the next attempt tries again. A successful Eject forgets the volume, so a different
    device that appears under the same drive letter is snapshotted on its first write. The Device
    view's Backup card lists the folder (`device_snapshots`, `device_snapshots_open`). Restoring is
    a manual copy of the files back into `.Pacemaker`.
 4. Files are written temp + fsync + rename (`library::atomic_write*`, `install_pfw`'s `.part`,
    backup's `.partial` folder); every failure path removes the temp file, so an unplug leaves at
-   worst an unreferenced `*.tmp` that the Device clean-up lists, never a truncated file under a
-   real name.
+   worst a `*.tmp` (the Device clean-up lists those under `/pmdb_tracks`; the next write of the
+   same file removes its own temps older than 10 minutes, which covers `.Pacemaker`), never a
+   truncated file under a real name. `install_pfw` renames over an existing `.pfw` without
+   deleting it first. A `.str` rewrite (`store_analysis`) restores the old file if the row update
+   then fails, so file and row never describe different grids.
 5. A new write command: use `quick_write` or `spawn_write_job`, never `Library::open` directly in
    a command. A new exclusive operation: take `take_exclusive` before it starts.
 

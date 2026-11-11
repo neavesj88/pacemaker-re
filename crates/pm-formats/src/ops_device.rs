@@ -496,16 +496,11 @@ pub fn install_pfw(
         return Err(e);
     }
     let dest = dir.join(&dest_name);
-    let moved = (|| -> Result<(), Error> {
-        if dest.exists() {
-            fs::remove_file(&dest)?;
-        }
-        fs::rename(&part, &dest)?;
-        Ok(())
-    })();
-    if let Err(e) = moved {
+    // rename replaces an existing file in one step (on Windows too), so the old firmware file is
+    // never deleted first: if the rename fails, it is still there
+    if let Err(e) = fs::rename(&part, &dest) {
         let _ = fs::remove_file(&part);
-        return Err(e);
+        return Err(e.into());
     }
     let installed = firmware_info(root).fw_version;
     Ok(InstallReport {
@@ -867,7 +862,18 @@ fn is_snapshot_dir(name: &str) -> bool {
     name.starts_with(SNAPSHOT_PREFIX) && !name.ends_with(".partial")
 }
 
-/// The snapshots in `dest_dir`, newest first (the stamp in the name sorts chronologically).
+/// Sort key of a snapshot folder name: the UTC stamp, then the same-second counter (`-2`, `-3`,
+/// ... `-10`; none = 1). Compared as a number, so `-10` is newer than `-2`.
+fn snapshot_order(name: &str) -> (String, u64) {
+    let rest = name.strip_prefix(SNAPSHOT_PREFIX).unwrap_or(name);
+    match rest.split_once('-') {
+        Some((stamp, n)) => (stamp.to_string(), n.parse().unwrap_or(1)),
+        None => (rest.to_string(), 1),
+    }
+}
+
+/// The snapshots in `dest_dir`, newest first (by the stamp in the name, then the same-second
+/// counter).
 pub fn list_snapshots(dest_dir: &Path) -> Vec<SnapshotEntry> {
     let mut out: Vec<SnapshotEntry> = fs::read_dir(dest_dir)
         .into_iter()
@@ -885,7 +891,7 @@ pub fn list_snapshots(dest_dir: &Path) -> Vec<SnapshotEntry> {
             Some(SnapshotEntry { folder: e.path().display().to_string(), name, files })
         })
         .collect();
-    out.sort_by(|a, b| b.name.cmp(&a.name));
+    out.sort_by_key(|e| std::cmp::Reverse(snapshot_order(&e.name)));
     out
 }
 
@@ -1942,7 +1948,7 @@ mod tests {
         }
         let left = list_snapshots(&dest);
         assert_eq!(left.len(), 3);
-        assert!(left[0].name > left[1].name && left[1].name > left[2].name, "newest first");
+        assert!(snapshot_order(&left[0].name) > snapshot_order(&left[1].name) && snapshot_order(&left[1].name) > snapshot_order(&left[2].name), "newest first");
         assert!(fs::read_dir(&dest).unwrap().flatten().all(|e| !e.file_name().to_string_lossy().ends_with(".partial")));
         assert!(!s.folder.is_empty() && !Path::new(&s.folder).exists(), "the oldest was pruned");
 
@@ -1953,6 +1959,20 @@ mod tests {
         let _ = fs::remove_dir_all(&root);
         let _ = fs::remove_dir_all(dest.parent().unwrap());
         let _ = fs::remove_dir_all(&empty);
+    }
+
+    #[test]
+    fn snapshots_made_in_one_second_order_by_number_not_by_text() {
+        let stamp = "music-db-20260609T101320Z";
+        let mut names: Vec<String> = ["", "-2", "-9", "-10", "-11"].iter().map(|n| format!("{stamp}{n}")).collect();
+        names.push("music-db-20260609T101321Z".to_string());
+        names.push("music-db-20260609T101319Z-12".to_string());
+        names.sort_by_key(|n| std::cmp::Reverse(snapshot_order(n)));
+        assert_eq!(names[0], "music-db-20260609T101321Z", "a later second beats any counter");
+        assert_eq!(names[1], format!("{stamp}-11"));
+        assert_eq!(names[2], format!("{stamp}-10"));
+        assert_eq!(names[5], stamp);
+        assert_eq!(names[6], "music-db-20260609T101319Z-12");
     }
 
     #[test]
@@ -1975,7 +1995,8 @@ mod tests {
         apply_setting_changes(&mut expect, &[(2001, 0.0), (2004, 0.0)]).unwrap();
         assert_eq!(written, emit_settings(&expect));
         assert_eq!(a.mru_counter, 62);
-        assert!(!root.join(".Pacemaker/settings.dat.tmp").exists());
+        let leftovers: Vec<_> = fs::read_dir(root.join(".Pacemaker")).unwrap().flatten().filter(|e| e.file_name().to_string_lossy().ends_with(".tmp")).collect();
+        assert!(leftovers.is_empty(), "{leftovers:?}");
 
         // refuses a file it would not reproduce exactly, or another repository version
         fs::write(&path, format!("{text}\n")).unwrap();

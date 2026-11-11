@@ -91,6 +91,22 @@ fn reveal(path: &Path) -> std::io::Result<()> {
     std::process::Command::new("xdg-open").arg(dir).spawn().map(|_| ())
 }
 
+/// Names of the mixes that contain any of the tracks, by name. Re-analysing replaces a track's
+/// beat grid and tempo, and a mix clip keeps the tempo the track had when the mix was made, so
+/// the confirmation lists these mixes first. Read-only.
+#[tauri::command]
+pub async fn tracks_mixes_using(root: String, track_ids: Vec<i64>) -> AppResult<Vec<String>> {
+    tauri::async_runtime::spawn_blocking(move || -> AppResult<Vec<String>> {
+        let lib = Library::open_read_only(Path::new(&root))?;
+        let mut names = std::collections::BTreeSet::new();
+        for id in track_ids {
+            names.extend(lib.mixes_using_track(id)?.into_iter().map(|(_, name)| name));
+        }
+        Ok(names.into_iter().collect())
+    })
+    .await?
+}
+
 /// Shows the track's audio file in the system file manager (Explorer with the file selected on
 /// Windows). Read-only: nothing on the volume changes.
 #[tauri::command]
@@ -112,6 +128,7 @@ macro_rules! tracks_commands {
                 $($acc)*
                 $crate::commands::tracks::reanalyse_tracks,
                 $crate::commands::tracks::tracks_reveal,
+                $crate::commands::tracks::tracks_mixes_using,
             ];
             $($rest),*
         }

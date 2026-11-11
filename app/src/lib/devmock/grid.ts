@@ -2,7 +2,7 @@
 // the Rust math in crates/pm-formats/src/ops_grid.rs closely enough to review the UI, and saves
 // are kept in memory only. Picked up automatically by devmock/index.ts.
 import { needs, tracks } from "./db";
-import { mixes as demoMixes } from "./mixes";
+import { mixNamesUsing } from "./mixes";
 import type { Handlers } from "./types";
 
 type Beat = { pos: number; bpm: number };
@@ -155,8 +155,7 @@ export const handlers: Handlers = {
     const t = trackOf(a.trackId);
     return constantGrid(t.bpm, 4200 + ((a.trackId * 104729) % 9000), t.play_time_secs * SR, 0);
   },
-  // the demo has no per-mix membership index: even track ids count as used by the first demo mix
-  grid_mixes_using: (a) => (a.trackId % 2 === 0 && demoMixes.length ? [demoMixes[0].name] : []),
+  grid_mixes_using: (a) => mixNamesUsing([a.trackId]),
   grid_save: (a) => {
     if (a.doc) saved.set(a.trackId, a.doc);
     if (a.cue) cues.set(a.trackId, a.cue.frames);

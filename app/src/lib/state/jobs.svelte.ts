@@ -4,7 +4,7 @@
 // Writes happen only through `confirm()`.
 import type { DoneEvent, JobKind, ProgressEvent } from "$lib/api/types";
 import { addTracks, expandAudioPaths, pickAudioFiles } from "$lib/api/import";
-import { reanalyseTracks } from "$lib/api/tracks";
+import { reanalyseTracks, tracksMixesUsing } from "$lib/api/tracks";
 import { baseName } from "$lib/format";
 import { session } from "./session.svelte";
 
@@ -150,11 +150,22 @@ class Jobs {
     });
   }
 
-  askReanalyse() {
+  async askReanalyse() {
     const lib = session.library;
     if (!lib || session.needs.size === 0) return;
     const ids = [...session.needs.keys()];
     const n = ids.length;
+    // a mix clip keeps the tempo its track had when the mix was made, so a new grid and tempo
+    // leaves those mixes out of step: name them in the question
+    let mixNote = "";
+    try {
+      const mixes = await tracksMixesUsing(lib.root, ids);
+      if (mixes.length > 0) {
+        mixNote = ` ${mixes.length === 1 ? "1 mix uses" : `${mixes.length} mixes use`} some of these tracks (${mixes.join(", ")}): a mix clip keeps the tempo the track had when the mix was made, so ${mixes.length === 1 ? "that mix" : "those mixes"} may drift out of step until beatmatched again.`;
+      }
+    } catch (err) {
+      mixNote = ` Could not check which mixes use these tracks (${String(err)}); a mix keeps the tempo its tracks had when it was made.`;
+    }
     this.ask({
       kind: "reanalyse",
       root: lib.root,
@@ -162,7 +173,7 @@ class Jobs {
       names: lib.tracks.filter((t) => session.needs.has(t.track_id)).map((t) => t.title || baseName(t.location)),
       title: `Re-analyse ${n} track${n === 1 ? "" : "s"} on ${lib.root} ?`,
       description:
-        "Only the beat grid (.str) and BPM of these tracks are rewritten, from the audio already on the device. No audio is copied.",
+        "Only the beat grid (.str) and BPM of these tracks are rewritten, from the audio already on the device. No audio is copied." + mixNote,
       confirmLabel: `Analyse ${n}`,
       runningLabel: "Analysing",
       doneLabel: "Analysis finished",
