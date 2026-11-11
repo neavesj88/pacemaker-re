@@ -108,7 +108,10 @@ pub async fn cases_set_tracks(app: tauri::AppHandle, root: String, case_id: i64,
 /// whether it is now a favourite. Cross-area contract, see `api/cases.ts`.
 #[tauri::command]
 pub async fn cases_toggle_favourite(app: tauri::AppHandle, root: String, track_id: i64) -> AppResult<bool> {
-    write(app, root, move |lib| lib.toggle_favourite(track_id)).await
+    let handle = app.clone();
+    let volume = root.clone();
+    // recorded for undo (device area: commands/device/undo.rs)
+    write(app, root, move |lib| crate::commands::device::undo::tracked_favourite(&handle, &volume, lib, track_id)).await
 }
 
 /// Ids in the "Favourites" case (empty if it does not exist yet).

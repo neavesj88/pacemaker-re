@@ -7,9 +7,13 @@
   import CleanupModal from "./CleanupModal.svelte";
   import { device } from "./device.svelte";
   import FirmwareCard from "./FirmwareCard.svelte";
+  import FixModal from "./FixModal.svelte";
   import HealthCard from "./HealthCard.svelte";
+  import RestoreCard from "./RestoreCard.svelte";
+  import SafetyCard from "./SafetyCard.svelte";
   import SettingsCard from "./SettingsCard.svelte";
   import StorageCard from "./StorageCard.svelte";
+  import UndoCard from "./UndoCard.svelte";
   import VocalCard from "./VocalCard.svelte";
 
   // Storage, health, firmware, backup and settings of the docked Pacemaker. Everything is read
@@ -50,9 +54,13 @@
     <FirmwareCard />
     <VocalCard />
     <BackupCard />
+    <RestoreCard />
+    <UndoCard />
+    <SafetyCard />
     <SettingsCard />
   </div>
   <CleanupModal />
+  {#if device.fixOpen}<FixModal />{/if}
 {:else}
   <p class="muted pad">Open a Pacemaker drive to see its storage, firmware and settings.</p>
 {/if}

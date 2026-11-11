@@ -4,6 +4,9 @@
 //! background job (`device-firmware`, `device-backup`, `device-cleanup`) so it shows progress and
 //! cannot overlap another write job.
 
+pub mod trust;
+pub mod undo;
+
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -23,6 +26,8 @@ pub struct DeviceCancel(AtomicBool);
 
 pub fn setup(app: &mut tauri::App) {
     app.manage(DeviceCancel::default());
+    app.manage(undo::UndoState::default());
+    trust::setup(app);
 }
 
 fn start_job_cancel(app: &AppHandle) {
@@ -238,6 +243,8 @@ pub async fn device_eject(app: AppHandle, root: String) -> AppResult<bool> {
         if ejected {
             // a different device may come back under this drive letter: it gets its own snapshot
             app.state::<crate::state::WriteGate>().forget(Path::new(&root));
+            // the edit history describes a card that is gone
+            undo::clear(&app, &root);
         }
         Ok(ejected)
     })
@@ -320,6 +327,19 @@ macro_rules! device_commands {
                 $crate::commands::device::device_cancel,
                 $crate::commands::device::device_snapshots,
                 $crate::commands::device::device_snapshots_open,
+                $crate::commands::device::trust::device_trust_settings,
+                $crate::commands::device::trust::device_trust_settings_set,
+                $crate::commands::device::trust::device_snapshot_rows,
+                $crate::commands::device::trust::device_snapshot_preview,
+                $crate::commands::device::trust::device_restore_snapshot,
+                $crate::commands::device::trust::device_verify_backup,
+                $crate::commands::device::trust::device_verify_report,
+                $crate::commands::device::trust::device_fix_plan,
+                $crate::commands::device::trust::device_fix_remove_rows,
+                $crate::commands::device::undo::device_undo_list,
+                $crate::commands::device::undo::device_undo_preview,
+                $crate::commands::device::undo::device_undo_apply,
+                $crate::commands::device::undo::device_undo_clear,
             ];
             $($rest),*
         }

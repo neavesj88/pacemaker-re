@@ -66,7 +66,10 @@
             Every track has its audio file.
           {/if}
         </div>
-        {#if h.missing_audio.length}<Button small onclick={showMissing}>Show tracks</Button>{/if}
+        {#if h.missing_audio.length}
+          <Button small onclick={showMissing}>Show tracks</Button>
+          <Button small disabled={device.blocked} onclick={() => (device.fixOpen = true)}>Fix…</Button>
+        {/if}
       </li>
 
       <li class={needs ? "bad" : "ok"}>
