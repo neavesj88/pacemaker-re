@@ -523,6 +523,15 @@ test("recipes keep to the backend's geometry and do not mutate it", () => {
   assert.notEqual(s.transition.curve, base.transition.curve);
 });
 
+test("the backend's bass-swap-only note is dropped by recipes that make no bass swap", () => {
+  const d = recipeDoc();
+  const note = "1 beat(s) is under a bar: no bass swap tools";
+  const base = baseSuggestion(d, 0.25);
+  base.notes = [note, "kept"];
+  assert.deepEqual(R.buildRecipe(d, base, "hardCut", { cutAt: "end" }, E.recipeKit).notes, ["kept"]);
+  assert.deepEqual(R.buildRecipe(d, base, "bassSwap", { cutAt: "end" }, E.recipeKit).notes, [note, "kept"]);
+});
+
 test("bass swap keeps the backend's tools", () => {
   const d = recipeDoc();
   const base = baseSuggestion(d, 16);

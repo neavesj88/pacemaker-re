@@ -29,8 +29,8 @@
 <div class="field">
   <label for="rs-cut">Hard cut falls</label>
   <select id="rs-cut" value={p.cutAt} onchange={(e) => recipePrefs.set({ cutAt: e.currentTarget.value as CutAt })}>
-    <option value="end">At the end</option>
-    <option value="start">At the start</option>
+    <option value="end">At the end (incoming held back until the last beat)</option>
+    <option value="start">At the start (incoming plays from the first beat)</option>
   </select>
 </div>
 <div class="field">

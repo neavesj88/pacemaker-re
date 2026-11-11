@@ -243,7 +243,8 @@ export function buildRecipe(doc: MixDoc, base: TransitionSuggestion, recipe: Rec
   const eqLo = (clipId: string, pts: [number, number][]) => add(clipId, "EQ", 0, L, { "EQ-Lo": envelope(L, pts) });
 
   let curve: CurveNode[];
-  const notes = [...base.notes];
+  // the backend's "under a bar" note is about the bass swap's tools, which no other recipe makes
+  const notes = base.notes.filter((n) => !n.includes("no bass swap tools"));
 
   switch (recipe) {
     case "longBlend": {

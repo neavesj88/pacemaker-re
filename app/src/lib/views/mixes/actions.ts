@@ -229,10 +229,14 @@ export async function autoTransition(fromId: string, toId: string, opts: AutoOpt
         remove: replace ? way.map((w) => w.id) : [],
       });
       const added = describeTools(built, (id) => clipTitle(E.clipOf(doc, id)), (t) => toolLabel(t, vocal.mode));
-      const skipped = !replace ? way.filter((w) => w.why === "overlaps").length : 0;
+      // new tools left out because one of the user's is in the way (one old tool can block several)
+      const skipped = !replace ? built.tools.filter((t) => t.conflicts.length > 0).length : 0;
+      // the rebuilt transition's old tools stay when the user chose to keep theirs
+      const kept = !replace ? way.filter((w) => w.why === "inside") : [];
       const bits = [`${label} added.`];
       if (added.length) bits.push(`Tools: ${added.join(", ")}.`);
-      if (skipped) bits.push(`${skipped} tool(s) skipped because yours are in the way.`);
+      if (skipped) bits.push(`${skipped} new tool(s) skipped because yours are in the way.`);
+      if (kept.length) bits.push(`Kept (setting "Keep mine"): ${kept.map((w) => wayText(doc, w)).join("; ")}.`);
       if (replace && way.length) bits.push(`Replaced: ${way.map((w) => wayText(doc, w)).join("; ")}.`);
       toast.show(bits.join(" ") + noteText, "ok", 9000);
     };
