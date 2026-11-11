@@ -57,7 +57,7 @@
       <p class="lead">{coverageText(s)}</p>
       <p class="muted small">
         A 1 to 10 estimate worked out from the audio: how loud the track is over time, how dense its attacks are, how much
-        sits below 150 Hz, and its tempo. It is kept by this app, per library, and does not appear on the device. It is
+        sits below 150 Hz, and its tempo (the BPM stored for the track, ignored for a track never analysed). It is kept by this app, per library, and does not appear on the device. It is
         separate from any energy rating you set yourself.
       </p>
       <p class="muted small">{scaleText(s)}</p>
@@ -84,7 +84,7 @@
         >Analyse all {s.total} again…</Button>
         {#if confirmForget}
           <span class="forget" role="alert">
-            Forget the {s.ready + s.skipped + s.stale} saved results? The audio and the device are not touched.
+            Forget the {s.ready + s.skipped + s.stale} saved results? The audio and the device are not touched; the Energy (auto) column stays empty until you analyse again.
             <Button small data-autofocus onclick={() => (confirmForget = false)}>Keep them</Button>
             <Button small variant="primary" onclick={forget}>Forget</Button>
           </span>

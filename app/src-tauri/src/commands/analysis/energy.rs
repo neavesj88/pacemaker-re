@@ -205,6 +205,9 @@ pub struct TrackRef {
     pub location: String,
     pub size: i64,
     pub bpm: f64,
+    /// `tracks.analysed`. The stored BPM of a track that was never analysed is not trusted (the
+    /// Tracks filter and the gap map ignore it too), so it does not feed the tempo term.
+    pub analysed: bool,
     /// Words for the progress strip.
     pub label: String,
 }
@@ -235,7 +238,7 @@ fn status_of(t: &TrackRef, cache: &CacheFile, min_secs: f32) -> Status {
 }
 
 fn bpm_of(t: &TrackRef) -> Option<f64> {
-    (t.bpm.is_finite() && t.bpm > 0.0).then_some(t.bpm)
+    (t.analysed && t.bpm.is_finite() && t.bpm > 0.0).then_some(t.bpm)
 }
 
 #[derive(Serialize, Clone, Debug, PartialEq)]
@@ -331,7 +334,7 @@ fn refs_of(lib: &Library) -> Result<Vec<TrackRef>, pm_formats::library::Error> {
     Ok(lib
         .tracks()?
         .into_iter()
-        .map(|t| TrackRef { label: super::label_of(&t), id: t.track_id, location: t.location, size: t.file_size, bpm: t.bpm })
+        .map(|t| TrackRef { label: super::label_of(&t), id: t.track_id, location: t.location, size: t.file_size, bpm: t.bpm, analysed: t.analysed })
         .collect())
 }
 
@@ -524,7 +527,7 @@ pub async fn analysis_energy_plan(app: AppHandle, root: String, track_ids: Optio
 /// library). Without `recompute` only tracks never analysed, or whose file changed, are done.
 /// Reads audio from the device and writes only the app-side cache.
 #[tauri::command]
-pub fn analysis_energy_analyse(
+pub async fn analysis_energy_analyse(
     app: AppHandle,
     lock: State<'_, JobLock>,
     root: String,
@@ -534,10 +537,14 @@ pub fn analysis_energy_analyse(
     if track_ids.as_ref().is_some_and(|ids| ids.is_empty()) {
         return Err("No tracks to analyse.".into());
     }
-    // choose the tracks before taking the lock, so an empty run reports itself without a job
-    let (dir, settings, targets) = plan(&app, &root, track_ids.as_deref(), recompute.unwrap_or(false))?;
+    // choose the tracks before taking the lock, so an empty run reports itself without a job;
+    // reading the library and the cache is off the main thread, which a large library would stall
+    let (plan_app, plan_root, plan_ids) = (app.clone(), root.clone(), track_ids.clone());
+    let (dir, settings, targets) = tauri::async_runtime::spawn_blocking(move || plan(&plan_app, &plan_root, plan_ids.as_deref(), recompute.unwrap_or(false)))
+        .await
+        .map_err(|e| AppError::from(e.to_string()))??;
     if targets.is_empty() {
-        return Err("Nothing to analyse: those tracks already have an energy estimate.".into());
+        return Err("Nothing to analyse: those tracks were already analysed. Choose Analyse again to measure them anew.".into());
     }
     spawn_job(app, &lock, ENERGY_JOB, move |app| {
         run_analysis(&dir, &root, &targets, &settings, |p| events::emit(app, JOB_PROGRESS, p)).map_err(AppError::from)
@@ -652,7 +659,7 @@ mod tests {
     }
 
     fn tref(id: i64, loc: &str, size: i64, bpm: f64) -> TrackRef {
-        TrackRef { id, location: loc.into(), size, bpm, label: format!("Demo {id}") }
+        TrackRef { id, location: loc.into(), size, bpm, analysed: true, label: format!("Demo {id}") }
     }
 
     fn measured(loud: f32, onsets: f32, low: f32, dur: f32) -> Measured {
@@ -737,6 +744,16 @@ mod tests {
         let slow = compute_state(&[tref(1, "/a", 1, 90.0)], &c, &fixed, None).entries[0].score;
         let fast = compute_state(&[tref(1, "/a", 1, 150.0)], &c, &fixed, None).entries[0].score;
         assert!(fast > slow);
+    }
+
+    #[test]
+    fn the_bpm_of_a_track_never_analysed_is_not_used() {
+        let mut c = CacheFile::default();
+        c.tracks.insert("/a".into(), entry(1, Some(measured(-16.0, 3.0, 0.4, 200.0)), None));
+        let fixed = Settings { scale: Scale::Fixed, ..Settings::default() };
+        let score = |bpm: f64, analysed: bool| compute_state(&[TrackRef { analysed, ..tref(1, "/a", 1, bpm) }], &c, &fixed, None).entries[0].score;
+        assert_eq!(score(170.0, false), score(0.0, true), "no tempo term without a trusted BPM");
+        assert!(score(170.0, true) > score(170.0, false));
     }
 
     #[test]

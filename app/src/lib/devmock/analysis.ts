@@ -93,7 +93,7 @@ export const handlers: Handlers = {
     const ids = (a.trackIds as number[] | null) ?? null;
     if (ids && ids.length === 0) throw "No tracks to analyse.";
     const targets = mockEnergyTargets(ids, !!a.recompute);
-    if (targets.length === 0) throw "Nothing to analyse: those tracks already have an energy estimate.";
+    if (targets.length === 0) throw "Nothing to analyse: those tracks were already analysed. Choose Analyse again to measure them anew.";
     jobLock.running = true;
     let ok = 0;
     let failed = 0;

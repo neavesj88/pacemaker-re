@@ -61,7 +61,16 @@ class Energy {
     if (!jobs.guard()) return;
     this.busy = true;
     try {
-      const plan = await planEnergy(lib.root, ids, recompute);
+      let plan = await planEnergy(lib.root, ids, recompute);
+      if (plan.length === 0 && !recompute && ids?.length) {
+        // nothing new: tracks analysed before that came out too short or silent have no estimate
+        // but are not "missing"; offer to measure exactly those again, by name in the question
+        const without = ids.filter((id) => this.of(id) === null);
+        if (without.length > 0) {
+          plan = await planEnergy(lib.root, without, true);
+          recompute = true;
+        }
+      }
       if (plan.length === 0) {
         toast.show("Those tracks already have an energy estimate.", "info");
         return;
