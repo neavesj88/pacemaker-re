@@ -11,6 +11,7 @@ pub mod grid;
 pub mod ingest;
 pub mod key;
 pub mod onset;
+pub mod onsets;
 pub mod peaks;
 pub mod tempo;
 

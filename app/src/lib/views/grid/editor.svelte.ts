@@ -2,7 +2,17 @@
 // an undo history for the session. Nothing reaches the device until `save()`. Edits go through
 // the backend (`grid_edit`) so the math lives in one place (crates/pm-formats/src/ops_grid.rs).
 import { peaks as fetchPeaks, type Peak } from "$lib/api/analysis";
-import { gridAnalyse, gridEdit, gridLoad, gridSave, type GridDoc, type GridEdit, type GridLoad } from "$lib/api/grid";
+import {
+  gridAnalyse,
+  gridEdit,
+  gridLoad,
+  gridSave,
+  gridVtempoEdit,
+  type GridDoc,
+  type GridEdit,
+  type GridLoad,
+  type TempoEdit,
+} from "$lib/api/grid";
 import { session } from "$lib/state/session.svelte";
 import { jobs } from "$lib/state/jobs.svelte";
 import { toast } from "$lib/state/toast.svelte";
@@ -10,7 +20,7 @@ import { toast } from "$lib/state/toast.svelte";
 /** Waveform columns requested for the whole track. */
 export const PEAK_COLUMNS = 8192;
 
-type Snap = { doc: GridDoc | null; cue: number | null };
+type Snap = { doc: GridDoc | null; cue: number | null; splits: number[] };
 
 /** Median of the local tempi: the track tempo. */
 export function trackBpm(doc: GridDoc | null): number {
@@ -39,6 +49,9 @@ class GridEditor {
   /** Waveform state, kept apart from `error` so a later edit does not wipe it. */
   peaksLoading = $state(false);
   peaksError = $state("");
+  /** Frames where the user cut the grid into tempo sections. Part of the undo history, never
+   *  written to the device (a cut with no tempo change leaves no trace in the .str). */
+  splits = $state.raw<number[]>([]);
 
   #past = $state.raw<Snap[]>([]);
   #future = $state.raw<Snap[]>([]);
@@ -82,6 +95,7 @@ class GridEditor {
     this.peaksLoading = false;
     this.peaksError = "";
     this.error = "";
+    this.splits = [];
     this.#past = [];
     this.#future = [];
     this.#baseDocState = null;
@@ -102,6 +116,7 @@ class GridEditor {
       this.cue = l.cue_frames;
       this.#baseDocState = l.doc;
       this.#baseCueState = l.cue_frames;
+      this.splits = [];
       this.#past = [];
       this.#future = [];
       this.peaks = null;
@@ -136,7 +151,7 @@ class GridEditor {
   }
 
   #push() {
-    this.#past = [...this.#past, { doc: this.doc, cue: this.cue }];
+    this.#past = [...this.#past, { doc: this.doc, cue: this.cue, splits: this.splits }];
     this.#future = [];
   }
 
@@ -159,6 +174,41 @@ class GridEditor {
     } finally {
       this.busy = false;
     }
+  }
+
+  /** Applies one tempo-map edit (a section tempo, a moved beat line, following the audio...). Same
+   *  rules as `edit`: failures are reported, not thrown, and nothing is saved. */
+  async tempoEdit(e: TempoEdit): Promise<boolean> {
+    const doc = this.doc;
+    const l = this.loaded;
+    if (!doc || !l || this.busy) return false;
+    this.busy = true;
+    try {
+      const next = await gridVtempoEdit(doc, e, l.sample_rate, l.total_frames > 0 ? l.total_frames : null);
+      if (this.doc !== doc || this.loaded !== l) return false; // the track changed under us
+      this.#push();
+      this.doc = next;
+      this.error = "";
+      return true;
+    } catch (err) {
+      toast.show(String(err).replace(/^invalid: /, ""), "bad");
+      return false;
+    } finally {
+      this.busy = false;
+    }
+  }
+
+  /** Cuts the grid into sections at `frame` (undoable). A cut at a frame already cut does nothing. */
+  addSplit(frame: number) {
+    if (!this.doc || this.splits.includes(frame)) return;
+    this.#push();
+    this.splits = [...this.splits, frame].sort((a, b) => a - b);
+  }
+
+  removeSplit(frame: number) {
+    if (!this.splits.includes(frame)) return;
+    this.#push();
+    this.splits = this.splits.filter((s) => s !== frame);
   }
 
   nudgeMs(ms: number) {
@@ -218,19 +268,21 @@ class GridEditor {
   undo() {
     const prev = this.#past[this.#past.length - 1];
     if (!prev) return;
-    this.#future = [...this.#future, { doc: this.doc, cue: this.cue }];
+    this.#future = [...this.#future, { doc: this.doc, cue: this.cue, splits: this.splits }];
     this.#past = this.#past.slice(0, -1);
     this.doc = prev.doc;
     this.cue = prev.cue;
+    this.splits = prev.splits;
   }
 
   redo() {
     const next = this.#future[this.#future.length - 1];
     if (!next) return;
-    this.#past = [...this.#past, { doc: this.doc, cue: this.cue }];
+    this.#past = [...this.#past, { doc: this.doc, cue: this.cue, splits: this.splits }];
     this.#future = this.#future.slice(0, -1);
     this.doc = next.doc;
     this.cue = next.cue;
+    this.splits = next.splits;
   }
 
   /** Writes what changed (the .str and/or the cue) and reloads the library list. The caller

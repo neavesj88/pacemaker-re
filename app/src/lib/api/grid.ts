@@ -172,3 +172,80 @@ export const gridBatchDiff = (root: string, planId: number, trackId: number) => 
  * stored grid changed since the plan was made is skipped. Normally started through
  * `gridBatch.apply()` (state/gridBatch.svelte.ts), which asks for confirmation first. */
 export const gridBatchApply = (root: string, planId: number, trackIds: number[]) => invoke<void>("grid_batch_apply", { root, planId, trackIds });
+
+// ---- variable tempo: sections, single-beat edits and drift (commands/grid/vtempo.rs) ----
+// The .str stores a position and a local tempo for every beat, so a grid with a changing tempo is
+// saved exactly as edited (pm_formats::ops_vtempo has the evidence). The maths is all on the
+// backend; the editor keeps the working copy and writes it with `gridSave`.
+
+/** An attack found in the audio, in source frames (device convention, same as the beat positions). */
+export type Onset = { frame: number; strength: number };
+
+export type OnsetList = { track_id: number; sample_rate: number; onsets: Onset[] };
+
+/** A stretch of the grid at one tempo: beats `first_beat` up to (not including) `end_beat`. */
+export type Section = {
+  first_beat: number;
+  /** Index of the next section's first beat; the beat count for the last section. */
+  end_beat: number;
+  start_frame: number;
+  end_frame: number;
+  beats: number;
+  bpm: number;
+  min_bpm: number;
+  max_bpm: number;
+  /** The user cut the grid here (a split), rather than the tempo changing. */
+  forced: boolean;
+};
+
+export type SectionOptions = { tolerance_pct: number; min_beats: number };
+
+export type DriftOptions = { window_pct: number; window_max_ms: number; threshold_ms: number; min_run: number; max_gap: number };
+
+export type DriftSpan = {
+  first_beat: number;
+  last_beat: number;
+  start_frame: number;
+  end_frame: number;
+  off_beats: number;
+  /** Mean of offset minus bias over the off beats; positive means the lines are early. */
+  mean_ms: number;
+  max_abs_ms: number;
+};
+
+export type DriftReport = {
+  /** Per beat: onset minus beat line in ms (positive: the line is early); null when no onset is near. */
+  offsets_ms: (number | null)[];
+  /** Median offset: the grid sitting early or late as a whole. Not drift. */
+  bias_ms: number;
+  matched: number;
+  beats: number;
+  worst_ms: number;
+  spans: DriftSpan[];
+};
+
+export type TempoEdit =
+  | { kind: "set_section_bpm"; from_beat: number; to_beat: number | null; bpm: number }
+  | { kind: "move_beat"; beat: number; frame: number }
+  | { kind: "shift_from"; beat: number; frames: number }
+  | { kind: "even"; from_beat: number; to_beat: number }
+  | { kind: "insert_beat"; frame: number }
+  | { kind: "remove_beat"; beat: number }
+  | { kind: "follow_onsets"; from_beat: number; to_beat: number | null; onsets: Onset[]; options: DriftOptions; smooth_beats: number };
+
+/** Applies one tempo-map edit to a grid; pure, nothing is written. */
+export const gridVtempoEdit = (doc: GridDoc, edit: TempoEdit, sampleRate: number, totalFrames: number | null) =>
+  invoke<GridDoc>("grid_vtempo_edit", { doc, edit, sampleRate, totalFrames });
+
+/** Cuts a grid into tempo sections; `splits` are frames the user cut the grid at. */
+export const gridSections = (doc: GridDoc, sampleRate: number, options: SectionOptions, splits: number[]) =>
+  invoke<Section[]>("grid_sections", { doc, sampleRate, options, splits });
+
+/** Measures how far each beat line is from the onset that belongs to it. */
+export const gridDrift = (doc: GridDoc, onsets: Onset[], sampleRate: number, options: DriftOptions) =>
+  invoke<DriftReport>("grid_drift", { doc, onsets, sampleRate, options });
+
+/** Decodes the track's audio and returns its attacks of at least `minStrength` (default: the analyser's
+ *  floor). Read-only; a long track takes a few seconds. */
+export const gridOnsets = (root: string, trackId: number, minStrength?: number) =>
+  invoke<OnsetList>("grid_onsets", { root, trackId, minStrength: minStrength ?? null });
