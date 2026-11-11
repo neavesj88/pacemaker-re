@@ -68,7 +68,7 @@
         </div>
         {#if h.missing_audio.length}
           <Button small onclick={showMissing}>Show tracks</Button>
-          <Button small disabled={device.blocked} onclick={() => (device.fixOpen = true)}>Fix�</Button>
+          <Button small disabled={device.blocked} onclick={() => (device.fixOpen = true)}>Fix…</Button>
         {/if}
       </li>
 
@@ -81,7 +81,10 @@
             Every track has a beat grid.
           {/if}
         </div>
-        {#if needs}<Button small onclick={() => jobs.askReanalyse()}>Analyse…</Button>{/if}
+        {#if needs}
+          <Button small onclick={() => jobs.askReanalyse()}>Analyse…</Button>
+          <Button small disabled={device.blocked} onclick={() => (device.fixOpen = true)}>Fix…</Button>
+        {/if}
       </li>
 
       <li class={!h.unreferenced_checked ? "warn" : h.unreferenced.length ? "bad" : "ok"}>

@@ -272,22 +272,25 @@ fn build_diff(root: &Path, name: String, snap: &Index, cur: Result<Index, String
     let counts = counts_only(snap, cur_idx.as_ref());
     let mut h = Sha256::new();
     h.update(name.as_bytes());
-    for (tag, ids) in [
-        ("tr", &t.returning),
-        ("tl", &t.lost),
-        ("tc", &t.changed),
-        ("cr", &c.returning),
-        ("cl", &c.lost),
-        ("cc", &c.changed),
-        ("mr", &m.returning),
-        ("ml", &m.lost),
-        ("mc", &m.changed),
-    ] {
+    // the row signatures (snapshot side and current side) go in too, so a row edited again after the preview
+    // changes the fingerprint and the restore is refused instead of applying values the user never saw
+    fn fold<R>(h: &mut Sha256, tag: &str, ids: &[i64], snap: &BTreeMap<i64, R>, cur: &BTreeMap<i64, R>, sig: impl Fn(&R) -> &str) {
         h.update(format!("|{tag}:").as_bytes());
         for id in ids {
-            h.update(format!("{id},").as_bytes());
+            let s = snap.get(id).map(&sig).unwrap_or("");
+            let c = cur.get(id).map(&sig).unwrap_or("");
+            h.update(format!("{id}\u{2}{s}\u{2}{c},").as_bytes());
         }
     }
+    fold(&mut h, "tr", &t.returning, &snap.tracks, &basis.tracks, |r| &r.sig);
+    fold(&mut h, "tl", &t.lost, &snap.tracks, &basis.tracks, |r| &r.sig);
+    fold(&mut h, "tc", &t.changed, &snap.tracks, &basis.tracks, |r| &r.sig);
+    fold(&mut h, "cr", &c.returning, &snap.cases, &basis.cases, |r| &r.sig);
+    fold(&mut h, "cl", &c.lost, &snap.cases, &basis.cases, |r| &r.sig);
+    fold(&mut h, "cc", &c.changed, &snap.cases, &basis.cases, |r| &r.sig);
+    fold(&mut h, "mr", &m.returning, &snap.mixes, &basis.mixes, |r| &r.sig);
+    fold(&mut h, "ml", &m.lost, &snap.mixes, &basis.mixes, |r| &r.sig);
+    fold(&mut h, "mc", &m.changed, &snap.mixes, &basis.mixes, |r| &r.sig);
     h.update(format!("|{}", current_problem.is_some()).as_bytes());
     let plain = |label: &str, id: &i64| ItemRef { id: *id, label: label.to_string(), note: None };
     SnapshotDiff {
@@ -665,6 +668,23 @@ mod tests {
         assert_eq!(rep2.counts, LibraryCounts { tracks: 4, cases: 0, mixes: 1 });
         let titles: Vec<String> = Library::open_read_only(&fx.vol).unwrap().tracks().unwrap().into_iter().map(|t| t.title).collect();
         assert!(titles.contains(&"Edited".to_string()) && titles.contains(&"Title 7".to_string()), "{titles:?}");
+    }
+
+    #[test]
+    fn re_editing_an_already_changed_track_after_the_preview_changes_the_fingerprint() {
+        let mut fx = fixture("reedit", 2);
+        let id = fx.lib.tracks().unwrap()[0].track_id;
+        let s = snap(&fx);
+        fx.lib.set_track_rating(id, 3).unwrap();
+        let d = diff_snapshot(&fx.vol, Path::new(&s.folder)).unwrap();
+        assert_eq!(d.tracks_changed.items.len(), 1, "the track is already in the changed list");
+        // edited again after the preview: same id in the same list, different values
+        fx.lib.set_track_rating(id, 5).unwrap();
+        let d2 = diff_snapshot(&fx.vol, Path::new(&s.folder)).unwrap();
+        assert_eq!(d2.tracks_changed.items.len(), 1);
+        assert_ne!(d.fingerprint, d2.fingerprint);
+        let e = restore_snapshot(&fx.vol, &fx.snaps, &s.name, &d.fingerprint, 10).unwrap_err().to_string();
+        assert!(e.contains("changed since the preview"), "{e}");
     }
 
     #[test]
