@@ -21,6 +21,11 @@ pub const COLOURS: [&str; 8] = ["red", "orange", "yellow", "green", "teal", "blu
 pub const MIN_ENERGY: u8 = 1;
 pub const MAX_ENERGY: u8 = 10;
 /// Longest tag, in characters.
+///
+/// `MAX_TAG_CHARS` and `MAX_TAGS` are validation bounds of the file format, not user policy: they
+/// are mirrored in `labels.ts` and pinned by the shared parity vectors, and a per-user setting
+/// would let one install write tags another install's rules reject. They are generous (a tag is a
+/// few words, 32 per track is far beyond what anyone scans) and defined once per language.
 pub const MAX_TAG_CHARS: usize = 40;
 /// Most tags one thing can carry.
 pub const MAX_TAGS: usize = 32;
@@ -169,6 +174,10 @@ pub fn apply_ops(before: &Labels, ops: &[Op]) -> Result<Labels, String> {
     Ok(l)
 }
 
+/// The file format version this build reads and writes. A file with a higher number was written
+/// by a newer build: this one reads what it understands but never saves over it.
+pub const FORMAT_VERSION: u32 = 1;
+
 /// Everything labelled in one library: kind -> key -> labels. Empty labels are never stored.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Store {
@@ -179,7 +188,7 @@ pub struct Store {
 }
 
 fn version() -> u32 {
-    1
+    FORMAT_VERSION
 }
 
 impl Default for Store {
@@ -252,6 +261,24 @@ impl Store {
         Ok(changed)
     }
 
+    /// The things of this kind whose key is not in `live` (labels of tracks that are no longer on
+    /// the card), in key order. The tag manager lists exactly these before they are forgotten.
+    pub fn unattached(&self, kind: Kind, live: &HashSet<&str>) -> Vec<(&String, &Labels)> {
+        self.iter(kind).filter(|(k, _)| !live.contains(k.as_str())).collect()
+    }
+
+    /// Drops everything of this kind whose key is not in `live`; returns how many were dropped.
+    pub fn forget_unattached(&mut self, kind: Kind, live: &HashSet<&str>) -> usize {
+        let gone: Vec<String> = self.unattached(kind, live).into_iter().map(|(k, _)| k.clone()).collect();
+        if let Some(m) = self.entities.get_mut(kind.as_str()) {
+            for k in &gone {
+                m.remove(k);
+            }
+        }
+        self.entities.retain(|_, m| !m.is_empty());
+        gone.len()
+    }
+
     /// Removes a tag (ignoring case) from everything of this kind; returns how many things
     /// lost it. Things left with no labels at all are dropped from the store.
     pub fn delete_tag(&mut self, kind: Kind, tag: &str) -> Result<usize, String> {
@@ -304,44 +331,92 @@ pub fn store_path(dir: &Path, volume_key: &str) -> PathBuf {
 /// What reading the file found.
 pub struct Loaded {
     pub store: Store,
-    /// Set when the file existed but could not be read; the store is then empty.
+    /// Set when the file existed but could not be used; the store is then empty (or, for a file
+    /// from a newer build, only what this build understands).
     pub notice: Option<String>,
-    /// The unreadable file itself, so a writer can set it aside before replacing it.
+    /// The file itself when it is not valid JSON for this format, so a writer can set it aside
+    /// before replacing it. Never set for a read error or a newer file: those are not "corrupt".
     pub corrupt: Option<PathBuf>,
+    /// Why a save must be refused: the file could not be read at all (a transient lock, say) or a
+    /// newer build wrote it. Saving then would replace good data with a near-empty store.
+    pub read_only: Option<String>,
 }
 
 /// Reads the store. A missing file is an empty store; an unreadable or corrupt one is an empty
 /// store plus a notice (it is not touched here, so a read never destroys anything).
 pub fn load(dir: &Path, volume_key: &str) -> Loaded {
     let p = store_path(dir, volume_key);
-    let bad = |why: String| Loaded {
-        store: Store::default(),
-        notice: Some(format!("The tag file {} could not be read ({why}); tags start empty. The file is kept as it is until you change a label.", p.display())),
-        corrupt: Some(p.clone()),
+    let empty = |notice: Option<String>, corrupt: Option<PathBuf>, read_only: Option<String>| Loaded { store: Store::default(), notice, corrupt, read_only };
+    let text = match std::fs::read_to_string(&p) {
+        Ok(t) => t,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return empty(None, None, None),
+        Err(e) => {
+            // an I/O error says nothing about the content: keep the file, refuse to save over it
+            let why = format!("The tag file {} could not be read ({e}); tags are not available and nothing was changed. Try again.", p.display());
+            return empty(Some(why.clone()), None, Some(why));
+        }
     };
-    match std::fs::read_to_string(&p) {
-        Ok(text) => match serde_json::from_str::<Store>(&text) {
-            Ok(mut store) => {
-                store.sanitise();
-                Loaded { store, notice: None, corrupt: None }
-            }
-            Err(e) => bad(e.to_string()),
-        },
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Loaded { store: Store::default(), notice: None, corrupt: None },
+    let bad = |why: String| {
+        empty(
+            Some(format!(
+                "The tag file {} could not be read ({why}); tags start empty. The file is kept as it is until you change a label, then set aside next to it.",
+                p.display()
+            )),
+            Some(p.clone()),
+            None,
+        )
+    };
+    let value: serde_json::Value = match serde_json::from_str(&text) {
+        Ok(v) => v,
+        Err(e) => return bad(e.to_string()),
+    };
+    let file_version = value.get("version").and_then(serde_json::Value::as_u64).unwrap_or(u64::from(FORMAT_VERSION));
+    if file_version > u64::from(FORMAT_VERSION) {
+        let why = format!("The tag file {} was written by a newer version of this app (format {file_version}); it is shown read-only and not changed.", p.display());
+        let mut store = serde_json::from_value::<Store>(value).unwrap_or_default();
+        store.sanitise();
+        return Loaded { store, notice: Some(why.clone()), corrupt: None, read_only: Some(why) };
+    }
+    match serde_json::from_value::<Store>(value) {
+        Ok(mut store) => {
+            store.sanitise();
+            Loaded { store, notice: None, corrupt: None, read_only: None }
+        }
         Err(e) => bad(e.to_string()),
     }
 }
 
+/// Where a corrupt file is set aside: `<name>.corrupt`, or `<name>.corrupt.1`, `.2`, ... when that
+/// is taken, so a second bad file never replaces the only copy of the first.
+fn aside_path(bad: &Path) -> PathBuf {
+    let mut base = bad.as_os_str().to_owned();
+    base.push(".corrupt");
+    let first = PathBuf::from(&base);
+    if !first.exists() {
+        return first;
+    }
+    (1..10_000)
+        .map(|n| {
+            let mut name = base.clone();
+            name.push(format!(".{n}"));
+            PathBuf::from(name)
+        })
+        .find(|p| !p.exists())
+        .unwrap_or(first)
+}
+
 /// Writes the store: temp file, fsync, rename. The temp file is removed on any failure.
-/// A corrupt file found by [`load`] is first moved to `<name>.corrupt` (the last such copy is
-/// replaced) so the data in it is still there to recover by hand.
+/// A corrupt file found by [`load`] is first moved aside (see [`aside_path`]; earlier copies are
+/// kept) so the data in it is still there to recover by hand. If it cannot be moved the save
+/// fails rather than overwrite it.
 pub fn save(dir: &Path, volume_key: &str, store: &Store, corrupt: Option<&Path>) -> Result<(), String> {
     std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
     if let Some(bad) = corrupt {
-        let mut name = bad.as_os_str().to_owned();
-        name.push(".corrupt");
-        // rename failing (file already gone) must not stop the save
-        let _ = std::fs::rename(bad, PathBuf::from(name));
+        match std::fs::rename(bad, aside_path(bad)) {
+            Ok(()) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => return Err(format!("Could not set the unreadable tag file aside ({e}); nothing was saved.")),
+        }
     }
     let p = store_path(dir, volume_key);
     let tmp = p.with_extension("json.tmp");
@@ -533,6 +608,67 @@ mod tests {
         assert_eq!(s.get(Kind::Track, "k2").unwrap().colour.as_deref(), Some("pink"));
         assert!(s.get(Kind::Track, "k3").is_none(), "empty entries are dropped");
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_second_corrupt_file_does_not_replace_the_first_backup() {
+        let dir = tmp_dir("bad2");
+        std::fs::create_dir_all(&dir).unwrap();
+        let p = store_path(&dir, "e:");
+        let mut s = Store::default();
+        s.apply(Kind::Track, &keys(&["k"]), &[add(&["x"])]).unwrap();
+        for text in ["first bad", "second bad"] {
+            std::fs::write(&p, text).unwrap();
+            let l = load(&dir, "e:");
+            assert!(l.corrupt.is_some() && l.read_only.is_none());
+            save(&dir, "e:", &s, l.corrupt.as_deref()).unwrap();
+        }
+        assert_eq!(std::fs::read_to_string(p.with_extension("json.corrupt")).unwrap(), "first bad");
+        assert_eq!(std::fs::read_to_string(p.with_extension("json.corrupt.1")).unwrap(), "second bad");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_read_error_is_not_corruption() {
+        // a directory where the file should be: reading fails with an I/O error, not NotFound
+        let dir = tmp_dir("ioerr");
+        std::fs::create_dir_all(store_path(&dir, "e:")).unwrap();
+        let l = load(&dir, "e:");
+        assert!(l.notice.is_some());
+        assert!(l.corrupt.is_none(), "so the writer will not rename it away");
+        assert!(l.read_only.is_some(), "and the caller must refuse to save");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_newer_format_is_read_but_never_saved_over() {
+        let dir = tmp_dir("newer");
+        std::fs::create_dir_all(&dir).unwrap();
+        let json = r#"{"version":2,"entities":{"track":{"k":{"tags":["keep"],"future_field":1}}}}"#;
+        std::fs::write(store_path(&dir, "e:"), json).unwrap();
+        let l = load(&dir, "e:");
+        assert!(l.read_only.is_some() && l.notice.is_some() && l.corrupt.is_none());
+        assert_eq!(tags(l.store.get(Kind::Track, "k").unwrap()), ["keep"], "what this build understands is still shown");
+        assert_eq!(std::fs::read_to_string(store_path(&dir, "e:")).unwrap(), json);
+        // a structure this build cannot parse at all is read-only too, not "corrupt"
+        std::fs::write(store_path(&dir, "e:"), r#"{"version":3,"entities":[1,2]}"#).unwrap();
+        let l = load(&dir, "e:");
+        assert!(l.read_only.is_some() && l.corrupt.is_none() && l.store == Store::default());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn unattached_things_are_listed_and_forgotten_by_the_same_rule() {
+        let mut s = Store::default();
+        s.apply(Kind::Track, &keys(&["a", "b", "c"]), &[add(&["x"])]).unwrap();
+        s.apply(Kind::Case, &keys(&["b"]), &[add(&["y"])]).unwrap();
+        let live: HashSet<&str> = ["a"].into_iter().collect();
+        let listed: Vec<String> = s.unattached(Kind::Track, &live).into_iter().map(|(k, _)| k.clone()).collect();
+        assert_eq!(listed, ["b", "c"]);
+        assert_eq!(s.forget_unattached(Kind::Track, &live), 2);
+        assert!(s.get(Kind::Track, "b").is_none() && s.get(Kind::Track, "a").is_some());
+        assert!(s.get(Kind::Case, "b").is_some(), "other kinds are untouched");
+        assert_eq!(s.forget_unattached(Kind::Track, &live), 0);
     }
 
     /// The same vectors the TS mirror (`labels.ts`) is tested against.

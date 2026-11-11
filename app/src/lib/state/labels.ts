@@ -189,6 +189,23 @@ export function tracksWithTag(entries: Iterable<readonly [number, TrackLabels]>,
   return out;
 }
 
+/** The labels of removed tracks that carry `tag` (ignoring case). Delete and merge change these
+ *  too, so the tag manager's confirmation counts and lists them next to the tracks it names. */
+export function orphansWithTag(orphans: readonly TrackLabels[], tag: string): TrackLabels[] {
+  const k = tagKey(tag);
+  return orphans.filter((l) => hasTag(l.tags, k));
+}
+
+/** One line naming a removed track's labels, for the "forget" confirmation (the track itself is
+ *  gone, so its labels are all that identify it): `opener, old crate · Teal · energy 4`. */
+export function describeOrphan(l: TrackLabels): string {
+  const parts: string[] = [];
+  if (l.tags.length) parts.push(l.tags.join(", "));
+  if (l.colour) parts.push(colourName(l.colour));
+  if (l.energy !== null) parts.push(`energy ${l.energy}`);
+  return parts.join(" · ") || "no labels";
+}
+
 // ---- filtering ---------------------------------------------------------------------------
 
 export type LabelFilter = {

@@ -53,12 +53,23 @@ pub struct TrackLabels {
     pub energy: Option<u8>,
 }
 
+/// The labels of one thing in the store that matches no track on the card. Its track is gone, so
+/// the labels are all there is to name it by.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct OrphanLabels {
+    pub tags: Vec<String>,
+    pub colour: Option<String>,
+    pub energy: Option<u8>,
+}
+
 #[derive(Debug, Serialize)]
 pub struct TagsView {
     /// Only the tracks that have any label.
     pub tracks: Vec<TrackLabels>,
-    /// Labelled things in the store that match no track on this card (see the module note).
+    /// Labelled things in the store that match no track on this card (see the module note); the
+    /// same list "forget" removes, so what the UI shows is what it deletes.
     pub orphans: usize,
+    pub orphan_labels: Vec<OrphanLabels>,
     /// Set when the store file could not be read (it then starts empty).
     pub notice: Option<String>,
 }
@@ -100,17 +111,18 @@ fn labels_row(track_id: i64, l: Option<&store::Labels>) -> TrackLabels {
     TrackLabels { track_id, tags: l.tags, colour: l.colour, energy: l.energy }
 }
 
+fn live_keys(idents: &[(i64, String)]) -> HashSet<&str> {
+    idents.iter().map(|(_, k)| k.as_str()).collect()
+}
+
 fn view_of(store: &Store, idents: &[(i64, String)], notice: Option<String>) -> TagsView {
-    let mut live: HashSet<&str> = HashSet::new();
-    let mut tracks = Vec::new();
-    for (id, key) in idents {
-        live.insert(key.as_str());
-        if let Some(l) = store.get(Kind::Track, key) {
-            tracks.push(labels_row(*id, Some(l)));
-        }
-    }
-    let orphans = store.iter(Kind::Track).filter(|(k, _)| !live.contains(k.as_str())).count();
-    TagsView { tracks, orphans, notice }
+    let tracks = idents.iter().filter_map(|(id, key)| store.get(Kind::Track, key).map(|l| labels_row(*id, Some(l)))).collect();
+    let orphan_labels: Vec<OrphanLabels> = store
+        .unattached(Kind::Track, &live_keys(idents))
+        .into_iter()
+        .map(|(_, l)| OrphanLabels { tags: l.tags.clone(), colour: l.colour.clone(), energy: l.energy })
+        .collect();
+    TagsView { tracks, orphans: orphan_labels.len(), orphan_labels, notice }
 }
 
 /// Resolves `ids` to store keys; an id that is not a track on the card is an error.
@@ -124,7 +136,11 @@ fn keys_for(idents: &[(i64, String)], ids: &[i64]) -> Result<Vec<String>, String
 /// Loads the store, runs `f` on it and saves it when `f` changed it. The caller holds no lock.
 fn mutate<T>(dir: &Path, volume_key: &str, f: impl FnOnce(&mut Store) -> Result<T, String>) -> Result<T, String> {
     let _guard = STORE_LOCK.lock().unwrap_or_else(|p| p.into_inner());
-    let Loaded { mut store, corrupt, .. } = store::load(dir, volume_key);
+    let Loaded { mut store, corrupt, read_only, .. } = store::load(dir, volume_key);
+    // a file that could not be read, or a newer build wrote, is never saved over
+    if let Some(why) = read_only {
+        return Err(why);
+    }
     let before = store.clone();
     let out = f(&mut store)?;
     if store != before {
@@ -137,6 +153,17 @@ fn load_view(dir: &Path, volume_key: &str, idents: &[(i64, String)]) -> TagsView
     let _guard = STORE_LOCK.lock().unwrap_or_else(|p| p.into_inner());
     let loaded = store::load(dir, volume_key);
     view_of(&loaded.store, idents, loaded.notice)
+}
+
+fn forget_core(dir: &Path, volume_key: &str, idents: &[(i64, String)], expected: usize) -> Result<usize, String> {
+    mutate(dir, volume_key, |store| {
+        let live = live_keys(idents);
+        let now = store.unattached(Kind::Track, &live).len();
+        if now != expected {
+            return Err(format!("{now} labelled tracks are no longer on the card, not the {expected} you were shown. Nothing was removed; reopen the tag manager."));
+        }
+        Ok(store.forget_unattached(Kind::Track, &live))
+    })
 }
 
 fn apply_core(dir: &Path, volume_key: &str, idents: &[(i64, String)], ids: &[i64], ops: &[Op]) -> Result<Vec<TrackLabels>, String> {
@@ -199,6 +226,21 @@ pub async fn tags_delete_tag(app: tauri::AppHandle, root: String, tag: String) -
     .await?
 }
 
+/// Forgets the labels of tracks that are no longer on the card (the ones `orphan_labels` lists).
+/// `expected` is how many the user was shown; if the card changed since, nothing is removed and
+/// the manager has to be reopened to see the new list. Returns the fresh view.
+#[tauri::command]
+pub async fn tags_forget_unattached(app: tauri::AppHandle, root: String, expected: usize) -> AppResult<TagsView> {
+    let dir = config_dir(&app)?;
+    tauri::async_runtime::spawn_blocking(move || -> AppResult<TagsView> {
+        let idents = read_keys(&root)?;
+        let vk = volume(&root);
+        forget_core(&dir, &vk, &idents, expected)?;
+        Ok(load_view(&dir, &vk, &idents))
+    })
+    .await?
+}
+
 /// This area's command paths, one per line, written `$crate::commands::tags::name,`.
 #[macro_export]
 macro_rules! tags_commands {
@@ -210,6 +252,7 @@ macro_rules! tags_commands {
                 $crate::commands::tags::tags_apply,
                 $crate::commands::tags::tags_rename_tag,
                 $crate::commands::tags::tags_delete_tag,
+                $crate::commands::tags::tags_forget_unattached,
             ];
             $($rest),*
         }
@@ -312,6 +355,49 @@ mod tests {
         apply_core(&dir, "e:", &idents, &[1], &[add(&["x"])]).unwrap();
         assert!(load_view(&dir, "e:", &idents).notice.is_none());
         assert_eq!(std::fs::read_to_string(p.with_extension("json.corrupt")).unwrap(), "garbage");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_file_that_cannot_be_read_is_never_saved_over() {
+        let dir = tmp_dir("ro");
+        let idents = build_keys(&rows(&[(1, "u1", "")]));
+        let good = apply_core(&dir, "e:", &idents, &[1], &[add(&["keep"])]).unwrap();
+        assert_eq!(good[0].tags, ["keep"]);
+        let p = store::store_path(&dir, "e:");
+        let text = std::fs::read_to_string(&p).unwrap();
+        // newer format: shown with a notice, every write refused, file untouched
+        let newer = text.replace("\"version\": 1", "\"version\": 2");
+        assert_ne!(newer, text);
+        std::fs::write(&p, &newer).unwrap();
+        let v = load_view(&dir, "e:", &idents);
+        assert!(v.notice.is_some());
+        assert_eq!(v.tracks[0].tags, ["keep"]);
+        assert!(apply_core(&dir, "e:", &idents, &[1], &[add(&["more"])]).is_err());
+        assert!(mutate(&dir, "e:", |s| s.delete_tag(Kind::Track, "keep").map(|_| ())).is_err());
+        assert!(forget_core(&dir, "e:", &idents, 0).is_err());
+        assert_eq!(std::fs::read_to_string(&p).unwrap(), newer);
+        assert!(!p.with_extension("json.corrupt").exists());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn forgetting_unattached_labels_matches_what_the_view_lists() {
+        let dir = tmp_dir("forget");
+        let idents = build_keys(&rows(&[(1, "u1", ""), (2, "u2", "")]));
+        apply_core(&dir, "e:", &idents, &[1, 2], &[add(&["x"])]).unwrap();
+        apply_core(&dir, "e:", &idents, &[2], &[Op::SetEnergy { energy: Some(5) }]).unwrap();
+        // track 2 leaves the card
+        let now = build_keys(&rows(&[(1, "u1", "")]));
+        let v = load_view(&dir, "e:", &now);
+        assert_eq!(v.orphans, 1);
+        assert_eq!(v.orphan_labels, [OrphanLabels { tags: vec!["x".into()], colour: None, energy: Some(5) }]);
+        // the count the user was shown must still be right
+        assert!(forget_core(&dir, "e:", &now, 3).unwrap_err().contains("Nothing was removed"));
+        assert_eq!(load_view(&dir, "e:", &now).orphans, 1);
+        assert_eq!(forget_core(&dir, "e:", &now, 1).unwrap(), 1);
+        let v = load_view(&dir, "e:", &now);
+        assert_eq!((v.orphans, v.tracks.len()), (0, 1), "track 1 keeps its tag");
         let _ = std::fs::remove_dir_all(&dir);
     }
 

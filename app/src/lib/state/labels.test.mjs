@@ -190,3 +190,17 @@ test("draftChangesAnything ignores a draft that repeats what the tracks have", (
 test("labelsEmpty", () => {
   assert.ok(L.labelsEmpty(undefined) && L.labelsEmpty(none) && !L.labelsEmpty(lab(["x"])) && !L.labelsEmpty(lab([], null, 1)));
 });
+
+test("orphansWithTag picks the removed tracks' labels carrying a tag, ignoring case", () => {
+  const gone = [lab(["Opener", "x"]), lab(["peak"]), lab([], "red", 3)];
+  assert.deepEqual(L.orphansWithTag(gone, "OPENER"), [gone[0]]);
+  assert.deepEqual(L.orphansWithTag(gone, "none"), []);
+  assert.deepEqual(L.orphansWithTag([], "x"), []);
+});
+
+test("describeOrphan names a removed track by its labels", () => {
+  assert.equal(L.describeOrphan(lab(["opener", "old crate"], "teal", 4)), "opener, old crate · Teal · energy 4");
+  assert.equal(L.describeOrphan(lab([], null, 7)), "energy 7");
+  assert.equal(L.describeOrphan(lab([], "pink", null)), "Pink");
+  assert.equal(L.describeOrphan(none), "no labels");
+});

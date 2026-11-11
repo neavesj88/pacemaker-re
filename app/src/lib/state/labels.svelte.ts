@@ -3,8 +3,8 @@
 // needs the device to be writable and none of it appears on the Pacemaker. Pure rules are in
 // labels.ts; this store holds the loaded state and does the calls.
 import { SvelteMap } from "svelte/reactivity";
-import { applyTags, deleteTag, loadTags, renameTag, type TagsView, type TrackLabelsRow } from "$lib/api/tags";
-import { isColour, labelsEmpty, tagVocabulary, tracksWithTag, type LabelOp, type TrackLabels } from "./labels";
+import { applyTags, deleteTag, forgetUnattachedLabels, loadTags, renameTag, type TagsView, type TrackLabelsRow } from "$lib/api/tags";
+import { isColour, labelsEmpty, orphansWithTag, tagVocabulary, tracksWithTag, type LabelOp, type TrackLabels } from "./labels";
 import { session } from "./session.svelte";
 import { toast } from "./toast.svelte";
 
@@ -19,8 +19,9 @@ class Labels {
   byTrack = new SvelteMap<number, TrackLabels>();
   /** The library these labels were read for. */
   root = $state<string | null>(null);
-  /** Labelled things in the file that match no track on this card. */
-  orphans = $state(0);
+  /** Labels in the file that match no track on this card (removed or added again). */
+  orphanLabels = $state.raw<TrackLabels[]>([]);
+  orphans = $derived(this.orphanLabels.length);
   /** Set when the labels file could not be read. */
   notice = $state("");
   #seq = 0;
@@ -47,7 +48,7 @@ class Labels {
     this.#seq++;
     this.byTrack.clear();
     this.root = null;
-    this.orphans = 0;
+    this.orphanLabels = [];
     this.notice = "";
   }
 
@@ -58,7 +59,7 @@ class Labels {
       if (!labelsEmpty(l)) this.byTrack.set(r.track_id, l);
     }
     this.root = root;
-    this.orphans = v.orphans;
+    this.orphanLabels = v.orphan_labels.map((o) => toLabels({ track_id: 0, ...o }));
     this.notice = v.notice ?? "";
   }
 
@@ -91,6 +92,16 @@ class Labels {
       toast.show(`Could not save the tags: ${e}`, "bad");
       return false;
     }
+  }
+
+  /** The labels of removed tracks that carry `tag`. */
+  orphansWithTag(tag: string): TrackLabels[] {
+    return orphansWithTag(this.orphanLabels, tag);
+  }
+
+  /** Removes the labels of tracks that are no longer on the card (the `orphanLabels` shown). */
+  async forgetOrphans(): Promise<boolean> {
+    return this.#manage((root) => forgetUnattachedLabels(root, this.orphanLabels.length), "forget the labels");
   }
 
   async rename(from: string, to: string): Promise<boolean> {

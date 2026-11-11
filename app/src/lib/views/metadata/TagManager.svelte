@@ -1,8 +1,9 @@
 <script lang="ts">
   // The tag manager: every tag in the library with its track count; rename, merge or delete one
-  // across all tracks. Delete and merge show a confirmation that lists every track affected. The
-  // lists come from the same helpers as the counts, so what is shown is what is changed.
-  import { colourName, normaliseTag, tagKey } from "$lib/state/labels";
+  // across all tracks. Delete and merge show a confirmation that lists every track affected, and
+  // the labels of removed tracks they also change. The lists come from the same helpers as the
+  // counts, so what is shown is what is changed. "Forget" clears the labels of removed tracks.
+  import { describeOrphan, normaliseTag, tagKey, type TrackLabels } from "$lib/state/labels";
   import { labelEditor, labels } from "$lib/state/labels.svelte";
   import { session } from "$lib/state/session.svelte";
   import { toast } from "$lib/state/toast.svelte";
@@ -10,8 +11,9 @@
   import Modal from "$lib/ui/Modal.svelte";
 
   type Pending =
-    | { kind: "delete"; tag: string; ids: number[] }
-    | { kind: "merge"; from: string; into: string; ids: number[]; both: number };
+    | { kind: "delete"; tag: string; ids: number[]; gone: TrackLabels[] }
+    | { kind: "merge"; from: string; into: string; ids: number[]; gone: TrackLabels[]; both: number }
+    | { kind: "forget"; gone: TrackLabels[] };
 
   let query = $state("");
   let editing = $state<string | null>(null);
@@ -27,6 +29,7 @@
     return t ? [t.title, t.artist].filter(Boolean).join(" — ") || `Track ${id}` : `Track ${id}`;
   };
   const noun = (n: number) => `${n} track${n === 1 ? "" : "s"}`;
+  const goneNoun = (n: number) => `${n} labelled track${n === 1 ? "" : "s"} no longer on this card`;
 
   function startRename(tag: string) {
     editing = tag;
@@ -52,7 +55,7 @@
     if (target && tagKey(target.tag) !== tagKey(from)) {
       // an existing, different tag: this is a merge, and it asks first
       const have = new Set(labels.withTag(target.tag));
-      pending = { kind: "merge", from, into: target.tag, ids, both: ids.filter((id) => have.has(id)).length };
+      pending = { kind: "merge", from, into: target.tag, ids, gone: labels.orphansWithTag(from), both: ids.filter((id) => have.has(id)).length };
       return;
     }
     busy = true;
@@ -68,17 +71,30 @@
     const p = pending;
     if (!p || busy) return;
     busy = true;
-    const ok = p.kind === "delete" ? await labels.remove(p.tag) : await labels.rename(p.from, p.into);
+    const ok = p.kind === "delete" ? await labels.remove(p.tag) : p.kind === "merge" ? await labels.rename(p.from, p.into) : await labels.forgetOrphans();
     busy = false;
     if (!ok) return;
-    toast.show(p.kind === "delete" ? `Deleted the tag “${p.tag}” from ${noun(p.ids.length)}` : `Merged “${p.from}” into “${p.into}” on ${noun(p.ids.length)}`, "ok");
+    const tail = (n: number) => (n ? ` and ${goneNoun(n)}` : "");
+    toast.show(
+      p.kind === "delete"
+        ? `Deleted the tag “${p.tag}” from ${noun(p.ids.length)}${tail(p.gone.length)}`
+        : p.kind === "merge"
+          ? `Merged “${p.from}” into “${p.into}” on ${noun(p.ids.length)}${tail(p.gone.length)}`
+          : `Forgot the labels of ${p.gone.length} removed track${p.gone.length === 1 ? "" : "s"}`,
+      "ok",
+    );
     pending = null;
     editing = null;
   }
 
   function askDelete(tag: string) {
     editing = null;
-    pending = { kind: "delete", tag, ids: labels.withTag(tag) };
+    pending = { kind: "delete", tag, ids: labels.withTag(tag), gone: labels.orphansWithTag(tag) };
+  }
+
+  function askForget() {
+    editing = null;
+    pending = { kind: "forget", gone: [...labels.orphanLabels] };
   }
 
   function onClose() {
@@ -90,30 +106,53 @@
 
 <Modal title="Manage tags" onclose={onClose}>
   {#if pending}
-    <div class="confirm" role="alertdialog" aria-label={pending.kind === "delete" ? "Delete tag" : "Merge tags"}>
+    <div class="confirm" role="alertdialog" aria-label={pending.kind === "delete" ? "Delete tag" : pending.kind === "merge" ? "Merge tags" : "Forget labels of removed tracks"}>
       {#if pending.kind === "delete"}
         <p>
-          Delete the tag <b>“{pending.tag}”</b> from {noun(pending.ids.length)}? The tracks, their other tags, colours and
-          energy stay as they are. This cannot be undone.
+          Delete the tag <b>“{pending.tag}”</b> from {noun(pending.ids.length)}{pending.gone.length ? ` and from ${goneNoun(pending.gone.length)}` : ""}? The
+          tracks, their other tags, colours and energy stay as they are. This cannot be undone.
         </p>
-      {:else}
+      {:else if pending.kind === "merge"}
         <p>
-          Merge <b>“{pending.from}”</b> into <b>“{pending.into}”</b>? {noun(pending.ids.length)} will carry
+          Merge <b>“{pending.from}”</b> into <b>“{pending.into}”</b>? {noun(pending.ids.length)}{pending.gone.length ? ` and ${goneNoun(pending.gone.length)}` : ""} will carry
           “{pending.into}” instead of “{pending.from}”{pending.both
             ? `; ${pending.both === 1 ? "1 already has" : `${pending.both} already have`} both and will end up with one`
             : ""}. “{pending.from}” will no longer exist. This cannot be undone.
         </p>
+      {:else}
+        <p>
+          Forget the labels of {pending.gone.length} track{pending.gone.length === 1 ? "" : "s"} that are no longer on this card? Their tags, colours and
+          energy are removed from the tag file. Tracks on this card are not touched. This cannot be undone.
+        </p>
       {/if}
-      <div class="tracks">
-        <div class="muted">{pending.kind === "delete" ? "Tracks losing the tag" : "Tracks changed"} ({pending.ids.length}):</div>
-        <ul>
-          {#each pending.ids as id (id)}<li>{name(id)}</li>{/each}
-        </ul>
-      </div>
+      {#if pending.kind !== "forget"}
+        <div class="tracks">
+          <div class="muted">{pending.kind === "delete" ? "Tracks losing the tag" : "Tracks changed"} ({pending.ids.length}):</div>
+          <ul>
+            {#each pending.ids as id (id)}<li>{name(id)}</li>{/each}
+          </ul>
+        </div>
+      {/if}
+      {#if pending.gone.length}
+        <div class="tracks">
+          <div class="muted">
+            {pending.kind === "forget" ? "Labels to forget" : "Labels of tracks no longer on this card, also changed"} ({pending.gone.length}):
+          </div>
+          <ul>
+            {#each pending.gone as g, i (i)}<li>{describeOrphan(g)}</li>{/each}
+          </ul>
+        </div>
+      {/if}
       <div class="btns">
         <Button data-autofocus onclick={() => (pending = null)} disabled={busy}>Cancel</Button>
         <Button variant="primary" onclick={confirm} disabled={busy}>
-          {busy ? "Working…" : pending.kind === "delete" ? `Delete tag from ${noun(pending.ids.length)}` : `Merge on ${noun(pending.ids.length)}`}
+          {busy
+            ? "Working…"
+            : pending.kind === "delete"
+              ? `Delete tag from ${noun(pending.ids.length)}${pending.gone.length ? ` and ${pending.gone.length} removed` : ""}`
+              : pending.kind === "merge"
+                ? `Merge on ${noun(pending.ids.length)}${pending.gone.length ? ` and ${pending.gone.length} removed` : ""}`
+                : `Forget ${pending.gone.length} label set${pending.gone.length === 1 ? "" : "s"}`}
         </Button>
       </div>
     </div>
@@ -150,7 +189,8 @@
     {#if labels.orphans > 0}
       <p class="muted foot">
         The tag file also holds labels for {labels.orphans} track{labels.orphans === 1 ? "" : "s"} that are not on this card
-        (removed or added again). They are kept and hidden.
+        (removed or added again). They are kept and hidden, and Delete and Merge change them too.
+        <Button small onclick={askForget}>Forget labels of removed tracks…</Button>
       </p>
     {/if}
     {#if labels.notice}<p class="problem" role="alert">{labels.notice}</p>{/if}

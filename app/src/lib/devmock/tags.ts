@@ -18,14 +18,31 @@ seed(9, ["peak", "closer"], "pink", 10);
 seed(12, [], "yellow", null);
 seed(14, ["Deep"], null, 6);
 
+// Labels of tracks that left the card (a track deleted and added again gets a new id): kept in
+// the file, listed by the tag manager, removable with "forget".
+const orphans = new Map<string, TrackLabels>([
+  ["gone-1", { tags: ["opener", "old crate"], colour: "teal", energy: 4 }],
+  ["gone-2", { tags: ["peak"], colour: null, energy: null }],
+]);
+
 const row = (id: number) => {
   const l = store.get(id);
   return { track_id: id, tags: l ? [...l.tags] : [], colour: l?.colour ?? null, energy: l?.energy ?? null };
 };
 const known = (id: number) => tracks.some((t) => t.track_id === id);
-const view = () => ({ tracks: [...store.keys()].filter(known).sort((a, b) => a - b).map(row), orphans: 0, notice: null });
+const view = () => ({
+  tracks: [...store.keys()].filter(known).sort((a, b) => a - b).map(row),
+  orphans: orphans.size,
+  orphan_labels: [...orphans.values()].map((l) => ({ tags: [...l.tags], colour: l.colour, energy: l.energy })),
+  notice: null,
+});
 
 function mutateTag(from: string, to: string | null) {
+  mutateIn(store, from, to);
+  mutateIn(orphans, from, to);
+}
+
+function mutateIn<K>(m: Map<K, TrackLabels>, from: string, to: string | null) {
   const f = normaliseTag(from);
   if (!f.ok) throw f.error;
   let target: string | null = null;
@@ -34,14 +51,14 @@ function mutateTag(from: string, to: string | null) {
     if (!t.ok) throw t.error;
     target = t.tag;
   }
-  for (const [id, l] of [...store]) {
+  for (const [id, l] of [...m]) {
     if (!l.tags.some((t) => tagKey(t) === tagKey(f.tag))) continue;
     // the real store re-adds with the same rules as an add: an existing equal tag keeps its casing
     const kept = { ...l, tags: l.tags.filter((t) => tagKey(t) !== tagKey(f.tag)) };
     const r = target === null ? { ok: true as const, labels: kept } : applyOps(kept, [{ op: "add_tags", tags: [target] }]);
     if (!r.ok) throw r.error;
-    if (labelsEmpty(r.labels)) store.delete(id);
-    else store.set(id, r.labels);
+    if (labelsEmpty(r.labels)) m.delete(id);
+    else m.set(id, r.labels);
   }
 }
 
@@ -65,4 +82,9 @@ export const handlers: Handlers = {
   },
   tags_rename_tag: (a) => (mutateTag(a.from, a.to), view()),
   tags_delete_tag: (a) => (mutateTag(a.tag, null), view()),
+  tags_forget_unattached: (a) => {
+    if (orphans.size !== a.expected) throw `${orphans.size} labelled tracks are no longer on the card, not the ${a.expected} you were shown. Nothing was removed; reopen the tag manager.`;
+    orphans.clear();
+    return view();
+  },
 };
