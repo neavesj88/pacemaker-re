@@ -136,10 +136,11 @@
   const folderHint = $derived(plan?.folder ?? "");
 </script>
 
-<svelte:window onkeydown={(e) => e.key === "Escape" && onclose()} />
+<!-- While the export runs, Escape and a click outside do nothing: the Close button stays, and the footer says the export carries on. -->
+<svelte:window onkeydown={(e) => e.key === "Escape" && !vdj.running && onclose()} />
 
 <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-<div class="scrim" onclick={onclose}>
+<div class="scrim" onclick={() => !vdj.running && onclose()}>
   <div class="dlg" role="dialog" aria-modal="true" aria-label="Export to VirtualDJ" tabindex="-1" onclick={(e) => e.stopPropagation()}>
     <header>
       <h2>Export to VirtualDJ</h2>
@@ -185,7 +186,7 @@
             </label>
             <p class="muted small indent">
               {#if vdj.options.copy_audio}
-                A file that is already in the Audio folder with the same name and size is kept, never overwritten.
+                A file that is already in the Audio folder with the same name, size and first and last 64 kB is reused, never overwritten.
               {:else}
                 The list points at the files where they are on the Pacemaker, so the card has to be plugged in at the same place when VirtualDJ
                 opens the list.
@@ -252,6 +253,7 @@
           <div class="fill" style:width="{Math.round(vdj.pct * 100)}%"></div>
         </div>
         <span class="small cur">{vdj.current || "Starting…"}</span>
+        <span class="small muted note">Closing this window does not stop the export.</span>
         <Button onclick={stop}>Stop</Button>
       {:else}
         <span class="msg small" class:bad={!!startError || vdj.result?.bad}>
@@ -271,7 +273,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    background: rgba(0, 0, 0, 0.6);
+    background: var(--scrim);
   }
   .dlg {
     display: flex;
@@ -437,6 +439,9 @@
   .fill {
     height: 100%;
     background: var(--accent-ramp);
+  }
+  .note {
+    max-width: 200px;
   }
   .cur {
     max-width: 260px;

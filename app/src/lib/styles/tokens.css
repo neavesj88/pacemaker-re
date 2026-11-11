@@ -14,6 +14,8 @@
   --green: #00ff46;
   --accent: #ff00c8;
   --accent-soft: rgba(255, 0, 200, 0.14);
+  /* the dim layer behind a dialog */
+  --scrim: rgba(0, 0, 0, 0.6);
   /* waveform bands and editor markers (grid editor, mix editor, tracks) */
   --wave-low: #ff48a8;
   --wave-mid: #e070ff;

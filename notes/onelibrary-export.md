@@ -93,7 +93,7 @@ Implemented in `app/src-tauri/src/commands/export/vdj.rs`, with the dialog in
   seconds between beats, the list page is silent), so writing it would be a guess. VirtualDJ
   reads both from the audio when it analyses the file.
 - Nothing is written to the Pacemaker. Existing audio copies are never overwritten (same name and
-  size is reused, a different file gets a numbered name); the list file is replaced only after an
+  size, plus the first and last 64 kB, is reused, a different file gets a numbered name); the list file is replaced only after an
   explicit tick; the list is written last, so a stopped export leaves no list that points at
   missing files.
 

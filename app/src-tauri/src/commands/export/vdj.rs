@@ -19,7 +19,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::fs::{self, File};
-use std::io::{ErrorKind, Read, Write};
+use std::io::{ErrorKind, Read, Seek, SeekFrom, Write};
 use std::path::{Component, Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -42,6 +42,8 @@ pub const MAX_TRACKS: usize = 5000;
 /// Longest file-name stem for a copy or a list.
 const MAX_STEM: usize = 120;
 const COPY_CHUNK: usize = 1 << 20;
+/// How much of each end of a file is compared before an existing copy is reused.
+const SAMPLE: u64 = 64 * 1024;
 
 /// Set by `vdj_export_cancel`, polled between chunks of a copy. Cleared when an export starts.
 static CANCEL: AtomicBool = AtomicBool::new(false);
@@ -102,7 +104,8 @@ pub struct Request {
 pub enum Status {
     /// The audio file will be copied.
     Copy,
-    /// A file with this name and size is already in the Audio folder; it is used as it is.
+    /// A file with this name and size, and the same first and last 64 kB, is already in the Audio
+    /// folder; it is used as it is.
     Reuse,
     /// No copy: the list points at the file on the Pacemaker volume.
     Reference,
@@ -160,6 +163,9 @@ pub struct Plan {
     pub copy_bytes: u64,
     /// Things worth saying that are not about one track.
     pub notes: Vec<String>,
+    /// The Pacemaker's music folder with links followed; a copy re-checks its source against it.
+    #[serde(skip)]
+    music_root: PathBuf,
 }
 
 // ---- names and paths ---------------------------------------------------------------------
@@ -225,7 +231,9 @@ fn audio_parts(location: &str) -> Result<Vec<&str>, String> {
 }
 
 /// The audio file for a stored location, which must lie inside the volume's music folder (and,
-/// if both exist, still inside it after links are followed). The returned path may not exist.
+/// if both exist, still inside it after links are followed). The returned path has its links
+/// followed when the file exists (so two routes to one file give one path); otherwise it is the
+/// plain joined path and may not exist.
 fn resolve_audio(root: &Path, location: &str) -> Result<PathBuf, String> {
     let parts = audio_parts(location)?;
     let music = root.join(MUSIC_DIR);
@@ -235,12 +243,33 @@ fn resolve_audio(root: &Path, location: &str) -> Result<PathBuf, String> {
     if !inside {
         return Err("The track's location points outside the library.".into());
     }
-    if let (Ok(a), Ok(m)) = (audio.canonicalize(), music.canonicalize())
-        && !a.starts_with(&m)
-    {
-        return Err("The track's file is a link that leads outside the library.".into());
+    if let (Ok(a), Ok(m)) = (audio.canonicalize(), music.canonicalize()) {
+        if !a.starts_with(&m) {
+            return Err("The track's file is a link that leads outside the library.".into());
+        }
+        return Ok(a);
     }
     Ok(audio)
+}
+
+/// Do two files of `size` bytes agree in their first and last [`SAMPLE`] bytes (all of them when
+/// the file is no longer than two samples)? A cheap guard against reusing a different track that
+/// happens to have the same name and size; not a full comparison.
+fn same_ends(a: &Path, b: &Path, size: u64) -> std::io::Result<bool> {
+    let (mut fa, mut fb) = (File::open(a)?, File::open(b)?);
+    let (mut ba, mut bb) = (vec![0u8; SAMPLE as usize], vec![0u8; SAMPLE as usize]);
+    let mut check = |at: u64, len: u64| -> std::io::Result<bool> {
+        let len = len as usize;
+        fa.seek(SeekFrom::Start(at))?;
+        fb.seek(SeekFrom::Start(at))?;
+        fa.read_exact(&mut ba[..len])?;
+        fb.read_exact(&mut bb[..len])?;
+        Ok(ba[..len] == bb[..len])
+    };
+    if size <= 2 * SAMPLE {
+        return check(0, size);
+    }
+    Ok(check(0, SAMPLE)? && check(size - SAMPLE, SAMPLE)?)
 }
 
 /// `base` joined with `parts` in the path style `base` is written in: a drive letter or `\\`
@@ -381,8 +410,9 @@ pub fn plan_from(root: &Path, tracks: &[Track], ids: &[i64], list_name: &str, de
                 continue;
             }
         };
-        let original = src.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
         let parts = audio_parts(&t.location)?;
+        // the name the track has on the Pacemaker, not the name of whatever a link leads to
+        let original = parts.last().map(|n| n.to_string()).unwrap_or_default();
         let item = |path: String| Item { path, size, artist: t.artist.trim().to_string(), title: t.title.trim().to_string(), secs: t.play_time_secs };
 
         if !opts.copy_audio {
@@ -418,7 +448,13 @@ pub fn plan_from(root: &Path, tracks: &[Track], ids: &[i64], list_name: &str, de
                     continue;
                 }
                 match fs::metadata(audio_dir.join(&cand)) {
-                    Ok(m) if m.is_file() && m.len() == size => break (cand, Status::Reuse),
+                    Ok(m) if m.is_file() && m.len() == size => {
+                        // same name and size: reuse only when the ends agree, else it is another file
+                        if same_ends(&src, &audio_dir.join(&cand), size).unwrap_or(false) {
+                            break (cand, Status::Reuse);
+                        }
+                        continue;
+                    }
                     Ok(_) => continue,
                     Err(e) if e.kind() == ErrorKind::NotFound => break (cand, Status::Copy),
                     Err(e) => return Err(format!("Cannot look in {}: {e}", audio_dir.display())),
@@ -448,6 +484,7 @@ pub fn plan_from(root: &Path, tracks: &[Track], ids: &[i64], list_name: &str, de
         copy_bytes,
         notes,
         entries,
+        music_root: root.join(MUSIC_DIR).canonicalize().unwrap_or_else(|_| root.join(MUSIC_DIR)),
     })
 }
 
@@ -535,11 +572,20 @@ enum CopyError {
 
 /// Copies `src` to `dst` through `<dst>.part` (fsync, then rename), so a stopped copy leaves no
 /// half file under the real name. Refuses to replace a file that appeared since the plan.
-fn copy_atomic(src: &Path, dst: &Path, expect: u64, keep_going: &dyn Fn() -> bool) -> Result<u64, CopyError> {
+/// `music` is the music folder with links followed: the source must still be exactly where the
+/// plan found it, with no link swapped in since.
+fn copy_atomic(src: &Path, music: &Path, dst: &Path, expect: u64, keep_going: &dyn Fn() -> bool) -> Result<u64, CopyError> {
     let mut tmp = dst.as_os_str().to_owned();
     tmp.push(".part");
     let tmp = PathBuf::from(tmp);
     let run = || -> Result<u64, CopyError> {
+        // The plan resolved `src` with links followed; if that is no longer true the file was
+        // swapped since. Narrows (cannot close) the gap between this check and the open below.
+        match src.canonicalize() {
+            Ok(c) if c.as_os_str() == src.as_os_str() && c.starts_with(music) => {}
+            Ok(_) => return Err(CopyError::Other("the audio file was replaced by a link since the plan; nothing was copied".into())),
+            Err(e) => return Err(CopyError::Io(e)),
+        }
         let mut input = File::open(src).map_err(CopyError::Io)?;
         let _ = fs::remove_file(&tmp);
         let mut out = fs::OpenOptions::new().write(true).create_new(true).open(&tmp).map_err(CopyError::Io)?;
@@ -610,7 +656,7 @@ pub fn run_export(plan: &Plan, opts: &Options, replace_list: bool, progress: &mu
         let item = e.item.as_ref().expect("an exportable entry has its list values");
         let mut error: Option<String> = None;
         let status = match e.status {
-            Status::Copy => match copy_atomic(&e.source, &e.target, e.size, &|| !CANCEL.load(Ordering::SeqCst)) {
+            Status::Copy => match copy_atomic(&e.source, &plan.music_root, &e.target, e.size, &|| !CANCEL.load(Ordering::SeqCst)) {
                 Ok(n) => {
                     fin.copied += 1;
                     fin.copied_bytes += n;
@@ -960,6 +1006,76 @@ mod tests {
         assert_eq!(p.entries[0].file, "A - One.mp3");
         assert_eq!(p.entries[1].status, Status::Copy);
         assert_eq!(p.entries[1].file, "A - Two (2).mp3");
+        let _ = fs::remove_dir_all(root.parent().unwrap());
+    }
+
+    #[test]
+    fn a_same_size_file_with_other_content_is_not_reused() {
+        let big_a: Vec<u8> = (0..300_000u32).map(|i| (i % 251) as u8).collect();
+        let mut big_b = big_a.clone();
+        *big_b.last_mut().unwrap() ^= 0xff; // differs only in the last byte
+        let (root, dest) = volume("reuse-content", &[("a/1.mp3", b"one"), ("a/2.mp3", &big_a), ("a/3.mp3", &big_a)]);
+        let audio = dest.join("Set A").join(AUDIO_DIR);
+        fs::create_dir_all(&audio).unwrap();
+        fs::write(audio.join("A - One.mp3"), b"two").unwrap(); // same size as "one", other bytes
+        fs::write(audio.join("A - Two.mp3"), &big_b).unwrap(); // same size, other last byte
+        fs::write(audio.join("A - Three.mp3"), &big_a).unwrap(); // identical
+        let t = [track(1, "A", "One", "/pmdb_tracks/a/1.mp3"), track(2, "A", "Two", "/pmdb_tracks/a/2.mp3"), track(3, "A", "Three", "/pmdb_tracks/a/3.mp3")];
+        let p = go(&root, &dest, &t, &Options::default());
+        assert_eq!((p.entries[0].status, p.entries[0].file.as_str()), (Status::Copy, "A - One (2).mp3"));
+        assert_eq!((p.entries[1].status, p.entries[1].file.as_str()), (Status::Copy, "A - Two (2).mp3"));
+        assert_eq!((p.entries[2].status, p.entries[2].file.as_str()), (Status::Reuse, "A - Three.mp3"));
+        let _ = fs::remove_dir_all(root.parent().unwrap());
+    }
+
+    #[test]
+    fn two_routes_to_one_file_are_copied_once() {
+        let (root, dest) = volume("routes", &[("a/1.mp3", b"one")]);
+        let music = root.join(MUSIC_DIR);
+        // a link inside the music folder (needs a privilege on Windows, so skipped when refused)
+        #[cfg(unix)]
+        let linked = std::os::unix::fs::symlink(music.join("a/1.mp3"), music.join("a/alias.mp3")).is_ok();
+        #[cfg(windows)]
+        let linked = std::os::windows::fs::symlink_file(music.join("a/1.mp3"), music.join("a/alias.mp3")).is_ok();
+        #[cfg(not(any(unix, windows)))]
+        let linked = false;
+        if linked {
+            let t = [track(1, "A", "T", "/pmdb_tracks/a/1.mp3"), track(2, "A", "T", "/pmdb_tracks/a/alias.mp3")];
+            let p = go(&root, &dest, &t, &Options::default());
+            assert_eq!(p.entries[1].status, Status::Reuse, "both routes reach one file");
+            assert_eq!(p.entries[1].file, p.entries[0].file);
+            assert_eq!(p.copy_count, 1);
+            assert_eq!(p.entries[1].path, p.entries[0].path);
+        }
+        // a different spelling of the same name on a case-insensitive file system
+        if music.join("A").exists() {
+            let t = [track(1, "A", "T", "/pmdb_tracks/a/1.mp3"), track(2, "A", "T", "/pmdb_tracks/A/1.mp3")];
+            let p = go(&root, &dest, &t, &Options::default());
+            assert_eq!(p.entries[1].status, Status::Reuse);
+            assert_eq!(p.copy_count, 1);
+        }
+        let _ = fs::remove_dir_all(root.parent().unwrap());
+    }
+
+    #[test]
+    fn a_copy_refuses_a_source_that_is_no_longer_where_the_plan_found_it() {
+        let (root, dest) = volume("recheck", &[("a/1.mp3", b"one")]);
+        let music = root.join(MUSIC_DIR).canonicalize().unwrap();
+        let src = root.join(MUSIC_DIR).join("a/1.mp3").canonicalize().unwrap();
+        let elsewhere = dest.canonicalize().unwrap();
+        // outside the music folder (what a swapped-in link would look like after canonicalize)
+        let out = dest.join("out.mp3");
+        assert!(matches!(copy_atomic(&src, &elsewhere, &out, 3, &|| true), Err(CopyError::Other(_))));
+        assert!(!out.exists() && !dest.join("out.mp3.part").exists());
+        // not the canonical form (refused as changed, or as unreadable where the form is not valid)
+        // built from a string: joining ".." onto a Windows verbatim path would be normalised away
+        let sep = std::path::MAIN_SEPARATOR;
+        let uncanon = PathBuf::from(format!("{}{sep}a{sep}..{sep}a{sep}1.mp3", music.display()));
+        assert!(copy_atomic(&uncanon, &music, &out, 3, &|| true).is_err());
+        assert!(!out.exists());
+        // the normal case
+        assert_eq!(copy_atomic(&src, &music, &out, 3, &|| true).ok(), Some(3));
+        assert_eq!(fs::read(&out).unwrap(), b"one");
         let _ = fs::remove_dir_all(root.parent().unwrap());
     }
 
