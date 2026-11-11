@@ -425,12 +425,7 @@ impl Library {
     /// device, so ids of deleted cases are never reused). Duplicate names are allowed, as on
     /// the device; empty names and names over [`MAX_CASE_NAME_CHARS`] are rejected.
     pub fn create_case(&mut self, name: &str) -> Result<i64, Error> {
-        if name.trim().is_empty() {
-            return Err(Error::Invalid("case name is empty".into()));
-        }
-        if name.chars().count() > MAX_CASE_NAME_CHARS {
-            return Err(Error::Invalid(format!("case name is longer than {MAX_CASE_NAME_CHARS} characters")));
-        }
+        check_case_name(name)?;
         let now = now_ms();
         self.con.execute(
             "INSERT INTO cases (case_id, name, date_created, times_played, structured_ct, image_id, genre, year,
@@ -492,6 +487,284 @@ impl Library {
         let rows = st.query_map([case_id], |r| r.get(0))?;
         Ok(rows.collect::<Result<_, _>>()?)
     }
+}
+
+// ---- Cases: metadata, membership edits, favourites ----------------------------------------
+
+#[cfg(test)]
+mod case_ops_tests;
+
+impl Library {
+    /// Every case with its metadata, ordered by name (the same order as [`Library::cases`]).
+    pub fn case_infos(&self) -> Result<Vec<CaseInfo>, Error> {
+        let mut st = self.con.prepare(&format!("{CASE_INFO_SELECT} WHERE c.case_id >= 0 ORDER BY c.name"))?;
+        let rows = st.query_map([], case_info_row)?;
+        Ok(rows.collect::<Result<_, _>>()?)
+    }
+
+    /// One case's metadata, or `None` if there is no such case.
+    pub fn case_info(&self, case_id: i64) -> Result<Option<CaseInfo>, Error> {
+        Ok(self
+            .con
+            .query_row(&format!("{CASE_INFO_SELECT} WHERE c.case_id = ?1 AND c.case_id >= 0"), [case_id], case_info_row)
+            .optional()?)
+    }
+
+    /// The first (lowest `case_id`) case with exactly this name. Names are not unique on the
+    /// device; the Editor's importers merge by name the same way.
+    pub fn case_id_by_name(&self, name: &str) -> Result<Option<i64>, Error> {
+        Ok(self
+            .con
+            .query_row("SELECT case_id FROM cases WHERE name = ?1 AND case_id >= 0 ORDER BY case_id LIMIT 1", [name], |r| r.get(0))
+            .optional()?)
+    }
+
+    /// Creates a case already holding `track_ids` (in order, repeats once). Every id is
+    /// checked before anything is written, so a bad id leaves the library untouched.
+    pub fn create_case_with_tracks(&mut self, name: &str, track_ids: &[i64]) -> Result<i64, Error> {
+        check_case_name(name)?;
+        for id in track_ids {
+            self.require_track(*id)?;
+        }
+        let case_id = self.create_case(name)?;
+        if let Err(e) = self.set_case_tracks(case_id, track_ids) {
+            let _ = self.delete_case(case_id);
+            return Err(e);
+        }
+        Ok(case_id)
+    }
+
+    /// Appends tracks to the end of a case, skipping any it already holds and repeats in
+    /// `track_ids` (existing rows keep their `rowid`, so the current order is untouched). Like
+    /// the Editor's insert it refreshes `date_modified` and `play_time_secs` in the same
+    /// transaction. Returns how many were added; an unknown case or track errors and nothing
+    /// is written.
+    pub fn add_case_tracks(&mut self, case_id: i64, track_ids: &[i64]) -> Result<usize, Error> {
+        let tx = self.con.transaction()?;
+        require_case(&tx, case_id)?;
+        let mut have: std::collections::HashSet<i64> = {
+            let mut st = tx.prepare("SELECT track_id FROM casetracks WHERE case_id = ?1")?;
+            let rows = st.query_map([case_id], |r| r.get(0))?;
+            rows.collect::<Result<_, _>>()?
+        };
+        let mut added = 0;
+        {
+            let mut ins = tx.prepare("INSERT INTO casetracks (case_id, track_id) VALUES (?1, ?2)")?;
+            for id in track_ids {
+                require_track_in(&tx, *id)?;
+                if have.insert(*id) {
+                    ins.execute(params![case_id, id])?;
+                    added += 1;
+                }
+            }
+        }
+        if added > 0 {
+            refresh_case_derived(&tx, case_id)?;
+        }
+        tx.commit()?;
+        Ok(added)
+    }
+
+    /// Removes tracks from a case (`DELETE ... WHERE case_id = X AND track_id = Y`, as the
+    /// Editor does); the rest keep their order. Returns how many rows went. An unknown case
+    /// errors.
+    pub fn remove_case_tracks(&mut self, case_id: i64, track_ids: &[i64]) -> Result<usize, Error> {
+        let tx = self.con.transaction()?;
+        require_case(&tx, case_id)?;
+        let mut removed = 0;
+        for id in track_ids {
+            removed += tx.execute("DELETE FROM casetracks WHERE case_id = ?1 AND track_id = ?2", params![case_id, id])?;
+        }
+        if removed > 0 {
+            refresh_case_derived(&tx, case_id)?;
+        }
+        tx.commit()?;
+        Ok(removed)
+    }
+
+    /// Adds the track to the case if it is not in it, removes it if it is; returns whether it
+    /// is in the case afterwards.
+    pub fn toggle_case_track(&mut self, case_id: i64, track_id: i64) -> Result<bool, Error> {
+        if self.case_track_ids(case_id)?.contains(&track_id) {
+            self.remove_case_tracks(case_id, &[track_id])?;
+            Ok(false)
+        } else {
+            self.add_case_tracks(case_id, &[track_id])?;
+            Ok(true)
+        }
+    }
+
+    /// Edits a case's name and metadata (the fields of the Editor's `EditCaseMetaDataComponent`:
+    /// name, genre, year, rating, producer, remixer, comments). The name follows the
+    /// [`Library::create_case`] rules and the rating is 0 to [`MAX_RATING`]. `date_modified` is
+    /// set to now only when something actually changed (the rule `modifyTrack` follows for
+    /// tracks; that the case dialog behaves alike is inferred, not verified). Returns whether
+    /// the row changed.
+    pub fn set_case_meta(&mut self, case_id: i64, meta: &CaseMeta) -> Result<bool, Error> {
+        check_case_name(&meta.name)?;
+        if meta.rating > MAX_RATING {
+            return Err(Error::Invalid(format!("rating {} is above {MAX_RATING}", meta.rating)));
+        }
+        if !(0..=9999).contains(&meta.year) {
+            return Err(Error::Invalid(format!("year {} is out of range", meta.year)));
+        }
+        let Some(cur) = self.case_info(case_id)? else {
+            return Err(Error::Invalid(format!("no case {case_id}")));
+        };
+        if cur.meta() == *meta {
+            return Ok(false);
+        }
+        self.con.execute(
+            "UPDATE cases SET name = ?1, genre = ?2, year = ?3, rating = ?4, producer = ?5, remixer = ?6,
+                    comments = ?7, date_modified = ?8 WHERE case_id = ?9",
+            params![meta.name, meta.genre, meta.year, meta.rating, meta.producer, meta.remixer, meta.comments, now_ms(), case_id],
+        )?;
+        Ok(true)
+    }
+
+    /// Renames a case, leaving its other metadata alone. Returns whether the name changed.
+    pub fn rename_case(&mut self, case_id: i64, name: &str) -> Result<bool, Error> {
+        let Some(cur) = self.case_info(case_id)? else {
+            return Err(Error::Invalid(format!("no case {case_id}")));
+        };
+        self.set_case_meta(case_id, &CaseMeta { name: name.to_string(), ..cur.meta() })
+    }
+
+    /// Adds the track to the "Favourites" case (created on first use) or removes it; returns
+    /// whether it is now a favourite. Errors on an unknown track before creating anything.
+    pub fn toggle_favourite(&mut self, track_id: i64) -> Result<bool, Error> {
+        self.require_track(track_id)?;
+        let case_id = match self.case_id_by_name(FAVOURITES_CASE_NAME)? {
+            Some(id) => id,
+            None => self.create_case(FAVOURITES_CASE_NAME)?,
+        };
+        self.toggle_case_track(case_id, track_id)
+    }
+
+    /// Ids in the "Favourites" case, in case order; empty if the case does not exist.
+    pub fn favourite_track_ids(&self) -> Result<Vec<i64>, Error> {
+        match self.case_id_by_name(FAVOURITES_CASE_NAME)? {
+            Some(id) => self.case_track_ids(id),
+            None => Ok(Vec::new()),
+        }
+    }
+
+    fn require_track(&self, track_id: i64) -> Result<(), Error> {
+        require_track_in(&self.con, track_id)
+    }
+}
+
+/// The case that holds a library's favourites, created on first use. The same name is used on
+/// the device, so a favourite also shows up in the device's own case list.
+pub const FAVOURITES_CASE_NAME: &str = "Favourites";
+
+/// A case with the metadata the Editor's case table and dialog show.
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct CaseInfo {
+    pub id: i64,
+    pub name: String,
+    pub genre: String,
+    pub year: i64,
+    pub rating: i64,
+    pub producer: String,
+    pub remixer: String,
+    pub comments: String,
+    pub date_created: i64,
+    pub date_modified: i64,
+    pub times_played: i64,
+    /// Unix milliseconds, 0 = never (cases store 0, tracks -1).
+    pub last_played: i64,
+    pub play_time_secs: i64,
+    pub track_count: i64,
+}
+
+impl CaseInfo {
+    /// The editable part, for [`Library::set_case_meta`].
+    pub fn meta(&self) -> CaseMeta {
+        CaseMeta {
+            name: self.name.clone(),
+            genre: self.genre.clone(),
+            year: self.year,
+            rating: self.rating.clamp(0, i64::from(MAX_RATING)) as u8,
+            producer: self.producer.clone(),
+            remixer: self.remixer.clone(),
+            comments: self.comments.clone(),
+        }
+    }
+}
+
+/// What the case metadata dialog edits.
+#[derive(Debug, Clone, PartialEq, serde::Deserialize)]
+pub struct CaseMeta {
+    pub name: String,
+    pub genre: String,
+    pub year: i64,
+    pub rating: u8,
+    pub producer: String,
+    pub remixer: String,
+    pub comments: String,
+}
+
+const CASE_INFO_SELECT: &str = "SELECT c.case_id, IFNULL(c.name,''), IFNULL(c.genre,''), IFNULL(c.year,0), IFNULL(c.rating,0),
+        IFNULL(c.producer,''), IFNULL(c.remixer,''), IFNULL(c.comments,''), IFNULL(c.date_created,0),
+        IFNULL(c.date_modified,0), IFNULL(c.times_played,0), IFNULL(c.last_played,0), IFNULL(c.play_time_secs,0),
+        (SELECT COUNT(*) FROM casetracks t WHERE t.case_id = c.case_id)
+     FROM cases c";
+
+fn case_info_row(r: &rusqlite::Row) -> rusqlite::Result<CaseInfo> {
+    Ok(CaseInfo {
+        id: r.get(0)?,
+        name: r.get(1)?,
+        genre: r.get(2)?,
+        year: r.get(3)?,
+        rating: r.get(4)?,
+        producer: r.get(5)?,
+        remixer: r.get(6)?,
+        comments: r.get(7)?,
+        date_created: r.get(8)?,
+        date_modified: r.get(9)?,
+        times_played: r.get(10)?,
+        last_played: r.get(11)?,
+        play_time_secs: r.get(12)?,
+        track_count: r.get(13)?,
+    })
+}
+
+fn check_case_name(name: &str) -> Result<(), Error> {
+    if name.trim().is_empty() {
+        return Err(Error::Invalid("case name is empty".into()));
+    }
+    if name.chars().count() > MAX_CASE_NAME_CHARS {
+        return Err(Error::Invalid(format!("case name is longer than {MAX_CASE_NAME_CHARS} characters")));
+    }
+    Ok(())
+}
+
+fn require_case(con: &Connection, case_id: i64) -> Result<(), Error> {
+    match con.query_row("SELECT 1 FROM cases WHERE case_id = ?1 AND case_id >= 0", [case_id], |_| Ok(())).optional()? {
+        Some(()) => Ok(()),
+        None => Err(Error::Invalid(format!("no case {case_id}"))),
+    }
+}
+
+fn require_track_in(con: &Connection, track_id: i64) -> Result<(), Error> {
+    match con.query_row("SELECT 1 FROM tracks WHERE track_id = ?1 AND track_id >= 0", [track_id], |_| Ok(())).optional()? {
+        Some(()) => Ok(()),
+        None => Err(Error::Invalid(format!("no track {track_id}"))),
+    }
+}
+
+/// After a membership change: `date_modified` = now and `play_time_secs` = the members' sum
+/// (`updateCaseDateModified` + `updateCasePlayTimeSecs`, FINDINGS 4d).
+fn refresh_case_derived(con: &Connection, case_id: i64) -> Result<(), Error> {
+    con.execute(
+        "UPDATE cases SET date_modified = ?1,
+                play_time_secs = (SELECT IFNULL(SUM(t.play_time_secs), 0) FROM casetracks c
+                                  JOIN tracks t ON t.track_id = c.track_id WHERE c.case_id = ?2)
+         WHERE case_id = ?2",
+        params![now_ms(), case_id],
+    )?;
+    Ok(())
 }
 
 /// `mixes.name` is declared VARCHAR(255); SQLite does not enforce it, so we do.
