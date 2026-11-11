@@ -119,7 +119,12 @@ export function uniqueGenres(list: Track[]): string[] {
 
 // ---- sorting ------------------------------------------------------------------------------
 
-export type SortField = "fav" | "title" | "artist" | "album" | "genre" | "bpm" | "key" | "rating" | "times_played" | "play_time_secs" | "colour" | "energy" | "tags";
+export type SortField =
+  | "fav" | "title" | "artist" | "album" | "genre" | "bpm" | "key" | "rating" | "times_played" | "play_time_secs" | "colour" | "energy" | "tags"
+  | "year" | "label" | "remixer" | "composer" | "comments" | "date_added" | "last_played" | "format" | "bit_rate" | "file_size";
+
+/** One key of a sort: the column and its direction. */
+export type SortSpec = { field: SortField; asc: boolean };
 
 const collator = new Intl.Collator(undefined, { sensitivity: "base", numeric: true });
 
@@ -129,9 +134,88 @@ const collator = new Intl.Collator(undefined, { sensitivity: "base", numeric: tr
 export const COLOUR_SORT_ORDER: readonly LabelColour[] = ["red", "orange", "yellow", "green", "teal", "blue", "purple", "pink"];
 const colourRank = (c: LabelColour | null) => (c === null ? 999 : COLOUR_SORT_ORDER.indexOf(c));
 
-/** Sorted copy of `rows`. Ties fall back to title then id so the order is stable. The colour,
- *  energy and tags columns sort by the app-side labels (`labelOf`); tracks without that label
- *  come last whichever way the column sorts. */
+/** Number fields whose "nothing here" value (no year, never played ...) sorts after every real
+ *  value in both directions, like the app-side label columns, as do the empty label, remixer,
+ *  composer, comments and format. The older columns keep the order they always had (an empty
+ *  artist sorts first ascending). */
+const MISSING_LAST_NUMBER: Partial<Record<SortField, (t: Track) => number | null>> = {
+  year: (t) => (t.year > 0 ? t.year : null),
+  date_added: (t) => (t.date_added > 0 ? t.date_added : null),
+  last_played: (t) => (t.last_played > 0 ? t.last_played : null),
+  bit_rate: (t) => (t.bit_rate > 0 ? t.bit_rate : null),
+};
+
+/** Sorted copy of `rows` by the keys in order (the first is the primary key). Ties fall back to
+ *  title then id so the order is stable. The colour, energy and tags columns sort by the
+ *  app-side labels (`labelOf`); tracks without that label come last whichever way the column
+ *  sorts. An empty `keys` sorts by title. */
+export function sortTracksBy(
+  rows: Track[],
+  keys: readonly SortSpec[],
+  isFavourite: (id: number) => boolean,
+  labelOf: (id: number) => TrackLabels | undefined = () => undefined,
+): Track[] {
+  const comparators = keys.map((k) => comparatorFor(k, rows, isFavourite, labelOf));
+  return [...rows].sort((a, b) => {
+    for (const c of comparators) {
+      const r = c(a, b);
+      if (r) return r;
+    }
+    return collator.compare(a.title, b.title) || a.track_id - b.track_id;
+  });
+}
+
+/** One column's comparison, already turned the way `asc` says. */
+function comparatorFor(
+  spec: SortSpec,
+  rows: Track[],
+  isFavourite: (id: number) => boolean,
+  labelOf: (id: number) => TrackLabels | undefined,
+): (a: Track, b: Track) => number {
+  const { field } = spec;
+  const dir = spec.asc ? 1 : -1;
+  /** Compares two values that may be missing; missing ones come last whichever way it sorts. */
+  const withMissing = <V,>(get: (t: Track) => V | null, cmp: (x: V, y: V) => number) => (a: Track, b: Track): number => {
+    const x = get(a);
+    const y = get(b);
+    if (x === null || y === null) return x === y ? 0 : x === null ? 1 : -1;
+    return cmp(x, y) * dir;
+  };
+  switch (field) {
+    case "colour": return withMissing((t) => labelOf(t.track_id)?.colour ?? null, (x, y) => colourRank(x) - colourRank(y));
+    case "energy": return withMissing((t) => labelOf(t.track_id)?.energy ?? null, (x, y) => x - y);
+    case "tags": return withMissing((t) => { const l = labelOf(t.track_id)?.tags; return l && l.length > 0 ? l.join(", ") : null; }, (x, y) => collator.compare(x, y));
+    case "fav": return (a, b) => (Number(isFavourite(a.track_id)) - Number(isFavourite(b.track_id))) * dir;
+    case "key": {
+      const rank = new Map<number, number>();
+      for (const t of rows) rank.set(t.track_id, keyRank(parseKey(t.key)));
+      return (a, b) => (rank.get(a.track_id)! - rank.get(b.track_id)!) * dir;
+    }
+    case "bpm":
+    case "rating":
+    case "times_played":
+    case "play_time_secs":
+    case "file_size":
+      return (a, b) => (a[field] - b[field]) * dir;
+    case "year":
+    case "date_added":
+    case "last_played":
+    case "bit_rate": {
+      const get = MISSING_LAST_NUMBER[field]!;
+      return withMissing(get, (x, y) => x - y);
+    }
+    case "label":
+    case "remixer":
+    case "composer":
+    case "comments":
+    case "format":
+      return withMissing((t) => (t[field].trim() === "" ? null : t[field]), (x, y) => collator.compare(x, y));
+    default:
+      return (a, b) => collator.compare(a[field], b[field]) * dir;
+  }
+}
+
+/** Sorted copy of `rows` by one column; see {@link sortTracksBy}. */
 export function sortTracks(
   rows: Track[],
   field: SortField,
@@ -139,38 +223,46 @@ export function sortTracks(
   isFavourite: (id: number) => boolean,
   labelOf: (id: number) => TrackLabels | undefined = () => undefined,
 ): Track[] {
-  const dir = asc ? 1 : -1;
-  const keyOf = new Map<number, number>();
-  if (field === "key") for (const t of rows) keyOf.set(t.track_id, keyRank(parseKey(t.key)));
-  const byLabel = (a: Track, b: Track): number => {
-    const x = labelOf(a.track_id);
-    const y = labelOf(b.track_id);
-    const none = (l: TrackLabels | undefined) => (field === "colour" ? !l?.colour : field === "energy" ? l?.energy == null : !l?.tags.length);
-    if (none(x) || none(y)) return none(x) === none(y) ? 0 : (none(x) ? 1 : -1) * dir; // `* dir` cancels the final `* dir`
-    if (field === "colour") return colourRank(x!.colour) - colourRank(y!.colour);
-    if (field === "energy") return x!.energy! - y!.energy!;
-    return collator.compare(x!.tags.join(", "), y!.tags.join(", "));
-  };
-  const compare = (a: Track, b: Track): number => {
-    switch (field) {
-      case "colour":
-      case "energy":
-      case "tags":
-        return byLabel(a, b);
-      case "fav":
-        return Number(isFavourite(a.track_id)) - Number(isFavourite(b.track_id));
-      case "key":
-        return keyOf.get(a.track_id)! - keyOf.get(b.track_id)!;
-      case "bpm":
-      case "rating":
-      case "times_played":
-      case "play_time_secs":
-        return a[field] - b[field];
-      default:
-        return collator.compare(a[field], b[field]);
-    }
-  };
-  return [...rows].sort((a, b) => compare(a, b) * dir || collator.compare(a.title, b.title) || a.track_id - b.track_id);
+  return sortTracksBy(rows, [{ field, asc }], isFavourite, labelOf);
+}
+
+/** The sort after a click on a column header. A plain click makes the column the only key (or, if
+ *  it already is the primary key, reverses it and keeps the secondary keys); a shift-click adds
+ *  the column as the last key, then reverses it, then removes it (a lone key is just reversed). */
+export function sortClick(keys: readonly SortSpec[], field: SortField, additive: boolean): SortSpec[] {
+  const i = keys.findIndex((k) => k.field === field);
+  if (!additive) {
+    if (i === 0) return keys.map((k, j) => (j === 0 ? { field, asc: !k.asc } : { ...k }));
+    return [{ field, asc: true }];
+  }
+  if (i < 0) return [...keys.map((k) => ({ ...k })), { field, asc: true }];
+  if (keys[i].asc) return keys.map((k, j) => (j === i ? { field, asc: false } : { ...k }));
+  if (keys.length === 1) return [{ field, asc: true }];
+  return keys.filter((_, j) => j !== i).map((k) => ({ ...k }));
+}
+
+// ---- cell text ------------------------------------------------------------------------------
+
+const pad2 = (n: number) => String(n).padStart(2, "0");
+
+/** A time in Unix milliseconds as a local date, `2026-03-14`; empty when there is none. */
+export function formatDate(ms: number): string {
+  if (!(ms > 0)) return "";
+  const d = new Date(ms);
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+}
+
+/** A file size as `7.6 MB`; empty for no size. */
+export function formatSize(bytes: number): string {
+  if (!(bytes > 0)) return "";
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  let v = bytes;
+  let u = 0;
+  while (v >= 1024 && u < units.length - 1) {
+    v /= 1024;
+    u++;
+  }
+  return `${u === 0 ? v : v.toFixed(v >= 100 ? 0 : 1)} ${units[u]}`;
 }
 
 // ---- matching tracks ----------------------------------------------------------------------

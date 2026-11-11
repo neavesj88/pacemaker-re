@@ -90,6 +90,29 @@ pub struct Track {
     pub times_played: i64,
     /// Unix milliseconds of the last play, or -1 for "never played" (the stored sentinel).
     pub last_played: i64,
+    /// Release year, 0 when not set.
+    pub year: i64,
+    pub label: String,
+    pub remixer: String,
+    pub composer: String,
+    pub comments: String,
+    /// Unix milliseconds the track was added (FINDINGS section 4b), or -1 when the row has none.
+    pub date_added: i64,
+    /// Bit rate in kilobits per second (what `TrackMeta::bit_rate_kbps` stores), 0 when unknown.
+    pub bit_rate: i64,
+}
+
+/// An integer column read without trusting its storage class. These columns have NUMBER affinity,
+/// so a tool that wrote text into one (an empty string, "2010s") would otherwise make the whole
+/// track list fail to load instead of showing one blank cell.
+fn lenient_i64(r: &rusqlite::Row<'_>, idx: usize, missing: i64) -> rusqlite::Result<i64> {
+    use rusqlite::types::Value;
+    Ok(match r.get::<_, Value>(idx)? {
+        Value::Integer(i) => i,
+        Value::Real(f) if f.is_finite() => f.round() as i64,
+        Value::Text(t) => t.trim().parse::<i64>().unwrap_or(missing),
+        _ => missing,
+    })
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -303,7 +326,9 @@ impl Library {
             "SELECT track_id, IFNULL(title,''), IFNULL(artist,''), IFNULL(album,''), IFNULL(genre,''),
                     IFNULL(bpm,0), IFNULL(key,''), IFNULL(play_time_secs,0), IFNULL(rating,0),
                     IFNULL(location,''), IFNULL(file_size,0), IFNULL(format,''),
-                    IFNULL(track_flags,0), IFNULL(times_played,0), IFNULL(last_played,-1)
+                    IFNULL(track_flags,0), IFNULL(times_played,0), IFNULL(last_played,-1),
+                    year, CAST(IFNULL(label,'') AS TEXT), CAST(IFNULL(remixer,'') AS TEXT),
+                    CAST(IFNULL(composer,'') AS TEXT), CAST(IFNULL(comments,'') AS TEXT), date_added, bit_rate
              FROM tracks WHERE track_id >= 0 ORDER BY track_id",
         )?;
         let rows = st.query_map([], |r| {
@@ -323,6 +348,13 @@ impl Library {
                 analysed: r.get::<_, i64>(12)? & 2 != 0,
                 times_played: r.get(13)?,
                 last_played: r.get(14)?,
+                year: lenient_i64(r, 15, 0)?.max(0),
+                label: r.get(16)?,
+                remixer: r.get(17)?,
+                composer: r.get(18)?,
+                comments: r.get(19)?,
+                date_added: lenient_i64(r, 20, -1)?,
+                bit_rate: lenient_i64(r, 21, 0)?.max(0),
             })
         })?;
         Ok(rows.collect::<Result<_, _>>()?)
@@ -1283,6 +1315,52 @@ mod tests {
         assert!(find_volumes().iter().all(|v| v != &vol), "temp dirs are not mounted volumes");
 
         drop(lib); // Windows won't delete a database file that is still open
+        std::fs::remove_dir_all(&vol).unwrap();
+        std::fs::remove_dir_all(&src_dir).unwrap();
+    }
+
+    #[test]
+    fn tracks_carry_the_columns_the_table_sorts_by_and_survive_odd_storage() {
+        let vol = temp_dir("cols-vol");
+        let src_dir = temp_dir("cols-src");
+        let src = src_dir.join("Demo.mp3");
+        std::fs::write(&src, vec![0u8; 777]).unwrap();
+        let analysis = strfile::Analysis {
+            normalize_factor: 1.0,
+            beat_start_offset: 0,
+            beats: (0..8).map(|i| strfile::Beat { pos: i * 20000, bpm: 120.0 }).collect(),
+            first_downbeat: Some(0),
+        };
+        let meta = TrackMeta {
+            title: "Demo".into(),
+            label: "Example Label".into(),
+            remixer: "Example Remixer".into(),
+            composer: "Example Composer".into(),
+            comment: "A note".into(),
+            year: 2012,
+            bit_rate_kbps: 320,
+            format: "MP3".into(),
+            ..Default::default()
+        };
+        let mut lib = Library::create(&vol).unwrap();
+        let id = lib.add_track(&src, &meta, &analysis).unwrap();
+        let t = lib.tracks().unwrap().remove(0);
+        assert_eq!((t.year, t.bit_rate), (2012, 320));
+        assert_eq!((t.label.as_str(), t.remixer.as_str(), t.composer.as_str(), t.comments.as_str()), ("Example Label", "Example Remixer", "Example Composer", "A note"));
+        assert!(t.date_added > 1_500_000_000_000, "date_added is Unix milliseconds, got {}", t.date_added);
+
+        // a row another tool wrote with text, NULLs and odd types in the numeric columns still loads
+        lib.con
+            .execute("UPDATE tracks SET year = '2010s', bit_rate = '256', date_added = NULL, label = 42, comments = NULL WHERE track_id = ?1", [id])
+            .unwrap();
+        let t = lib.tracks().unwrap().remove(0);
+        assert_eq!((t.year, t.bit_rate, t.date_added), (0, 256, -1));
+        assert_eq!((t.label.as_str(), t.comments.as_str()), ("42", ""));
+        lib.con.execute("UPDATE tracks SET year = -5, bit_rate = 128.6 WHERE track_id = ?1", [id]).unwrap();
+        let t = lib.tracks().unwrap().remove(0);
+        assert_eq!((t.year, t.bit_rate), (0, 129), "a negative year is no year; a real bit rate rounds");
+
+        drop(lib);
         std::fs::remove_dir_all(&vol).unwrap();
         std::fs::remove_dir_all(&src_dir).unwrap();
     }

@@ -1,11 +1,16 @@
 //! Tracks: operations on tracks already in the library (beat-grid re-analysis now; tags,
 //! ratings and removal later).
 
+mod views;
+
 use std::path::{Component, Path, PathBuf};
+use std::sync::Mutex;
 
 use pm_analysis::ingest::{self, Existing};
 use pm_formats::library::Library;
-use tauri::{AppHandle, State};
+use serde::Serialize;
+use serde_json::Value;
+use tauri::{AppHandle, Manager, State};
 
 use crate::error::AppResult;
 use crate::events::{self, JOB_PROGRESS};
@@ -119,6 +124,99 @@ pub async fn tracks_reveal(root: String, track_id: i64) -> AppResult<()> {
     .await?
 }
 
+// ---- saved filter presets and the remembered view (app-side, see tracks/views.rs) ----------
+
+/// One read-modify-write of a views file at a time.
+static VIEWS_LOCK: Mutex<()> = Mutex::new(());
+
+/// What the UI gets: the presets, the remembered view, and why the file could not be used.
+#[derive(Debug, Serialize)]
+pub struct ViewsPayload {
+    presets: Vec<views::Preset>,
+    state: Option<Value>,
+    notice: Option<String>,
+}
+
+fn views_payload(l: views::Loaded) -> ViewsPayload {
+    ViewsPayload { presets: l.views.presets, state: l.views.state, notice: l.notice }
+}
+
+fn views_dir(app: &AppHandle) -> AppResult<PathBuf> {
+    Ok(app.path().app_config_dir()?)
+}
+
+/// Loads the views file, runs `f` on it and saves it when `f` changed it. A file that could not
+/// be read, or a newer build wrote, is never saved over.
+fn views_mutate<T>(dir: &Path, root: &str, f: impl FnOnce(&mut views::Views) -> Result<T, String>) -> Result<(T, views::Loaded), String> {
+    let _guard = VIEWS_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+    let key = crate::state::volume_key(Path::new(root));
+    let mut loaded = views::load(dir, &key);
+    if let Some(why) = loaded.read_only.clone() {
+        return Err(why);
+    }
+    let before = loaded.views.clone();
+    let out = f(&mut loaded.views)?;
+    if loaded.views != before {
+        views::save(dir, &key, &loaded.views, loaded.corrupt.as_deref())?;
+        loaded.corrupt = None;
+        loaded.notice = None;
+    }
+    Ok((out, loaded))
+}
+
+/// The saved filter presets and the remembered view of this library. Nothing is written.
+#[tauri::command]
+pub async fn tracks_views_load(app: AppHandle, root: String) -> AppResult<ViewsPayload> {
+    let dir = views_dir(&app)?;
+    tauri::async_runtime::spawn_blocking(move || -> AppResult<ViewsPayload> {
+        let _guard = VIEWS_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        Ok(views_payload(views::load(&dir, &crate::state::volume_key(Path::new(&root)))))
+    })
+    .await?
+}
+
+/// Saves the filter state under `name`. A preset with that name is replaced only when `replace`
+/// is set. Returns the fresh list.
+#[tauri::command]
+pub async fn tracks_views_save_preset(app: AppHandle, root: String, name: String, state: Value, replace: bool) -> AppResult<ViewsPayload> {
+    let dir = views_dir(&app)?;
+    tauri::async_runtime::spawn_blocking(move || -> AppResult<ViewsPayload> {
+        let (_, loaded) = views_mutate(&dir, &root, |v| v.save_preset(&name, state, replace, views::fresh_id))?;
+        Ok(views_payload(loaded))
+    })
+    .await?
+}
+
+/// Deletes one preset by id. Returns the fresh list.
+#[tauri::command]
+pub async fn tracks_views_delete_preset(app: AppHandle, root: String, id: String) -> AppResult<ViewsPayload> {
+    let dir = views_dir(&app)?;
+    tauri::async_runtime::spawn_blocking(move || -> AppResult<ViewsPayload> {
+        let (_, loaded) = views_mutate(&dir, &root, |v| {
+            if v.delete_preset(&id) { Ok(()) } else { Err("That preset no longer exists.".to_string()) }
+        })?;
+        Ok(views_payload(loaded))
+    })
+    .await?
+}
+
+/// Remembers the view the table was left in (`None` forgets it).
+#[tauri::command]
+pub async fn tracks_views_set_state(app: AppHandle, root: String, state: Option<Value>) -> AppResult<()> {
+    let dir = views_dir(&app)?;
+    tauri::async_runtime::spawn_blocking(move || -> AppResult<()> {
+        views_mutate(&dir, &root, |v| {
+            if let Some(s) = &state {
+                views::check_state(s)?;
+            }
+            v.state = state;
+            Ok(())
+        })?;
+        Ok(())
+    })
+    .await?
+}
+
 /// This area's command paths, one per line.
 #[macro_export]
 macro_rules! tracks_commands {
@@ -129,6 +227,10 @@ macro_rules! tracks_commands {
                 $crate::commands::tracks::reanalyse_tracks,
                 $crate::commands::tracks::tracks_reveal,
                 $crate::commands::tracks::tracks_mixes_using,
+                $crate::commands::tracks::tracks_views_load,
+                $crate::commands::tracks::tracks_views_save_preset,
+                $crate::commands::tracks::tracks_views_delete_preset,
+                $crate::commands::tracks::tracks_views_set_state,
             ];
             $($rest),*
         }

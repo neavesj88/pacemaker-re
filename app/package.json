@@ -9,7 +9,7 @@
     "preview": "vite preview",
     "prepare": "svelte-kit sync || echo ''",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
-    "test": "node src/lib/views/mixes/layout.test.mjs && node src/lib/views/tracks/trackLogic.test.mjs && node src/lib/state/labels.test.mjs",
+    "test": "node src/lib/views/mixes/layout.test.mjs && node src/lib/views/tracks/trackLogic.test.mjs && node src/lib/views/tracks/query.test.mjs && node src/lib/views/tracks/columns.test.mjs && node src/lib/views/tracks/viewState.test.mjs && node src/lib/state/labels.test.mjs",
     "test:mixedit": "node --experimental-strip-types scripts/test-mixedit.mjs",
     "check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
     "tauri": "tauri"

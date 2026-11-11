@@ -4,7 +4,6 @@
 import type { Unlisten } from "$lib/api/events";
 import { playback } from "$lib/state/playback.svelte";
 import { nav } from "$lib/state/nav.svelte";
-import { visibleTracks } from "$lib/views/tracks/trackFilter";
 import { selection } from "$lib/state/selection.svelte";
 import { session } from "$lib/state/session.svelte";
 import { engine } from "./engine.svelte";
@@ -46,8 +45,9 @@ export default function init(): Unlisten {
       if (e.repeat) return;
       if (playback.trackId === null && playback.mixPreview === null) {
         const id = selection.trackIds[0];
-        // next / previous then follow the table the user is looking at (its filter and sort)
-        if (id !== undefined) playback.load(id, true, nav.view === "tracks" ? visibleTracks(session.library.tracks).map((t) => t.track_id) : undefined);
+        // an empty queue makes next / previous follow the Tracks table as it is at that moment
+        // (its search, filters and sort), instead of a list frozen when playing started
+        if (id !== undefined) playback.load(id, true, nav.view === "tracks" ? [] : undefined);
       } else playback.toggle();
     } else if (e.code === "KeyC" && !e.repeat && !e.shiftKey && !overlayOpen()) {
       engine.cuePress();

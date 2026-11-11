@@ -1,10 +1,14 @@
 <script lang="ts">
-  // The toolbar above the table: genre, BPM range, key, analysed / missing, column chooser.
+  // The toolbar above the table: genre, BPM range, key, analysed / missing, presets, search help
+  // and the column chooser; under it, anything the search box could not read.
   import { filters } from "$lib/state/filters.svelte";
   import Button from "$lib/ui/Button.svelte";
-  import { labelFilterActive } from "$lib/state/labels";
   import { COLUMNS } from "./columns";
+  import { labelFilterActive } from "$lib/state/labels";
   import LabelFilterBar from "./LabelFilterBar.svelte";
+  import PresetsMenu from "./PresetsMenu.svelte";
+  import QueryHelp from "./QueryHelp.svelte";
+  import { compileQuery } from "./query";
   import { ALL_CAMELOT, filterIsActive, type Camelot } from "./trackLogic";
   import { tracksState } from "./tracksState.svelte";
 
@@ -24,6 +28,9 @@
   } = $props();
 
   let chooser = $state(false);
+
+  // terms of the search box that were skipped or taken as text, so a typo is not silent
+  const diagnostics = $derived(compileQuery(filters.query).diagnostics);
 
   // the options of the key menu: whatever is active must stay listed even after the focus moves
   const compatOptions = $derived.by(() => {
@@ -46,12 +53,7 @@
     filters.onlyNeeds = !filters.onlyNeeds;
     if (filters.onlyNeeds) tracksState.onlyAnalysed = false;
   }
-  function clearAll() {
-    tracksState.clearFilters();
-    filters.onlyNeeds = false;
-    filters.query = "";
-  }
-
+  const clearAll = () => tracksState.clearAllFilters();
 </script>
 
 <svelte:window onclick={() => (chooser = false)} />
@@ -89,21 +91,31 @@
     <span><i class="low"></i>kick/bass</span><span><i class="mid"></i>mids</span><span><i class="high"></i>highs</span>
   </span>
 
+  <PresetsMenu />
+  <QueryHelp />
+
   <div class="chooser">
     <Button small active={chooser} onclick={(e) => (e.stopPropagation(), (chooser = !chooser))}>Columns</Button>
     {#if chooser}
       <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
       <div class="pop" onclick={(e) => e.stopPropagation()}>
-        {#each COLUMNS.filter((c) => !c.fixed) as c (c.key)}
+        {#each tracksState.prefs.order.map((k) => COLUMNS.find((c) => c.key === k)!).filter((c) => !c.fixed) as c (c.key)}
           <label>
             <input type="checkbox" checked={tracksState.prefs.visible[c.key]} onchange={() => tracksState.toggleColumn(c.key)} />
             {c.label}
           </label>
         {/each}
+        <p class="hint muted">Drag a column header to move it. Click a header to sort, shift-click to add a second key.</p>
+        <Button small variant="link" onclick={() => tracksState.resetColumns()}>Reset columns</Button>
       </div>
     {/if}
   </div>
 </div>
+{#if diagnostics.length > 0}
+  <ul class="diag" aria-live="polite">
+    {#each diagnostics as d (d.term + d.message)}<li><code>{d.term}</code> {d.message}</li>{/each}
+  </ul>
+{/if}
 
 <style>
   .bar {
@@ -159,6 +171,8 @@
     flex-direction: column;
     gap: 4px;
     min-width: 140px;
+    max-height: 70vh;
+    overflow-y: auto;
     padding: 8px 10px;
     background: var(--panel);
     border: 1px solid var(--line-hi);
@@ -172,5 +186,23 @@
   }
   .pop input {
     padding: 0;
+  }
+  .hint {
+    margin: 4px 0 0;
+    max-width: 200px;
+    font-size: 11px;
+    line-height: 1.4;
+  }
+  .diag {
+    margin: 0;
+    padding: 4px 12px;
+    list-style: none;
+    border-bottom: 1px solid var(--line);
+    background: var(--accent-soft);
+    font-size: 12px;
+  }
+  .diag code {
+    color: var(--accent);
+    font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
   }
 </style>
