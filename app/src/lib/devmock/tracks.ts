@@ -54,7 +54,7 @@ let presetSeq = 0;
 export const handlers: Handlers = {
   tracks_views_load: (a) => payload(a.root),
   tracks_views_save_preset: (a) => {
-    const name = String(a.name).split(/s+/).filter(Boolean).join(" ");
+    const name = String(a.name).split(/\s+/).filter(Boolean).join(" ");
     if (!name) throw "A preset needs a name.";
     if (name.length > 60) throw "The preset name is longer than 60 characters.";
     if (!a.state || typeof a.state !== "object" || Array.isArray(a.state)) throw "The filter state is not an object.";
