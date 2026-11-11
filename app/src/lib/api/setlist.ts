@@ -22,5 +22,7 @@ export const saveSetlistHtml = (root: string, dest: string, html: string) =>
 /** The native save dialog for the page (null if cancelled). */
 export async function pickSetlistPath(defaultName: string): Promise<string | null> {
   const p = await save({ title: "Save the setlist page", defaultPath: defaultName, filters: [{ name: "Web page", extensions: ["html"] }] });
-  return typeof p === "string" ? p : null;
+  if (typeof p !== "string") return null;
+  // some platform dialogs return a bare name; the backend only accepts .html / .htm
+  return /\.html?$/i.test(p) ? p : `${p}.html`;
 }

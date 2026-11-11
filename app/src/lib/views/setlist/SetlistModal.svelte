@@ -117,9 +117,18 @@
     });
   });
 
-  async function flush() {
+  // Saves run one after another: two overlapping invokes could land out of order and let an older
+  // sheet overwrite a newer one. Each run re-reads the sheet when its turn comes.
+  let chain: Promise<void> = Promise.resolve();
+
+  function flush(): Promise<void> {
     clearTimeout(timer);
     timer = undefined;
+    chain = chain.then(saveNow);
+    return chain;
+  }
+
+  async function saveNow() {
     const snap = JSON.stringify($state.snapshot(sheet));
     if (!root || snap === lastSaved) return;
     saveState = "saving";
@@ -244,6 +253,7 @@
                 </label>
               {/each}
             </div>
+            {#if kind === "mix"}<p class="muted small">BPM is the tempo stored for each track, not the speed it is stretched to in the mix.</p>{/if}
             <label class="chk"><input type="checkbox" bind:checked={setlist.options.hideEmpty} /> Leave out a column that is empty for every track</label>
             <label>Key as
               <select bind:value={setlist.options.keyNotation}>
@@ -322,7 +332,7 @@
           <div class="bar">
             <Button variant="primary" onclick={print} disabled={built.rows.length === 0}>Print…</Button>
             <Button onclick={saveHtml} disabled={saving}>Save as HTML…</Button>
-            <span class="muted small">Print opens the system print dialog; choose “Save as PDF” as the printer for a PDF.</span>
+            <span class="muted small">Print opens the system print dialog; choose “Save as PDF” as the printer for a PDF. If printing does nothing on this system, use Save as HTML and print that file from a browser.</span>
           </div>
           <iframe bind:this={frame} title="Setlist preview" srcdoc={html} sandbox="allow-same-origin allow-modals"></iframe>
         </div>
