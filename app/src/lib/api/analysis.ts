@@ -111,3 +111,102 @@ export const clearEnergy = (root: string) => invoke<number>("analysis_energy_cle
  * them, and the run is started with exactly this list. Same selection code as the run. */
 export const planEnergy = (root: string, trackIds?: number[], recompute = false) =>
   invoke<number[]>("analysis_energy_plan", { root, trackIds: trackIds ?? null, recompute });
+
+// ---- sections (phrase detection) -------------------------------------------------------------
+// Intro / build / drop / breakdown / outro per track, detected from the beat grid and the audio.
+// The device cannot store them, so results live in an app-side file keyed by the library;
+// nothing here writes to the card. Estimates, not facts: see `confidence`.
+
+export type SectionKind = "intro" | "build" | "drop" | "breakdown" | "outro" | "section";
+
+/** One section of a track. Times are seconds in the same time base as the beat grid, so they line
+ * up with the bar lines of the grid editor. */
+export type SectionOut = {
+  kind: SectionKind;
+  start_secs: number;
+  end_secs: number;
+  /** Bar index from the first downbeat of the grid (0 = the first bar). `end_bar` is exclusive. */
+  start_bar: number;
+  end_bar: number;
+  /** 0 to 1, relative to this track: for ranking and fading markers, not a probability. */
+  confidence: number;
+  /** 0 to 1: how strong the boundary at the start is (1 for the start of the track). */
+  start_confidence: number;
+  /** The start sits on the phrase grid. */
+  on_phrase: boolean;
+};
+
+export type TrackSections = {
+  track_id: number;
+  /** Bars in the grid. */
+  bars: number;
+  /** The phrase length boundaries were snapped to; 0 when no phrase grid fits the track. */
+  phrase_bars: number;
+  sections: SectionOut[];
+};
+
+export type SectionsOrigin = "first_downbeat" | "best_fit";
+
+export type SectionsSettings = {
+  /** 1 (only obvious changes) to 5 (small changes count). */
+  sensitivity: number;
+  /** No two section boundaries closer than this many bars, 4-32. */
+  min_section_bars: number;
+  /** Phrase length boundaries snap to: 4, 8, 16, 32, or 0 to choose from each track. */
+  phrase_bars: number;
+  /** Where the phrase grid starts: at the first downbeat, or wherever most boundaries of the track fall. */
+  origin: SectionsOrigin;
+  /** A boundary moves onto the phrase grid only if it is at most this many bars away, 0-8. */
+  snap_tolerance_bars: number;
+  /** Tracks with fewer bars than this get no sections shown, 16-512. */
+  min_bars: number;
+  /** Tracks decoded at once by the job, 1-8. */
+  threads: number;
+  /** Draw section markers on waveforms. */
+  show_markers: boolean;
+};
+
+export type SectionsState = {
+  /** Tracks that have sections, in library order. */
+  entries: TrackSections[];
+  total: number;
+  /** Tracks with sections (`entries.length`). */
+  ready: number;
+  /** Measured, but no clear sections at the current sensitivity. */
+  flat: number;
+  /** Nothing to measure (no grid, no first downbeat, silent) or too short for the settings. */
+  skipped: number;
+  skip_reasons: { reason: string; count: number }[];
+  /** Analysed, but the file has changed size since. */
+  stale: number;
+  /** Never analysed. */
+  none: number;
+  settings: SectionsSettings;
+  /** Saved results that could not be read and were dropped. */
+  problem: string | null;
+};
+
+/** The sections of every track that has some, with the counts and the settings in force. The
+ * read API for other features: use `sections.snap` / `sections.of` (state/sections.svelte.ts). */
+export const sectionsState = (root: string) => invoke<SectionsState>("analysis_sections_state", { root });
+
+export const sectionsSettings = () => invoke<SectionsSettings>("analysis_sections_settings");
+
+/** Saves the settings (the backend checks every range) and returns what was saved. */
+export const saveSectionsSettings = (settings: SectionsSettings) =>
+  invoke<SectionsSettings>("analysis_sections_save_settings", { settings });
+
+/** Starts the "sections" background job: decodes tracks and caches bar features measured against
+ * their beat grids. Without `trackIds` it covers the library. Without `recompute` only tracks never
+ * analysed, or whose file or grid changed since, are done. Reads the card, writes nothing to it.
+ * Normally started through `sections.askAnalyse` (state/sections.svelte.ts), which confirms first. */
+export const analyseSections = (root: string, trackIds?: number[], recompute = false) =>
+  invoke<void>("analysis_sections_analyse", { root, trackIds: trackIds ?? null, recompute });
+
+/** The ids a run with these arguments would analyse, in library order: the confirmation lists
+ * them, and the run is started with exactly this list. Same selection code as the run. */
+export const planSections = (root: string, trackIds?: number[], recompute = false) =>
+  invoke<number[]>("analysis_sections_plan", { root, trackIds: trackIds ?? null, recompute });
+
+/** Forgets every saved section result of the library; returns how many. */
+export const clearSections = (root: string) => invoke<number>("analysis_sections_clear", { root });

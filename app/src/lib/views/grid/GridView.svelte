@@ -11,6 +11,7 @@
   import { editor, tempoMap } from "./editor.svelte";
   import { fmtTime, lowerBound } from "./gridMath";
   import { Metronome } from "./metronome";
+  import SectionList from "../analysis/SectionList.svelte";
   import Overview from "./Overview.svelte";
   import WaveCanvas from "./WaveCanvas.svelte";
 
@@ -349,6 +350,7 @@
         status={editor.peaksLoading ? "Loading waveform…" : ""}
       />
       <Overview
+        trackId={editor.trackId}
         peaks={editor.peaks}
         {beatSecs}
         firstDownbeat={fd}
@@ -358,6 +360,13 @@
         {viewStart}
         {viewSpan}
         oncentre={(s) => {
+          follow = false;
+          wave?.centre(s);
+        }}
+      />
+      <SectionList
+        trackId={editor.trackId}
+        onseek={(s) => {
           follow = false;
           wave?.centre(s);
         }}

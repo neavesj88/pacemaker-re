@@ -16,6 +16,7 @@
   import { addToCase } from "./addToCase.svelte";
   import { analysis } from "$lib/state/analysis.svelte";
   import { energy } from "$lib/state/energy.svelte";
+  import { sections } from "$lib/state/sections.svelte";
   import EnergyCell from "../analysis/EnergyCell.svelte";
   import { addToMix, editGrid, editMetadata, playTrack, rate, revealInExplorer } from "./trackActions";
   import { keyColour, parseKey } from "./trackLogic";
@@ -194,7 +195,7 @@
       anchorId = t.track_id;
       select([t.track_id], t.track_id);
     }
-    menu = { x: Math.max(0, Math.min(e.clientX, innerWidth - 230)), y: Math.max(0, Math.min(e.clientY, innerHeight - 250)), ids: [...selection.trackIds] };
+    menu = { x: Math.max(0, Math.min(e.clientX, innerWidth - 230)), y: Math.max(0, Math.min(e.clientY, innerHeight - 285)), ids: [...selection.trackIds] };
   }
 
   const menuItems = $derived.by(() => {
@@ -204,6 +205,7 @@
     const n = ids.length;
     const allFav = ids.every((id) => tracksState.favourites.has(id));
     const again = ids.every((id) => energy.of(id) !== null);
+    const sectionsAgain = ids.every((id) => sections.of(id) !== null);
     return [
       { label: "Play", onclick: () => playTrack(ids[0]) },
       { label: one ? "Edit metadata…" : `Edit metadata of ${n} tracks…`, onclick: () => editMetadata(ids) },
@@ -218,6 +220,11 @@
       {
         label: `Analyse energy${again ? " again" : ""}${one ? "" : ` of ${n} tracks`}…`,
         onclick: () => energy.askAnalyse(ids, again),
+        disabled: !jobs.canWrite,
+      },
+      {
+        label: `Detect sections${sectionsAgain ? " again" : ""}${one ? "" : ` of ${n} tracks`}…`,
+        onclick: () => sections.askAnalyse(ids, sectionsAgain),
         disabled: !jobs.canWrite,
       },
       { label: "Edit grid", onclick: () => editGrid(ids[0]), disabled: !one },
@@ -313,7 +320,7 @@
             {:else if c.key === "genre"}
               <span class="text">{t.genre}</span>
             {:else if c.key === "wave"}
-              {#if t.location}<MiniWave {root} location={t.location} />{/if}
+              {#if t.location}<MiniWave {root} location={t.location} trackId={t.track_id} />{/if}
             {:else if c.key === "bpm"}
               {t.bpm && !need ? t.bpm.toFixed(2) : "–"}
             {:else if c.key === "key"}

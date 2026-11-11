@@ -151,15 +151,21 @@ struct CacheFile {
 /// The file for a library, named by a hash of its root (same normalisation as the smart-case
 /// store: case and slash style do not matter), so nothing about the device is written next to it.
 pub fn cache_path(dir: &Path, root: &str) -> PathBuf {
+    dir.join(format!("energy-{:016x}.json", root_hash(root)))
+}
+
+/// FNV-1a of the normalised library root: the per-library part of every app-side file name of
+/// the analysis area (energy, sections).
+pub(super) fn root_hash(root: &str) -> u64 {
     let norm = root.replace('\\', "/").trim_end_matches('/').to_lowercase();
-    let mut h: u64 = 0xcbf2_9ce4_8422_2325; // FNV-1a
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
     for b in norm.bytes() {
         h = (h ^ u64::from(b)).wrapping_mul(0x0100_0000_01b3);
     }
-    dir.join(format!("energy-{h:016x}.json"))
+    h
 }
 
-fn atomic_write(path: &Path, bytes: &[u8]) -> Result<(), String> {
+pub(super) fn atomic_write(path: &Path, bytes: &[u8]) -> Result<(), String> {
     let dir = path.parent().ok_or("no folder")?;
     std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
     let tmp = path.with_extension("json.tmp");

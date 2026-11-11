@@ -1,5 +1,7 @@
 <script lang="ts">
   import type { Peak } from "$lib/api/analysis";
+  import { sections } from "$lib/state/sections.svelte";
+  import SectionBand from "../analysis/SectionBand.svelte";
   import { bandsOver, clamp, isDownbeat } from "./gridMath";
 
   // The whole track in one strip: the visible window of the main waveform is the lit rectangle;
@@ -15,6 +17,7 @@
     viewSpan,
     oncentre,
     height = 72,
+    trackId = null,
   }: {
     peaks: Peak[] | null;
     beatSecs: ArrayLike<number>;
@@ -26,7 +29,11 @@
     viewSpan: number;
     oncentre: (secs: number) => void;
     height?: number;
+    /** The track shown, for its section markers (analysis area). */
+    trackId?: number | null;
   } = $props();
+
+  const marks = $derived(trackId !== null && sections.showMarkers ? sections.of(trackId) : null);
 
   let canvas = $state<HTMLCanvasElement | null>(null);
   let host = $state<HTMLDivElement | null>(null);
@@ -112,16 +119,27 @@
     onpointerup={() => (dragging = false)}
     onpointercancel={() => (dragging = false)}
   ></canvas>
+  {#if marks}<div class="marks"><SectionBand sections={marks} {duration} labels /></div>{/if}
 </div>
 
 <style>
   .ov {
+    position: relative;
     width: 100%;
     background: var(--deep);
     border: 1px solid var(--line);
     border-radius: 4px;
     overflow: hidden;
     margin-top: 8px;
+  }
+  /* over the top of the strip; clicks fall through to the canvas, which moves the window */
+  .marks {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 14px;
+    pointer-events: none;
   }
   canvas {
     display: block;

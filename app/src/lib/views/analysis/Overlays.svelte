@@ -1,20 +1,26 @@
 <script lang="ts">
-  // Always-mounted part of the analysis area: keeps the energy estimates in step with the open
-  // library, and shows the "Energy (auto)" panel (coverage, run buttons, settings) when asked.
+  // Always-mounted part of the analysis area: keeps the energy estimates and the sections in step
+  // with the open library, and shows the "Energy (auto)" panel (coverage, run buttons, settings)
+  // and the "Sections" panel when asked.
   import { untrack } from "svelte";
   import type { EnergySettings } from "$lib/api/analysis";
   import { energy } from "$lib/state/energy.svelte";
   import { jobs } from "$lib/state/jobs.svelte";
+  import { sections } from "$lib/state/sections.svelte";
   import { session } from "$lib/state/session.svelte";
   import Button from "$lib/ui/Button.svelte";
   import Modal from "$lib/ui/Modal.svelte";
   import { clampSetting, coverageText, LIMITS, scaleText, toAnalyse, type NumericSetting } from "./energyLogic";
+  import SectionsPanel from "./SectionsPanel.svelte";
 
   // The library object changes on every open and every in-place reload (after a job, a BPM
   // edit), and a BPM edit changes the score, so the numbers are read again each time.
   $effect(() => {
     session.library;
-    untrack(() => energy.load());
+    untrack(() => {
+      energy.load();
+      sections.load();
+    });
   });
 
   const s = $derived(energy.state);
@@ -135,6 +141,8 @@
     {/snippet}
   </Modal>
 {/if}
+
+<SectionsPanel />
 
 <style>
   .lead {

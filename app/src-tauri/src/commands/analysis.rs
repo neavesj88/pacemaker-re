@@ -1,5 +1,6 @@
 //! Analysis: waveform peaks (`analysis_peaks`), key detection (`analysis_detect_keys`, a
-//! background job of kind "keys") and energy analysis (`energy.rs`, kind "energy", app-side cache).
+//! background job of kind "keys"), energy analysis (`energy.rs`, kind "energy", app-side cache)
+//! and section detection (`sections.rs`, kind "sections", app-side cache).
 //!
 //! Peaks are computed once per track from a full decode at a fixed fine resolution, cached in
 //! the app cache dir (see `pm_analysis::peaks`) and resampled to the width asked for. Computing
@@ -8,6 +9,7 @@
 //! fifty times.
 
 pub mod energy;
+pub mod sections;
 
 use std::collections::HashMap;
 use std::path::{Component, Path, PathBuf};
@@ -283,6 +285,12 @@ macro_rules! analysis_commands {
                 $crate::commands::analysis::energy::analysis_energy_plan,
                 $crate::commands::analysis::energy::analysis_energy_analyse,
                 $crate::commands::analysis::energy::analysis_energy_clear,
+                $crate::commands::analysis::sections::analysis_sections_state,
+                $crate::commands::analysis::sections::analysis_sections_settings,
+                $crate::commands::analysis::sections::analysis_sections_save_settings,
+                $crate::commands::analysis::sections::analysis_sections_plan,
+                $crate::commands::analysis::sections::analysis_sections_analyse,
+                $crate::commands::analysis::sections::analysis_sections_clear,
             ];
             $($rest),*
         }

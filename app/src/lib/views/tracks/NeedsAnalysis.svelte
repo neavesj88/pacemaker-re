@@ -7,6 +7,7 @@
   import { filters } from "$lib/state/filters.svelte";
   import { jobs } from "$lib/state/jobs.svelte";
   import { nav } from "$lib/state/nav.svelte";
+  import { sections } from "$lib/state/sections.svelte";
   import { session } from "$lib/state/session.svelte";
   import Button from "$lib/ui/Button.svelte";
 
@@ -34,6 +35,11 @@
 {#if energy.state && energy.state.total > 0}
   <Button small onclick={() => energy.openPanel()} title="Estimate how intense each track is from its audio. Kept by this app only; nothing is written to the device.">
     Energy {energy.state.ready} / {energy.state.total}…
+  </Button>
+{/if}
+{#if sections.state && sections.state.total > 0}
+  <Button small onclick={() => sections.openPanel()} title="Find the intro, builds, drops, breakdowns and outro of each track and mark them on the waveforms. Kept by this app only; nothing is written to the device.">
+    Sections {sections.state.ready} / {sections.state.total}…
   </Button>
 {/if}
 {#if analysis.keyless.length > 0}
