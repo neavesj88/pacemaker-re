@@ -74,25 +74,20 @@ pub fn add_tracks(app: AppHandle, lock: State<'_, JobLock>, root: String, files:
     })
 }
 
-// ---- other libraries: rekordbox XML, iTunes / Music Library.xml, M3U8 / CSV out ----
+// ---- other libraries: rekordbox XML, iTunes, Traktor NML, Serato crates, M3U / M3U8; M3U8 / CSV out ----
 
 const JOB_INTEROP: &str = "interop";
-/// Library files bigger than this are refused instead of read into memory.
-const MAX_LIBRARY_FILE: u64 = 2 << 30;
 
+/// Reads whatever the user picked (a library file, a playlist, a `.crate` or a `_Serato_` folder).
+/// The reader picks the format; paths inside the file are never probed unless they are plain
+/// local ones (see `pm_formats::interop::paths`).
 fn read_foreign(path: &str) -> AppResult<interop::ForeignLibrary> {
-    let meta = std::fs::metadata(path)?;
-    if meta.len() > MAX_LIBRARY_FILE {
-        return Err("That file is larger than 2 GB; it is not a library export.".into());
-    }
-    let bytes = std::fs::read(path)?;
-    // no second copy of a big file when it is valid UTF-8 (the usual case)
-    let text = String::from_utf8(bytes).unwrap_or_else(|e| String::from_utf8_lossy(e.as_bytes()).into_owned());
-    Ok(interop::parse_library(&text)?)
+    Ok(interop::read_path(Path::new(path))?)
 }
 
-/// Reads a rekordbox XML or iTunes `Library.xml` and lists exactly what importing it would
-/// change in the library on `root`. Writes nothing.
+/// Reads a rekordbox / iTunes / Traktor library, a Serato crate (file or `_Serato_` folder) or an
+/// M3U / M3U8 playlist and lists exactly what importing it would change in the library on
+/// `root`. Writes nothing.
 #[tauri::command]
 pub async fn interop_preview(root: String, path: String, options: Option<ImportOptions>) -> AppResult<ImportPlan> {
     tauri::async_runtime::spawn_blocking(move || {
@@ -192,4 +187,30 @@ macro_rules! import_commands {
             $($rest),*
         }
     };
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use pm_formats::interop::{CueMode, Source};
+
+    // the UI sends these exact names; an options object from before `cues` existed still works
+    #[test]
+    fn options_json_contract() {
+        let o: ImportOptions =
+            serde_json::from_str(r#"{"ratings":true,"playlists":false,"playlist_indexes":[1,2],"cues":"overwrite"}"#).unwrap();
+        assert_eq!((o.cues, o.playlists, o.playlist_indexes), (CueMode::Overwrite, false, Some(vec![1, 2])));
+        let o: ImportOptions = serde_json::from_str(r#"{"ratings":true,"playlists":true,"playlist_indexes":null}"#).unwrap();
+        assert_eq!(o.cues, CueMode::Off);
+        assert!(serde_json::from_str::<ImportOptions>(r#"{"cues":"sometimes"}"#).is_err());
+        assert_eq!(serde_json::to_string(&Source::Serato).unwrap(), "\"serato\"");
+        assert_eq!(serde_json::to_string(&Source::M3u).unwrap(), "\"m3u\"");
+        assert_eq!(serde_json::to_string(&Source::Traktor).unwrap(), "\"traktor\"");
+    }
+
+    #[test]
+    fn read_foreign_reports_unreadable_input_as_an_error_string() {
+        let e = read_foreign("Z:/this/does/not/exist.nml").unwrap_err();
+        assert!(!e.to_string().is_empty());
+    }
 }

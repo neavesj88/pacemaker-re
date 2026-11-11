@@ -48,9 +48,9 @@
 
   <section class="card">
     <h3>rekordbox</h3>
-    <p class="muted">rekordbox.xml: ratings and playlists become ratings and cases (previewed first); cues and grids are not imported yet. Export writes tracks with their tempo grids, ratings, keys and cases.</p>
+    <p class="muted">rekordbox.xml: ratings, playlists and the first memory cue become ratings, cases and (if you choose) cue points, previewed first; beat grids are not imported. Export writes tracks with their tempo grids, ratings, keys and cases.</p>
     <div class="row">
-      <Button onclick={() => interop.pick("Choose a rekordbox XML export")} disabled={!lib || interop.loading}>Import XML…</Button>
+      <Button onclick={() => interop.pick("rekordbox")} disabled={!lib || interop.loading}>Import XML…</Button>
       <Button onclick={() => interop.export("rekordbox", { scope: "library" }, "rekordbox")} disabled={!lib || interop.exporting}>Export XML…</Button>
     </div>
   </section>
@@ -58,13 +58,16 @@
   <section class="card">
     <h3>iTunes / Music</h3>
     <p class="muted">Library.xml: ratings (0-100 become 0-5 stars) and playlists become cases.</p>
-    <Button onclick={() => interop.pick("Choose an iTunes / Music Library.xml")} disabled={!lib || interop.loading}>Import…</Button>
+    <Button onclick={() => interop.pick("itunes")} disabled={!lib || interop.loading}>Import…</Button>
   </section>
 
   <section class="card">
     <h3>Playlists and lists</h3>
-    <p class="muted">Save a case, a mix or the whole library as an M3U8 playlist or a CSV list.</p>
+    <p class="muted">Import an M3U / M3U8 playlist as a case (relative and absolute paths, #EXTINF titles), or save a case, a mix or the whole library as an M3U8 playlist or a CSV list.</p>
     <div class="row">
+      <Button onclick={() => interop.pick("m3u")} disabled={!lib || interop.loading}>Import playlist…</Button>
+    </div>
+    <div class="row export">
       <select bind:value={scope} disabled={!lib} aria-label="What to export">
         <option value="library">Whole library</option>
         {#if lib?.cases.length}
@@ -84,8 +87,18 @@
   </section>
 
   <section class="card">
-    <h3>Serato · Traktor</h3>
-    <p class="muted">Importing crates and cues from Serato or Traktor is not built yet.</p>
+    <h3>Serato</h3>
+    <p class="muted">Crates become cases. Pick the <code>_Serato_</code> folder (on your music drive, or in your Music folder) to read every crate in it, or a single <code>.crate</code> file. A crate holds file paths only, so tracks are matched by file name and size and the files must be reachable from this computer. Smart crates are not imported.</p>
+    <div class="row">
+      <Button onclick={() => interop.pick("serato-folder")} disabled={!lib || interop.loading}>Import _Serato_ folder…</Button>
+      <Button onclick={() => interop.pick("serato-crate")} disabled={!lib || interop.loading}>Import .crate…</Button>
+    </div>
+  </section>
+
+  <section class="card">
+    <h3>Traktor</h3>
+    <p class="muted">collection.nml: ratings, playlists and the first cue of each track become ratings, cases and (if you choose) cue points, previewed first. Colours and beat grids are not imported.</p>
+    <Button onclick={() => interop.pick("traktor")} disabled={!lib || interop.loading}>Import collection.nml…</Button>
   </section>
 
   {#if interop.error}<p class="err" role="alert">{interop.error}</p>{/if}
@@ -110,6 +123,9 @@
   h3 {
     margin: 0 0 6px;
     font-size: 14px;
+  }
+  .row.export {
+    margin-top: 8px;
   }
   .row {
     display: flex;

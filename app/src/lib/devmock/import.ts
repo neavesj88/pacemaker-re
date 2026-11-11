@@ -1,14 +1,30 @@
 // Mock of src-tauri/src/commands/import.rs.
 import { emit } from "@tauri-apps/api/event";
-import type { CasePlan, ImportOptions, ImportPlan } from "$lib/api/import";
+import type { CasePlan, ImportOptions, ImportPlan, InteropSource } from "$lib/api/import";
+import { cueApplies } from "$lib/views/import/importLogic";
 import { baseName } from "$lib/format";
 import { AUDIO, tracks } from "./db";
 import { jobLock, runJob } from "./jobs";
 import type { Handlers } from "./types";
 
+/** The mock dialog answers every pick with the same fake path, so the source of a preview is
+ *  read from the path when it names one, else from `globalThis.__mockImportSource` (set it in the
+ *  browser console to see the Serato / Traktor / M3U previews), else rekordbox. */
+function mockSource(path: string): InteropSource {
+  const forced = (globalThis as { __mockImportSource?: InteropSource }).__mockImportSource;
+  if (forced) return forced;
+  if (/itunes|library\.xml/i.test(path)) return "itunes";
+  if (/\.nml$|traktor/i.test(path)) return "traktor";
+  if (/\.crate$|serato/i.test(path)) return "serato";
+  if (/\.m3u8?$/i.test(path)) return "m3u";
+  return "rekordbox";
+}
+
 /** An invented import plan over the shared fixture: some rating changes, a new case, an
- *  extended case, one already complete, memory cues, and unmatched files (one on disk). */
+ *  extended case, one already complete, cue points, and unmatched files (one on disk). */
 function mockPlan(path: string, options: ImportOptions): ImportPlan {
+  const source = mockSource(path);
+  const hasTags = source !== "serato"; // a crate holds paths only: no ratings, no cues
   const pick = (ids: number[]) =>
     ids.map((id) => tracks[id - 1]).map((t) => ({ track_id: t.track_id, title: t.title, artist: t.artist }));
   const ratings = [1, 2, 3, 6, 9].map((id) => {
@@ -28,17 +44,33 @@ function mockPlan(path: string, options: ImportOptions): ImportPlan {
     { title: "Mock Tune Two", artist: "Example Artist Z", path: "C:\\Music\\Mock Tune Two.flac", reason: "not on the device", on_disk: true, in_playlist: true },
     { title: "Mock Tune Three", artist: "Example Artist Y", path: "D:\\Gone\\Mock Tune Three.mp3", reason: "not on the device", on_disk: false, in_playlist: false },
     { title: "Mock Tune Four", artist: "Example Artist Y", path: "", reason: "2 device tracks share this title and artist", on_disk: false, in_playlist: false },
-  ];
+    { title: "Mock Tune Five", artist: "", path: "//example-host/share/Mock Tune Five.mp3", reason: "not on the device; the file location was not checked because it points at a network or device location", on_disk: false, in_playlist: true },
+  ].map((u) => ({ path_checked: !u.reason.includes("not checked"), ...u }));
   return {
-    source: /itunes|library\.xml/i.test(path) ? "itunes" : "rekordbox",
+    source,
     foreign_tracks: 20,
     matched: 16,
     matched_by_file: 12,
     matched_by_tags: 4,
-    ratings: options.ratings ? ratings : [],
+    ratings: options.ratings && hasTags ? ratings : [],
     ratings_unchanged: 3,
     cases,
-    cues_skipped: [2, 4, 6].map((id) => ({ track_id: id, title: tracks[id - 1].title, artist: tracks[id - 1].artist, cue_secs: 12.25 * id })),
+    cues: hasTags
+      ? [2, 4, 6].map((id, i) => {
+          const secs = 12.25 * id;
+          const existing = i === 1 ? 5 * 44100 : i === 2 ? Math.round(secs * 44100) : null;
+          return {
+            track_id: id,
+            title: tracks[id - 1].title,
+            artist: tracks[id - 1].artist,
+            cue_secs: secs,
+            cue_frames: Math.round(secs * 44100),
+            existing_frames: existing,
+            action: existing === null ? ("set" as const) : existing === Math.round(secs * 44100) ? ("same" as const) : ("replace" as const),
+          };
+        })
+      : [],
+    notes: source === "serato" ? ["Skipped Broken.crate: this is not a Serato crate (it does not start with a vrsn record)", "Smart crates (rule-based) are not imported; only ordinary crates are."] : [],
     unmatched_total: unmatched.length,
     unmatched,
     addable_paths: unmatched.filter((u) => u.on_disk).map((u) => u.path),
@@ -58,6 +90,7 @@ export const handlers: Handlers = {
     const opts = a.options as ImportOptions;
     const steps = [
       ...(opts.ratings && plan.ratings.length ? [`${plan.ratings.length} ratings`] : []),
+      ...(plan.cues.some((c) => cueApplies(opts.cues, c.action)) ? [`${plan.cues.filter((c) => cueApplies(opts.cues, c.action)).length} cue points`] : []),
       ...plan.cases.filter((c) => c.selected && (c.action === "create" || c.action === "extend")).map((c) => c.name),
     ];
     jobLock.running = true;

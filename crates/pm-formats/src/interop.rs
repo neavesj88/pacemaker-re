@@ -10,6 +10,11 @@
 //! The XML reading is a small tolerant pull parser in this file (elements, attributes, text,
 //! entities, CDATA; DTDs, comments and processing instructions are skipped) so the crate needs
 //! no XML dependency.
+//!
+//! Sources: rekordbox XML, iTunes / Music `Library.xml`, Traktor `collection.nml` ([`traktor`]),
+//! Serato crates ([`serato`], binary) and M3U / M3U8 playlists ([`m3u`]). [`read_path`] opens a
+//! file or folder and picks the reader. Every path found in such a file is untrusted and is only
+//! ever probed through [`paths`] (no UNC / device / URL / relative paths, no network shares).
 
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
@@ -18,6 +23,11 @@ use serde::{Deserialize, Serialize};
 
 use crate::library::{Error, Library, Track};
 use crate::{naming, strfile};
+
+pub mod m3u;
+pub mod paths;
+pub mod serato;
+pub mod traktor;
 
 // ---------------------------------------------------------------------------------------------
 // XML pull parser
@@ -305,6 +315,9 @@ fn build_node(r: &mut Reader, name: String, attrs: Vec<(String, String)>, depth:
 pub enum Source {
     Rekordbox,
     Itunes,
+    Traktor,
+    Serato,
+    M3u,
 }
 
 impl Source {
@@ -312,6 +325,9 @@ impl Source {
         match self {
             Source::Rekordbox => "rekordbox",
             Source::Itunes => "iTunes / Music",
+            Source::Traktor => "Traktor",
+            Source::Serato => "Serato",
+            Source::M3u => "M3U playlist",
         }
     }
 }
@@ -349,6 +365,8 @@ pub struct ForeignLibrary {
     pub source: Source,
     pub tracks: Vec<ForeignTrack>,
     pub playlists: Vec<ForeignPlaylist>,
+    /// Things the reader skipped or could not use (a damaged crate, smart crates), shown in the preview.
+    pub notes: Vec<String>,
 }
 
 fn pct_decode(s: &str) -> String {
@@ -379,7 +397,9 @@ pub fn location_to_path(loc: &str) -> String {
         .or_else(|| loc.strip_prefix("file://"))
         .or_else(|| loc.strip_prefix("FILE://"));
     let Some(rest) = rest else { return loc.to_string() };
-    let p = pct_decode(rest);
+    // `file://host/share/x` has a host: keep it as `//host/share/x` (a network path, which the
+    // importers refuse to probe) instead of passing it off as the relative path `host/share/x`
+    let p = if rest.starts_with('/') || rest.is_empty() { pct_decode(rest) } else { format!("//{}", pct_decode(rest)) };
     let b = p.as_bytes();
     if b.len() >= 3 && b[0] == b'/' && b[1].is_ascii_alphabetic() && b[2] == b':' {
         p[1..].to_string()
@@ -449,7 +469,7 @@ pub fn parse_rekordbox(text: &str) -> Result<ForeignLibrary, Error> {
             walk_rekordbox_nodes(top, &mut Vec::new(), true, &by_id, &by_path, &mut playlists);
         }
     }
-    Ok(ForeignLibrary { source: Source::Rekordbox, tracks, playlists })
+    Ok(ForeignLibrary { source: Source::Rekordbox, tracks, playlists, notes: vec![] })
 }
 
 fn walk_rekordbox_nodes(
@@ -674,17 +694,59 @@ pub fn parse_itunes(text: &str) -> Result<ForeignLibrary, Error> {
             playlists.push(pl);
         }
     }
-    Ok(ForeignLibrary { source: Source::Itunes, tracks, playlists })
+    Ok(ForeignLibrary { source: Source::Itunes, tracks, playlists, notes: vec![] })
 }
 
-/// Reads a rekordbox or iTunes library file, detecting which from the root element.
+/// Reads a rekordbox, iTunes or Traktor library file, detecting which from the root element.
 pub fn parse_library(text: &str) -> Result<ForeignLibrary, Error> {
     let t = text.strip_prefix('\u{feff}').unwrap_or(text);
     let mut r = Reader::new(t);
     match r.next_start()? {
         Some((n, _)) if n == "DJ_PLAYLISTS" => parse_rekordbox(t),
         Some((n, _)) if n == "plist" => parse_itunes(t),
-        _ => Err(bad("this is not a rekordbox XML or iTunes / Music Library.xml file")),
+        Some((n, _)) if n == "NML" => traktor::parse(t),
+        _ => Err(bad("this is not a rekordbox XML, iTunes / Music Library.xml or Traktor collection.nml file")),
+    }
+}
+
+/// Library files bigger than this are refused instead of read into memory.
+pub const MAX_LIBRARY_FILE: u64 = 2 << 30;
+/// Playlists and crates are small; a bigger one is not one.
+const MAX_SMALL_FILE: u64 = 256 << 20;
+
+fn lossy(bytes: Vec<u8>) -> String {
+    // no second copy of a big file when it is valid UTF-8 (the usual case)
+    String::from_utf8(bytes).unwrap_or_else(|e| String::from_utf8_lossy(e.as_bytes()).into_owned())
+}
+
+/// Opens whatever the user picked and reads it with the right reader: a folder is a Serato
+/// `_Serato_` folder; a file is recognised by its extension (`.crate`, `.m3u` / `.m3u8`, `.nml`,
+/// `.xml`) and, failing that, by its first bytes.
+pub fn read_path(path: &Path) -> Result<ForeignLibrary, Error> {
+    let meta = std::fs::metadata(path)?;
+    if meta.is_dir() {
+        return serato::read_path(path);
+    }
+    let ext = path.extension().map(|e| e.to_string_lossy().to_ascii_lowercase()).unwrap_or_default();
+    let cap = if matches!(ext.as_str(), "xml" | "nml") { MAX_LIBRARY_FILE } else { MAX_SMALL_FILE };
+    if meta.len() > cap {
+        return Err(bad(format!("that file is larger than {} MB; it is not a library export", cap >> 20)));
+    }
+    if ext == "crate" {
+        return serato::read_path(path);
+    }
+    let bytes = std::fs::read(path)?;
+    let name = path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+    let base = path.parent().map(|p| p.display().to_string());
+    let head = bytes.strip_prefix(&[0xEF, 0xBB, 0xBF]).unwrap_or(&bytes);
+    let looks_xml = head.iter().find(|b| !b.is_ascii_whitespace()) == Some(&b'<');
+    match ext.as_str() {
+        "m3u" | "m3u8" => m3u::parse(&bytes, &name, base.as_deref()),
+        "xml" | "nml" => parse_library(&lossy(bytes)),
+        _ if head.starts_with(b"vrsn") => serato::read_path(path),
+        _ if looks_xml => parse_library(&lossy(bytes)),
+        _ if head.starts_with(b"#EXTM3U") => m3u::parse(&bytes, &name, base.as_deref()),
+        _ => Err(bad("this is not a library file the importer knows (rekordbox XML, iTunes XML, Traktor NML, Serato crate, M3U / M3U8)")),
     }
 }
 
@@ -701,11 +763,45 @@ pub struct ImportOptions {
     pub playlists: bool,
     /// Which playlists (indexes into the plan's `cases`' `index`); `None` = all.
     pub playlist_indexes: Option<Vec<usize>>,
+    /// What to do with the first cue point of a matched track (see [`CueMode`]).
+    pub cues: CueMode,
 }
 
 impl Default for ImportOptions {
     fn default() -> Self {
-        ImportOptions { ratings: true, playlists: true, playlist_indexes: None }
+        ImportOptions { ratings: true, playlists: true, playlist_indexes: None, cues: CueMode::Off }
+    }
+}
+
+/// The device keeps one cue point per track. Writing it changes what the device cues to, so the
+/// default is to leave cues alone; the user picks how far an import may go.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CueMode {
+    /// Report cues, write none.
+    #[default]
+    Off,
+    /// Set the cue only on tracks that have none.
+    Empty,
+    /// Also replace a cue the track already has.
+    Overwrite,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CueAction {
+    /// The track has no cue yet.
+    Set,
+    /// The track has a different cue.
+    Replace,
+    /// The track already has this cue.
+    Same,
+}
+
+impl CueMode {
+    /// Whether a cue with this action is written in this mode (the preview and the apply both ask).
+    pub fn applies(self, a: CueAction) -> bool {
+        matches!((self, a), (CueMode::Empty, CueAction::Set) | (CueMode::Overwrite, CueAction::Set | CueAction::Replace))
     }
 }
 
@@ -759,6 +855,11 @@ pub struct CueNote {
     pub title: String,
     pub artist: String,
     pub cue_secs: f64,
+    /// `cue_secs` in source frames at the track's sample rate, the unit the device row stores.
+    pub cue_frames: i64,
+    /// The cue the track has now, in source frames.
+    pub existing_frames: Option<i64>,
+    pub action: CueAction,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -767,6 +868,9 @@ pub struct UnmatchedTrack {
     pub artist: String,
     pub path: String,
     pub reason: String,
+    /// Whether `path` was looked up on this computer (false for a network, device, URL or relative
+    /// location, which is never probed); `on_disk` only means something when it is true.
+    pub path_checked: bool,
     pub on_disk: bool,
     pub in_playlist: bool,
 }
@@ -784,9 +888,11 @@ pub struct ImportPlan {
     pub ratings: Vec<RatingChange>,
     pub ratings_unchanged: usize,
     pub cases: Vec<CasePlan>,
-    /// Memory cues found for matched tracks that this version leaves alone (the device keeps one
-    /// cue per track and there is no library operation to set it yet).
-    pub cues_skipped: Vec<CueNote>,
+    /// The first cue found for each matched track and what writing it would do; which of them are
+    /// written is the [`CueMode`] option.
+    pub cues: Vec<CueNote>,
+    /// What the reader skipped (damaged crates, smart crates...).
+    pub notes: Vec<String>,
     pub unmatched_total: usize,
     pub unmatched: Vec<UnmatchedTrack>,
     /// Unmatched files that exist on this computer: what the add-tracks job could bring over.
@@ -827,7 +933,8 @@ fn match_tracks(lib_tracks: &[Track], foreign: &[ForeignTrack]) -> Vec<Matched> 
                         return Matched::ByFile(*id);
                     }
                 }
-                let size = f.size.or_else(|| std::fs::metadata(&f.path).ok().map(|m| m.len()));
+                // the length comes from the file only when it is a plain local path (never a share)
+                let size = f.size.or_else(|| paths::local_file_len(&f.path));
                 if let Some(size) = size {
                     let (_, loc) = naming::device_paths(file_name_of(&f.path), size);
                     if let Some(id) = by_loc.get(loc.as_str()) {
@@ -838,6 +945,9 @@ fn match_tracks(lib_tracks: &[Track], foreign: &[ForeignTrack]) -> Vec<Matched> 
             // 2. same title and artist, and the same length when both are known
             if f.title.trim().is_empty() {
                 return Matched::No("no file match and no title to compare".into());
+            }
+            if f.duration_secs.is_none() {
+                return Matched::No("not on the device (the file gives no length to confirm a title match)".into());
             }
             let cands: Vec<&&Track> = by_tags
                 .get(&(norm(&f.title), norm(&f.artist)))
@@ -875,6 +985,7 @@ pub fn plan_import(lib: &Library, foreign: &ForeignLibrary, opts: &ImportOptions
     let mut unchanged = 0;
     let mut cues = Vec::new();
     let mut seen_rating: HashSet<i64> = HashSet::new();
+    let mut seen_cue: HashSet<i64> = HashSet::new();
     for (f, m) in foreign.tracks.iter().zip(&matches) {
         match m {
             Matched::ByFile(_) => by_file += 1,
@@ -892,8 +1003,26 @@ pub fn plan_import(lib: &Library, foreign: &ForeignLibrary, opts: &ImportOptions
                 }
             }
         }
-        if let Some(c) = f.cue_secs {
-            cues.push(CueNote { track_id: id, title: t.title.clone(), artist: t.artist.clone(), cue_secs: c });
+        if let Some(c) = f.cue_secs.filter(|c| c.is_finite() && *c >= 0.0 && *c < 1e6) {
+            if seen_cue.insert(id) {
+                let rate = lib.sample_rate_of(id)?;
+                let frames = (c * f64::from(rate)).round() as i64;
+                let existing = lib.track_cue(id)?;
+                let action = match existing {
+                    None => CueAction::Set,
+                    Some(e) if e == frames => CueAction::Same,
+                    Some(_) => CueAction::Replace,
+                };
+                cues.push(CueNote {
+                    track_id: id,
+                    title: t.title.clone(),
+                    artist: t.artist.clone(),
+                    cue_secs: c,
+                    cue_frames: frames,
+                    existing_frames: existing,
+                    action,
+                });
+            }
         }
     }
 
@@ -955,15 +1084,28 @@ pub fn plan_import(lib: &Library, foreign: &ForeignLibrary, opts: &ImportOptions
     let mut unmatched: Vec<(usize, UnmatchedTrack)> = Vec::new();
     for (i, (f, m)) in foreign.tracks.iter().zip(&matches).enumerate() {
         if let Matched::No(reason) = m {
-            let on_disk = !f.path.is_empty() && Path::new(&f.path).is_file();
+            let on_disk = paths::local_is_file(&f.path);
             let reason = if f.path.is_empty() && reason.starts_with("not on the device") {
                 "not on the device (and the file has no location)".to_string()
             } else {
                 reason.clone()
             };
+            // a location that was never probed says so, instead of looking like "file not found"
+            let reason = match (f.path.is_empty(), paths::rejection(&f.path)) {
+                (false, Some(why)) => format!("{reason}; the file location was not checked because {why}"),
+                _ => reason,
+            };
             unmatched.push((
                 i,
-                UnmatchedTrack { title: f.title.clone(), artist: f.artist.clone(), path: f.path.clone(), reason, on_disk, in_playlist: in_playlist.contains(&i) },
+                UnmatchedTrack {
+                    title: f.title.clone(),
+                    artist: f.artist.clone(),
+                    path: f.path.clone(),
+                    reason,
+                    path_checked: paths::is_local(&f.path),
+                    on_disk,
+                    in_playlist: in_playlist.contains(&i),
+                },
             ));
         }
     }
@@ -981,7 +1123,8 @@ pub fn plan_import(lib: &Library, foreign: &ForeignLibrary, opts: &ImportOptions
         ratings: if opts.ratings { ratings } else { vec![] },
         ratings_unchanged: unchanged,
         cases,
-        cues_skipped: cues,
+        cues,
+        notes: foreign.notes.clone(),
         unmatched_total,
         unmatched,
         addable_paths,
@@ -989,6 +1132,15 @@ pub fn plan_import(lib: &Library, foreign: &ForeignLibrary, opts: &ImportOptions
 }
 
 impl Library {
+    /// A track's sample rate; a row without one (never written by the Editor) is read as CD rate,
+    /// as the grid editor does.
+    fn sample_rate_of(&self, track_id: i64) -> Result<u32, Error> {
+        use rusqlite::OptionalExtension;
+        let r: Option<i64> =
+            self.con.query_row("SELECT IFNULL(sample_rate,0) FROM tracks WHERE track_id = ?1 AND track_id >= 0", [track_id], |r| r.get(0)).optional()?;
+        Ok(r.filter(|r| *r > 0 && *r <= 768_000).unwrap_or(44_100) as u32)
+    }
+
     /// Sets several ratings in one transaction (all or none), each exactly as
     /// [`Library::set_track_rating`] does. Returns how many rows changed.
     pub fn set_track_ratings(&mut self, changes: &[(i64, u8)]) -> Result<usize, Error> {
@@ -1016,6 +1168,7 @@ pub struct ApplyReport {
     pub ratings_set: usize,
     pub cases_created: usize,
     pub cases_extended: usize,
+    pub cues_set: usize,
     pub tracks_added_to_cases: usize,
     pub failures: Vec<(String, String)>,
 }
@@ -1039,9 +1192,10 @@ pub fn apply_plan(
 ) -> Result<ApplyReport, Error> {
     let mut rep = ApplyReport::default();
     let do_ratings = opts.ratings && !plan.ratings.is_empty();
+    let cue_changes: Vec<&CueNote> = plan.cues.iter().filter(|c| opts.cues.applies(c.action)).collect();
     let cases: Vec<&CasePlan> =
         plan.cases.iter().filter(|c| c.selected && matches!(c.action, CaseAction::Create | CaseAction::Extend)).collect();
-    let total = usize::from(do_ratings) + cases.len();
+    let total = usize::from(do_ratings) + usize::from(!cue_changes.is_empty()) + cases.len();
     let mut done = 0;
 
     if do_ratings {
@@ -1058,6 +1212,25 @@ pub fn apply_plan(
                 progress(Step { label: &label, done, total, error: Some(&msg) });
                 rep.failures.push((label, msg));
             }
+        }
+    }
+
+    if !cue_changes.is_empty() {
+        let label = format!("{} cue point{}", cue_changes.len(), if cue_changes.len() == 1 { "" } else { "s" });
+        done += 1;
+        let mut failed = None;
+        for c in &cue_changes {
+            match lib.set_track_cue(c.track_id, Some(c.cue_frames)) {
+                Ok(changed) => rep.cues_set += usize::from(changed),
+                Err(e) => {
+                    failed = Some(format!("{}: {e}", c.title));
+                    break;
+                }
+            }
+        }
+        progress(Step { label: &label, done, total, error: failed.as_deref() });
+        if let Some(msg) = failed {
+            rep.failures.push((label, msg));
         }
     }
 
@@ -1111,6 +1284,9 @@ impl ApplyReport {
         let mut parts = Vec::new();
         if self.ratings_set > 0 {
             parts.push(format!("{} rating{} set", self.ratings_set, if self.ratings_set == 1 { "" } else { "s" }));
+        }
+        if self.cues_set > 0 {
+            parts.push(format!("{} cue point{} set", self.cues_set, if self.cues_set == 1 { "" } else { "s" }));
         }
         if self.cases_created > 0 {
             parts.push(format!("{} case{} created", self.cases_created, if self.cases_created == 1 { "" } else { "s" }));
@@ -1607,8 +1783,8 @@ mod tests {
         assert!(!plan.unmatched[0].on_disk);
         let r: Vec<(String, i64, u8)> = plan.ratings.iter().map(|r| (r.title.clone(), r.from, r.to)).collect();
         assert_eq!(r, vec![("Synth Title 0".to_string(), 0, 3), ("Synth Title 1".to_string(), 0, 5)]);
-        assert_eq!(plan.cues_skipped.len(), 1);
-        assert_eq!(plan.cues_skipped[0].cue_secs, 12.25);
+        assert_eq!(plan.cues.len(), 1);
+        assert_eq!(plan.cues[0].cue_secs, 12.25);
         let names: Vec<(&str, CaseAction, usize, usize)> = plan.cases.iter().map(|c| (c.name.as_str(), c.action, c.tracks.len(), c.unmatched)).collect();
         assert_eq!(names, vec![("Warm up", CaseAction::Create, 2, 1), ("Folder / Inner", CaseAction::Create, 1, 1)]);
 
@@ -1651,7 +1827,7 @@ mod tests {
         lib.set_case_tracks(cid, &[t[2].track_id, t[1].track_id]).unwrap();
         let f = parse_library(ITUNES).unwrap();
 
-        let opts = ImportOptions { ratings: false, playlists: true, playlist_indexes: None };
+        let opts = ImportOptions { ratings: false, playlists: true, playlist_indexes: None, ..Default::default() };
         let plan = plan_import(&lib, &f, &opts).unwrap();
         assert!(plan.ratings.is_empty(), "ratings switched off");
         assert_eq!(plan.matched, 2);
@@ -1667,7 +1843,7 @@ mod tests {
 
         // deselecting the playlist applies nothing
         let (mut lib2, dirs2, _) = library("ext2", 3);
-        let opts = ImportOptions { ratings: true, playlists: true, playlist_indexes: Some(vec![]) };
+        let opts = ImportOptions { ratings: true, playlists: true, playlist_indexes: Some(vec![]), ..Default::default() };
         let plan = plan_import(&lib2, &f, &opts).unwrap();
         let rep = apply_plan(&mut lib2, &plan, &opts, |_| {}).unwrap();
         assert_eq!((rep.ratings_set, rep.cases_created), (2, 0));
@@ -1702,6 +1878,7 @@ mod tests {
             source: Source::Itunes,
             tracks: vec![ForeignTrack { title: "synth title 0".into(), artist: "SYNTH ARTIST".into(), duration_secs: Some(200.0), ..Default::default() }],
             playlists: vec![],
+            notes: vec![],
         };
         let plan = plan_import(&lib, &f, &ImportOptions::default()).unwrap();
         assert_eq!(plan.matched, 1);
@@ -1726,6 +1903,7 @@ mod tests {
             source: Source::Rekordbox,
             tracks: vec![ForeignTrack { title: "Brand New".into(), path: extra.display().to_string(), ..Default::default() }],
             playlists: vec![ForeignPlaylist { name: "P".into(), tracks: vec![0], dangling: 0 }],
+            notes: vec![],
         };
         let plan = plan_import(&lib, &f, &ImportOptions::default()).unwrap();
         assert_eq!(plan.addable_paths, vec![extra.display().to_string()]);
@@ -1843,5 +2021,168 @@ mod tests {
         assert_eq!(csv_text("@x"), "'@x");
         assert_eq!(csv_text("-1"), "'-1");
         assert_eq!(csv_text("plain"), "plain");
+    }
+
+    // ---- the new sources, end to end -----------------------------------------------------
+
+    #[test]
+    fn network_device_and_url_paths_are_not_probed_and_say_so() {
+        assert_eq!(location_to_path("file:////host/share/x.mp3"), "//host/share/x.mp3");
+        assert_eq!(location_to_path("file://host/share/x.mp3"), "//host/share/x.mp3", "a host is not a relative folder");
+        let (lib, dirs, _) = library("unsafe", 1);
+        let f = ForeignLibrary {
+            source: Source::M3u,
+            tracks: [
+                "\\\\invalid-host-for-test\\share\\a.mp3",
+                "//invalid-host-for-test/share/b.mp3",
+                "\\\\.\\pipe\\c",
+                "smb://invalid-host-for-test/d.mp3",
+                "rel/e.mp3",
+            ]
+            .iter()
+            .map(|p| ForeignTrack { title: format!("T {p}"), path: (*p).into(), ..Default::default() })
+            .collect(),
+            playlists: vec![],
+            notes: vec![],
+        };
+        let plan = plan_import(&lib, &f, &ImportOptions::default()).unwrap();
+        assert_eq!(plan.matched, 0);
+        assert!(plan.addable_paths.is_empty(), "nothing from a refused location is offered to the add job");
+        assert!(
+            plan.unmatched.iter().all(|u| !u.on_disk && u.reason.contains("not checked")),
+            "{:?}",
+            plan.unmatched.iter().map(|u| &u.reason).collect::<Vec<_>>()
+        );
+        clean(lib, dirs);
+    }
+
+    #[test]
+    fn m3u_playlist_matches_by_file_and_becomes_a_case() {
+        let (mut lib, dirs, _) = library("m3u", 3);
+        // relative entries next to the audio, a missing file, and a stream
+        let list = dirs[1].join("Friday.m3u8");
+        std::fs::write(&list, "#EXTM3U\n#EXTINF:200,Whatever - Else\nsynth 2.mp3\nsynth 0.mp3\nmissing.mp3\nhttp://example.invalid/s\n").unwrap();
+        let f = read_path(&list).unwrap();
+        assert_eq!(f.source, Source::M3u);
+        let opts = ImportOptions::default();
+        let plan = plan_import(&lib, &f, &opts).unwrap();
+        assert_eq!((plan.matched, plan.matched_by_file), (2, 2));
+        assert_eq!(plan.cases.len(), 1);
+        let c = &plan.cases[0];
+        assert_eq!((c.name.as_str(), c.action, c.tracks.len(), c.unmatched), ("Friday", CaseAction::Create, 2, 2));
+        assert_eq!(c.tracks[0].title, "Synth Title 2", "playlist order is kept");
+        let rep = apply_plan(&mut lib, &plan, &opts, |_| {}).unwrap();
+        assert_eq!((rep.cases_created, rep.failures.len()), (1, 0));
+        clean(lib, dirs);
+    }
+
+    fn crate_file(paths: &[&str]) -> Vec<u8> {
+        let rec = |tag: &[u8; 4], d: &[u8]| {
+            let mut v = tag.to_vec();
+            v.extend((d.len() as u32).to_be_bytes());
+            v.extend(d);
+            v
+        };
+        let u16be = |s: &str| s.encode_utf16().flat_map(|c| c.to_be_bytes()).collect::<Vec<u8>>();
+        let mut v = rec(b"vrsn", &u16be("1.0/Serato ScratchLive Crate"));
+        for p in paths {
+            v.extend(rec(b"otrk", &rec(b"ptrk", &u16be(p))));
+        }
+        v
+    }
+
+    #[test]
+    fn serato_crates_match_by_file_through_the_serato_folder() {
+        let (lib, dirs, _) = library("serato", 3);
+        // `_Serato_` sits in the folder that holds the music, so the stored paths are relative to it
+        let sub = dirs[1].join("_Serato_").join("Subcrates");
+        std::fs::create_dir_all(&sub).unwrap();
+        std::fs::write(sub.join("Sets%%Friday.crate"), crate_file(&["synth 1.mp3", "synth 0.mp3", "nope.mp3"])).unwrap();
+        let f = read_path(&dirs[1]).unwrap();
+        assert_eq!(f.source, Source::Serato);
+        let plan = plan_import(&lib, &f, &ImportOptions::default()).unwrap();
+        assert_eq!((plan.matched, plan.matched_by_file, plan.unmatched_total), (2, 2, 1));
+        assert_eq!((plan.cases[0].name.as_str(), plan.cases[0].tracks.len()), ("Sets / Friday", 2));
+        assert!(plan.ratings.is_empty() && plan.cues.is_empty(), "a crate carries paths only");
+        clean(lib, dirs);
+    }
+
+    const NML: &str = r#"<NML VERSION="19"><COLLECTION ENTRIES="2">
+<ENTRY TITLE="Synth Title 0" ARTIST="Synth Artist"><LOCATION DIR="/:gone/:" FILE="x0.mp3" VOLUME="C:"/><INFO RANKING="204" PLAYTIME="200"/><CUE_V2 TYPE="0" START="1500" HOTCUE="0"/></ENTRY>
+<ENTRY TITLE="Synth Title 1" ARTIST="Synth Artist"><LOCATION DIR="/:gone/:" FILE="x1.mp3" VOLUME="C:"/><INFO RANKING="51" PLAYTIME="201"/><CUE_V2 TYPE="0" START="2500" HOTCUE="0"/></ENTRY>
+</COLLECTION><PLAYLISTS><NODE TYPE="FOLDER" NAME="$ROOT"><SUBNODES COUNT="1"><NODE TYPE="PLAYLIST" NAME="Peak"><PLAYLIST ENTRIES="2" TYPE="LIST">
+<ENTRY><PRIMARYKEY TYPE="TRACK" KEY="C:/:gone/:x1.mp3"/></ENTRY><ENTRY><PRIMARYKEY TYPE="TRACK" KEY="C:/:gone/:x0.mp3"/></ENTRY>
+</PLAYLIST></NODE></SUBNODES></NODE></PLAYLISTS></NML>"#;
+
+    #[test]
+    fn traktor_collection_ratings_playlists_and_cue_modes() {
+        let (mut lib, dirs, _) = library("nml", 2);
+        let f = parse_library(NML).unwrap();
+        assert_eq!(f.source, Source::Traktor);
+        let t = lib.tracks().unwrap();
+        let id_of = |title: &str| t.iter().find(|x| x.title == title).unwrap().track_id;
+        let (id0, id1) = (id_of("Synth Title 0"), id_of("Synth Title 1"));
+
+        // default: ratings and a case, cues reported but not written
+        let opts = ImportOptions::default();
+        let plan = plan_import(&lib, &f, &opts).unwrap();
+        assert_eq!((plan.matched, plan.matched_by_tags), (2, 2));
+        assert_eq!(plan.ratings.iter().map(|r| (r.track_id, r.to)).collect::<Vec<_>>(), vec![(id0, 4), (id1, 1)]);
+        assert_eq!(plan.cases[0].tracks.iter().map(|p| p.track_id).collect::<Vec<_>>(), vec![id1, id0]);
+        assert_eq!(plan.cues.len(), 2);
+        assert!(plan.cues.iter().all(|c| c.action == CueAction::Set && c.existing_frames.is_none()));
+        assert_eq!(plan.cues[0].cue_frames, 66_150, "1.5 s at 44.1 kHz");
+        apply_plan(&mut lib, &plan, &opts, |_| {}).unwrap();
+        assert_eq!((lib.track_cue(id0).unwrap(), lib.track_cue(id1).unwrap()), (None, None), "cue mode off writes no cue");
+
+        // "empty only": sets both; a second run sees them as the same
+        let opts = ImportOptions { cues: CueMode::Empty, ratings: false, playlists: false, ..Default::default() };
+        let plan = plan_import(&lib, &f, &opts).unwrap();
+        let rep = apply_plan(&mut lib, &plan, &opts, |_| {}).unwrap();
+        assert_eq!((rep.cues_set, rep.failures.len()), (2, 0));
+        assert_eq!(lib.track_cue(id0).unwrap(), Some(66_150));
+        let again = plan_import(&lib, &f, &opts).unwrap();
+        assert!(again.cues.iter().all(|c| c.action == CueAction::Same));
+        assert_eq!(apply_plan(&mut lib, &again, &opts, |_| {}).unwrap().cues_set, 0);
+
+        // a different cue already there: kept by "empty only", replaced by "overwrite"
+        lib.set_track_cue(id0, Some(1000)).unwrap();
+        let plan = plan_import(&lib, &f, &opts).unwrap();
+        let c0 = plan.cues.iter().find(|c| c.track_id == id0).unwrap();
+        assert_eq!((c0.action, c0.existing_frames), (CueAction::Replace, Some(1000)));
+        assert_eq!(apply_plan(&mut lib, &plan, &opts, |_| {}).unwrap().cues_set, 0);
+        assert_eq!(lib.track_cue(id0).unwrap(), Some(1000));
+        let opts = ImportOptions { cues: CueMode::Overwrite, ..opts };
+        let plan = plan_import(&lib, &f, &opts).unwrap();
+        assert_eq!(apply_plan(&mut lib, &plan, &opts, |_| {}).unwrap().cues_set, 1);
+        assert_eq!(lib.track_cue(id0).unwrap(), Some(66_150));
+        clean(lib, dirs);
+    }
+
+    #[test]
+    fn cue_mode_decides_what_is_written() {
+        use CueAction::*;
+        for (mode, set, replace, same) in [(CueMode::Off, false, false, false), (CueMode::Empty, true, false, false), (CueMode::Overwrite, true, true, false)] {
+            assert_eq!((mode.applies(Set), mode.applies(Replace), mode.applies(Same)), (set, replace, same), "{mode:?}");
+        }
+    }
+
+    #[test]
+    fn read_path_recognises_files_by_content_and_refuses_others() {
+        let dir = temp_dir("sniff");
+        let w = |n: &str, b: &[u8]| {
+            let p = dir.join(n);
+            std::fs::write(&p, b).unwrap();
+            p
+        };
+        assert_eq!(read_path(&w("noext1", &crate_file(&["a.mp3"]))).unwrap().source, Source::Serato);
+        assert_eq!(read_path(&w("noext2", b"#EXTM3U\n/x/a.mp3\n")).unwrap().source, Source::M3u);
+        assert_eq!(read_path(&w("noext3", b"<NML></NML>")).unwrap().source, Source::Traktor);
+        assert_eq!(read_path(&w("a.xml", NML.as_bytes())).unwrap().source, Source::Traktor);
+        assert!(read_path(&w("noext4", b"\x00\x01\x02 binary")).is_err());
+        assert!(read_path(&w("empty.m3u", b"")).is_err());
+        assert!(read_path(&w("trunc.crate", &crate_file(&["a.mp3"])[..20])).is_err());
+        assert!(read_path(&dir.join("does-not-exist.xml")).is_err());
+        let _ = std::fs::remove_dir_all(dir);
     }
 }
