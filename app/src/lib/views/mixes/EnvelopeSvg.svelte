@@ -60,6 +60,9 @@
   } = $props();
 
   const PAD = 7;
+  /** Pixels from the line that still grab it, and how far it must be dragged before it changes. */
+  const LINE_GRAB = 10;
+  const LINE_MOVE = 3;
   const span = $derived(Math.max(1, d1 - d0));
   const px = (pos: number) => ((pos - d0) / span) * width;
   const py = (v: number) => PAD + (1 - (v - min) / (max - min || 1)) * Math.max(1, height - 2 * PAD);
@@ -84,7 +87,7 @@
 
   let svg = $state<SVGSVGElement | null>(null);
   let active = $state(-1);
-  let drag: { index: number; lineBase?: boolean } | null = null;
+  let drag: { index: number; lineBase?: boolean; startY?: number; armed?: boolean } | null = null;
 
   function local(e: PointerEvent): { x: number; y: number } {
     const r = svg!.getBoundingClientRect();
@@ -101,11 +104,13 @@
     const target = e.target as SVGElement;
     const idx = target.dataset.node !== undefined ? Number(target.dataset.node) : -1;
     const { x, y } = local(e);
+    // A whole-curve drag starts only on the line itself and only once the pointer has moved a
+    // few pixels, so a click elsewhere in the lane just selects the clip and never re-times it.
+    if (lineDrag && idx < 0 && Math.abs(y - py(envelopeAt(nodes, posAt(x)))) > LINE_GRAB) return;
     svg.setPointerCapture(e.pointerId);
     svg.focus();
     if (lineDrag && idx < 0) {
-      drag = { index: -1, lineBase: true };
-      lineDrag(valueAt(y), true);
+      drag = { index: -1, lineBase: true, startY: y, armed: false };
       return;
     }
     if (idx >= 0) {
@@ -128,6 +133,8 @@
     if (!drag) return;
     const { x, y } = local(e);
     if (drag.lineBase) {
+      if (!drag.armed && Math.abs(y - (drag.startY ?? y)) < LINE_MOVE) return;
+      drag.armed = true;
       lineDrag?.(valueAt(y), true);
       return;
     }

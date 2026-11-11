@@ -7,7 +7,7 @@
   import Button from "$lib/ui/Button.svelte";
   import { describe, duplicateSelection, errText, pasteAtPlayhead } from "./actions";
   import { confirm } from "./confirm.svelte";
-  import { closeMix, exportAudio, newMix } from "./flow";
+  import { closeMix, exportAudio, newMix, saveMix } from "./flow";
   import Inspector from "./Inspector.svelte";
   import { PPS_MAX, PPS_MIN, SR, clock, ppsFromSlider, sliderFromPps } from "./layout";
   import { preview } from "./preview.svelte";
@@ -36,7 +36,7 @@
     if (saving || !mixes.doc) return;
     saving = true;
     try {
-      await mixes.save();
+      await saveMix();
     } catch (e) {
       toast.show(`Not saved: ${errText(e)}`, "bad", 10000);
     } finally {
@@ -44,17 +44,12 @@
     }
   }
 
-  /** Deleting asks first when it takes a clip (with its tools and curves) or several things, and
-   * names each one. A single tool or crossfade goes at once; Ctrl+Z brings it back. */
+  /** Deleting always asks first and names each thing it takes (a clip with its tools and curves,
+   * a tool, a crossfade). Ctrl+Z brings it back until the mix is saved and closed. */
   function requestDelete() {
     const d = mixes.doc;
     if (!d || mixes.selected.length === 0) return;
     const ids = [...mixes.selected];
-    const hasClip = ids.some((id) => E.find(d, id)?.kind === "clip");
-    if (!hasClip && ids.length === 1) {
-      mixes.deleteSelection();
-      return;
-    }
     const lines = ids.map((id) => {
       const f = E.find(d, id);
       let line = describe(d, id);
@@ -128,7 +123,7 @@
       void preview.seek(0);
       mv.scrollLeft = 0;
     } else if (!mod && k === "end") {
-      void preview.seek(doc.length);
+      toEnd();
     } else if (!mod && (k === "=" || k === "+")) {
       mv.setZoom(mv.pps * 1.25);
     } else if (!mod && (k === "-" || k === "_")) {
@@ -138,6 +133,15 @@
 
   function onbeforeunload(e: BeforeUnloadEvent) {
     if (mixes.dirty) e.preventDefault();
+  }
+
+  /** Moves the playhead to the end of the mix and scrolls it into view. */
+  function toEnd() {
+    const d = mixes.doc;
+    if (!d) return;
+    void preview.seek(d.length);
+    const px = mv.x(d.length);
+    if (px < mv.scrollLeft || px > mv.scrollLeft + mv.viewW - 80) mv.scrollLeft = Math.max(0, px - mv.viewW + 120);
   }
 
   async function playPause() {
@@ -209,7 +213,7 @@
     <Button variant="primary" aria-label={preview.playing ? "Pause" : "Play"} onclick={playPause} disabled={doc.clips.length === 0}>
       {preview.playing ? "❚❚ Pause" : preview.status === "rendering" ? "Rendering…" : "▶ Play"}
     </Button>
-    <Button aria-label="To the end" onclick={() => void preview.seek(doc.length)}>⏭</Button>
+    <Button aria-label="To the end" onclick={toEnd}>⏭</Button>
     <span class="time" aria-live="off">{clock(mv.playhead / SR)}</span>
     <span class="muted">/ {clock(doc.lengthSec)}</span>
     {#if busyLabel}<span class="muted">{busyLabel}</span>{/if}
@@ -217,6 +221,9 @@
       <span class="stale" title="The preview was rendered before your last edit. Press play again to hear the change.">preview is out of date</span>
     {/if}
     {#if preview.notice}<span class="notice" role="status">{preview.notice}</span>{/if}
+    <label class="ctl" title="Preview volume only; it is not saved in the mix">Master
+      <input type="range" min="0" max="1" step="0.01" bind:value={preview.volume} aria-label="Preview volume" />
+    </label>
     <label class="ctl follow"><input type="checkbox" bind:checked={mv.follow} /> follow playhead</label>
     <span class="legend">drag clips · click a block to edit it · Space plays from the playhead</span>
   </div>

@@ -5,6 +5,7 @@
   import Modal from "$lib/ui/Modal.svelte";
   import { errText } from "./actions";
   import { unsaved } from "./confirm.svelte";
+  import { saveMix } from "./flow";
 
   let busy = $state(false);
 
@@ -13,7 +14,7 @@
     if (!next) return;
     busy = true;
     try {
-      await mixes.save();
+      await saveMix();
       unsaved.next = null;
       await next();
     } catch (e) {
@@ -36,7 +37,8 @@
   <Modal title="Unsaved changes" onclose={() => (unsaved.next = null)}>
     <p>
       “{mixes.doc.name}” has {mixes.undoDepth} unsaved edit{mixes.undoDepth === 1 ? "" : "s"}. Save them before
-      continuing?
+      continuing? Rating, genre and comments are written to the library as you change them, so Discard does not
+      undo those.
     </p>
     {#snippet actions()}
       <Button onclick={() => (unsaved.next = null)} data-autofocus>Cancel</Button>

@@ -13,6 +13,13 @@ import { listMeta } from "./listmeta.svelte";
 import { preview } from "./preview.svelte";
 import { mv } from "./view.svelte";
 
+/** Saves the open mix and refreshes the library-row cache (new modified date and play time). */
+export async function saveMix() {
+  const id = mixes.doc?.id;
+  await mixes.save();
+  if (id !== undefined) listMeta.afterSave(id, mixes.doc?.id === id ? mixes.doc.meta : null);
+}
+
 /** Opens a mix in the editor, after dealing with unsaved changes in the one now open. */
 export function openMix(id: number) {
   guard(async () => {

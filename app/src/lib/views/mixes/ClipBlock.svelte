@@ -134,7 +134,8 @@
   }
 
   function key(e: KeyboardEvent) {
-    if (e.key === "Enter" || e.key === " ") {
+    // Space is left to the window handler (play / pause)
+    if (e.key === "Enter") {
       e.preventDefault();
       e.stopPropagation();
       mixes.select([clip.id], e.shiftKey);

@@ -47,17 +47,38 @@ class ListMeta {
     }
   }
 
-  /** Sets the rating of a mix (a library-row write, immediate, like the Editor's star column). */
-  async rate(id: number, rating: number) {
-    const root = session.library?.root;
+  /** Takes the date and play time a save stamped on the open mix; the rest of the cached row
+   * (rating, genre, ...) is kept, because the open document's copy of it can be older. */
+  afterSave(id: number, saved: MixMeta | null) {
     const cur = this.byId.get(id);
-    if (!root) return;
-    let meta = cur;
-    if (!meta) meta = (await mixOpen(root, id)).meta ?? undefined;
-    if (!meta) throw new Error("this mix has no library row");
-    const next = { ...meta, rating };
-    await mixSetMeta(root, id, next);
-    this.set(id, next);
+    if (!saved) return this.forget(id);
+    this.set(id, cur ? { ...cur, dateModified: saved.dateModified, playTimeSecs: saved.playTimeSecs } : saved);
+  }
+
+  #chain: Promise<unknown> = Promise.resolve();
+
+  /** Changes fields of a mix's library row (an immediate write, like the Editor's star column).
+   * The row is read again first so a stale copy never overwrites other fields, and again after
+   * the write so the cache holds the new modified date. Writes run one after another. */
+  update(id: number, change: Partial<MixMeta>): Promise<MixMeta> {
+    const run = async () => {
+      const root = session.library?.root;
+      if (!root) throw new Error("no library is open");
+      const fresh = (await mixOpen(root, id)).meta;
+      if (!fresh) throw new Error("this mix has no library row");
+      await mixSetMeta(root, id, { ...fresh, ...change });
+      const after = (await mixOpen(root, id)).meta ?? { ...fresh, ...change };
+      if (session.library?.root === root) this.set(id, after);
+      return after;
+    };
+    const p = this.#chain.then(run, run);
+    this.#chain = p.catch(() => undefined);
+    return p;
+  }
+
+  /** Sets the rating of a mix. */
+  async rate(id: number, rating: number) {
+    await this.update(id, { rating });
   }
 
   clear() {

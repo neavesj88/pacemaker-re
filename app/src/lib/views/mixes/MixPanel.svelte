@@ -1,6 +1,6 @@
 <script lang="ts">
   // Inspector when nothing is selected: the mix itself (name, reference tempo, library row).
-  import { mixSetMeta } from "$lib/api/mixes";
+  import type { MixMeta } from "$lib/api/mixes";
   import { mixes } from "$lib/state/mixes.svelte";
   import { toast } from "$lib/state/toast.svelte";
   import Stars from "$lib/ui/Stars.svelte";
@@ -11,17 +11,14 @@
   import { mv } from "./view.svelte";
 
   const doc = $derived(mixes.doc!);
-  const meta = $derived(doc.meta);
+  // The library row lives in the list cache, not in the document: undo and redo restore old
+  // snapshots of the document and must never bring back an old rating, genre or comments.
+  const meta = $derived(listMeta.byId.get(doc.id) ?? doc.meta);
 
-  async function setMeta(change: Partial<NonNullable<typeof meta>>) {
-    const root = mixes.root;
-    if (!root || !meta) return;
-    const next = { ...meta, ...change };
+  async function setMeta(change: Partial<MixMeta>) {
+    if (!meta) return;
     try {
-      await mixSetMeta(root, doc.id, next);
-      // the library row is not part of the saved document: update the open copy without an undo step
-      mixes.edit("Mix details", (d) => ({ ...d, meta: next }), { dirties: false });
-      listMeta.set(doc.id, next);
+      await listMeta.update(doc.id, change);
     } catch (e) {
       toast.show(`Could not save the details: ${errText(e)}`, "bad", 7000);
     }

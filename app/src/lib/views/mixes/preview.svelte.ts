@@ -16,6 +16,21 @@ import { mv } from "./view.svelte";
 /** Length of one rendered window; playback continues into the next window by itself. */
 const WINDOW_SECS = 180;
 
+/** True when two documents sound the same: everything but the name, the library row and the
+ * reference tempo, which never change the audio. Untouched parts are shared between documents,
+ * so a reference comparison per field is enough. */
+function sameAudio(a: MixDoc | null, b: MixDoc | null): boolean {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  const x = a as Record<string, unknown>;
+  const y = b as Record<string, unknown>;
+  for (const k of new Set([...Object.keys(x), ...Object.keys(y)])) {
+    if (k === "name" || k === "meta" || k === "tempoBpm") continue;
+    if (x[k] !== y[k]) return false;
+  }
+  return true;
+}
+
 export type PreviewStatus = "idle" | "rendering" | "playing" | "paused";
 
 class Preview {
@@ -25,6 +40,7 @@ class Preview {
   /** The document the audio was rendered from; differs from `mixes.doc` after an edit. */
   renderedDoc = $state.raw<MixDoc | null>(null);
 
+  #volume = $state(1);
   #audio: HTMLAudioElement | null = null;
   /** Mix time (seconds) at which the loaded file starts, and its length. */
   #from = 0;
@@ -32,12 +48,21 @@ class Preview {
   #token = 0;
   #raf = 0;
 
+  /** Preview level 0..1 (a listening aid, not part of the mix). */
+  get volume() {
+    return this.#volume;
+  }
+  set volume(v: number) {
+    this.#volume = Math.min(1, Math.max(0, v));
+    if (this.#audio) this.#audio.volume = this.#volume;
+  }
+
   get playing() {
     return this.status === "playing";
   }
 
   get stale() {
-    return this.renderedDoc !== null && this.renderedDoc !== mixes.doc;
+    return this.renderedDoc !== null && !sameAudio(this.renderedDoc, mixes.doc);
   }
 
   /** Plays from the playhead (or `fromSamples`), rendering first when the loaded audio is out of
@@ -54,7 +79,7 @@ class Preview {
     const endSec = doc.lengthSec;
     let startSec = fromSamples / SR;
     if (startSec >= endSec - 0.05) startSec = 0;
-    const loaded = this.#audio && this.renderedDoc === doc;
+    const loaded = this.#audio && sameAudio(this.renderedDoc, doc);
     const inside = startSec >= this.#from - 0.01 && startSec <= this.#from + this.#span - 0.2;
     if (loaded && inside && this.#audio) {
       this.#audio.currentTime = Math.max(0, startSec - this.#from);
@@ -77,6 +102,7 @@ class Preview {
       if (token !== this.#token) return;
       const audio = new Audio(convertFileSrc(path));
       audio.preload = "auto";
+      audio.volume = this.#volume;
       audio.onended = () => void this.#ended();
       audio.onerror = () => {
         if (token !== this.#token) return;
@@ -115,7 +141,7 @@ class Preview {
     const doc = mixes.doc;
     if (!doc) return;
     const next = this.#from + this.#span;
-    if (this.renderedDoc === doc && next < doc.lengthSec - 0.1) {
+    if (sameAudio(this.renderedDoc, doc) && next < doc.lengthSec - 0.1) {
       await this.#render(next);
     } else {
       this.status = "paused";

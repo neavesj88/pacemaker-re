@@ -105,7 +105,8 @@
   onpointerleave={() => (hover = false)}
   oncontextmenu={ctx}
   onkeydown={(e) => {
-    if (e.key === "Enter" || e.key === " ") {
+    // Space is left to the window handler (play / pause)
+    if (e.key === "Enter") {
       e.preventDefault();
       mixes.select([t.id]);
     }
