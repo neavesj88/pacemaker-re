@@ -39,7 +39,11 @@
     <span class="label">
       <span class="ic" aria-hidden="true">{s.on_device ? "▣" : "◇"}</span>{s.name}
     </span>
-    <span class="n">{cases.smartCounts[s.id] ?? ""}</span>
+    {#if cases.smartErrors[s.id]}
+      <span class="n bad" title={cases.smartErrors[s.id]} aria-label={`Cannot run: ${cases.smartErrors[s.id]}`}>!</span>
+    {:else}
+      <span class="n">{cases.smartCounts[s.id] ?? ""}</span>
+    {/if}
   </button>
 {:else}
   <p class="note">None yet. Rules like “rated 4+ and never played”.</p>
@@ -93,5 +97,9 @@
   }
   .n {
     color: var(--muted);
+  }
+  .n.bad {
+    color: var(--bad);
+    font-weight: 700;
   }
 </style>

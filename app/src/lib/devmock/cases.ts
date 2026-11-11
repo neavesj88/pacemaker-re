@@ -1,7 +1,8 @@
 // Mock of src-tauri/src/commands/cases.rs. Mutates the shared `cases` fixture so the Cases view,
 // the sidebar counts and the library reload all agree. Invented placeholder data only.
-import type { CaseInfo, CaseMeta, Rule, SmartCase } from "../api/cases";
+import type { CaseInfo, CaseMeta, Query, SmartCase } from "../api/cases";
 import { planMerge, planTransfer } from "../state/casePlan";
+import { evaluateQuery, referencedCases, validateQuery, type RuleRow } from "../state/smartRules";
 import { cases, tracks } from "./db";
 import type { Handlers } from "./types";
 
@@ -80,80 +81,61 @@ function transferPlan(from: number | null, to: number, trackIds: number[], remov
 
 // ---- smart cases ---------------------------------------------------------------------------------
 
+const flat = { mode: "all", sort: null, limit: null } as const;
 let smartCases: SmartCase[] = [
-  { id: 1, name: "Rated 4+", rules: [{ kind: "rating_min", stars: 4 }], on_device: false, device_case_id: null },
-  { id: 2, name: "Never played", rules: [{ kind: "plays_zero" }], on_device: true, device_case_id: null },
-  { id: 3, name: "Warm-up keys", rules: [{ kind: "bpm_range", min: 120, max: 130 }, { kind: "key_compatible", key: "8A" }], on_device: false, device_case_id: null },
+  { id: 1, name: "Rated 4+", ...flat, rules: [{ kind: "rating_min", stars: 4 }], on_device: false, device_case_id: null },
+  { id: 2, name: "Never played", ...flat, rules: [{ kind: "plays_zero" }], on_device: true, device_case_id: null },
+  { id: 3, name: "Warm-up keys", ...flat, rules: [{ kind: "bpm_range", min: 120, max: 130 }, { kind: "key_compatible", key: "8A" }], on_device: false, device_case_id: null },
+  {
+    id: 4,
+    name: "Fresh and stale",
+    mode: "any",
+    rules: [
+      { kind: "added_within", days: 60 },
+      { kind: "group", mode: "all", items: [{ kind: "last_played_before", days: 10, include_never: false }, { kind: "group", mode: "none", items: [{ kind: "favourite", value: true }, { kind: "text", field: "genre", op: "is", text: "Trance" }] }] },
+    ],
+    sort: { field: "date_added", descending: true },
+    limit: 12,
+    on_device: false,
+    device_case_id: null,
+  },
 ];
 
-// pitch class -> Camelot number
-const MINOR = [5, 12, 7, 2, 9, 4, 11, 6, 1, 8, 3, 10];
-const MAJOR = [8, 3, 10, 5, 12, 7, 2, 9, 4, 11, 6, 1];
-
-function camelot(text: string): { n: number; minor: boolean } | null {
-  const t = text.trim();
-  let m = /^(\d{1,2})([abAB])$/.exec(t);
-  if (m) {
-    const n = Number(m[1]);
-    return n >= 1 && n <= 12 ? { n, minor: m[2].toLowerCase() === "a" } : null;
-  }
-  m = /^([A-Ga-g])([#b♯♭]?)\s*(maj|major|min|minor|m)?$/i.exec(t);
-  if (!m) return null;
-  const base = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 }[m[1].toUpperCase() as "C"];
-  const acc = m[2] === "#" || m[2] === "♯" ? 1 : m[2] ? -1 : 0;
-  const pc = (((base + acc) % 12) + 12) % 12;
-  const minor = !!m[3] && m[3].toLowerCase().startsWith("m") && m[3].toLowerCase() !== "maj" && m[3].toLowerCase() !== "major";
-  return { n: minor ? MINOR[pc] : MAJOR[pc], minor };
-}
-
-function compatible(a: { n: number; minor: boolean }, b: { n: number; minor: boolean }) {
-  if (a.n === b.n) return true;
-  const step = (((a.n - b.n) % 12) + 12) % 12;
-  return a.minor === b.minor && (step === 1 || step === 11);
-}
-
-function validate(name: string, rules: Rule[]) {
-  if (!name.trim()) throw "The smart case needs a name.";
-  if (rules.length === 0) throw "Add at least one rule.";
-  for (const r of rules) {
-    if (r.kind === "rating_min" && !(r.stars >= 1 && r.stars <= 5)) throw "A rating rule needs 1 to 5 stars.";
-    if (r.kind === "plays_min" && !(r.n >= 1)) throw "A plays rule needs a count of 1 or more.";
-    if (r.kind === "played_within" && !(r.days >= 1)) throw "A last-played rule needs 1 day or more.";
-    if (r.kind === "bpm_range") {
-      if (r.min == null && r.max == null) throw "A BPM rule needs a minimum, a maximum or both.";
-      if (r.min != null && r.max != null && r.min > r.max) throw "The BPM minimum is above the maximum.";
-    }
-    if ((r.kind === "key" || r.kind === "key_compatible") && !camelot(r.key)) throw `"${r.key}" is not a key (try 8A or Am).`;
-    if (r.kind === "genre" && !r.text.trim()) throw "A genre rule needs some text.";
-  }
-}
-
-function matches(rules: Rule[]): number[] {
-  const favs = new Set(favouriteCase()?.ids ?? []);
+// columns the shared fixture lacks but the rules read (invented, deterministic)
+const LABELS = ["Example Label", "Sample Records", ""];
+function ruleRows(): RuleRow[] {
   const now = Date.now();
-  const lastPlayed = (t: (typeof tracks)[number]) => (t.times_played > 0 ? now - (t.track_id % 20) * DAY : -1);
-  const ok = (r: Rule, t: (typeof tracks)[number]): boolean => {
-    switch (r.kind) {
-      case "rating_min": return t.rating >= r.stars;
-      case "favourite": return favs.has(t.track_id) === r.value;
-      case "plays_zero": return t.times_played === 0;
-      case "plays_min": return t.times_played >= r.n;
-      case "played_within": return lastPlayed(t) > 0 && lastPlayed(t) >= now - r.days * DAY;
-      case "bpm_range": return t.bpm > 0 && (r.min == null || t.bpm >= r.min) && (r.max == null || t.bpm <= r.max);
-      case "key": { const a = camelot(r.key), b = camelot(t.key); return !!a && !!b && a.n === b.n && a.minor === b.minor; }
-      case "key_compatible": { const a = camelot(r.key), b = camelot(t.key); return !!a && !!b && compatible(a, b); }
-      case "genre": return t.genre.toLowerCase().includes(r.text.trim().toLowerCase());
-      case "analysed": return t.analysed === r.value;
-    }
-  };
-  return tracks
-    .filter((t) => rules.every((r) => ok(r, t)))
-    .sort((a, b) => a.artist.toLowerCase().localeCompare(b.artist.toLowerCase()) || a.title.toLowerCase().localeCompare(b.title.toLowerCase()) || a.track_id - b.track_id)
-    .map((t) => t.track_id);
+  return tracks.map((t) => ({
+    ...t,
+    last_played: t.times_played > 0 ? now - (t.track_id % 20) * DAY : -1,
+    year: t.track_id % 7 === 0 ? 0 : 1995 + ((t.track_id * 3) % 30),
+    date_added: now - t.track_id * 9 * DAY,
+    label: LABELS[t.track_id % 3],
+    comments: t.track_id % 4 === 0 ? "synthetic note" : "",
+    remixer: t.track_id % 5 === 0 ? "Example Remixer" : "",
+  }));
 }
+
+function checkSmart(name: string, q: Query) {
+  if (!name.trim()) throw "The smart case needs a name.";
+  const e = validateQuery(q);
+  if (e) throw e;
+}
+
+/** What the query matches right now (the Rust `evaluate` is the real one). */
+function matches(q: Query) {
+  const caseSets = new Map<number, Set<number> | null>();
+  for (const id of referencedCases(q.rules)) {
+    const c = cases.find((x) => x.id === id);
+    caseSets.set(id, c ? new Set(c.ids) : null);
+  }
+  return evaluateQuery(q, ruleRows(), { favourites: new Set(favouriteCase()?.ids ?? []), cases: caseSets, now: Date.now() });
+}
+
+const queryOf = (sc: Query): Query => ({ mode: sc.mode, rules: structuredClone(sc.rules), sort: sc.sort ? { ...sc.sort } : null, limit: sc.limit });
 
 function putOnDevice(sc: SmartCase): number {
-  const ids = matches(sc.rules);
+  const ids = matches(sc).ids;
   let c = sc.device_case_id != null ? cases.find((x) => x.id === sc.device_case_id) : undefined;
   if (c) {
     c.name = PREFIX + sc.name.trim();
@@ -165,6 +147,12 @@ function putOnDevice(sc: SmartCase): number {
   sc.on_device = true;
   sc.device_case_id = c.id;
   return ids.length;
+}
+
+function selfCheck(sc: SmartCase) {
+  if (sc.device_case_id != null && referencedCases(sc.rules).has(sc.device_case_id)) {
+    throw "This smart case has a rule that reads its own Pacemaker copy, which is rebuilt from the rules. Remove that rule first.";
+  }
 }
 
 function takeOffDevice(sc: SmartCase) {
@@ -307,18 +295,24 @@ export const handlers: Handlers = {
   },
 
   smart_cases_list: () => structuredClone(smartCases),
-  smart_cases_counts: () => smartCases.map((s) => ({ id: s.id, count: matches(s.rules).length })),
-  smart_cases_evaluate: (a) => (validate("-", a.rules), matches(a.rules)),
+  smart_cases_counts: () =>
+    smartCases.map((s) => {
+      try {
+        return { id: s.id, count: matches(s).ids.length, error: null };
+      } catch (e) {
+        return { id: s.id, count: 0, error: String(e) };
+      }
+    }),
+  smart_cases_evaluate: (a) => (checkSmart("-", a.query), matches(a.query)),
   smart_cases_save: (a) => {
     const inc = a.smartCase as SmartCase;
-    validate(inc.name, inc.rules);
+    checkSmart(inc.name, inc);
     const cur = smartCases.find((s) => s.id === inc.id && inc.id !== 0);
     if (cur) {
-      cur.name = inc.name.trim();
-      cur.rules = structuredClone(inc.rules);
+      Object.assign(cur, queryOf(inc), { name: inc.name.trim() });
       return structuredClone(cur);
     }
-    const fresh: SmartCase = { id: Math.max(0, ...smartCases.map((s) => s.id)) + 1, name: inc.name.trim(), rules: structuredClone(inc.rules), on_device: false, device_case_id: null };
+    const fresh: SmartCase = { id: Math.max(0, ...smartCases.map((s) => s.id)) + 1, name: inc.name.trim(), ...queryOf(inc), on_device: false, device_case_id: null };
     smartCases.push(fresh);
     return structuredClone(fresh);
   },
@@ -336,9 +330,22 @@ export const handlers: Handlers = {
   smart_cases_set_on_device: (a) => {
     const sc = smartCases.find((s) => s.id === a.id);
     if (!sc) throw `no smart case ${a.id}`;
-    validate(sc.name, sc.rules);
+    checkSmart(sc.name, sc);
+    if (a.on) selfCheck(sc);
     const count = a.on ? putOnDevice(sc) : (takeOffDevice(sc), 0);
-    return { smart_case: structuredClone(sc), count };
+    return { smart_case: structuredClone(sc), count, error: null };
   },
-  smart_cases_refresh_all: () => smartCases.filter((s) => s.on_device).map((s) => ({ count: putOnDevice(s), smart_case: structuredClone(s) })),
+  smart_cases_refresh_all: () =>
+    smartCases
+      .filter((s) => s.on_device)
+      .map((s) => {
+        try {
+          checkSmart(s.name, s);
+          selfCheck(s);
+          matches(s);
+          return { count: putOnDevice(s), smart_case: structuredClone(s), error: null };
+        } catch (e) {
+          return { count: 0, smart_case: structuredClone(s), error: String(e) };
+        }
+      }),
 };

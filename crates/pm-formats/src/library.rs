@@ -584,6 +584,9 @@ impl Library {
 #[cfg(test)]
 mod case_ops_tests;
 
+mod track_extra;
+pub use track_extra::TrackExtra;
+
 mod case_bulk;
 pub use case_bulk::{plan_merge, plan_transfer, MergeDest, MergeDone, MergePlan, TransferDone, TransferNewDone, TransferPlan};
 #[cfg(test)]

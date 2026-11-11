@@ -44,6 +44,7 @@ import type { Collection } from "$lib/api/types";
 import { baseName } from "$lib/format";
 import { jobs } from "./jobs.svelte";
 import { session } from "./session.svelte";
+import { referencedCases } from "./smartRules";
 import { toast } from "./toast.svelte";
 
 class Cases {
@@ -59,6 +60,8 @@ class Cases {
   smart = $state<SmartCase[]>([]);
   /** Match count per smart case id. */
   smartCounts = $state<Record<number, number>>({});
+  /** Why a smart case cannot be evaluated right now (a rule names a case that was deleted), by id. */
+  smartErrors = $state<Record<number, string>>({});
   /** The smart case being viewed: its id, 0 for a new unsaved one, null for none. */
   smartOpen = $state<number | null>(null);
   busy = $state(false);
@@ -305,14 +308,24 @@ class Cases {
     const root = this.#root();
     if (!root || this.smart.length === 0) {
       this.smartCounts = {};
+      this.smartErrors = {};
       return;
     }
     try {
       const counts = await smartCaseCounts(root);
-      if (this.#root() === root) this.smartCounts = Object.fromEntries(counts.map((c) => [c.id, c.count]));
+      if (this.#root() === root) {
+        this.smartCounts = Object.fromEntries(counts.filter((c) => !c.error).map((c) => [c.id, c.count]));
+        this.smartErrors = Object.fromEntries(counts.filter((c) => c.error).map((c) => [c.id, c.error as string]));
+      }
     } catch (e) {
       session.error = String(e);
     }
+  }
+
+  /** Names of the smart cases whose rules read any of these cases (deleting one breaks them until fixed). */
+  smartCasesUsing(caseIds: number[]): string[] {
+    const gone = new Set(caseIds);
+    return this.smart.filter((s) => [...referencedCases(s.rules)].some((id) => gone.has(id))).map((s) => s.name);
   }
 
   openSmart(id: number) {
@@ -365,7 +378,15 @@ class Cases {
     const done = await this.#write((root) => refreshSmartDeviceCases(root));
     if (done) {
       await this.loadSmart();
-      toast.show(done.length === 0 ? "No smart case is on the Pacemaker" : `Refreshed ${done.length} smart case${done.length === 1 ? "" : "s"} on the Pacemaker`, "ok");
+      const failed = done.filter((d) => d.error);
+      const ok = done.length - failed.length;
+      if (done.length === 0) toast.show("No smart case is on the Pacemaker", "ok");
+      else if (failed.length === 0) toast.show(`Refreshed ${ok} smart case${ok === 1 ? "" : "s"} on the Pacemaker`, "ok");
+      else {
+        // name each one that was skipped and why; its device copy was left as it was
+        session.error = failed.map((d) => `“${d.smart_case.name}” was not refreshed: ${d.error}`).join("\n");
+        toast.show(`Refreshed ${ok} of ${done.length} smart cases; ${failed.length} skipped`, "bad");
+      }
     }
     return done;
   }
@@ -377,6 +398,7 @@ class Cases {
     this.favourites = new Set();
     this.smart = [];
     this.smartCounts = {};
+    this.smartErrors = {};
   }
 }
 

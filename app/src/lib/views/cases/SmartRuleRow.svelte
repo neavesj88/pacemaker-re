@@ -1,0 +1,142 @@
+<script lang="ts">
+  import type { Rule } from "$lib/api/cases";
+  import { cases } from "$lib/state/cases.svelte";
+  import { session } from "$lib/state/session.svelte";
+  import { KINDS, TEXT_OPS, defaultCaseId, defaultRule, formatDuration, kindId, parseDuration } from "$lib/state/smartRules";
+  import Button from "$lib/ui/Button.svelte";
+
+  // One rule (anything but a group) of a smart case: the type menu and that type's inputs.
+  let { rule = $bindable(), onremove }: { rule: Rule; onremove: () => void } = $props();
+
+  const uid = $props.id();
+  const groups = [...new Set(KINDS.map((k) => k.group))];
+  const firstCase = () => defaultCaseId(cases.infos);
+  const formats = $derived([...new Set((session.library?.tracks ?? []).map((t) => t.format).filter(Boolean))].sort());
+
+  // A deleted case stays selectable as "(missing)" so the rule can be seen and fixed, not dropped.
+  const caseKnown = $derived.by(() => {
+    const r = rule;
+    return r.kind === "in_case" && cases.infos.some((c) => c.id === r.case_id);
+  });
+
+  // Length boxes hold text like 3:30; the rule gets seconds, or NaN while the text is not a length.
+  let minText = $state(rule.kind === "duration_range" ? formatDuration(rule.min_secs) : "");
+  let maxText = $state(rule.kind === "duration_range" ? formatDuration(rule.max_secs) : "");
+  $effect(() => {
+    if (rule.kind !== "duration_range") return;
+    rule.min_secs = parseDuration(minText);
+    rule.max_secs = parseDuration(maxText);
+  });
+  function retype(id: string) {
+    rule = defaultRule(id, firstCase());
+    if (rule.kind === "duration_range") {
+      minText = formatDuration(rule.min_secs);
+      maxText = formatDuration(rule.max_secs);
+    }
+  }
+</script>
+
+<div class="rule">
+  <select value={kindId(rule)} aria-label="Rule type" onchange={(e) => retype(e.currentTarget.value)}>
+    {#each groups as g (g)}
+      <optgroup label={g}>
+        {#each KINDS.filter((k) => k.group === g) as k (k.id)}<option value={k.id}>{k.label}</option>{/each}
+      </optgroup>
+    {/each}
+  </select>
+
+  {#if rule.kind === "text"}
+    <select bind:value={rule.op} aria-label="Comparison">
+      {#each TEXT_OPS as o (o.op)}<option value={o.op}>{o.label}</option>{/each}
+    </select>
+    <input class="wide" bind:value={rule.text} placeholder="text" aria-label="Text to match" />
+  {:else if rule.kind === "rating_min"}
+    <select bind:value={rule.stars} aria-label="Stars">
+      {#each [1, 2, 3, 4, 5] as n (n)}<option value={n}>{"★".repeat(n)}</option>{/each}
+    </select>
+  {:else if rule.kind === "favourite"}
+    <select bind:value={rule.value} aria-label="In Favourites">
+      <option value={true}>are in Favourites</option>
+      <option value={false}>are not in Favourites</option>
+    </select>
+  {:else if rule.kind === "plays_min"}
+    <input type="number" min="1" bind:value={rule.n} aria-label="Plays" /> <span class="muted">times</span>
+  {:else if rule.kind === "plays_range"}
+    <input type="number" min="0" placeholder="any" bind:value={rule.min} aria-label="Minimum plays" />
+    <span class="muted">to</span>
+    <input type="number" min="0" placeholder="any" bind:value={rule.max} aria-label="Maximum plays" />
+    <span class="muted">times</span>
+  {:else if rule.kind === "played_within"}
+    <input type="number" min="1" bind:value={rule.days} aria-label="Days" /> <span class="muted">days</span>
+  {:else if rule.kind === "last_played_before"}
+    <input type="number" min="1" bind:value={rule.days} aria-label="Days" /> <span class="muted">days</span>
+    <label class="check"><input type="checkbox" bind:checked={rule.include_never} /> also tracks never played</label>
+  {:else if rule.kind === "added_within"}
+    <input type="number" min="1" bind:value={rule.days} aria-label="Days" /> <span class="muted">days</span>
+  {:else if rule.kind === "added_before"}
+    <input type="number" min="1" bind:value={rule.days} aria-label="Days" /> <span class="muted">days ago</span>
+  {:else if rule.kind === "bpm_range"}
+    <input type="number" min="0" step="0.5" placeholder="any" bind:value={rule.min} aria-label="Minimum BPM" />
+    <span class="muted">to</span>
+    <input type="number" min="0" step="0.5" placeholder="any" bind:value={rule.max} aria-label="Maximum BPM" />
+  {:else if rule.kind === "year_range"}
+    <input type="number" min="1" step="1" placeholder="any" bind:value={rule.min} aria-label="Earliest year" />
+    <span class="muted">to</span>
+    <input type="number" min="1" step="1" placeholder="any" bind:value={rule.max} aria-label="Latest year" />
+  {:else if rule.kind === "duration_range"}
+    <input class="time" bind:value={minText} placeholder="any" aria-label="Shortest length" />
+    <span class="muted">to</span>
+    <input class="time" bind:value={maxText} placeholder="any" aria-label="Longest length" />
+    <span class="muted">minutes:seconds</span>
+  {:else if rule.kind === "key" || rule.kind === "key_compatible"}
+    <input class="key" bind:value={rule.key} placeholder="8A or Am" aria-label="Key" />
+    {#if rule.kind === "key_compatible"}<span class="muted">same, next to it on the wheel, or its relative</span>{/if}
+  {:else if rule.kind === "format"}
+    <input class="key" list={`${uid}-formats`} bind:value={rule.value} placeholder="MP3" aria-label="File format" />
+    <datalist id={`${uid}-formats`}>{#each formats as f (f)}<option value={f}></option>{/each}</datalist>
+  {:else if rule.kind === "in_case"}
+    <select bind:value={rule.value} aria-label="In the case or not">
+      <option value={true}>is in</option>
+      <option value={false}>is not in</option>
+    </select>
+    <select bind:value={rule.case_id} aria-label="Case">
+      {#if !caseKnown}<option value={rule.case_id}>(missing case {rule.case_id})</option>{/if}
+      {#each cases.infos as c (c.id)}<option value={c.id}>{c.name}</option>{/each}
+    </select>
+    {#if cases.infos.length === 0}<span class="muted">there are no cases yet</span>{/if}
+  {:else if rule.kind === "analysed"}
+    <select bind:value={rule.value} aria-label="Analysed">
+      <option value={true}>have been analysed</option>
+      <option value={false}>have not been analysed</option>
+    </select>
+  {/if}
+
+  <Button small variant="ghost" onclick={onremove} aria-label="Remove this rule">Remove</Button>
+</div>
+
+<style>
+  .rule {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .rule input[type="number"] {
+    width: 72px;
+  }
+  .key {
+    width: 100px;
+  }
+  .time {
+    width: 70px;
+  }
+  .wide {
+    min-width: 180px;
+  }
+  .check {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--muted);
+  }
+</style>

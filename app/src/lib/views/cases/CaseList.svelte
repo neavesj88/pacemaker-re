@@ -146,6 +146,8 @@
     if (list.some(isFav)) notes.push(`“Favourites” is the case the heart on a track uses: deleting it clears every heart, and the next heart click starts a new, empty Favourites case.`);
     const smart = list.filter(smartOf);
     if (smart.length > 0) notes.push(`${smart.map((c) => `“${c.name}”`).join(", ")} ${smart.length === 1 ? "is the Pacemaker copy of a smart case, which will make it" : "are Pacemaker copies of smart cases, which will make them"} again the next time you refresh.`);
+    const used = cases.smartCasesUsing(list.map((c) => c.id));
+    if (used.length > 0) notes.push(`${used.map((n) => `“${n}”`).join(", ")} ${used.length === 1 ? "is a smart case that has" : "are smart cases that have"} a rule about ${list.length === 1 ? "this case" : "one of these cases"}; ${used.length === 1 ? "it" : "they"} will report an error until you pick another case in the rule.`);
     return notes.join(" ");
   }
 

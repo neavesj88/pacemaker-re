@@ -68,38 +68,75 @@ export const favouriteIds = (root: string) => invoke<number[]>("cases_favourite_
 
 // ---- smart cases ------------------------------------------------------------------------------
 
-/** One condition; a smart case matches the tracks for which every rule holds. */
+/** How a group combines its items: all (AND), any (OR) or none (NOT any). */
+export type Mode = "all" | "any" | "none";
+export type TextField = "title" | "artist" | "album" | "genre" | "label" | "comments" | "remixer";
+export type TextOp = "contains" | "is" | "starts_with";
+
+/** One condition, or a group of them (groups nest). The old `genre` rule is rewritten by the
+ * backend into `text` on load, so it never arrives here. */
 export type Rule =
   | { kind: "rating_min"; stars: number }
   | { kind: "favourite"; value: boolean }
   | { kind: "plays_zero" }
   | { kind: "plays_min"; n: number }
+  | { kind: "plays_range"; min: number | null; max: number | null }
   | { kind: "played_within"; days: number }
+  /** Last played more than `days` days ago (stale); never-played tracks count when `include_never`. */
+  | { kind: "last_played_before"; days: number; include_never: boolean }
   | { kind: "bpm_range"; min: number | null; max: number | null }
   | { kind: "key"; key: string }
   | { kind: "key_compatible"; key: string }
-  | { kind: "genre"; text: string }
-  | { kind: "analysed"; value: boolean };
+  | { kind: "analysed"; value: boolean }
+  | { kind: "text"; field: TextField; op: TextOp; text: string }
+  | { kind: "year_range"; min: number | null; max: number | null }
+  | { kind: "added_within"; days: number }
+  | { kind: "added_before"; days: number }
+  | { kind: "duration_range"; min_secs: number | null; max_secs: number | null }
+  | { kind: "format"; value: string }
+  | { kind: "in_case"; case_id: number; value: boolean }
+  | { kind: "group"; mode: Mode; items: Rule[] };
 
-export type SmartCase = {
+export type SortField =
+  | "title" | "artist" | "album" | "genre" | "label" | "bpm" | "key" | "rating" | "year"
+  | "duration" | "date_added" | "plays" | "last_played" | "format" | "file_size";
+
+export type Sort = { field: SortField; descending: boolean };
+
+/** What a smart case asks for: `mode` over `rules`, then the order, then "only the first N".
+ * No order = artist, title. No limit = every match. */
+export type Query = { mode: Mode; rules: Rule[]; sort: Sort | null; limit: number | null };
+
+export type SmartCase = Query & {
   /** 0 for a new one; the backend assigns the id on save. */
   id: number;
   name: string;
-  rules: Rule[];
   /** "Put on Pacemaker" is on: a real case with the matches exists on the device. */
   on_device: boolean;
   device_case_id: number | null;
 };
 
-export type DeviceCopy = { smart_case: SmartCase; count: number };
+/** `error` is set when a smart case was skipped (a refresh of all of them) and nothing was written. */
+export type DeviceCopy = { smart_case: SmartCase; count: number; error: string | null };
+
+/** The live result of a query. */
+export type Preview = {
+  /** Track ids in display order, after the limit. */
+  ids: number[];
+  /** How many tracks matched before the limit cut the list. */
+  matched: number;
+  /** For an order by a column the track table lacks (year, date added ...): each track's value, aligned with `ids`; else empty. */
+  values: string[];
+};
 
 export const listSmartCases = (root: string) => invoke<SmartCase[]>("smart_cases_list", { root });
 
 /** Match count of each saved smart case right now. */
-export const smartCaseCounts = (root: string) => invoke<{ id: number; count: number }[]>("smart_cases_counts", { root });
+export const smartCaseCounts = (root: string) =>
+  invoke<{ id: number; count: number; error: string | null }[]>("smart_cases_counts", { root });
 
-/** Track ids a rule set matches, in display order. Saves nothing. */
-export const evaluateRules = (root: string, rules: Rule[]) => invoke<number[]>("smart_cases_evaluate", { root, rules });
+/** The tracks a query matches, in its order, and how many matched before its limit. Saves nothing. */
+export const evaluateRules = (root: string, query: Query) => invoke<Preview>("smart_cases_evaluate", { root, query });
 
 /** Saves a new (id 0) or edited smart case in the app's config dir; never touches the device. */
 export const saveSmartCase = (root: string, smartCase: SmartCase) =>

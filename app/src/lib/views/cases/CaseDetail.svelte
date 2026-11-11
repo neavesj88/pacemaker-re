@@ -591,9 +591,10 @@
 {/if}
 
 {#if deleting}
+  {@const smartUsing = cases.smartCasesUsing([open.id])}
   <ConfirmDialog
     title="Delete this case?"
-    message={`Delete the case “${open.name}” (${all.length} track${all.length === 1 ? "" : "s"}) from the Pacemaker? The tracks stay in the library; only the case is removed.${open.name === "Favourites" ? " This is the case the heart on a track uses: deleting it clears every heart, and the next heart click starts a new, empty Favourites case." : ""}`}
+    message={`Delete the case “${open.name}” (${all.length} track${all.length === 1 ? "" : "s"}) from the Pacemaker? The tracks stay in the library; only the case is removed.${open.name === "Favourites" ? " This is the case the heart on a track uses: deleting it clears every heart, and the next heart click starts a new, empty Favourites case." : ""}${smartUsing.length > 0 ? ` ${smartUsing.map((n) => `“${n}”`).join(", ")} ${smartUsing.length === 1 ? "is a smart case that has" : "are smart cases that have"} a rule about this case; ${smartUsing.length === 1 ? "it" : "they"} will report an error until you pick another case in the rule.` : ""}`}
     confirmLabel="Delete case"
     onconfirm={() => cases.remove(open.id)}
     onclose={() => (deleting = false)}

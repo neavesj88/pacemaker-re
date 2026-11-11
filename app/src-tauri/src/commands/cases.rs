@@ -9,7 +9,6 @@
 mod export;
 mod smart;
 
-use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -18,7 +17,7 @@ use serde::Serialize;
 use tauri::Manager;
 
 use crate::error::AppResult;
-use smart::{Context, Rule, SmartCase};
+use smart::{Data, Eval, Query, SmartCase};
 
 pub fn setup(_app: &mut tauri::App) {}
 
@@ -217,11 +216,11 @@ fn config_dir(app: &tauri::AppHandle) -> AppResult<PathBuf> {
     Ok(app.path().app_config_dir()?)
 }
 
-/// What the rules match right now in `lib`.
-fn matches_in(lib: &Library, rules: &[Rule]) -> Result<Vec<i64>, Error> {
-    let tracks = lib.tracks()?;
-    let favourites: HashSet<i64> = lib.favourite_track_ids()?.into_iter().collect();
-    Ok(smart::evaluate(rules, &tracks, &Context { favourites: &favourites, now_ms: now_ms() }))
+/// What the query matches right now in `lib`: the one evaluation behind the live preview, the
+/// sidebar counts and the device copy.
+fn matches_in(lib: &Library, q: &Query) -> AppResult<Eval> {
+    let data = Data::load(lib, &[q], now_ms())?;
+    Ok(smart::evaluate(q, &data)?)
 }
 
 /// Blocking: loads the store, runs `f`, maps the string errors.
@@ -239,7 +238,10 @@ pub async fn smart_cases_list(app: tauri::AppHandle, root: String) -> AppResult<
 #[derive(Serialize)]
 pub struct SmartCount {
     id: u32,
+    /// Tracks matched after the limit; 0 when `error` is set.
     count: usize,
+    /// Why this smart case cannot be evaluated (a rule names a case that was deleted).
+    error: Option<String>,
 }
 
 /// How many tracks each saved smart case matches right now (one read of the library).
@@ -249,20 +251,30 @@ pub async fn smart_cases_counts(app: tauri::AppHandle, root: String) -> AppResul
     tauri::async_runtime::spawn_blocking(move || -> AppResult<Vec<SmartCount>> {
         let list = smart::load(&dir, &root)?;
         let lib = Library::open_read_only(&PathBuf::from(&root))?;
-        let tracks = lib.tracks()?;
-        let favourites: HashSet<i64> = lib.favourite_track_ids()?.into_iter().collect();
-        let cx = Context { favourites: &favourites, now_ms: now_ms() };
-        Ok(list.iter().map(|s| SmartCount { id: s.id, count: smart::evaluate(&s.rules, &tracks, &cx).len() }).collect())
+        let queries: Vec<&Query> = list.iter().map(|s| &s.query).collect();
+        let data = Data::load(&lib, &queries, now_ms())?;
+        Ok(list
+            .iter()
+            .map(|s| match smart::evaluate(&s.query, &data) {
+                Ok(e) => SmartCount { id: s.id, count: e.ids.len(), error: None },
+                Err(error) => SmartCount { id: s.id, count: 0, error: Some(error) },
+            })
+            .collect())
     })
     .await?
 }
 
-/// The track ids a rule set matches, in display order: the rule builder's live count and the
-/// smart case's track list. Nothing is saved.
+/// The track ids a query (rules, order, limit) matches, in display order, and how many matched
+/// before the limit: the rule builder's live count and the smart case's track list. Nothing is
+/// saved.
 #[tauri::command]
-pub async fn smart_cases_evaluate(root: String, rules: Vec<Rule>) -> AppResult<Vec<i64>> {
-    smart::validate_rules(&rules)?;
-    read(root, move |lib| matches_in(lib, &rules)).await
+pub async fn smart_cases_evaluate(root: String, query: Query) -> AppResult<Eval> {
+    smart::validate_query(&query)?;
+    tauri::async_runtime::spawn_blocking(move || -> AppResult<Eval> {
+        let lib = Library::open_read_only(&PathBuf::from(root))?;
+        matches_in(&lib, &query)
+    })
+    .await?
 }
 
 /// Saves a new (id 0) or edited smart case in the config dir; returns it as stored. Does not
@@ -299,6 +311,18 @@ pub struct DeviceCopy {
     smart_case: SmartCase,
     /// Tracks in the device case after the write (0 after taking it off).
     count: usize,
+    /// Set when this smart case was skipped (refresh-all only): why, and nothing was written.
+    error: Option<String>,
+}
+
+/// A smart case must not read its own device copy: that copy is rebuilt from the rules.
+fn check_not_self_referencing(sc: &SmartCase) -> AppResult<()> {
+    match sc.device_case_id {
+        Some(id) if smart::refers_to_case(&sc.query, id) => {
+            Err("This smart case has a rule that reads its own Pacemaker copy, which is rebuilt from the rules. Remove that rule first.".into())
+        }
+        _ => Ok(()),
+    }
 }
 
 /// The "Put on Pacemaker" toggle. `on = true` creates the device case (named with a star
@@ -308,10 +332,11 @@ pub async fn smart_cases_set_on_device(app: tauri::AppHandle, root: String, id: 
     let dir = config_dir(&app)?;
     crate::state::quick_write(app, root.clone(), move || -> AppResult<DeviceCopy> {
         let mut sc = smart::load(&dir, &root)?.into_iter().find(|s| s.id == id).ok_or_else(|| format!("no smart case {id}"))?;
-        smart::validate(&sc.name, &sc.rules)?;
+        smart::validate(&sc.name, &sc.query)?;
         let mut lib = Library::open(&PathBuf::from(&root))?;
         let count = if on {
-            let ids = matches_in(&lib, &sc.rules)?;
+            check_not_self_referencing(&sc)?;
+            let ids = matches_in(&lib, &sc.query)?.ids;
             let (case_id, n) = smart::put_on_device(&mut lib, &sc, &ids)?;
             sc.on_device = true;
             sc.device_case_id = Some(case_id);
@@ -323,7 +348,7 @@ pub async fn smart_cases_set_on_device(app: tauri::AppHandle, root: String, id: 
             0
         };
         smart::update(&dir, &root, &sc)?;
-        Ok(DeviceCopy { smart_case: sc, count })
+        Ok(DeviceCopy { smart_case: sc, count, error: None })
     })
     .await
 }
@@ -340,11 +365,24 @@ pub async fn smart_cases_refresh_all(app: tauri::AppHandle, root: String) -> App
         let mut lib = Library::open(&PathBuf::from(&root))?;
         let mut out = Vec::new();
         for mut sc in list {
-            let ids = matches_in(&lib, &sc.rules)?;
+            // one smart case that cannot run (a deleted case in a rule, invalid hand-edited
+            // rules) is reported and skipped; the others still refresh and its device copy is
+            // left as it was rather than emptied
+            let ids = smart::validate(&sc.name, &sc.query)
+                .map_err(Into::into)
+                .and_then(|()| check_not_self_referencing(&sc))
+                .and_then(|()| matches_in(&lib, &sc.query));
+            let ids = match ids {
+                Ok(e) => e.ids,
+                Err(e) => {
+                    out.push(DeviceCopy { smart_case: sc, count: 0, error: Some(e.to_string()) });
+                    continue;
+                }
+            };
             let (case_id, count) = smart::put_on_device(&mut lib, &sc, &ids)?;
             sc.device_case_id = Some(case_id);
             smart::update(&dir, &root, &sc)?;
-            out.push(DeviceCopy { smart_case: sc, count });
+            out.push(DeviceCopy { smart_case: sc, count, error: None });
         }
         Ok(out)
     })
