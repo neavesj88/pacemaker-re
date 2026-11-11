@@ -51,9 +51,8 @@
   async function run() {
     if (!ready) return;
     working = true;
-    let to = typeof choice === "number" ? choice : undefined;
-    if (choice === "new") to = await cases.create(newName.trim(), []);
-    const done = to === undefined ? undefined : await cases.transfer(from.id, to, ids, move);
+    // a new case is created by the same write as the transfer, so a failure leaves nothing behind
+    const done = choice === "new" ? await cases.transferToNew(from.id, newName, ids, move) : typeof choice === "number" ? await cases.transfer(from.id, choice, ids, move) : undefined;
     working = false;
     if (!done) return;
     toast.show(

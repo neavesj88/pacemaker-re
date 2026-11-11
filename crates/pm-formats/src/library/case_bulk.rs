@@ -229,6 +229,29 @@ fn transfer_inputs(con: &Connection, from: Option<i64>, to: i64, ids: &[i64], re
     Ok(plan_transfer(ids, source.as_deref(), &dest, remove_from_source, |i| known.contains(&i)))
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct TransferNewDone {
+    pub case_id: i64,
+    pub added: usize,
+    pub removed: usize,
+}
+
+/// The write half of a transfer, inside the caller's transaction.
+fn transfer_in(tx: &Connection, from: Option<i64>, to: i64, ids: &[i64], remove_from_source: bool) -> Result<TransferDone, Error> {
+    let plan = transfer_inputs(tx, from, to, ids, remove_from_source)?;
+    append_members(tx, to, &plan.to_add)?;
+    if !plan.to_add.is_empty() {
+        refresh_case_derived(tx, to)?;
+    }
+    if let (Some(f), false) = (from, plan.to_remove.is_empty()) {
+        for id in &plan.to_remove {
+            tx.execute("DELETE FROM casetracks WHERE case_id = ?1 AND track_id = ?2", params![f, id])?;
+        }
+        refresh_case_derived(tx, f)?;
+    }
+    Ok(TransferDone { added: plan.to_add.len(), removed: plan.to_remove.len() })
+}
+
 // ---- the Library operations ----------------------------------------------------------------
 
 impl Library {
@@ -303,19 +326,22 @@ impl Library {
     /// when `to` already held them. Both cases' `date_modified` and `play_time_secs` follow.
     pub fn transfer_tracks(&mut self, from: Option<i64>, to: i64, ids: &[i64], remove_from_source: bool) -> Result<TransferDone, Error> {
         let tx = self.con.transaction()?;
-        let plan = transfer_inputs(&tx, from, to, ids, remove_from_source)?;
-        append_members(&tx, to, &plan.to_add)?;
-        if !plan.to_add.is_empty() {
-            refresh_case_derived(&tx, to)?;
-        }
-        if let (Some(f), false) = (from, plan.to_remove.is_empty()) {
-            for id in &plan.to_remove {
-                tx.execute("DELETE FROM casetracks WHERE case_id = ?1 AND track_id = ?2", params![f, id])?;
-            }
-            refresh_case_derived(&tx, f)?;
-        }
+        let done = transfer_in(&tx, from, to, ids, remove_from_source)?;
         tx.commit()?;
-        Ok(TransferDone { added: plan.to_add.len(), removed: plan.to_remove.len() })
+        Ok(done)
+    }
+
+    /// Like [`Library::transfer_tracks`] into a case created here under `name`, in one
+    /// transaction: if the transfer fails no empty case is left behind. Returns the new case's
+    /// id and what was transferred.
+    pub fn transfer_to_new_case(&mut self, from: Option<i64>, name: &str, ids: &[i64], remove_from_source: bool) -> Result<TransferNewDone, Error> {
+        check_case_name(name)?;
+        let tx = self.con.transaction()?;
+        let case_id = insert_case_row(&tx, name)?;
+        let done = transfer_in(&tx, from, case_id, ids, remove_from_source)?;
+        refresh_case_derived(&tx, case_id)?;
+        tx.commit()?;
+        Ok(TransferNewDone { case_id, added: done.added, removed: done.removed })
     }
 
     /// Deletes several cases and their membership rows in one transaction (the tracks stay).

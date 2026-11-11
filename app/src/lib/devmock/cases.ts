@@ -275,6 +275,23 @@ export const handlers: Handlers = {
     }
     return { added: plan.to_add.length, removed: plan.to_remove.length };
   },
+  cases_transfer_new: (a) => {
+    checkName(a.newName);
+    if (a.removeFromSource && a.from == null) throw "invalid: a move needs the case the tracks come from";
+    if (a.from != null) find(a.from);
+    const ids = [...new Set<number>(a.trackIds)].filter(known);
+    const dest = create(a.newName, ids);
+    let removed = 0;
+    if (a.from != null && a.removeFromSource) {
+      const src = find(a.from);
+      const gone = new Set(ids);
+      const before = src.ids.length;
+      src.ids = src.ids.filter((id) => !gone.has(id));
+      removed = before - src.ids.length;
+      refresh(src);
+    }
+    return { case_id: dest.id, added: ids.length, removed };
+  },
   cases_delete_many: (a) => {
     let n = 0;
     for (const id of new Set<number>(a.caseIds)) {

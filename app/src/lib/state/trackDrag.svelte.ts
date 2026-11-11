@@ -4,6 +4,12 @@
 // (views/cases/CaseDrops.svelte) is the target that is on screen whatever view the drag begins in;
 // it shows itself while `trackDrag.active` is set.
 //
+// Caveat: this is HTML5 drag and drop. tauri.conf.json leaves Tauri's own drag-drop handler on
+// (the OS file import in api/import.ts needs it), and Tauri's docs say that handler replaces
+// WebView2's on Windows, so these in-page drags may not fire there. Unverified in the built app:
+// every drag action therefore also has a click route (Add to case… in the Tracks context menu and
+// inspector, Add tracks… / Copy to… / Move to… in an open case).
+//
 // Payload: JSON number array under `TRACKS_MIME`. The mix editor's picker uses its own type
 // (`application/x-pm-tracks`) for the mix timeline; the two do not overlap.
 import { parseTrackIds } from "./casePlan";

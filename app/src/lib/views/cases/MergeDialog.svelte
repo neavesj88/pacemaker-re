@@ -123,7 +123,7 @@
       <ul>
         {#each picked as c (c.id)}
           <li>
-            “{c.name}” ({plural(c.track_count, "track")}){mode === "existing" && c.id === target ? " – the destination, not deleted" : ""}{c.name === "Favourites" ? " – the case the heart on a track uses" : ""}
+            “{c.name}” ({plural(c.track_count, "track")}){c.name === "Favourites" ? " – the case the heart on a track uses" : ""}
           </li>
         {/each}
       </ul>

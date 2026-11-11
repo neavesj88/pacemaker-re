@@ -144,6 +144,7 @@ export type TransferPlan = {
 };
 
 export type TransferDone = { added: number; removed: number };
+export type TransferNewDone = TransferDone & { case_id: number };
 
 /** Where a merge goes: an existing case (kept as it is, new tracks appended) or a new one. */
 export type MergeTarget = { existing: number } | { newName: string };
@@ -176,6 +177,11 @@ export const transferPreview = (root: string, from: number | null, to: number, t
  * and skipping any it already holds. A move takes them out of `from` only. */
 export const transferTracks = (root: string, from: number | null, to: number, trackIds: number[], removeFromSource: boolean) =>
   invoke<TransferDone>("cases_transfer", { root, from, to, trackIds, removeFromSource });
+
+/** Like `transferTracks` into a case created by the same write: if the transfer fails no empty
+ * case is left behind. */
+export const transferToNewCase = (root: string, from: number | null, newName: string, trackIds: number[], removeFromSource: boolean) =>
+  invoke<TransferNewDone>("cases_transfer_new", { root, from, newName, trackIds, removeFromSource });
 
 /** Deletes several cases in one transaction (the tracks stay); returns how many went. */
 export const deleteCases = (root: string, caseIds: number[]) => invoke<number>("cases_delete_many", { root, caseIds });

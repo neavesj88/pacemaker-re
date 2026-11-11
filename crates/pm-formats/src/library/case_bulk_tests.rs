@@ -173,6 +173,34 @@ fn copy_and_move_tracks_between_cases() {
 }
 
 #[test]
+fn transfer_into_a_new_case_is_one_transaction() {
+    let (mut lib, dirs, t) = library_with_tracks("xfernew", &[10, 20, 30]);
+    let src = lib.create_case("Src").unwrap();
+    lib.set_case_tracks(src, &[t[0], t[1], t[2]]).unwrap();
+
+    // copy: the source keeps everything, the new case gets the library tracks it knows
+    let done = lib.transfer_to_new_case(Some(src), "Fresh", &[t[1], t[1], 424242], false).unwrap();
+    assert_eq!((done.added, done.removed), (1, 0));
+    assert_eq!(ids(&lib, done.case_id), vec![t[1]]);
+    assert_eq!(ids(&lib, src), vec![t[0], t[1], t[2]]);
+    assert_eq!(lib.case_info(done.case_id).unwrap().unwrap().play_time_secs, 20);
+
+    // move: the tracks leave the source
+    let done = lib.transfer_to_new_case(Some(src), "Moved", &[t[0], t[2]], true).unwrap();
+    assert_eq!((done.added, done.removed), (2, 2));
+    assert_eq!(ids(&lib, done.case_id), vec![t[0], t[2]]);
+    assert_eq!(ids(&lib, src), vec![t[1]]);
+
+    // a failure leaves no empty case behind
+    let before = lib.case_infos().unwrap();
+    assert!(lib.transfer_to_new_case(None, "Nope", &[t[0]], true).is_err(), "a move needs a source");
+    assert!(lib.transfer_to_new_case(Some(9999), "Nope", &[t[0]], false).is_err());
+    assert!(lib.transfer_to_new_case(Some(src), "  ", &[t[1]], false).is_err());
+    assert_eq!(lib.case_infos().unwrap(), before);
+    cleanup(lib, dirs);
+}
+
+#[test]
 fn delete_several_cases_in_one_go() {
     let (mut lib, dirs, t) = library_with_tracks("delmany", &[10, 20]);
     let a = lib.create_case("A").unwrap();

@@ -13,7 +13,7 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use pm_formats::library::{CaseInfo, CaseMeta, Error, Library, MergeDest, MergeDone, MergePlan, TransferDone, TransferPlan};
+use pm_formats::library::{CaseInfo, CaseMeta, Error, Library, MergeDest, MergeDone, MergePlan, TransferDone, TransferNewDone, TransferPlan};
 use serde::Serialize;
 use tauri::Manager;
 
@@ -181,6 +181,20 @@ pub async fn cases_transfer(
     remove_from_source: bool,
 ) -> AppResult<TransferDone> {
     write(app, root, move |lib| lib.transfer_tracks(from, to, &track_ids, remove_from_source)).await
+}
+
+/// Copies or moves tracks into a case created by the same write (one transaction, so a failure
+/// leaves no empty case). Returns the new case's id with what was transferred.
+#[tauri::command]
+pub async fn cases_transfer_new(
+    app: tauri::AppHandle,
+    root: String,
+    from: Option<i64>,
+    new_name: String,
+    track_ids: Vec<i64>,
+    remove_from_source: bool,
+) -> AppResult<TransferNewDone> {
+    write(app, root, move |lib| lib.transfer_to_new_case(from, &new_name, &track_ids, remove_from_source)).await
 }
 
 /// Deletes several cases (and their membership rows) in one transaction; the tracks stay.
@@ -360,6 +374,7 @@ macro_rules! cases_commands {
                 $crate::commands::cases::cases_merge,
                 $crate::commands::cases::cases_transfer_preview,
                 $crate::commands::cases::cases_transfer,
+                $crate::commands::cases::cases_transfer_new,
                 $crate::commands::cases::cases_delete_many,
                 $crate::commands::cases::cases_export,
                 $crate::commands::cases::smart_cases_list,

@@ -585,7 +585,7 @@ impl Library {
 mod case_ops_tests;
 
 mod case_bulk;
-pub use case_bulk::{plan_merge, plan_transfer, MergeDest, MergeDone, MergePlan, TransferDone, TransferPlan};
+pub use case_bulk::{plan_merge, plan_transfer, MergeDest, MergeDone, MergePlan, TransferDone, TransferNewDone, TransferPlan};
 #[cfg(test)]
 mod case_bulk_tests;
 

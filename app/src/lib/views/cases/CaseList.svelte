@@ -189,7 +189,7 @@
     {#if picked.size > 0}{plural(picked.size, "case")} ticked ·{/if}
     <Button small variant="link" onclick={() => (picked = new Set(rows.map((c) => c.id)))}>Tick all {rows.length === cases.infos.length ? "" : "shown "}</Button>
     {#if picked.size > 0}<Button small variant="link" onclick={() => (picked = new Set())}>Clear ticks</Button>{/if}
-    · Drag tracks onto a case to add them (not onto a smart case's copy: its rules rewrite it)
+    · Drag tracks onto a case to add them, or use Add to case… in the Tracks view (not onto a smart case's copy: its rules rewrite it)
   </div>
 {/if}
 

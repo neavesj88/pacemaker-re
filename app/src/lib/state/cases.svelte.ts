@@ -11,6 +11,7 @@ import {
   type MergeTarget,
   type SmartCase,
   type TransferDone,
+  type TransferNewDone,
   type TransferPlan,
   addTracksToCase,
   caseTracks,
@@ -35,6 +36,7 @@ import {
   smartCaseCounts,
   toggleFavourite,
   transferPreview,
+  transferToNewCase,
   transferTracks,
 } from "$lib/api/cases";
 import { pickSavePath } from "$lib/api/import";
@@ -238,6 +240,14 @@ class Cases {
   async transfer(from: number | null, to: number, ids: number[], move: boolean): Promise<TransferDone | undefined> {
     const done = await this.#write((root) => transferTracks(root, from, to, ids, move));
     if (done && this.open && (this.open.id === from || this.open.id === to)) await this.#reloadOpen();
+    return done;
+  }
+
+  /** Copies / moves tracks into a case created by the same write (nothing is left behind if it
+   *  fails); returns what was done, with the new case's id. */
+  async transferToNew(from: number | null, name: string, ids: number[], move: boolean): Promise<TransferNewDone | undefined> {
+    const done = await this.#write((root) => transferToNewCase(root, from, name.trim(), ids, move));
+    if (done && this.open && this.open.id === from) await this.#reloadOpen();
     return done;
   }
 
