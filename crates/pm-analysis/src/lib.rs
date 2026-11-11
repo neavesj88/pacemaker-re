@@ -7,6 +7,7 @@
 pub mod align;
 pub mod beats;
 pub mod decode;
+pub mod fingerprint;
 pub mod grid;
 pub mod ingest;
 pub mod key;

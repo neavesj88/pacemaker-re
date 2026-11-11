@@ -390,3 +390,17 @@ export async function pickExportFolder(start: string | null): Promise<string | n
   const dir = await open({ directory: true, title: "Choose the folder to export to (not on the Pacemaker)", ...(start ? { defaultPath: start } : {}) });
   return typeof dir === "string" ? dir : null;
 }
+
+// ---- which cases hold a track -------------------------------------------------------------------
+
+/** A case that holds a track, with the track's place in it. `smart_copy_of` is set when the case is
+ * the Pacemaker copy of a smart case. */
+export type HoldingCase = { case_id: number; name: string; position: number; of: number; smart_copy_of: number | null };
+
+/** A smart case whose rules match the track right now. */
+export type HoldingSmart = { id: number; name: string; on_device: boolean; device_case_id: number | null };
+
+export type TrackHolding = { track_id: number; cases: HoldingCase[]; smart: HoldingSmart[] };
+
+/** For each track, the cases that hold it and the smart cases that match it. Reads only. */
+export const casesHolding = (root: string, trackIds: number[]) => invoke<TrackHolding[]>("cases_holding", { root, trackIds });

@@ -7,6 +7,9 @@
 //! explicit user action. Smart-case rules are kept in the app's config dir, never on the
 //! device; see `cases/smart.rs`.
 
+pub mod dupes;
+mod dupes_logic;
+mod dupes_settings;
 mod export;
 mod export_bulk;
 mod export_prefs;
@@ -35,6 +38,7 @@ pub const JOB_CASES_EXPORT: &str = export_bulk::JOB;
 
 pub fn setup(app: &mut tauri::App) {
     app.manage(export_bulk::Cancel::default());
+    dupes::setup(app);
 }
 
 fn now_ms() -> i64 {
@@ -597,6 +601,14 @@ macro_rules! cases_commands {
                 $crate::commands::cases::cases_export_plan,
                 $crate::commands::cases::cases_export_start,
                 $crate::commands::cases::cases_export_cancel,
+                $crate::commands::cases::dupes::dupes_settings_get,
+                $crate::commands::cases::dupes::dupes_settings_set,
+                $crate::commands::cases::dupes::dupes_find,
+                $crate::commands::cases::dupes::dupes_fingerprint_start,
+                $crate::commands::cases::dupes::dupes_cancel,
+                $crate::commands::cases::dupes::dupes_merge_plan,
+                $crate::commands::cases::dupes::dupes_merge_start,
+                $crate::commands::cases::dupes::cases_holding,
             ];
             $($rest),*
         }

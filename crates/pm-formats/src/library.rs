@@ -585,6 +585,8 @@ impl Library {
 mod case_ops_tests;
 
 mod track_extra;
+mod dupes;
+pub use dupes::{check_disjoint, plan_group, Blocked, CaseEdit, CaseEditKind, CaseHold, Change, Computed, DupRow, Facts, GroupPlan, MergeGroup, MergeOptions, PlaysRule, RatingRule, RemovedRow, StatEdit, TrackHolds};
 pub use track_extra::TrackExtra;
 
 mod case_bulk;

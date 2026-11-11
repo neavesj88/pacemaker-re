@@ -8,6 +8,7 @@
   import { smartRefresh } from "$lib/state/smartRefresh.svelte";
   import { caseExport } from "$lib/state/caseExport.svelte";
   import ExportDialog from "./ExportDialog.svelte";
+  import HoldersDialog from "./HoldersDialog.svelte";
   import SmartRefreshDialog from "./SmartRefreshDialog.svelte";
 
   // the export dialog and the case menus read the remembered export folder and format
@@ -33,3 +34,4 @@
 
 <SmartRefreshDialog />
 <ExportDialog />
+<HoldersDialog />

@@ -9,6 +9,7 @@
   import { selection } from "$lib/state/selection.svelte";
   import { session } from "$lib/state/session.svelte";
   import { armTrackDrag } from "$lib/state/trackDrag.svelte";
+  import { holders } from "$lib/state/holders.svelte";
   import ContextMenu from "$lib/ui/ContextMenu.svelte";
   import Stars from "$lib/ui/Stars.svelte";
   import type { ColDef } from "./columns";
@@ -206,6 +207,7 @@
       { label: one ? "Edit metadata…" : `Edit metadata of ${n} tracks…`, onclick: () => editMetadata(ids) },
       { label: one ? "Add to mix" : `Add ${n} tracks to mix`, onclick: () => addToMix(ids) },
       { label: one ? "Add to case…" : `Add ${n} tracks to case…`, onclick: () => addToCase.ask(ids) },
+      { label: "Which cases hold this track…", onclick: () => holders.show(ids[0]), disabled: !one },
       {
         label: allFav ? (one ? "Remove from favourites" : `Remove ${n} from favourites`) : one ? "Favourite" : `Favourite ${n} tracks`,
         onclick: () => tracksState.setFavourite(ids, !allFav),
