@@ -141,3 +141,4 @@ export async function pickBackupFolder(): Promise<string | null> {
 export * from "./device-trust";
 export * from "./device-space";
 export * from "./device-relink";
+export * from "./device-preset";

@@ -17,6 +17,7 @@ pub mod ops_fix;
 pub mod ops_grid;
 pub mod ops_history;
 pub mod ops_metadata;
+pub mod ops_preset;
 pub mod ops_relink;
 pub mod ops_restore;
 pub mod ops_space;

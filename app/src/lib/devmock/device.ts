@@ -76,6 +76,9 @@ let settings: S[] = [
   float(300, "Lineout volume (mix)", 1.3456, 2.284794807434082),
 ];
 
+/** The mock card's settings, shared with devmock/device-preset.ts (presets read and write them). */
+export const mockSettings = () => settings;
+
 // Switches keyed on the drive's name, like "broken" below: open a folder whose path contains
 // "nosettings" (no settings.dat yet), "nofree" (free space unreadable) or "pending" (a firmware file
 // already waits, so an install is refused) to see those states.

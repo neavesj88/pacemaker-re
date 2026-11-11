@@ -9,6 +9,7 @@
   import FirmwareCard from "./FirmwareCard.svelte";
   import FixModal from "./FixModal.svelte";
   import HealthCard from "./HealthCard.svelte";
+  import PresetsCard from "./PresetsCard.svelte";
   import RelinkModal from "./RelinkModal.svelte";
   import RestoreCard from "./RestoreCard.svelte";
   import SafetyCard from "./SafetyCard.svelte";
@@ -59,6 +60,7 @@
     <UndoCard />
     <SafetyCard />
     <SettingsCard />
+    <PresetsCard />
   </div>
   <CleanupModal />
   {#if device.fixOpen}<FixModal />{/if}

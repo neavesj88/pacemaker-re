@@ -3,8 +3,10 @@
 //! command layer. Reads are plain commands; anything that copies or deletes many files is a
 //! background job (`device-firmware`, `device-backup`, `device-cleanup`) so it shows progress and
 //! cannot overlap another write job. `space` is the free-space planner (archive and remove);
-//! `relink` finds the audio of tracks whose file is missing and relinks or copies it back.
+//! `relink` finds the audio of tracks whose file is missing and relinks or copies it back;
+//! `preset` saves, previews and applies named settings.dat presets.
 
+pub mod preset;
 pub mod relink;
 pub mod space;
 pub mod trust;
@@ -345,6 +347,15 @@ macro_rules! device_commands {
                 $crate::commands::device::trust::device_verify_report,
                 $crate::commands::device::trust::device_fix_plan,
                 $crate::commands::device::trust::device_fix_remove_rows,
+                $crate::commands::device::preset::device_presets_list,
+                $crate::commands::device::preset::device_preset_get,
+                $crate::commands::device::preset::device_preset_save_current,
+                $crate::commands::device::preset::device_preset_delete,
+                $crate::commands::device::preset::device_preset_export,
+                $crate::commands::device::preset::device_preset_read_file,
+                $crate::commands::device::preset::device_preset_import,
+                $crate::commands::device::preset::device_preset_diff,
+                $crate::commands::device::preset::device_preset_apply,
                 $crate::commands::device::relink::device_relink_settings,
                 $crate::commands::device::relink::device_relink_settings_set,
                 $crate::commands::device::relink::device_relink_scan,
