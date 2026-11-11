@@ -13,6 +13,7 @@ export const DEFAULT_WATCH_SETTINGS: WatchSettings = {
   min_age_secs: 10,
   auto_max_files: 100,
   open_confirmation: false,
+  length_tolerance_secs: 2.5,
 };
 
 /** Why a scan ran: the library was opened, the timer fired, the user pressed Scan now, or the
@@ -152,6 +153,23 @@ export function intervalLabel(min: number): string {
   if (min === 1) return "every minute";
   if (min % 60 === 0) return min === 60 ? "every hour" : `every ${min / 60} hours`;
   return `every ${min} minutes`;
+}
+
+/** Which scan to run when requests arrive while one is already running. A scan that acts on its
+ *  result ("open", "manual") outranks one that only brings the list up to date ("refresh"); the
+ *  timer's request is dropped (the next tick comes anyway). Returns the reason to remember. */
+export function mergeQueued(queued: ScanReason | null, incoming: ScanReason): ScanReason | null {
+  if (incoming === "timer") return queued;
+  const rank: Record<ScanReason, number> = { timer: 0, refresh: 1, manual: 2, open: 3 };
+  return queued !== null && rank[queued] >= rank[incoming] ? queued : incoming;
+}
+
+/** A number (decimal point or comma, no sign or exponent) in [lo, hi] from a text field, or null. */
+export function decimalIn(raw: string, lo: number, hi: number): number | null {
+  const t = raw.trim().replace(",", ".");
+  if (!/^\d+(\.\d+)?$/.test(t)) return null;
+  const n = Number(t);
+  return n >= lo && n <= hi ? n : null;
 }
 
 /** A whole number in [lo, hi] from a text field, or null. */

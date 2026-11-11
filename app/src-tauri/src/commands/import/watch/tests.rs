@@ -142,6 +142,69 @@ fn tags_match_needs_title_artist_and_a_close_length() {
 }
 
 #[test]
+fn the_length_tolerance_is_a_setting() {
+    let d = dir("tolerance");
+    file(&d, "near.mp3", 70);
+    let tracks = [track(1, "Tune", "A", 200, 999, "/pmdb_tracks/1/1/aa.mp3")];
+    let tags = |_: &Path| FileTags { title: "Tune".into(), artist: "A".into(), duration_secs: Some(205.0) };
+    let mut s = settings(&[&d]);
+    assert_eq!(run(&s, "Q:\\", &tracks, &[], &tags).candidates.len(), 1, "5 s apart is not a match by default");
+    s.length_tolerance_secs = 5.0;
+    let wide = run(&s, "Q:\\", &tracks, &[], &tags);
+    assert_eq!((wide.matched_total, wide.candidates.len()), (1, 0));
+    s.length_tolerance_secs = 4.9;
+    assert_eq!(run(&s, "Q:\\", &tracks, &[], &tags).candidates.len(), 1);
+    // a damaged value is brought back to something usable
+    let bad = Settings { length_tolerance_secs: f64::NAN, ..Settings::default() }.sanitised();
+    assert_eq!(bad.length_tolerance_secs, 2.5);
+    assert_eq!(Settings { length_tolerance_secs: -3.0, ..Settings::default() }.sanitised().length_tolerance_secs, 0.0);
+    assert_eq!(Settings { length_tolerance_secs: 900.0, ..Settings::default() }.sanitised().length_tolerance_secs, 30.0);
+}
+
+#[test]
+fn the_tag_cache_reads_a_file_once_and_again_when_it_changes() {
+    use std::cell::{Cell, RefCell};
+    let d = dir("cache");
+    let f = file(&d, "song.mp3", 10);
+    let reads = Cell::new(0);
+    let reader = |_: &Path| {
+        reads.set(reads.get() + 1);
+        FileTags { title: format!("read {}", reads.get()), ..FileTags::default() }
+    };
+    let mut c = TagCache::default();
+    assert_eq!(c.get_or_read(&f, &reader).title, "read 1");
+    assert_eq!(c.get_or_read(&f, &reader).title, "read 1");
+    assert_eq!(reads.get(), 1);
+    // a different size is a different file
+    std::fs::write(&f, vec![0u8; 11]).unwrap();
+    assert_eq!(c.get_or_read(&f, &reader).title, "read 2");
+    assert_eq!(c.get_or_read(&f, &reader).title, "read 2");
+    // a file that cannot be examined is read every time and never remembered
+    let gone = d.join("absent.mp3");
+    c.get_or_read(&gone, &reader);
+    c.get_or_read(&gone, &reader);
+    assert_eq!(reads.get(), 4);
+
+    // used the way a scan uses it: the second scan of unchanged files reads none
+    let d2 = dir("cache-scan");
+    file(&d2, "a.mp3", 21);
+    file(&d2, "b.mp3", 22);
+    let tracks = [track(1, "zzz", "zzz", 100, 1, "/pmdb_tracks/1/1/aa.mp3")];
+    let calls = Cell::new(0);
+    let counting = |p: &Path| {
+        calls.set(calls.get() + 1);
+        no_tags(p)
+    };
+    let cache = RefCell::new(TagCache::default());
+    let cached = |p: &Path| cache.borrow_mut().get_or_read(p, &counting);
+    let s = settings(&[&d2]);
+    assert_eq!(run(&s, "Q:\\", &tracks, &[], &cached).candidates.len(), 2);
+    assert_eq!(calls.get(), 2);
+    assert_eq!(run(&s, "Q:\\", &tracks, &[], &cached).candidates.len(), 2);
+    assert_eq!(calls.get(), 2, "unchanged files are not read again");
+}
+
+#[test]
 fn two_lookalike_library_tracks_make_a_tag_match_a_guess_so_it_is_not_made() {
     let d = dir("lookalike");
     file(&d, "x.mp3", 60);

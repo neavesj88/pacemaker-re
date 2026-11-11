@@ -3,7 +3,7 @@
   import { session } from "$lib/state/session.svelte";
   import { watch } from "$lib/state/watch.svelte";
   import Button from "$lib/ui/Button.svelte";
-  import { agoText, intervalLabel, looksAbsolute, wholeIn } from "./watchLogic";
+  import { agoText, decimalIn, intervalLabel, looksAbsolute, wholeIn } from "./watchLogic";
 
   // The watch-folder settings. Each choice saves as soon as it changes. They are kept on this
   // computer (in the app's config folder), not on the Pacemaker, and are the same for every card.
@@ -13,15 +13,17 @@
   let interval = $state("");
   let minAge = $state("");
   let autoMax = $state("");
+  let tolerance = $state("");
 
   // Show a saved value in its field only when that value changed, so saving some other setting
   // does not wipe what is half typed here.
-  let shown = { interval: NaN, minAge: NaN, autoMax: NaN };
+  let shown = { interval: NaN, minAge: NaN, autoMax: NaN, tolerance: NaN };
   $effect(() => {
     const s = watch.settings;
     if (s.interval_minutes !== shown.interval) interval = String((shown.interval = s.interval_minutes));
     if (s.min_age_secs !== shown.minAge) minAge = String((shown.minAge = s.min_age_secs));
     if (s.auto_max_files !== shown.autoMax) autoMax = String((shown.autoMax = s.auto_max_files));
+    if (s.length_tolerance_secs !== shown.tolerance) tolerance = String((shown.tolerance = s.length_tolerance_secs));
   });
 
   // a clock for "3 minutes ago" that moves on without a rescan
@@ -54,6 +56,17 @@
     }
     err = "";
     if (n !== watch.settings[key]) void commit({ [key]: n });
+  }
+
+  function commitTolerance() {
+    const n = decimalIn(tolerance, 0, 30);
+    if (n === null) {
+      err = "The length difference must be a number of seconds from 0 to 30.";
+      tolerance = String(watch.settings.length_tolerance_secs);
+      return;
+    }
+    err = "";
+    if (n !== watch.settings.length_tolerance_secs) void commit({ length_tolerance_secs: n });
   }
 
   const known = (p: string) => watch.settings.folders.some((f) => f.replace(/[\\/]+$/, "").toLowerCase() === p.replace(/[\\/]+$/, "").toLowerCase());
@@ -197,6 +210,18 @@
         onkeydown={(e) => e.key === "Enter" && commitNumber(autoMax, 1, 5000, "The most files at once", "auto_max_files")}
       />
       <span class="muted">only used by "Add them automatically"</span>
+    </label>
+    <label class="field">
+      Same recording if the lengths differ by at most (seconds)
+      <input
+        type="text"
+        inputmode="decimal"
+        bind:value={tolerance}
+        disabled={busy}
+        onchange={commitTolerance}
+        onkeydown={(e) => e.key === "Enter" && commitTolerance()}
+      />
+      <span class="muted">used when a file's title and artist match a library track but the name does not; 0 = exactly the same length</span>
     </label>
   </div>
 

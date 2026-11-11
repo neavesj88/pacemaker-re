@@ -9,8 +9,10 @@ import {
   decide,
   fmtSize,
   intervalLabel,
+  decimalIn,
   logEntryFor,
   looksAbsolute,
+  mergeQueued,
   scanLines,
   scanSignature,
   wholeIn,
@@ -52,6 +54,7 @@ test("the defaults ask first, scan on open and have no timer (same as the Rust d
   assert.equal(DEFAULT_WATCH_SETTINGS.auto_max_files, 100);
   assert.equal(DEFAULT_WATCH_SETTINGS.min_age_secs, 10);
   assert.equal(DEFAULT_WATCH_SETTINGS.open_confirmation, false);
+  assert.equal(DEFAULT_WATCH_SETTINGS.length_tolerance_secs, 2.5);
   assert.deepEqual(DEFAULT_WATCH_SETTINGS.folders, []);
 });
 
@@ -186,4 +189,29 @@ test("chosen candidates keep the list order", () => {
   const all = ["/m/a", "/m/b", "/m/c"].map((p) => cand(p));
   assert.deepEqual(chosenCandidates(all, new Set(["/m/c", "/m/a"])).map((c) => c.path), ["/m/a", "/m/c"]);
   assert.deepEqual(chosenCandidates(all, new Set()), []);
+});
+
+test("a scan asked for during a scan is remembered, acting scans outrank refreshes, the timer is dropped", () => {
+  assert.equal(mergeQueued(null, "refresh"), "refresh");
+  assert.equal(mergeQueued(null, "timer"), null);
+  assert.equal(mergeQueued("refresh", "timer"), "refresh");
+  assert.equal(mergeQueued("refresh", "open"), "open");
+  assert.equal(mergeQueued("open", "refresh"), "open");
+  assert.equal(mergeQueued("open", "manual"), "open");
+  assert.equal(mergeQueued("refresh", "manual"), "manual");
+  assert.equal(mergeQueued("manual", "refresh"), "manual");
+  assert.equal(mergeQueued("refresh", "refresh"), "refresh");
+});
+
+test("decimalIn takes seconds with a point or a comma and nothing else", () => {
+  assert.equal(decimalIn("2.5", 0, 30), 2.5);
+  assert.equal(decimalIn(" 2,5 ", 0, 30), 2.5);
+  assert.equal(decimalIn("0", 0, 30), 0);
+  assert.equal(decimalIn("30", 0, 30), 30);
+  assert.equal(decimalIn("30.1", 0, 30), null);
+  assert.equal(decimalIn("-1", 0, 30), null);
+  assert.equal(decimalIn("1e3", 0, 30), null);
+  assert.equal(decimalIn("", 0, 30), null);
+  assert.equal(decimalIn("2.", 0, 30), null);
+  assert.equal(decimalIn("abc", 0, 30), null);
 });

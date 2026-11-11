@@ -141,6 +141,8 @@ export type WatchSettings = {
   auto_max_files: number;
   /** In "ask" mode: open the confirmation as soon as a scan finds files. */
   open_confirmation: boolean;
+  /** Same title and artist count as the same track when the lengths differ by at most this many seconds. */
+  length_tolerance_secs: number;
 };
 
 export type WatchSettingsView = { settings: WatchSettings; problem: string | null };

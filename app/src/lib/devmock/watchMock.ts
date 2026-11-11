@@ -25,6 +25,7 @@ type Settings = {
   min_age_secs: number;
   auto_max_files: number;
   open_confirmation: boolean;
+  length_tolerance_secs: number;
 };
 
 let settings: Settings = {
@@ -36,6 +37,7 @@ let settings: Settings = {
   min_age_secs: 10,
   auto_max_files: 100,
   open_confirmation: false,
+  length_tolerance_secs: 2.5,
 };
 
 type Ignored = { path: string; size: number; at: number };
@@ -124,6 +126,7 @@ export const handlers: Handlers = {
       interval_minutes: Math.min(s.interval_minutes, 1440),
       min_age_secs: Math.min(s.min_age_secs, 3600),
       auto_max_files: Math.min(Math.max(s.auto_max_files, 1), 5000),
+      length_tolerance_secs: Number.isFinite(s.length_tolerance_secs) ? Math.min(Math.max(s.length_tolerance_secs, 0), 30) : 2.5,
     };
     return settings;
   },

@@ -74,10 +74,12 @@ class Jobs {
     this.job = null;
   }
 
-  async confirm() {
+  /** Starts the pending job. True when it started; false when there was nothing pending or the
+   *  backend refused to start it (the error banner says why). */
+  async confirm(): Promise<boolean> {
     const p = this.pending;
     this.pending = null;
-    if (!p) return;
+    if (!p) return false;
     this.job = {
       kind: p.kind,
       runningLabel: p.runningLabel,
@@ -92,9 +94,11 @@ class Jobs {
     };
     try {
       await p.start();
+      return true;
     } catch (e) {
       this.job = null;
       session.error = String(e);
+      return false;
     }
   }
 
@@ -128,7 +132,7 @@ class Jobs {
   /** Confirm adding these picked / dropped paths; folders are searched, non-audio is dropped.
    *  `opts.source` names where the files came from (the confirmation says so); `opts.auto` starts
    *  the add without the question (only the watch-folder "add automatically" setting passes it).
-   *  Returns true when the add was set up (asked, or started for `auto`). */
+   *  Returns true when the add was set up (asked, or really started for `auto`). */
   async askAdd(paths: string[], opts: { source?: string; auto?: boolean } = {}): Promise<boolean> {
     const lib = session.library;
     if (!lib) return false;
@@ -155,7 +159,7 @@ class Jobs {
       doneLabel: "Add finished",
       start: () => addTracks(lib.root, files),
     });
-    if (asked && opts.auto) await this.confirm();
+    if (asked && opts.auto) return await this.confirm();
     return asked;
   }
 

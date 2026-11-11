@@ -25,6 +25,7 @@ import {
   autoDoneText,
   decide,
   logEntryFor,
+  mergeQueued,
   scanSignature,
   type ScanReason,
 } from "$lib/views/import/watchLogic";
@@ -60,6 +61,9 @@ class WatchStore {
   /** Files an automatic add has tried this session; never tried automatically a second time. */
   #tried = new Set<string>();
   #auto: AutoRun | null = null;
+  /** A scan asked for while another was running; runs when that one ends, so a refresh after a
+   *  settings change, an un-ignore or an add is never lost. */
+  #queued: ScanReason | null = null;
   #lastDone: DoneEvent | null = null;
 
   async loadSettings() {
@@ -103,10 +107,15 @@ class WatchStore {
     }
   }
 
-  /** Searches the watched folders now and acts on the result as the settings say. */
+  /** Searches the watched folders now and acts on the result as the settings say. Asked while a
+   *  scan is running, it is remembered and run once that one has ended. */
   async scanNow(reason: ScanReason = "manual") {
     const root = session.library?.root;
-    if (!root || this.scanning || !this.watching) return;
+    if (!root || !this.watching) return;
+    if (this.scanning) {
+      this.#queued = mergeQueued(this.#queued, reason);
+      return;
+    }
     this.scanning = true;
     this.scanError = "";
     try {
@@ -119,6 +128,9 @@ class WatchStore {
       this.scanError = String(e);
     } finally {
       this.scanning = false;
+      const next = this.#queued;
+      this.#queued = null;
+      if (next) void this.scanNow(next);
     }
   }
 
@@ -137,15 +149,24 @@ class WatchStore {
       this.#announced.set(root, sig);
       toast.show(action.text, action.tone === "bad" ? "bad" : "info", 9000);
     } else if (action.kind === "confirm") {
-      this.#announced.set(root, sig);
-      await jobs.askAdd(action.paths, { source: "a watched folder" });
+      // told only when the question really opened; if another one was waiting, the next scan asks again
+      if (await jobs.askAdd(action.paths, { source: "a watched folder" })) this.#announced.set(root, sig);
     } else {
       const names = action.paths.map(baseName);
       this.#auto = { root, names };
       for (const p of action.paths) this.#tried.add(p);
       const started = await jobs.askAdd(action.paths, { source: "a watched folder", auto: true });
-      if (!started) this.#auto = null;
-      else toast.show(`Adding ${names.length} new file${names.length === 1 ? "" : "s"} from the watched folders.`, "info", 6000);
+      if (started) {
+        toast.show(`Adding ${names.length} new file${names.length === 1 ? "" : "s"} from the watched folders.`, "info", 6000);
+      } else {
+        // nothing started (another question or job in the way, or the backend refused): these
+        // files are not "tried", so a later scan offers them to the automatic add again
+        this.#auto = null;
+        for (const p of action.paths) this.#tried.delete(p);
+        if (reason === "manual") {
+          toast.show("Nothing was added: another question or job is in the way. Scan again when it is done.", "info", 7000);
+        }
+      }
     }
   }
 

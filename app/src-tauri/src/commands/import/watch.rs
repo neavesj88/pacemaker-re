@@ -13,7 +13,8 @@
 //!    case ignored. Catches a file renamed by a downloader; needs no tags.
 //! 3. Same title and artist in the tags (the file name stands in for a missing title, as the add
 //!    flow does) and a length within 2.5 s of the track's, both known. Tags are read only for
-//!    files that fail 1 and 2.
+//!    files that fail 1 and 2, and remembered per file (path, size, modified time) while the app
+//!    runs, so a repeated scan of a folder full of unrelated music reads nothing again.
 //!
 //! Files matched by 2 or 3 are not offered, but they are listed in the result so a wrong guess
 //! can be overridden with "Add tracks". No track location is turned into a file path here: the
@@ -41,6 +42,10 @@ use crate::error::AppResult;
 /// click must not both rewrite a file from the same starting point).
 static WATCH_LOCK: Mutex<()> = Mutex::new(());
 
+/// Tags read by earlier scans. Held for the whole of a scan, so two scans at once take turns
+/// (the second then finds everything the first read).
+static TAG_CACHE: Mutex<Option<TagCache>> = Mutex::new(None);
+
 // ---- limits ------------------------------------------------------------------------------
 
 const MAX_FOLDERS: usize = 20;
@@ -52,8 +57,9 @@ const MAX_LISTED_MATCHES: usize = 300;
 const MAX_IGNORED: usize = 50_000;
 const MAX_LOG: usize = 100;
 const MAX_LOG_NAMES: usize = 200;
-/// Length difference still counted as the same recording.
-const DURATION_TOLERANCE_SECS: f64 = 2.5;
+/// Tag results remembered between scans (path + size + modified time); the whole cache is
+/// dropped when it grows past this, so it cannot grow without bound over a long session.
+const MAX_TAG_CACHE: usize = 50_000;
 /// A file dated further than this ahead of the clock is a clock mix-up, not a write in progress.
 const FUTURE_SLACK_MS: i64 = 60_000;
 
@@ -86,6 +92,9 @@ pub struct Settings {
     pub auto_max_files: u32,
     /// In "ask" mode: open the confirmation as soon as a scan finds files, instead of a toast.
     pub open_confirmation: bool,
+    /// Two recordings with the same title and artist count as the same track when their lengths
+    /// differ by at most this many seconds.
+    pub length_tolerance_secs: f64,
 }
 
 impl Default for Settings {
@@ -99,6 +108,7 @@ impl Default for Settings {
             min_age_secs: 10,
             auto_max_files: 100,
             open_confirmation: false,
+            length_tolerance_secs: 2.5,
         }
     }
 }
@@ -117,6 +127,9 @@ impl Settings {
         self.interval_minutes = self.interval_minutes.min(1440);
         self.min_age_secs = self.min_age_secs.min(3600);
         self.auto_max_files = self.auto_max_files.clamp(1, 5000);
+        // NaN (from a hand-edited file) falls back to the default instead of matching nothing
+        self.length_tolerance_secs =
+            if self.length_tolerance_secs.is_finite() { self.length_tolerance_secs.clamp(0.0, 30.0) } else { 2.5 };
         self
     }
 
@@ -227,6 +240,34 @@ pub fn read_tags(path: &Path) -> FileTags {
     tags
 }
 
+/// What was read from a file, remembered with the size and modified time it had then: a file that
+/// changed (or was replaced) is read again.
+#[derive(Default)]
+pub struct TagCache {
+    map: HashMap<String, (u64, i64, FileTags)>,
+}
+
+impl TagCache {
+    /// The remembered tags of `path` if its size and modified time are unchanged, otherwise
+    /// `read`'s result, which is then remembered.
+    pub fn get_or_read(&mut self, path: &Path, read: &dyn Fn(&Path) -> FileTags) -> FileTags {
+        let Ok(m) = std::fs::metadata(path) else { return read(path) };
+        let (size, mtime) = (m.len(), modified_ms(&m));
+        let key = norm_path(&path.to_string_lossy());
+        if let Some((s, t, tags)) = self.map.get(&key) {
+            if *s == size && *t == mtime {
+                return tags.clone();
+            }
+        }
+        let tags = read(path);
+        if self.map.len() >= MAX_TAG_CACHE {
+            self.map.clear();
+        }
+        self.map.insert(key, (size, mtime, tags.clone()));
+        tags
+    }
+}
+
 /// How a file was recognised as already in the library.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Found {
@@ -251,12 +292,12 @@ fn by_size_and_title(ix: &LibIndex, name: &str, size: u64) -> Option<i64> {
     ix.by_size.get(&(size as i64))?.iter().find(|(_, title, both)| *title == stem || *both == stem).map(|(id, _, _)| *id)
 }
 
-fn by_tags(ix: &LibIndex, tags: &FileTags) -> Option<i64> {
+fn by_tags(ix: &LibIndex, tags: &FileTags, tolerance_secs: f64) -> Option<i64> {
     let secs = tags.duration_secs?;
     let cands = ix.by_tags.get(&(norm_text(&tags.title), norm_text(&tags.artist)))?;
     let close: Vec<i64> = cands
         .iter()
-        .filter(|(_, len)| *len > 0 && (secs - *len as f64).abs() <= DURATION_TOLERANCE_SECS)
+        .filter(|(_, len)| *len > 0 && (secs - *len as f64).abs() <= tolerance_secs)
         .map(|(id, _)| *id)
         .collect();
     // two library tracks that look alike: a match would be a guess about which one
@@ -440,7 +481,7 @@ pub fn scan_folders(
             }
             hit = by_size_and_title(index, name, f.size)
                 .map(Found::SizeAndTitle)
-                .or_else(|| by_tags(index, &tags(&f.path)).map(Found::Tags));
+                .or_else(|| by_tags(index, &tags(&f.path), settings.length_tolerance_secs).map(Found::Tags));
         }
         match hit {
             Some(Found::NameAndSize) => scan.in_library += 1,
@@ -667,7 +708,13 @@ pub async fn watch_scan(app: tauri::AppHandle, root: String) -> AppResult<Scan> 
             load_state(&dir, &root, now)?.state.ignored
         };
         // the long part (walking folders, reading tags) runs without the lock held
-        let mut scan = scan_folders(&settings, &root, &index, &ignored, now, &read_tags);
+        let mut scan = {
+            let mut guard = TAG_CACHE.lock().unwrap_or_else(|p| p.into_inner());
+            let cache = std::cell::RefCell::new(guard.take().unwrap_or_default());
+            let scan = scan_folders(&settings, &root, &index, &ignored, now, &|p| cache.borrow_mut().get_or_read(p, &read_tags));
+            *guard = Some(cache.into_inner());
+            scan
+        };
         let _held = WATCH_LOCK.lock().unwrap_or_else(|p| p.into_inner());
         // read again: an "ignore" may have been saved while the scan ran
         let mut view = load_state(&dir, &root, now)?;
