@@ -87,7 +87,13 @@ class Sections {
     if (!jobs.guard()) return;
     this.busy = true;
     try {
-      const plan = await planSections(lib.root, ids, recompute);
+      let plan = await planSections(lib.root, ids, recompute);
+      // tracks picked by hand that have a result already (even a flat or skipped one) are measured
+      // again on request: the question below names every one of them, so nothing runs unseen
+      if (plan.length === 0 && ids?.length && !recompute) {
+        plan = await planSections(lib.root, ids, true);
+        recompute = plan.length > 0;
+      }
       if (plan.length === 0) {
         toast.show(
           ids?.length

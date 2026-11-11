@@ -500,13 +500,14 @@ pub fn detect(rows: &[Row], p: &Params) -> Result<Detection, NoStructure> {
         .map(|&(t, v)| {
             if phrase > 0 {
                 let line = nearest_line(t, phrase, offset);
-                if line >= 1 && (t as isize - line).unsigned_abs() <= p.snap_tolerance_bars {
+                // a line at or past the end of the track is no boundary (a wide tolerance can reach one)
+                if line >= 1 && (line as usize) < n && (t as isize - line).unsigned_abs() <= p.snap_tolerance_bars {
                     return (line as usize, v, true);
                 }
             }
             (t, v, false)
         })
-        .filter(|&(t, _, _)| t >= edge_min && n - t >= edge_min)
+        .filter(|&(t, _, _)| t >= edge_min && t + edge_min <= n)
         .collect();
     cand.sort_by(|a, b| b.1.total_cmp(&a.1).then(a.0.cmp(&b.0)));
     let mut picked: Vec<(usize, f32, bool)> = Vec::new();
@@ -953,5 +954,72 @@ mod tests {
         assert_eq!(snap_secs(&b, 0.0, 2.0), None);
         assert_eq!(snap_secs(&b, 31.5, 2.0), Some(30.0));
         assert_eq!(snap_secs(&[], 5.0, 100.0), None);
+    }
+
+    /// Blocky random bar features: stretches of one level with a few jumps, the shape that makes
+    /// the detector find boundaries.
+    fn blocky_rows(seed: &mut u64, n: usize) -> Vec<Row> {
+        let mut next = move |seed: &mut u64| {
+            *seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            (*seed >> 33) as f32 / (1u64 << 31) as f32
+        };
+        let mut rows = Vec::with_capacity(n);
+        let mut cur: Row = [0.0; FEATURES];
+        let mut left = 0usize;
+        while rows.len() < n {
+            if left == 0 {
+                cur = std::array::from_fn(|_| next(seed) * 120.0 - 60.0);
+                left = 1 + (next(seed) * 20.0) as usize;
+            }
+            left -= 1;
+            rows.push(std::array::from_fn(|k| cur[k] + next(seed) * 2.0));
+        }
+        rows
+    }
+
+    #[test]
+    fn a_wide_snap_tolerance_never_puts_a_boundary_past_the_end() {
+        // a step a few bars from the end of the track: the nearest phrase line can be past the
+        // end, and must not become a boundary (it used to slice out of range)
+        let quiet: Row = [-40.0, -30.0, -30.0, -35.0, 20.0];
+        let loud: Row = [10.0, 0.0, -5.0, -10.0, 150.0];
+        for n in 16..=48usize {
+            for step in n - 8..n - 3 {
+                let rows: Vec<Row> = (0..n).map(|i| if i < step { quiet } else { loud }).collect();
+                for phrase_bars in [4usize, 8, 16, 32] {
+                    for tol in 0..=8 {
+                        let p = Params { phrase_bars, snap_tolerance_bars: tol, min_section_bars: 4, ..Params::default() };
+                        if let Ok(d) = detect(&rows, &p) {
+                            let ctx = format!("n {n} step {step} phrase {phrase_bars} tol {tol}");
+                            assert!(d.sections.iter().all(|s| s.end_bar <= n && s.start_bar < s.end_bar), "{ctx}");
+                            assert!(d.boundary_bars().iter().all(|&b| b < n), "{ctx}");
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn detect_never_panics_over_the_whole_settings_range() {
+        let mut seed = 0x5eed_u64;
+        let mut ok = 0;
+        for round in 0..6000 {
+            let n = 8 + (round * 7) % 190;
+            let rows = blocky_rows(&mut seed, n);
+            let p = Params {
+                sensitivity: 1 + (round % 5) as u8,
+                min_section_bars: 4 + (round * 3) % 29,
+                phrase_bars: [0usize, 4, 8, 16, 32][round % 5],
+                best_fit_phase: round % 3 == 0,
+                snap_tolerance_bars: (round / 5) % 9,
+            };
+            if let Ok(d) = detect(&rows, &p) {
+                ok += 1;
+                assert!(d.sections.windows(2).all(|w| w[0].end_bar == w[1].start_bar), "round {round}");
+                assert_eq!(d.sections.last().unwrap().end_bar, n, "round {round}");
+            }
+        }
+        assert!(ok > 500, "the fuzz should reach the snapping code, only {ok} tracks had structure");
     }
 }

@@ -91,7 +91,7 @@ export function sectionTitle(s: SectionOut): string {
 
 /** One line for a tooltip over a whole strip of markers. */
 export function summaryTitle(sections: readonly SectionOut[]): string {
-  return `Sections (estimated): ${sections.map((s) => `${KIND_LABEL[s.kind].toLowerCase()} ${clock(s.start_secs)}`).join(", ")}`;
+  return `Sections (estimated): ${sections.map((s) => `${KIND_LABEL[s.kind].toLowerCase()} ${clock(s.start_secs)} (${percent(s.confidence)})`).join(", ")}`;
 }
 
 /** What the chip under the grid editor's overview says about the phrase grid. */

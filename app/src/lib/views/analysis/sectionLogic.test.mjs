@@ -72,7 +72,7 @@ test("clock, opacity and the lookups", () => {
 
 test("titles name the section, its times, its bars and its confidence", () => {
   assert.equal(sectionTitle(sec("drop", 24, 56)), "Drop, 0:48 to 1:52, bars 25 to 56, confidence 80%");
-  assert.equal(summaryTitle(SECTIONS.slice(0, 3)), "Sections (estimated): intro 0:00, build 0:32, drop 0:48");
+  assert.equal(summaryTitle(SECTIONS.slice(0, 3)), "Sections (estimated): intro 0:00 (80%), build 0:32 (80%), drop 0:48 (80%)");
   assert.match(phraseText({ phrase_bars: 8, sections: SECTIONS }), /8-bar phrase grid \(4 of 5 on it\)/);
   assert.match(phraseText({ phrase_bars: 0, sections: SECTIONS }), /no phrase grid fits/);
   assert.equal(phraseText({ phrase_bars: 0, sections: SECTIONS.slice(0, 1) }), "");

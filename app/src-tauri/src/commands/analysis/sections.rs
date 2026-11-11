@@ -259,10 +259,12 @@ fn status_of<'a>(t: &TrackRef, cache: &'a CacheFile, settings: &Settings) -> Sta
     if e.rows.len() < settings.min_bars {
         return Status::Skipped(format!("fewer than {} bars", settings.min_bars));
     }
-    match core::detect(&e.rows, &settings.params()) {
-        Ok(d) => Status::Ready(d, e),
-        Err(NoStructure::Flat) => Status::Flat,
-        Err(NoStructure::TooShort) => Status::Skipped(NoStructure::TooShort.reason().into()),
+    // one track whose cached measurements trip the detector must not fail the whole library
+    match catch_unwind(AssertUnwindSafe(|| core::detect(&e.rows, &settings.params()))) {
+        Ok(Ok(d)) => Status::Ready(d, e),
+        Ok(Err(NoStructure::Flat)) => Status::Flat,
+        Ok(Err(NoStructure::TooShort)) => Status::Skipped(NoStructure::TooShort.reason().into()),
+        Err(_) => Status::Skipped("the section detector failed on this track".into()),
     }
 }
 

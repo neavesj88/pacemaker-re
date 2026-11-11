@@ -2,6 +2,7 @@
   import type { Peak } from "$lib/api/analysis";
   import { sections } from "$lib/state/sections.svelte";
   import SectionBand from "../analysis/SectionBand.svelte";
+  import { sectionAt, sectionTitle } from "../analysis/sectionLogic";
   import { bandsOver, clamp, isDownbeat } from "./gridMath";
 
   // The whole track in one strip: the visible window of the main waveform is the lit rectangle;
@@ -96,6 +97,18 @@
   });
 
   let dragging = false;
+  // the marker strip does not take the pointer (the canvas does), so the tooltip comes from here
+  let tip = $state("");
+
+  function hover(e: PointerEvent) {
+    if (!marks || duration <= 0) {
+      tip = "";
+      return;
+    }
+    const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const s = sectionAt(marks, clamp(((e.clientX - r.left) / r.width) * duration, 0, duration));
+    tip = s ? sectionTitle(s) : "";
+  }
 
   function at(e: PointerEvent) {
     const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
@@ -110,12 +123,13 @@
     style:width="{width}px"
     style:height="{height}px"
     aria-label="Overview of the whole track. Click or drag to move the visible window."
+    title={tip || undefined}
     onpointerdown={(e) => {
       (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
       dragging = true;
       at(e);
     }}
-    onpointermove={(e) => dragging && at(e)}
+    onpointermove={(e) => (dragging ? at(e) : hover(e))}
     onpointerup={() => (dragging = false)}
     onpointercancel={() => (dragging = false)}
   ></canvas>
