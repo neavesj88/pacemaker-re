@@ -1363,6 +1363,9 @@ pub struct XmlOptions {
     pub extras_only: bool,
     /// Cases left out of the playlist tree (their tracks stay in the collection).
     pub skip_cases: HashSet<i64>,
+    /// Tracks left out of the file altogether: not in the collection, not in any playlist
+    /// (the app uses it for tracks whose file location is not a plain path in the music folder).
+    pub exclude_tracks: HashSet<i64>,
     pub extra: Vec<ExtraPlaylist>,
     /// Put the extra playlists in a folder of this name instead of beside the cases.
     pub extra_folder: Option<String>,
@@ -1371,6 +1374,7 @@ pub struct XmlOptions {
 /// [`export_rekordbox`] with the choices in [`XmlOptions`].
 pub fn export_rekordbox_with(lib: &Library, opts: &XmlOptions) -> Result<String, Error> {
     let mut tracks = lib.tracks()?;
+    tracks.retain(|t| !opts.exclude_tracks.contains(&t.track_id));
     let mut cases = lib.cases()?;
     let mut mixes = lib.mix_infos()?;
     let restricted = opts.only_case.is_some() || opts.extras_only;
@@ -1931,6 +1935,15 @@ mod tests {
         let back = parse_library(&export_rekordbox_with(&lib, &opts).unwrap()).unwrap();
         assert_eq!(back.tracks.iter().map(|t| t.title.as_str()).collect::<Vec<_>>(), ["Synth Title 3", "Synth Title 1"]);
         assert_eq!(back.playlists.len(), 2);
+
+        // excluded tracks are in neither the collection nor any playlist (cases, extras, mixes)
+        let opts = XmlOptions { exclude_tracks: HashSet::from([id(1)]), extra: extra.clone(), ..Default::default() };
+        let xml = export_rekordbox_with(&lib, &opts).unwrap();
+        let back = parse_library(&xml).unwrap();
+        assert_eq!(back.tracks.len(), 3);
+        assert!(back.tracks.iter().all(|t| t.title != "Synth Title 1"), "{xml}");
+        assert_eq!(back.playlists.iter().find(|p| p.name == "Rule one").unwrap().tracks.len(), 1, "the other id of the rule is kept");
+        assert_eq!(back.playlists.iter().find(|p| p.name == "Copy of a rule").unwrap().tracks.len(), 0);
 
         // nothing extra and no options is exactly the plain export
         assert_eq!(export_rekordbox_with(&lib, &XmlOptions::default()).unwrap(), export_rekordbox(&lib).unwrap());

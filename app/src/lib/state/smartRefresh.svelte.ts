@@ -5,7 +5,7 @@
 // what a refresh would do. Every write is `smart_cases_refresh_apply`, which goes through the
 // device write gate; the preview and the write take their track lists from one function.
 import { smartRefreshApply, smartRefreshPlan, type RefreshReport } from "$lib/api/cases";
-import { changed, doneSummary, needsAttention, planSignature, skipped } from "$lib/views/cases/smartRefreshLogic";
+import { changed, decideCheck, doneSummary, loopMessage, planSignature, skipped, stuckLines, type RefreshMemory } from "$lib/views/cases/smartRefreshLogic";
 import { cases } from "./cases.svelte";
 import { jobs } from "./jobs.svelte";
 import { session } from "./session.svelte";
@@ -19,10 +19,10 @@ class SmartRefresh {
   manual = $state(false);
   checking = $state(false);
   applying = $state(false);
-  /** The plan the user answered "Not now" to, and one whose write failed: not asked / retried
-   *  until something different would change. */
-  #dismissed = "";
-  #failed = "";
+  /** The plan the user answered "Not now" to, one whose write failed, and the plans already
+   *  written automatically: not asked / retried / written again until something different would
+   *  change (see decideCheck). */
+  #mem: RefreshMemory = { dismissed: "", failed: "", written: new Set() };
 
   get open() {
     return this.report !== null;
@@ -50,18 +50,21 @@ class SmartRefresh {
     try {
       const plan = await smartRefreshPlan(root);
       if (this.#root() !== root) return;
-      if (!needsAttention(plan)) {
-        this.#dismissed = "";
-        this.#failed = "";
-        return;
-      }
+      const action = decideCheck(plan, mode, this.#mem);
       const sig = planSignature(plan);
-      if (sig === this.#dismissed || sig === this.#failed) return;
-      if (mode === "ask") {
+      if (action === "ask") {
         this.manual = false;
         this.report = plan;
-      } else {
-        await this.#write(root, sig);
+      } else if (action === "write") {
+        await this.#write(root, sig, true);
+      } else if (action === "stuck") {
+        // nothing to write, but a smart case cannot be refreshed: say so once
+        this.#mem.failed = sig;
+        toast.show(doneSummary(plan), "bad", 9000);
+        session.error = stuckLines(skipped(plan)).join("\n");
+      } else if (action === "loop") {
+        this.#mem.failed = sig;
+        session.error = loopMessage(plan);
       }
     } catch (e) {
       session.error = String(e);
@@ -97,30 +100,31 @@ class SmartRefresh {
     if (!root || !this.report || this.applying) return;
     const sig = planSignature(this.report);
     this.report = null;
-    await this.#write(root, sig);
+    await this.#write(root, sig, false);
   }
 
   /** "Not now": remembered for this exact set of changes. */
   dismiss() {
-    if (this.report && !this.manual) this.#dismissed = planSignature(this.report);
+    if (this.report && !this.manual) this.#mem.dismissed = planSignature(this.report);
     this.report = null;
   }
 
-  async #write(root: string, sig: string) {
+  async #write(root: string, sig: string, automatic: boolean) {
     if (!jobs.guard()) return;
     this.applying = true;
+    if (automatic) this.#mem.written.add(sig);
     try {
       const done = await smartRefreshApply(root);
       if (this.#root() !== root) return;
       const wrote = changed(done);
       const stuck = skipped(done);
-      this.#failed = stuck.length > 0 && wrote.length === 0 ? sig : "";
+      this.#mem.failed = stuck.length > 0 && wrote.length === 0 ? sig : "";
       await cases.loadSmart();
       await cases.refresh();
       toast.show(doneSummary(done), stuck.length ? "bad" : "ok", 9000);
-      if (stuck.length) session.error = stuck.map((i) => `“${i.name}” was not refreshed: ${i.error ?? "unknown reason"}`).join("\n");
+      if (stuck.length) session.error = stuckLines(stuck).join("\n");
     } catch (e) {
-      this.#failed = sig;
+      this.#mem.failed = sig;
       session.error = String(e);
     } finally {
       this.applying = false;
@@ -130,8 +134,7 @@ class SmartRefresh {
   reset() {
     this.report = null;
     this.manual = false;
-    this.#dismissed = "";
-    this.#failed = "";
+    this.#mem = { dismissed: "", failed: "", written: new Set() };
   }
 }
 

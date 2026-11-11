@@ -24,7 +24,7 @@ use pm_formats::library::{Error, Library, Track};
 
 use crate::error::{AppError, AppResult};
 
-use super::export::{check_dest, extension, refuse_escaping, write_out, ExportDone};
+use super::export::{check_dest, extension, left_out_escaping, write_out, ExportDone};
 use super::smart::{self, Data, SmartCase};
 use super::smart_settings::{self, EXPORT_FOLDER};
 
@@ -70,13 +70,21 @@ fn quoted(names: &[String]) -> String {
 /// Exports the whole library as rekordbox XML. With the "include smart cases" setting on (the
 /// default) every saved smart case becomes a playlist of its current matches and the Pacemaker
 /// copies of those smart cases are not written a second time; one that cannot be evaluated is
-/// named in `notes`, left out, and its device copy stays in as the ordinary case it is.
+/// named in `notes`, left out, and its device copy stays in as the ordinary case it is. A track
+/// whose file location is outside the music folder is left out of the file (named in full in
+/// `notes`); the rest of the library still exports.
 pub fn library_xml(lib: &Library, config_dir: &Path, root: &str, now_ms: i64) -> AppResult<LibraryXml> {
     let tracks = lib.tracks()?;
-    refuse_escaping(&tracks, "the library")?;
     let (settings, _) = smart_settings::load(config_dir);
     let mut notes = Vec::new();
     let mut opts = XmlOptions::default();
+    // a track whose location climbs out of the music folder is never resolved to a file: it is
+    // left out of the collection and every playlist, and named in full, rather than stopping
+    // the whole export
+    if let Some((ids, note)) = left_out_escaping(&tracks, "the library") {
+        opts.exclude_tracks = ids.into_iter().collect();
+        notes.push(note);
+    }
     if settings.export_smart {
         match smart::load(config_dir, root) {
             Err(e) => notes.push(format!("Smart cases were left out of the file: {e}")),
@@ -111,7 +119,7 @@ pub fn library_xml(lib: &Library, config_dir: &Path, root: &str, now_ms: i64) ->
         }
     }
     let text = interop::export_rekordbox_with(lib, &opts)?;
-    Ok(LibraryXml { text, tracks: tracks.len(), notes })
+    Ok(LibraryXml { text, tracks: tracks.len() - opts.exclude_tracks.len(), notes })
 }
 
 /// Writes one smart case, as it matches now, to `dest` as "m3u8", "csv" or "rekordbox" (XML:
@@ -131,15 +139,27 @@ pub fn export_one(root_str: &str, config_dir: &Path, id: u32, format: &str, dest
     }
     let all = lib.tracks()?;
     let by_id: std::collections::HashMap<i64, &Track> = all.iter().map(|t| (t.track_id, t)).collect();
-    let tracks: Vec<Track> = m.ids.iter().filter_map(|i| by_id.get(i).map(|t| (*t).clone())).collect();
-    refuse_escaping(&tracks, &format!("“{}”", sc.name))?;
+    let mut tracks: Vec<Track> = m.ids.iter().filter_map(|i| by_id.get(i).map(|t| (*t).clone())).collect();
+    let mut notes = Vec::new();
+    let mut exclude = HashSet::new();
+    if let Some((ids, note)) = left_out_escaping(&tracks, &format!("“{}”", sc.name)) {
+        exclude = ids.into_iter().collect();
+        tracks.retain(|t| !exclude.contains(&t.track_id));
+        notes.push(note);
+    }
+    if tracks.is_empty() {
+        return Err(format!("Every track “{}” matches has a file location outside the device's music folder, so there is nothing to export. {}", sc.name, notes.join(" ")).into());
+    }
     let text = match format {
         "m3u8" => interop::export_m3u8(&lib, &tracks),
         "csv" => interop::export_csv(&lib, &tracks),
-        _ => interop::export_rekordbox_with(&lib, &XmlOptions { extras_only: true, extra: vec![ExtraPlaylist { name: sc.name.trim().to_string(), track_ids: m.ids.clone() }], ..Default::default() })?,
+        _ => interop::export_rekordbox_with(
+            &lib,
+            &XmlOptions { extras_only: true, exclude_tracks: exclude, extra: vec![ExtraPlaylist { name: sc.name.trim().to_string(), track_ids: tracks.iter().map(|t| t.track_id).collect() }], ..Default::default() },
+        )?,
     };
     write_out(dest, &text)?;
-    Ok(ExportDone { path: dest.to_string(), tracks: tracks.len(), notes: Vec::new() })
+    Ok(ExportDone { path: dest.to_string(), tracks: tracks.len(), notes })
 }
 
 #[cfg(test)]
@@ -262,14 +282,91 @@ mod tests {
         std::fs::remove_dir_all(&cfg).unwrap();
     }
 
+    /// Rewrites the stored location of track `id` in `music.db` to a path that climbs out of
+    /// the music folder, keeping the byte length so the file layout stays valid. (The library
+    /// API never writes such a location; a hand-edited or foreign database could hold one.)
+    fn corrupt_location(vol: &Path, lib: Library, id: i64) -> String {
+        let loc = lib.tracks().unwrap().into_iter().find(|t| t.track_id == id).unwrap().location;
+        drop(lib);
+        assert!(loc.len() > 16, "{loc}");
+        let bad = format!("/pmdb_tracks/../{}", "x".repeat(loc.len() - 16));
+        let db = pm_formats::library::db_path(vol);
+        let bytes = std::fs::read(&db).unwrap();
+        let (from, to) = (loc.as_bytes(), bad.as_bytes());
+        let mut out = Vec::with_capacity(bytes.len());
+        let mut i = 0;
+        let mut hits = 0;
+        while i < bytes.len() {
+            if bytes[i..].starts_with(from) {
+                out.extend_from_slice(to);
+                i += from.len();
+                hits += 1;
+            } else {
+                out.push(bytes[i]);
+                i += 1;
+            }
+        }
+        assert!(hits > 0, "the location is stored in music.db");
+        std::fs::write(&db, out).unwrap();
+        bad
+    }
+
     #[test]
-    fn library_export_refuses_a_track_outside_the_music_folder() {
-        let (lib, vol, _) = library("escape", 1);
-        let mut t = lib.tracks().unwrap().remove(0);
-        assert!(refuse_escaping(std::slice::from_ref(&t), "the library").is_ok());
-        t.location = "/pmdb_tracks/../secret.mp3".into();
-        let e = refuse_escaping(&[t], "the library").unwrap_err().to_string();
-        assert!(e.contains("in the library has a file location outside") && e.contains("Export Title 0"), "{e}");
+    fn a_track_outside_the_music_folder_is_left_out_and_named_and_the_rest_still_exports() {
+        let (lib, vol, ids) = library("escape", 3);
+        let cfg = temp_dir("escape-cfg");
+        let root = vol.to_string_lossy().into_owned();
+        let mut lib = lib;
+        lib.set_track_ratings(&[(ids[0], 5), (ids[1], 5), (ids[2], 5)]).unwrap();
+        lib.create_case_with_tracks("Plain", &[ids[1], ids[2]]).unwrap();
+        smart::save(&cfg, &root, rated("Top rated", 5, false)).unwrap();
+        let bad = corrupt_location(&vol, lib, ids[1]);
+        let lib = Library::open_read_only(&vol).unwrap();
+
+        let x = library_xml(&lib, &cfg, &root, 0).unwrap();
+        assert_eq!(x.tracks, 2, "the collection holds the other two");
+        let back = interop::parse_library(&x.text).unwrap();
+        assert_eq!(titles(&back), ["Export Title 0", "Export Title 2"]);
+        assert!(!x.text.contains("Export Title 1") && !x.text.contains("xxxx"), "the bad row appears nowhere");
+        let by_name = |n: &str| back.playlists.iter().find(|p| p.name.ends_with(n)).unwrap().tracks.len();
+        assert_eq!((by_name("Plain"), by_name("Top rated")), (1, 2), "playlists lose only that track");
+        let note = x.notes.iter().find(|n| n.contains("left out of the file")).unwrap();
+        assert!(note.contains("“Export Title 1”") && note.contains(&bad) && note.starts_with("1 track in the library has"), "{note}");
+
+        // one smart case alone: the same, with the note on the result
+        let out = temp_dir("escape-out");
+        let sc = smart::load(&cfg, &root).unwrap().remove(0);
+        let csv = out.join("a.csv");
+        let done = export_one(&root, &cfg, sc.id, "csv", csv.to_str().unwrap(), 0).unwrap();
+        assert_eq!(done.tracks, 2);
+        assert!(done.notes[0].contains("“Export Title 1”") && done.notes[0].contains("“Top rated”"), "{:?}", done.notes);
+        let text = std::fs::read_to_string(&csv).unwrap();
+        assert!(!text.contains("Export Title 1") && text.contains("Export Title 0"));
+        let xml = out.join("a.xml");
+        export_one(&root, &cfg, sc.id, "rekordbox", xml.to_str().unwrap(), 0).unwrap();
+        let back = interop::parse_library(&std::fs::read_to_string(&xml).unwrap()).unwrap();
+        assert_eq!((titles(&back), back.playlists[0].tracks.len()), (vec!["Export Title 0".to_string(), "Export Title 2".to_string()], 2));
+
+        drop(lib);
+        std::fs::remove_dir_all(&vol).unwrap();
+        std::fs::remove_dir_all(&cfg).unwrap();
+        std::fs::remove_dir_all(&out).unwrap();
+    }
+
+    #[test]
+    fn left_out_note_names_every_track_not_just_five() {
+        let (lib, vol, _) = library("note", 8);
+        let mut tracks = lib.tracks().unwrap();
+        assert!(left_out_escaping(&tracks, "the library").is_none());
+        for t in tracks.iter_mut().take(7) {
+            t.location = "/pmdb_tracks/../secret.mp3".into();
+        }
+        let (ids, note) = left_out_escaping(&tracks, "the library").unwrap();
+        assert_eq!(ids.len(), 7);
+        for i in 0..7 {
+            assert!(note.contains(&format!("“Export Title {i}”")), "{note}");
+        }
+        assert!(note.starts_with("7 tracks in the library have") && note.contains("were left out"), "{note}");
         drop(lib);
         std::fs::remove_dir_all(&vol).unwrap();
     }

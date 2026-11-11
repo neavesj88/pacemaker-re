@@ -86,5 +86,48 @@ export function remakeWhen(mode: RefreshMode): string {
   return mode === "auto" ? "automatically straight afterwards" : mode === "ask" ? "when you answer yes to the refresh question" : "the next time you refresh";
 }
 
-/** Whether the report is worth interrupting for: a write is pending, or a smart case is stuck. */
-export const needsAttention = (r: RefreshReport) => r.changes > 0;
+/** Whether the report is worth surfacing from the automatic check: a write is pending, or a
+ *  smart case cannot be refreshed (it would otherwise only show when the button is pressed). */
+export const needsAttention = (r: RefreshReport) => r.changes > 0 || skipped(r).length > 0;
+
+/** One sentence per smart case that was not refreshed, with the reason. */
+export const stuckLines = (items: RefreshItem[]) => items.map((i) => `“${i.name}” was not refreshed: ${i.error ?? "unknown reason"}`);
+
+/** What the automatic check remembers between runs. */
+export interface RefreshMemory {
+  /** The plan the user answered "Not now" to. */
+  dismissed: string;
+  /** A plan whose write failed (or that has nothing to write but skips): not retried / repeated. */
+  failed: string;
+  /** Plans the automatic mode has already written since things last settled. */
+  written: Set<string>;
+}
+
+export type CheckAction = "nothing" | "ask" | "write" | "stuck" | "loop";
+
+/** What the automatic check does with `plan` under `mode`. "stuck": only skips are left, there
+ *  is nothing to write, say so (once). "loop": automatic mode would write a plan it has already
+ *  written and the library has not settled in between, so something keeps undoing the writes
+ *  (two smart cases changing each other, or an outside program): it stops instead of writing
+ *  the card again and again. Updates `mem` (forgets what no longer applies). */
+export function decideCheck(plan: RefreshReport, mode: RefreshMode, mem: RefreshMemory): CheckAction {
+  if (mode === "off") return "nothing";
+  if (!needsAttention(plan)) {
+    mem.dismissed = "";
+    mem.failed = "";
+    mem.written.clear();
+    return "nothing";
+  }
+  if (plan.changes === 0) mem.written.clear(); // converged: what is left cannot be written
+  const sig = planSignature(plan);
+  if (sig === mem.dismissed || sig === mem.failed) return "nothing";
+  if (mode === "ask") return "ask";
+  if (plan.changes === 0) return "stuck";
+  return mem.written.has(sig) ? "loop" : "write";
+}
+
+/** The sentence when automatic refresh stops because it would write the same changes again. */
+export function loopMessage(plan: RefreshReport): string {
+  const names = changed(plan).map((i) => `“${i.name}”`).join(", ");
+  return `Automatic refresh of smart cases stopped: the changes to ${names} were already written and came back, so something keeps undoing them (for example smart cases whose rules read each other's Pacemaker copies). Nothing more is written automatically until the changes are different; “Refresh smart cases” shows them.`;
+}

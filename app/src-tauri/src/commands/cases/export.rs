@@ -81,6 +81,26 @@ pub(super) fn refuse_escaping(tracks: &[Track], what: &str) -> AppResult<()> {
     .into())
 }
 
+/// The tracks whose file location is not a plain path in the music folder, and one sentence
+/// naming every one of them (title and location) for an export that is written without them.
+/// `None` when there are none. `what` names the list ("the library", "“Name”").
+pub(super) fn left_out_escaping(tracks: &[Track], what: &str) -> Option<(Vec<i64>, String)> {
+    let bad: Vec<&Track> = tracks.iter().filter(|t| !plain_location(&t.location)).collect();
+    if bad.is_empty() {
+        return None;
+    }
+    let names: Vec<String> = bad.iter().map(|t| format!("“{}” ({})", t.title, t.location)).collect();
+    let note = format!(
+        "{} track{} in {what} ha{} a file location outside the device's music folder and {} left out of the file: {}.",
+        bad.len(),
+        if bad.len() == 1 { "" } else { "s" },
+        if bad.len() == 1 { "s" } else { "ve" },
+        if bad.len() == 1 { "was" } else { "were" },
+        names.join(", ")
+    );
+    Some((bad.iter().map(|t| t.track_id).collect(), note))
+}
+
 /// Writes case `case_id` in `format` ("m3u8", "csv" or "rekordbox") to `dest`.
 pub fn export_case(root: &Path, case_id: i64, format: &str, dest: &str) -> AppResult<ExportDone> {
     let ext = extension(format).ok_or_else(|| AppError::from(format!("unknown export format {format}")))?;

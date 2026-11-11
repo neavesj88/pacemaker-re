@@ -89,6 +89,60 @@ pub fn self_reference(sc: &SmartCase) -> Option<&'static str> {
     }
 }
 
+/// For each smart case (by id) in `wanted` whose rules read the Pacemaker copy of a smart case
+/// that, through its own rules, reads the first one's copy back (or read its own copy): the
+/// sentence that says so. A copy is rebuilt from the rules, so such cases would rewrite each
+/// other's copies for ever (in "auto" mode, endlessly); they are skipped instead. A smart case
+/// that merely reads another's copy (no way back) is fine: it settles after one more refresh.
+pub fn cycle_notes(wanted: &[&SmartCase]) -> HashMap<u32, String> {
+    // edge a -> b: a's rules read the device copy of b
+    let reads: Vec<Vec<usize>> = wanted
+        .iter()
+        .map(|a| wanted.iter().enumerate().filter(|(_, b)| b.device_case_id.is_some_and(|id| smart::refers_to_case(&a.query, id))).map(|(j, _)| j).collect())
+        .collect();
+    let mut out = HashMap::new();
+    for (i, sc) in wanted.iter().enumerate() {
+        // everything reachable from i; i is in a cycle when it reaches itself
+        let mut seen = vec![false; wanted.len()];
+        let mut stack = reads[i].clone();
+        while let Some(n) = stack.pop() {
+            if !seen[n] {
+                seen[n] = true;
+                stack.extend(reads[n].iter().copied());
+            }
+        }
+        if !seen[i] {
+            continue;
+        }
+        // the others that read each other with i: reachable from i and reaching i
+        let mut peers: Vec<String> = (0..wanted.len())
+            .filter(|&j| j != i && seen[j] && {
+                let mut back = vec![false; wanted.len()];
+                let mut st = reads[j].clone();
+                while let Some(n) = st.pop() {
+                    if !back[n] {
+                        back[n] = true;
+                        st.extend(reads[n].iter().copied());
+                    }
+                }
+                back[i]
+            })
+            .map(|j| format!("“{}”", wanted[j].name.trim()))
+            .collect();
+        peers.sort();
+        let note = if peers.is_empty() {
+            self_reference(sc).unwrap_or_default().to_string()
+        } else {
+            format!(
+                "This smart case and {} have rules that read each other's Pacemaker copies, which are rebuilt from the rules, so they would keep changing one another. Remove one of those rules first.",
+                peers.join(", ")
+            )
+        };
+        out.insert(sc.id, note);
+    }
+    out
+}
+
 fn track_ref(by_id: &HashMap<i64, &Track>, id: i64) -> TrackRef {
     match by_id.get(&id) {
         Some(t) => TrackRef { track_id: id, title: t.title.clone(), artist: t.artist.clone() },
@@ -126,6 +180,7 @@ pub fn plan(lib: &Library, list: &[SmartCase], now_ms: i64) -> Result<Vec<Planne
     let queries: Vec<&smart::Query> = wanted.iter().map(|s| &s.query).collect();
     let data = Data::load(lib, &queries, now_ms)?;
     let by_id: HashMap<i64, &Track> = data.tracks.iter().map(|t| (t.track_id, t)).collect();
+    let cycles = cycle_notes(&wanted);
     let mut out = Vec::new();
     for sc in wanted {
         // a smart case that cannot run (a deleted case in a rule, rules edited by hand into
@@ -135,8 +190,8 @@ pub fn plan(lib: &Library, list: &[SmartCase], now_ms: i64) -> Result<Vec<Planne
             out.push(skipped(sc, e));
             continue;
         }
-        if let Some(e) = self_reference(sc) {
-            out.push(skipped(sc, e.to_string()));
+        if let Some(e) = cycles.get(&sc.id) {
+            out.push(skipped(sc, e.clone()));
             continue;
         }
         let ids = match smart::evaluate(&sc.query, &data) {
@@ -393,6 +448,37 @@ mod tests {
         let own = SmartCase { id: 9, name: "Own".into(), query: Query { rules: vec![Rule::InCase { case_id: copy, value: false, case_name: None }], ..Default::default() }, on_device: true, device_case_id: Some(copy) };
         let rep = preview(&lib, &[own], 0).unwrap();
         assert!(rep.items[0].error.as_ref().unwrap().contains("reads its own Pacemaker copy"));
+
+        drop(lib);
+        std::fs::remove_dir_all(&vol).unwrap();
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn smart_cases_that_read_each_others_copies_are_skipped_so_they_cannot_rewrite_one_another_for_ever() {
+        let (mut lib, vol, ids) = library("cycle", 3);
+        let dir = temp_dir("cycle-cfg");
+        let (ca, cb) = (lib.create_case_with_tracks("\u{2605} A", &[ids[0]]).unwrap(), lib.create_case_with_tracks("\u{2605} B", &[ids[1]]).unwrap());
+        let reads = |case_id: i64, value: bool| Query { rules: vec![Rule::InCase { case_id, value, case_name: None }], ..Default::default() };
+        let mk = |id: u32, name: &str, query: Query, copy: Option<i64>| SmartCase { id, name: name.into(), query, on_device: true, device_case_id: copy };
+        // A is in the star copy of B, B is not in the star copy of A: every write to one changes the other
+        let a = mk(1, "A", reads(cb, true), Some(ca));
+        let b = mk(2, "B", reads(ca, false), Some(cb));
+        // C only reads B's copy (no way back): an ordinary dependent, refreshed normally
+        let c = mk(3, "C", reads(cb, true), None);
+        let list = [a.clone(), b.clone(), c];
+
+        let rep = preview(&lib, &list, 0).unwrap();
+        let by = |n: &str| rep.items.iter().find(|i| i.name == n).unwrap();
+        assert_eq!((by("A").action, by("B").action, by("C").action), (Action::Skip, Action::Skip, Action::Create));
+        assert!(by("A").error.as_ref().unwrap().contains("This smart case and \u{201c}B\u{201d} have rules that read each other"), "{:?}", by("A").error);
+        assert!(by("B").error.as_ref().unwrap().contains("and \u{201c}A\u{201d} have rules"), "{:?}", by("B").error);
+
+        // the write leaves the looping pair's copies as they were
+        let before = (lib.case_track_ids(ca).unwrap(), lib.case_track_ids(cb).unwrap());
+        let done = apply(&mut lib, &dir, "P:\\", &[a, b], 0).unwrap();
+        assert_eq!(done.changes, 0);
+        assert_eq!(before, (lib.case_track_ids(ca).unwrap(), lib.case_track_ids(cb).unwrap()));
 
         drop(lib);
         std::fs::remove_dir_all(&vol).unwrap();
