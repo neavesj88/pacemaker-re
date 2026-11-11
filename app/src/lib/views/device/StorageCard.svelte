@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { nav } from "$lib/state/nav.svelte";
   import { session } from "$lib/state/session.svelte";
   import Button from "$lib/ui/Button.svelte";
   import Card from "./Card.svelte";
@@ -55,6 +56,7 @@
     >
       {unused > 0 ? `Clean up ${unused} unused file${unused === 1 ? "" : "s"}…` : "Clean up…"}
     </Button>
+    <Button disabled={!lib} onclick={() => nav.go("space")}>Free up space…</Button>
   </div>
 </Card>
 
@@ -109,5 +111,8 @@
   }
   .actions {
     margin-top: 10px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
   }
 </style>

@@ -92,7 +92,7 @@ let verifyReport: unknown = null;
 let running: { job: string; timers: ReturnType<typeof setTimeout>[]; what: string } | null = null;
 
 /** One job-progress event per step on a timer, then job-done, like jobs.rs. */
-function runSteps(job: string, labels: string[], status: string, summary: string, after?: () => void, detail?: (i: number, n: number) => string) {
+export function runSteps(job: string, labels: string[], status: string, summary: string, after?: () => void, detail?: (i: number, n: number) => string) {
   const timers: ReturnType<typeof setTimeout>[] = [];
   const what = job === "device-backup" ? "the backup was stopped and the partial copy was removed"
     : job === "device-firmware" ? "the firmware copy was stopped and nothing was installed"
@@ -248,6 +248,8 @@ export const handlers: Handlers = {
     r.timers.forEach(clearTimeout);
     if (r.job === "device-cleanup") {
       emit("job-done", { job: r.job, ok: 0, failed: 0, summary: "Deleted 0 files, stopped early at your request; the rest were not touched", error: null });
+    } else if (r.job === "device-space") {
+      emit("job-done", { job: r.job, ok: 0, failed: 0, summary: "Stopped at your request; nothing was removed", error: null });
     } else {
       emit("job-done", { job: r.job, ok: 0, failed: 0, summary: "", error: `invalid: Cancelled: ${r.what}` });
     }

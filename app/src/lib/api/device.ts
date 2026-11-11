@@ -139,3 +139,4 @@ export async function pickBackupFolder(): Promise<string | null> {
   return typeof d === "string" ? d : null;
 }
 export * from "./device-trust";
+export * from "./device-space";

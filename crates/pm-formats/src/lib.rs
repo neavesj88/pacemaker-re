@@ -18,6 +18,7 @@ pub mod ops_grid;
 pub mod ops_history;
 pub mod ops_metadata;
 pub mod ops_restore;
+pub mod ops_space;
 pub mod ops_undo;
 pub mod pfw;
 pub mod strfile;

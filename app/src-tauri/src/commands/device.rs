@@ -2,8 +2,9 @@
 //! files, settings.dat and eject. The logic lives in `pm_formats::ops_device`; this file is the
 //! command layer. Reads are plain commands; anything that copies or deletes many files is a
 //! background job (`device-firmware`, `device-backup`, `device-cleanup`) so it shows progress and
-//! cannot overlap another write job.
+//! cannot overlap another write job. `space` is the free-space planner (archive and remove).
 
+pub mod space;
 pub mod trust;
 pub mod undo;
 
@@ -327,6 +328,12 @@ macro_rules! device_commands {
                 $crate::commands::device::device_cancel,
                 $crate::commands::device::device_snapshots,
                 $crate::commands::device::device_snapshots_open,
+                $crate::commands::device::space::device_space_settings,
+                $crate::commands::device::space::device_space_settings_set,
+                $crate::commands::device::space::device_space_plan,
+                $crate::commands::device::space::device_space_run_preview,
+                $crate::commands::device::space::device_space_run,
+                $crate::commands::device::space::device_space_open_folder,
                 $crate::commands::device::trust::device_trust_settings,
                 $crate::commands::device::trust::device_trust_settings_set,
                 $crate::commands::device::trust::device_snapshot_rows,

@@ -100,7 +100,7 @@ pub struct FixPlan {
     pub mass: bool,
 }
 
-fn membership(lib: &Library, sql: &str) -> Result<BTreeMap<i64, Vec<String>>, Error> {
+pub(crate) fn membership(lib: &Library, sql: &str) -> Result<BTreeMap<i64, Vec<String>>, Error> {
     let mut st = lib.con.prepare(sql)?;
     let rows = st.query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?)))?;
     let mut out: BTreeMap<i64, Vec<String>> = BTreeMap::new();
@@ -175,6 +175,40 @@ pub fn plan_fixes(lib: &Library, guard_percent: u32) -> Result<FixPlan, Error> {
     Ok(plan)
 }
 
+/// Deletes the library rows of the given tracks in one transaction: the track rows, their case
+/// memberships and the `trackmap` rows that point at them (row conventions: see
+/// [`remove_dead_rows`]). Each case that lost a member gets its `date_modified` and
+/// `play_time_secs` refreshed. Returns how many cases were touched. Files and mix rows are not
+/// touched: the caller decides whether a track may go and never passes one a mix uses.
+pub(crate) fn delete_track_rows(con: &mut rusqlite::Connection, ids: &[i64]) -> Result<usize, Error> {
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as i64).unwrap_or(0);
+    let tx = con.transaction()?;
+    let mut touched: std::collections::BTreeSet<i64> = std::collections::BTreeSet::new();
+    for id in ids {
+        {
+            let mut st = tx.prepare("SELECT DISTINCT case_id FROM casetracks WHERE track_id = ?1")?;
+            let rows = st.query_map([id], |r| r.get::<_, i64>(0))?;
+            for c in rows {
+                touched.insert(c?);
+            }
+        }
+        tx.execute("DELETE FROM casetracks WHERE track_id = ?1", [id])?;
+        tx.execute("DELETE FROM trackmap WHERE int_id = ?1", [id])?;
+        tx.execute("DELETE FROM tracks WHERE track_id = ?1 AND track_id >= 0", [id])?;
+    }
+    for c in &touched {
+        tx.execute(
+            "UPDATE cases SET date_modified = ?1,
+                    play_time_secs = (SELECT IFNULL(SUM(t.play_time_secs), 0) FROM casetracks c
+                                      JOIN tracks t ON t.track_id = c.track_id WHERE c.case_id = ?2)
+             WHERE case_id = ?2",
+            params![now, c],
+        )?;
+    }
+    tx.commit()?;
+    Ok(touched.len())
+}
+
 /// Outcome of [`remove_dead_rows`].
 #[derive(Debug, Clone, Serialize, Default)]
 pub struct RemoveReport {
@@ -220,33 +254,9 @@ pub fn remove_dead_rows(lib: &mut Library, requested: &[i64], guard_percent: u32
             report.skipped.push(format!("track {id}: not a dead row any more (its audio is back, or it is gone)"));
         }
     }
-    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as i64).unwrap_or(0);
-    let tx = lib.con.transaction()?;
-    let mut touched: std::collections::BTreeSet<i64> = std::collections::BTreeSet::new();
-    for d in &doomed {
-        {
-            let mut st = tx.prepare("SELECT DISTINCT case_id FROM casetracks WHERE track_id = ?1")?;
-            let rows = st.query_map([d.track_id], |r| r.get::<_, i64>(0))?;
-            for c in rows {
-                touched.insert(c?);
-            }
-        }
-        tx.execute("DELETE FROM casetracks WHERE track_id = ?1", [d.track_id])?;
-        tx.execute("DELETE FROM trackmap WHERE int_id = ?1", [d.track_id])?;
-        tx.execute("DELETE FROM tracks WHERE track_id = ?1 AND track_id >= 0", [d.track_id])?;
-        report.removed.push(d.label.clone());
-    }
-    for c in &touched {
-        tx.execute(
-            "UPDATE cases SET date_modified = ?1,
-                    play_time_secs = (SELECT IFNULL(SUM(t.play_time_secs), 0) FROM casetracks c
-                                      JOIN tracks t ON t.track_id = c.track_id WHERE c.case_id = ?2)
-             WHERE case_id = ?2",
-            params![now, c],
-        )?;
-    }
-    tx.commit()?;
-    report.cases_touched = touched.len();
+    report.removed = doomed.iter().map(|d| d.label.clone()).collect();
+    let ids: Vec<i64> = doomed.iter().map(|d| d.track_id).collect();
+    report.cases_touched = delete_track_rows(&mut lib.con, &ids)?;
     Ok(report)
 }
 
