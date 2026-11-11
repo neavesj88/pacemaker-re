@@ -101,6 +101,14 @@ impl WavWriter {
     }
 }
 
+/// A render in which every clip failed is silence, not a mix: refuse it so no file is written.
+fn check_rendered(out: &Rendered) -> Result<(), Error> {
+    if out.clips_rendered == 0 && out.clips_failed > 0 {
+        return Err(Error::Invalid(format!("none of the clips could be rendered: {}", out.warnings.join("; "))));
+    }
+    Ok(())
+}
+
 fn partial(dest: &Path) -> PathBuf {
     let mut s = dest.as_os_str().to_owned();
     s.push(".partial");
@@ -123,6 +131,7 @@ pub fn render_to_file(
                 let mut w = WavWriter::create(&tmp)?;
                 let out = engine::render(mix, res, opts, progress, &mut |l, r| w.write(l, r))?;
                 w.finish()?;
+                check_rendered(&out)?;
                 Ok(out)
             }
             Format::Ogg => {
@@ -136,16 +145,19 @@ pub fn render_to_file(
                 let out = engine::render(mix, res, opts, progress, &mut |l, r| enc.encode_audio_block([l, r]).map_err(enc_err))?;
                 let mut file = enc.finish().map_err(enc_err)?;
                 file.flush()?;
+                check_rendered(&out)?;
                 Ok(out)
             }
         }
     })();
     match result {
         Ok(r) => {
-            if dest.exists() {
-                std::fs::remove_file(dest)?;
+            // rename replaces an existing file on Windows and Unix, so the old export survives
+            // until the new one is in place
+            if let Err(e) = std::fs::rename(&tmp, dest) {
+                let _ = std::fs::remove_file(&tmp);
+                return Err(e.into());
             }
-            std::fs::rename(&tmp, dest)?;
             Ok(r)
         }
         Err(e) => {

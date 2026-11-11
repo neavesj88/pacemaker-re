@@ -10,6 +10,8 @@ export type RenderedMix = {
   durationSecs: number;
   /** Clips that could not be rendered (removed track, missing file) and were left out. */
   warnings: string[];
+  /** How many clips were left out. */
+  clipsFailed: number;
 };
 
 /** Render part of a mix to a temporary WAV for preview playback; returns its path (play it with
@@ -32,7 +34,7 @@ export const MIX_EXPORT_JOB = "mix-export";
  * `job-progress` events (job "mix-export", `done` / `total` in seconds of audio) and the end as
  * `job-done` (its `summary` is the finished line, `failed` counts clips left out). The file
  * exists under `path` only after `job-done`. Rejects when another job is running, the format is
- * unknown, or `dest` is inside the device volume or in a folder that does not exist. Rendering
+ * unknown, `dest` does not end in the format's extension (.ogg / .wav), or `dest` is inside the device volume or in a folder that does not exist. Rendering
  * starts at the mix's first audible frame. */
 export const exportMixAudio = (root: string, mix: MixDoc, dest: string, format: "ogg" | "wav") =>
   invoke<MixExportStarted>("export_mix_audio", { root, mix, dest, format });

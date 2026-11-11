@@ -38,6 +38,13 @@ function clickWav(secs: number, bpm: number): Blob {
   return new Blob([buf], { type: "audio/wav" });
 }
 
+/** The real command refuses these before the job starts (render.rs `check_dest`). */
+function checkDest(dest: string, format: string) {
+  if (/[\\/]$/.test(dest)) throw "The destination is a folder; choose a file name.";
+  if (!dest.toLowerCase().endsWith("." + format)) throw `The file name must end in .${format} to match the chosen format.`;
+  if (/[\\/]device[\\/]/i.test(dest)) throw "Choose a folder outside the device: files written there would not be in its library.";
+}
+
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 export const handlers: Handlers = {
@@ -51,16 +58,19 @@ export const handlers: Handlers = {
     const secs = Math.min(to - from, 20);
     return {
       path: URL.createObjectURL(clickWav(secs, doc.tempoBpm ?? 128)),
-      durationSecs: to - from,
+      durationSecs: secs,
+      clipsFailed: doc.clips.filter((c) => c.trackId < 0).length,
       warnings: doc.clips.some((c) => c.trackId < 0) ? ["clip skipped: the track was removed from the library"] : [],
     };
   },
   export_mix_audio: (a) => {
     const doc = a.mix as MixDoc;
     if (a.format !== "ogg" && a.format !== "wav") throw `Unknown audio format '${a.format}' (use ogg or wav).`;
+    checkDest(String(a.dest), String(a.format));
     if (jobLock.running) throw "Another job is still running.";
     if (!doc.clips.length) throw "the mix has no audible clips";
-    const total = Math.max(1, Math.floor(doc.lengthSec));
+    // audible span (first audible frame to last clip end), like the Rust command
+    const total = Math.max(1, Math.ceil(Math.max(...doc.clips.map((c) => c.visibleEndSec)) - Math.min(...doc.clips.map((c) => c.visibleStartSec))));
     const skipped = doc.clips.filter((c) => c.trackId < 0).length;
     jobLock.running = true;
     void (async () => {
@@ -85,7 +95,7 @@ export const handlers: Handlers = {
         job: "mix-export",
         ok: 1,
         failed: skipped,
-        summary: `Exported ${doc.name} (${m}:${s}) to ${String(a.dest).split(/[\\/]/).pop()}`,
+        summary: `Exported ${doc.name} (${m}:${s}) to ${String(a.dest).split(/[\\/]/).pop()}${skipped ? ` with ${skipped} clip(s) left out, so it is not the complete mix` : ""}`,
         error: null,
       });
     })();

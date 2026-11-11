@@ -34,6 +34,8 @@ pub struct RenderedAudio {
     pub duration_secs: f64,
     /// Clips that could not be rendered and were left out.
     pub warnings: Vec<String>,
+    /// How many clips were left out.
+    pub clips_failed: usize,
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -112,10 +114,33 @@ fn mixer_err(e: pm_mixer::Error) -> AppError {
     AppError::from(e.to_string())
 }
 
+const PREVIEW_DIR_PREFIX: &str = "pacemaker-revival-preview-";
+
+/// Deletes preview directories left behind by earlier runs (untouched for a day; a running
+/// instance rewrites its files far more often than that).
+fn remove_stale_previews(tmp: &Path) {
+    let Ok(rd) = std::fs::read_dir(tmp) else { return };
+    for e in rd.flatten() {
+        if !e.file_name().to_string_lossy().starts_with(PREVIEW_DIR_PREFIX) {
+            continue;
+        }
+        // a directory's own mtime does not move when its files are overwritten, so look at those too
+        let files = std::fs::read_dir(e.path()).into_iter().flatten().flatten().map(|c| c.path());
+        let newest = std::iter::once(e.path()).chain(files).filter_map(|p| p.metadata().and_then(|m| m.modified()).ok()).max();
+        if newest.and_then(|t| t.elapsed().ok()).is_some_and(|age| age.as_secs() > 24 * 3600) {
+            let _ = std::fs::remove_dir_all(e.path());
+        }
+    }
+}
+
 /// Where the next preview goes (rotates over [`PREVIEW_SLOTS`] files in the temp directory).
 pub fn next_preview_path() -> AppResult<PathBuf> {
     static NEXT: AtomicUsize = AtomicUsize::new(0);
-    let dir = std::env::temp_dir().join("pacemaker-revival-preview");
+    static CLEANED: std::sync::Once = std::sync::Once::new();
+    let tmp = std::env::temp_dir();
+    // one directory per process, so two running instances never overwrite each other's slots
+    let dir = tmp.join(format!("{PREVIEW_DIR_PREFIX}{}", std::process::id()));
+    CLEANED.call_once(|| remove_stale_previews(&tmp));
     std::fs::create_dir_all(&dir)?;
     Ok(dir.join(format!("mix-preview-{}.wav", NEXT.fetch_add(1, Ordering::Relaxed) % PREVIEW_SLOTS)))
 }
@@ -131,7 +156,7 @@ pub fn render_preview(root: &Path, doc: &MixDoc, from_sec: f64, to_sec: f64, des
     let mix = doc.to_mix()?;
     let res = LibResolver::open(root, &mix)?;
     let out = pm_mixer::render_to_file(&mix, &res, &Options::window_secs(from_sec, to_sec), Format::Wav, dest, &mut |_| true).map_err(mixer_err)?;
-    Ok(RenderedAudio { path: dest.to_string_lossy().into_owned(), duration_secs: out.frames as f64 / f64::from(pm_mixer::RATE), warnings: out.warnings })
+    Ok(RenderedAudio { path: dest.to_string_lossy().into_owned(), duration_secs: out.frames as f64 / f64::from(pm_mixer::RATE), warnings: out.warnings, clips_failed: out.clips_failed })
 }
 
 /// The export format named by the frontend.
@@ -145,9 +170,13 @@ pub fn parse_format(s: &str) -> AppResult<Format> {
 
 /// Refuses destinations that would put a file inside the device volume (untracked audio there
 /// would confuse the device) or that cannot be written.
-pub fn check_dest(root: &Path, dest: &Path) -> AppResult<()> {
+pub fn check_dest(root: &Path, dest: &Path, format: Format) -> AppResult<()> {
     if dest.is_dir() {
         return Err("The destination is a folder; choose a file name.".into());
+    }
+    let want = format.extension();
+    if !dest.extension().is_some_and(|e| e.eq_ignore_ascii_case(want)) {
+        return Err(format!("The file name must end in .{want} to match the chosen format.").into());
     }
     let parent = dest.parent().filter(|p| !p.as_os_str().is_empty()).unwrap_or(Path::new("."));
     let parent = parent.canonicalize().map_err(|_| AppError::from("The destination folder does not exist."))?;
@@ -167,10 +196,21 @@ pub struct ExportPlan {
     pub dest: PathBuf,
 }
 
+impl ExportPlan {
+    /// Seconds of audio the export renders: from the first audible frame to the end of the last
+    /// audible clip (what the engine does with `skip_leading_silence`), so progress reaches its
+    /// total.
+    pub fn span_secs(&self) -> f64 {
+        let audible = self.mix.tracks.iter().filter(|t| !t.clip_bypassed).map(|t| (t.position.start + t.position.l_offset, t.position.start + t.position.length - t.position.r_offset)).filter(|(a, b)| b > a);
+        let (lo, hi) = audible.fold((f64::MAX, 0.0_f64), |(lo, hi), (a, b)| (lo.min(a), hi.max(b)));
+        if hi > lo { (hi - lo) / f64::from(pm_mixer::RATE) } else { 0.0 }
+    }
+}
+
 pub fn plan_export(root: &Path, doc: &MixDoc, dest: &str, format: &str) -> AppResult<ExportPlan> {
     let format = parse_format(format)?;
     let dest = PathBuf::from(dest);
-    check_dest(root, &dest)?;
+    check_dest(root, &dest, format)?;
     let mix = doc.to_mix()?;
     let res = LibResolver::open(root, &mix)?;
     Ok(ExportPlan { mix, res, format, dest })
@@ -181,7 +221,7 @@ pub fn plan_export(root: &Path, doc: &MixDoc, dest: &str, format: &str) -> AppRe
 pub fn run_export(plan: &ExportPlan, progress: &mut dyn FnMut(f64) -> bool) -> AppResult<RenderedAudio> {
     let opts = Options { skip_leading_silence: true, ..Options::default() };
     let out = pm_mixer::render_to_file(&plan.mix, &plan.res, &opts, plan.format, &plan.dest, progress).map_err(mixer_err)?;
-    Ok(RenderedAudio { path: plan.dest.to_string_lossy().into_owned(), duration_secs: out.frames as f64 / f64::from(pm_mixer::RATE), warnings: out.warnings })
+    Ok(RenderedAudio { path: plan.dest.to_string_lossy().into_owned(), duration_secs: out.frames as f64 / f64::from(pm_mixer::RATE), warnings: out.warnings, clips_failed: out.clips_failed })
 }
 
 #[cfg(test)]
@@ -297,6 +337,12 @@ mod tests {
         assert!(plan_export(&vol, &doc, scratch.to_str().unwrap(), "ogg").is_err());
         assert!(plan_export(&vol, &doc, scratch.join("nope").join("x.ogg").to_str().unwrap(), "ogg").is_err());
         assert!(plan_export(&vol, &doc, dest.to_str().unwrap(), "wav").is_ok());
+        // the extension must match the format (case does not matter)
+        assert!(plan_export(&vol, &doc, dest.to_str().unwrap(), "ogg").is_err());
+        assert!(plan_export(&vol, &doc, scratch.join("noext").to_str().unwrap(), "ogg").is_err());
+        assert!(plan_export(&vol, &doc, scratch.join("X.OGG").to_str().unwrap(), "ogg").is_ok());
+        let plan = plan_export(&vol, &doc, dest.to_str().unwrap(), "wav").unwrap();
+        assert!((plan.span_secs() - 6.0).abs() < 0.01, "{}", plan.span_secs());
         std::fs::remove_dir_all(vol).unwrap();
         std::fs::remove_dir_all(scratch).unwrap();
     }

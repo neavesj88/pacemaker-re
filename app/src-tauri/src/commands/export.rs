@@ -62,7 +62,7 @@ pub struct ExportStarted {
 #[tauri::command]
 pub fn export_mix_audio(app: AppHandle, lock: State<'_, JobLock>, root: String, mix: MixDoc, dest: String, format: String) -> AppResult<ExportStarted> {
     let plan = render::plan_export(Path::new(&root), &mix, &dest, &format)?;
-    let total = plan.mix.play_time_secs().max(1) as usize;
+    let total = (plan.span_secs().ceil() as usize).max(1);
     let label = if mix.name.trim().is_empty() { "mix".to_string() } else { mix.name.clone() };
     let out_path = plan.dest.to_string_lossy().into_owned();
     spawn_job(app, &lock, JOB_MIX_EXPORT, move |app| {
@@ -75,8 +75,14 @@ pub fn export_mix_audio(app: AppHandle, lock: State<'_, JobLock>, root: String, 
             }
             true
         })?;
+        // the throttle can swallow the last update, so the bar always ends full
+        events::emit(app, JOB_PROGRESS, Progress::new(JOB_MIX_EXPORT, label.clone(), total, total, "rendering"));
         let skipped = result.warnings.len();
-        let mut summary = format!("Exported {label} ({}) to {}", clock(result.duration_secs), file_name(&plan.dest));
+        let mut summary = if result.clips_failed > 0 {
+            format!("Exported {label} ({}) to {} with {} clip(s) left out, so it is not the complete mix", clock(result.duration_secs), file_name(&plan.dest), result.clips_failed)
+        } else {
+            format!("Exported {label} ({}) to {}", clock(result.duration_secs), file_name(&plan.dest))
+        };
         if skipped > 0 {
             summary.push_str(&format!("; {skipped} problem(s): {}", result.warnings.join("; ")));
         }

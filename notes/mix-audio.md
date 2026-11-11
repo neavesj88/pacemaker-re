@@ -192,3 +192,13 @@ destination checks, removed-track warning, preview file rotation.
 5. `Trans` has no sample document; its gate shape and parameters are a guess.
 6. WSOLA quality on very large stretches (> 15 %) or key shifts beyond +-5 semitones; a phase-vocoder
    or transient-preserving mode could be added behind the same `Base` interface.
+
+## 11. Robustness rules (review pass)
+
+- A render in which every clip failed to load is an error, not a silent file; no output is created and an existing destination is untouched. With some clips failed the export finishes but its summary says it is not the complete mix.
+- The finished file replaces an existing one by rename only (no delete first).
+- A corrupt packet is decoded as silence of the previous frame's length, so later audio keeps its place on the beat grid; the engine warns with the count.
+- Key cents are clamped to +-4800 (non-finite = 0) when the pitch warp is built.
+- The export destination must end in the format's extension; progress total is the audible span (first audible frame to last clip end) and a final done == total event is sent.
+- Preview WAVs live in `pacemaker-revival-preview-<pid>` under the temp folder; folders untouched for 24 h are removed on the first preview of a run.
+- Not done: cancelling an export (needs a cancel flag in the shared job layer; the engine already stops when the progress callback returns false) and a Preview/Export UI in the mix editor (integration work).

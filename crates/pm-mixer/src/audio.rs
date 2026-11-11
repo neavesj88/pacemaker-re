@@ -27,6 +27,8 @@ pub struct Source {
     pub r: Vec<f32>,
     /// Mono at `1/COARSE` of the rate (box-filtered), for the time-stretcher's coarse search.
     pub coarse: Vec<f32>,
+    /// Corrupt frames in the file that were replaced by silence while decoding.
+    pub glitches: usize,
 }
 
 impl std::fmt::Debug for Source {
@@ -46,7 +48,7 @@ impl Source {
             }
             coarse.push(s * (0.5 / COARSE as f32));
         }
-        Arc::new(Source { l, r, coarse })
+        Arc::new(Source { l, r, coarse, glitches: 0 })
     }
 
     pub fn len(&self) -> usize {
@@ -60,14 +62,15 @@ impl Source {
 
 /// Decodes `path` and converts it to [`RATE`] Hz stereo.
 pub fn load(path: &Path) -> Result<Arc<Source>, Error> {
-    let (l, r, rate) = decode_stereo(path)?;
-    if rate == RATE {
-        return Ok(Source::new(l, r));
+    let (l, r, rate, glitches) = decode_stereo(path)?;
+    let mut src = if rate == RATE { Source::new(l, r) } else { Source::new(sinc::resample(&l, rate, RATE), sinc::resample(&r, rate, RATE)) };
+    if let Some(s) = Arc::get_mut(&mut src) {
+        s.glitches = glitches;
     }
-    Ok(Source::new(sinc::resample(&l, rate, RATE), sinc::resample(&r, rate, RATE)))
+    Ok(src)
 }
 
-fn decode_stereo(path: &Path) -> Result<(Vec<f32>, Vec<f32>, u32), Error> {
+fn decode_stereo(path: &Path) -> Result<(Vec<f32>, Vec<f32>, u32, usize), Error> {
     let name = path.display().to_string();
     let bad = |e: SymErr| Error::Decode(format!("{name}: {e}"));
     let none = || Error::Decode(format!("{name}: no audio track"));
@@ -88,6 +91,7 @@ fn decode_stereo(path: &Path) -> Result<(Vec<f32>, Vec<f32>, u32), Error> {
 
     let (mut l, mut r) = (Vec::new(), Vec::new());
     let mut inter: Vec<f32> = Vec::new();
+    let (mut glitches, mut last_len) = (0usize, 1152usize);
     loop {
         let packet = match format.next_packet() {
             Ok(Some(p)) => p,
@@ -103,15 +107,21 @@ fn decode_stereo(path: &Path) -> Result<(Vec<f32>, Vec<f32>, u32), Error> {
                 let ch = buf.spec().channels().count().max(1);
                 inter.resize(buf.samples_interleaved(), 0.0);
                 buf.copy_to_slice_interleaved(&mut inter);
+                last_len = inter.len() / ch;
                 for f in inter.chunks_exact(ch) {
                     l.push(f[0]);
                     r.push(if ch > 1 { f[1] } else { f[0] });
                 }
             }
-            // a corrupt frame costs one frame, not the clip
-            Err(SymErr::DecodeError(_)) => continue,
+            // a corrupt frame becomes silence of the last frame's length, so everything after it
+            // keeps its position against the beat grid
+            Err(SymErr::DecodeError(_)) => {
+                glitches += 1;
+                l.resize(l.len() + last_len, 0.0);
+                r.resize(r.len() + last_len, 0.0);
+            }
             Err(e) => return Err(bad(e)),
         }
     }
-    Ok((l, r, rate))
+    Ok((l, r, rate, glitches))
 }

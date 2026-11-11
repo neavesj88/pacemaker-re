@@ -66,6 +66,10 @@ pub struct Rendered {
     /// Things that were skipped (a clip whose audio could not be loaded, a transition that could
     /// not be matched to two clips).
     pub warnings: Vec<String>,
+    /// Clips whose audio was loaded and rendered.
+    pub clips_rendered: usize,
+    /// Clips left out because their audio could not be loaded.
+    pub clips_failed: usize,
 }
 
 fn r(x: f64) -> i64 {
@@ -186,6 +190,7 @@ pub fn render(
     let (mut cl, mut cr) = (vec![0.0f32; BLOCK as usize], vec![0.0f32; BLOCK as usize]);
     let (mut ol, mut or) = (Vec::<f32>::new(), Vec::<f32>::new());
     let mut written = 0u64;
+    let (mut clips_rendered, mut clips_failed) = (0usize, 0usize);
 
     let mut b0 = from;
     while b0 < to {
@@ -206,9 +211,16 @@ pub fn render(
             let start = r(slot.track.position.start);
             if slot.stream.is_none() {
                 match res.source(slot.track) {
-                    Ok(src) => slot.stream = Some(ClipStream::new(slot.track, src, lo - start)),
+                    Ok(src) => {
+                        if src.glitches > 0 {
+                            warnings.push(format!("clip {}: {} corrupt audio frame(s) were replaced by silence", si + 1, src.glitches));
+                        }
+                        clips_rendered += 1;
+                        slot.stream = Some(ClipStream::new(slot.track, src, lo - start));
+                    }
                     Err(e) => {
                         warnings.push(format!("clip {} skipped: {e}", si + 1));
+                        clips_failed += 1;
                         slot.dead = true;
                         continue;
                     }
@@ -269,7 +281,7 @@ pub fn render(
         sink(&ol, &or)?;
         written += ol.len() as u64;
     }
-    Ok(Rendered { frames: written, warnings })
+    Ok(Rendered { frames: written, warnings, clips_rendered, clips_failed })
 }
 
 /// Renders into memory (tests, short previews): planar left and right.

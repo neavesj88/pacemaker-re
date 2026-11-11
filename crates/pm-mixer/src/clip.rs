@@ -49,7 +49,11 @@ struct Warp {
 
 impl Warp {
     fn new(cents: &Env, s0: i64, t_max: i64) -> Warp {
-        let ratio = |t: f64| 2f64.powf(f64::from(cents.at(t, 0.0)) / 1200.0);
+        // a document can hold any number; four octaves each way is far beyond what is usable
+        let ratio = |t: f64| {
+            let c = f64::from(cents.at(t, 0.0));
+            2f64.powf(if c.is_finite() { c.clamp(-4800.0, 4800.0) } else { 0.0 } / 1200.0)
+        };
         let n = ((t_max - s0).max(0) / WARP_STEP + 3) as usize;
         let mut u = Vec::with_capacity(n + 1);
         u.push(0.0);
