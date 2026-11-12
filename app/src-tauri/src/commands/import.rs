@@ -1,4 +1,8 @@
-//! Import: bring audio (and later other libraries) onto the device. Only `add_tracks` writes.
+//! Import: bring audio (and later other libraries) onto the device. Only `add_tracks` and
+//! `interop_apply` write; the watch-folder scan (`watch.rs`) only reads and keeps its settings
+//! in the app config dir.
+
+pub mod watch;
 
 use std::path::{Path, PathBuf};
 
@@ -188,6 +192,13 @@ macro_rules! import_commands {
                 $crate::commands::import::interop_preview,
                 $crate::commands::import::interop_apply,
                 $crate::commands::import::interop_export,
+                $crate::commands::import::watch::watch_settings_get,
+                $crate::commands::import::watch::watch_settings_set,
+                $crate::commands::import::watch::watch_scan,
+                $crate::commands::import::watch::watch_state,
+                $crate::commands::import::watch::watch_ignore,
+                $crate::commands::import::watch::watch_unignore,
+                $crate::commands::import::watch::watch_log_add,
             ];
             $($rest),*
         }

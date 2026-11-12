@@ -209,6 +209,13 @@
     }
   }
 
+  // hands these tracks to the Tidy metadata page (its recipes work on many tracks at once)
+  function tidy() {
+    const ids = [...startIds];
+    metadataEditor.close();
+    nav.go("metatidy", { "metatidy.ids": ids });
+  }
+
   function openGrid() {
     const id = current;
     void save(() => nav.go("grid", { "grid.trackId": id }));
@@ -366,6 +373,7 @@
         <Button onclick={() => step(-1)} disabled={busy || loading || position <= 0}>Previous</Button>
         <Button onclick={() => step(1)} disabled={busy || loading || position < 0 || position >= order.length - 1}>Next</Button>
       {/if}
+      <Button onclick={tidy} disabled={busy || loading || edits.length > 0} title={edits.length > 0 ? "Save or cancel your edits first" : "Open these tracks in Tidy metadata"}>Clean up…</Button>
       <span class="spacer"></span>
       <Button onclick={requestClose} disabled={busy}>Cancel</Button>
       <Button variant="primary" onclick={() => save()} disabled={!canSave}>

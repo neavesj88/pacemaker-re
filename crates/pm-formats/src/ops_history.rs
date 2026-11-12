@@ -48,6 +48,18 @@ pub struct PlaySession {
     pub played_at: Vec<i64>,
 }
 
+/// The play counters of one track together with its stable identity. `global_id` is the random
+/// id the Editor assigns at import (empty when the row has none); unlike `track_id` it survives
+/// the track being re-numbered, and it differs between two cards, so the app-side play log keys on it.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct PlayCounter {
+    pub track_id: i64,
+    pub global_id: String,
+    pub times_played: i64,
+    /// Unix ms of the last play, -1 when never played.
+    pub last_played: i64,
+}
+
 /// Raw counters read from the library.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct PlayStats {
@@ -115,6 +127,18 @@ impl Library {
                  FROM mixes m WHERE m.mix_id >= 0 ORDER BY m.mix_id",
             )?,
         })
+    }
+
+    /// Counters plus identity of every track, in `track_id` order. Read-only; the input of the
+    /// app-side play log.
+    pub fn play_counters(&self) -> Result<Vec<PlayCounter>, Error> {
+        let mut st = self.con.prepare(
+            "SELECT track_id, IFNULL(global_id,''), IFNULL(times_played,0), IFNULL(last_played,-1) FROM tracks WHERE track_id >= 0 ORDER BY track_id",
+        )?;
+        let rows = st.query_map([], |r| {
+            Ok(PlayCounter { track_id: r.get(0)?, global_id: r.get(1)?, times_played: r.get(2)?, last_played: r.get(3)? })
+        })?;
+        Ok(rows.collect::<Result<_, _>>()?)
     }
 
     fn played_collections(&self, sql: &str) -> Result<Vec<PlayedCollection>, Error> {
@@ -217,6 +241,18 @@ mod tests {
         assert_eq!(s.cases, vec![PlayedCollection { id: case, name: "Synthetic case".into(), times_played: 2, last_played: T0, track_count: 2 }]);
         assert_eq!(s.mixes.len(), 1);
         assert_eq!((s.mixes[0].id, s.mixes[0].times_played), (mix, 0));
+        drop(lib);
+        std::fs::remove_dir_all(&vol).unwrap();
+    }
+
+    #[test]
+    fn play_counters_carry_global_id_and_tolerate_nulls() {
+        let (lib, vol, ids) = lib_with_tracks("counters", 2);
+        lib.con.execute("UPDATE tracks SET global_id = 'abc123', times_played = 3, last_played = ?1 WHERE track_id = ?2", rusqlite::params![T0, ids[0]]).unwrap();
+        lib.con.execute("UPDATE tracks SET global_id = NULL, times_played = NULL, last_played = NULL WHERE track_id = ?1", [ids[1]]).unwrap();
+        let c = lib.play_counters().unwrap();
+        assert_eq!(c[0], PlayCounter { track_id: ids[0], global_id: "abc123".into(), times_played: 3, last_played: T0 });
+        assert_eq!(c[1], PlayCounter { track_id: ids[1], global_id: String::new(), times_played: 0, last_played: -1 });
         drop(lib);
         std::fs::remove_dir_all(&vol).unwrap();
     }

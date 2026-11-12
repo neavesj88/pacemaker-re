@@ -1,10 +1,13 @@
-// Import area startup: job events and OS file drops (picked up by shell/startup.ts).
+// Import area startup: job events, OS file drops and the watch-folder import (picked up by
+// shell/startup.ts).
 import { onJobDone, onJobProgress, subscribeAll, type Unlisten } from "$lib/api/events";
 import { onFileDrag } from "$lib/api/import";
 import { jobs } from "$lib/state/jobs.svelte";
+import { watch } from "$lib/state/watch.svelte";
 
 export default function init(): Unlisten {
-  return subscribeAll([
+  const stopWatch = watch.start();
+  const stopEvents = subscribeAll([
     () => onJobProgress((e) => jobs.onProgress(e)),
     () => onJobDone((e) => jobs.onDone(e)),
     () =>
@@ -17,4 +20,8 @@ export default function init(): Unlisten {
         }
       }),
   ]);
+  return () => {
+    stopWatch();
+    stopEvents();
+  };
 }

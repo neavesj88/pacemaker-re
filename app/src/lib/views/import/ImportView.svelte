@@ -4,6 +4,8 @@
   import { session } from "$lib/state/session.svelte";
   import Button from "$lib/ui/Button.svelte";
   import ImportPreview from "./ImportPreview.svelte";
+  import WatchFolders from "./WatchFolders.svelte";
+  import WatchResults from "./WatchResults.svelte";
   import { interop } from "./interop.svelte";
 
   const lib = $derived(session.library);
@@ -45,6 +47,9 @@
     <p class="muted">Drop files or folders anywhere in the window, or pick them. Each is analysed, copied to the device and added with its beat grid.</p>
     <Button variant="primary" onclick={() => jobs.pickFiles()} disabled={!jobs.canWrite}>Add tracks…</Button>
   </section>
+
+  <WatchFolders />
+  <WatchResults />
 
   <section class="card">
     <h3>rekordbox</h3>

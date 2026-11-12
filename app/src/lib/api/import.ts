@@ -121,3 +121,89 @@ export async function pickSavePath(defaultName: string, label: string, ext: stri
     throw e;
   }
 }
+
+// ---- watch folders (src-tauri/src/commands/import/watch.rs) ----
+// Folders on this computer that are searched for audio the library does not have. The settings,
+// the last scan, the ignore list and the log live in the app's config folder, never on the device.
+
+export type WatchMode = "ask" | "auto";
+
+export type WatchSettings = {
+  folders: string[];
+  mode: WatchMode;
+  scan_on_open: boolean;
+  /** Minutes between scans while the app runs; 0 = never. */
+  interval_minutes: number;
+  subfolders: boolean;
+  /** A file changed less than this many seconds ago waits for the next scan. */
+  min_age_secs: number;
+  /** "auto" adds at most this many files at once. */
+  auto_max_files: number;
+  /** In "ask" mode: open the confirmation as soon as a scan finds files. */
+  open_confirmation: boolean;
+  /** Same title and artist count as the same track when the lengths differ by at most this many seconds. */
+  length_tolerance_secs: number;
+};
+
+export type WatchSettingsView = { settings: WatchSettings; problem: string | null };
+
+export type WatchCandidate = { path: string; name: string; size: number; modified_ms: number; folder: string };
+export type WatchMatched = { path: string; name: string; track_id: number; how: string };
+export type WatchFolderReport = { path: string; error: string | null; audio_files: number };
+
+export type WatchScan = {
+  at: number;
+  root: string;
+  folders: WatchFolderReport[];
+  /** New files, newest first (at most 5000; see `candidates_total`). */
+  candidates: WatchCandidate[];
+  candidates_total: number;
+  audio_files: number;
+  in_library: number;
+  matched_total: number;
+  matched: WatchMatched[];
+  ignored: number;
+  too_new: number;
+  duplicates: number;
+  unusable_names: number;
+  cut_short: boolean;
+};
+
+export type WatchIgnored = { path: string; size: number; at: number };
+export type WatchLogEntry = {
+  at: number;
+  mode: "auto" | "ask";
+  requested: number;
+  names: string[];
+  ok: number;
+  failed: number;
+  summary: string;
+};
+
+export type WatchState = {
+  ignored: WatchIgnored[];
+  last_scan: WatchScan | null;
+  log: WatchLogEntry[];
+  /** Set when the saved file was damaged and had to be set aside. */
+  problem: string | null;
+};
+
+export const watchSettingsGet = () => invoke<WatchSettingsView>("watch_settings_get");
+/** Saves (clamped) and returns the settings as stored. */
+export const watchSettingsSet = (settings: WatchSettings) => invoke<WatchSettings>("watch_settings_set", { settings });
+/** Searches the saved folders for audio the library on `root` lacks. Reads only. */
+export const watchScan = (root: string) => invoke<WatchScan>("watch_scan", { root });
+export const watchState = (root: string) => invoke<WatchState>("watch_state", { root });
+export const watchIgnore = (root: string, files: { path: string; size: number }[]) =>
+  invoke<WatchState>("watch_ignore", { root, files });
+export const watchUnignore = (root: string, paths: string[]) => invoke<WatchState>("watch_unignore", { root, paths });
+export const watchLogAdd = (
+  root: string,
+  entry: { mode: "auto" | "ask"; requested: number; names: string[]; ok: number; failed: number; summary: string },
+) => invoke<WatchState>("watch_log_add", { root, entry });
+
+/** The folder the user picks in the native dialog (null if cancelled). */
+export async function pickWatchFolder(): Promise<string | null> {
+  const sel = await open({ directory: true, multiple: false, title: "Choose a folder to watch for new music" });
+  return typeof sel === "string" ? sel : null;
+}
