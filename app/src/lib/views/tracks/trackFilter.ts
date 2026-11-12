@@ -7,6 +7,7 @@
 // next / previous walk through can never differ.
 import type { Track } from "$lib/api/types";
 import { filters } from "$lib/state/filters.svelte";
+import { suspects } from "$lib/state/gridSuspects.svelte";
 import { filterByLabels } from "$lib/state/labels";
 import { labels } from "$lib/state/labels.svelte";
 import { session } from "$lib/state/session.svelte";
@@ -45,11 +46,13 @@ export function visibleTracks(list: Track[]): Track[] {
 }
 
 /** The rows of the Tracks table, in order: the header search, then the toolbar's filters, then
- *  the label filter, then the sort (every key, in order). */
+ *  the label filter, then the "Suspect grid" filter (flags come from the grid area's rules), then
+ *  the sort (every key, in order). */
 export function tracksViewRows(all: Track[]): Track[] {
   const found = filterTracks(searchTracks(all), tracksState.filter, session.needs);
+  const labelled = filterByLabels(found, tracksState.labelFilter, (id) => labels.get(id));
   return sortTracksBy(
-    filterByLabels(found, tracksState.labelFilter, (id) => labels.get(id)),
+    tracksState.onlySuspect ? labelled.filter((t) => suspects.byId.has(t.track_id)) : labelled,
     tracksState.prefs.sort,
     (id) => tracksState.favourites.has(id),
     (id) => labels.get(id),

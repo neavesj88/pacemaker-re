@@ -19,6 +19,12 @@ export const peaks = (root: string, location: string, width: number) =>
 export const detectKeys = (root: string, trackIds?: number[], overwrite = false, minConfidence?: number) =>
   invoke<void>("analysis_detect_keys", { root, trackIds: trackIds ?? null, overwrite, minConfidence: minConfidence ?? null });
 
+/** Sets the key of tracks by hand, in one transaction (all or nothing). `key` is a musical key such
+ * as "Am", "F#m" or "Bb"; the backend stores the detector's spelling ("A#"), refuses a Camelot code
+ * and resolves to how many rows actually changed. A quick write: it does not wait for a running job. */
+export const setKeys = (root: string, entries: { track_id: number; key: string }[]) =>
+  invoke<number>("analysis_set_keys", { root, entries });
+
 const BASE: Record<string, number> = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
 
 /** Camelot code ("8A" for Am, "8B" for C) of a key as written in `tracks.key` ("Am", "F#m",

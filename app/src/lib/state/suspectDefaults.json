@@ -1,0 +1,18 @@
+{
+  "tempo_rule": true,
+  "fallback_min": 70,
+  "fallback_max": 180,
+  "genres": [
+    { "name": "house", "min": 115, "max": 132 },
+    { "name": "techno", "min": 120, "max": 150 },
+    { "name": "trance", "min": 128, "max": 145 },
+    { "name": "drum & bass", "min": 160, "max": 180 },
+    { "name": "dubstep", "min": 135, "max": 150 },
+    { "name": "hip hop", "min": 70, "max": 105 },
+    { "name": "disco", "min": 100, "max": 130 }
+  ],
+  "quality_rule": true,
+  "min_confidence_pct": 60,
+  "steady_tolerance_pct": 4,
+  "coverage_target_pct": 80
+}

@@ -4,8 +4,9 @@
 // Writes happen only through `confirm()`.
 import type { DoneEvent, JobKind, ProgressEvent } from "$lib/api/types";
 import { addTracks, expandAudioPaths, pickAudioFiles } from "$lib/api/import";
-import { reanalyseTracks, tracksMixesUsing } from "$lib/api/tracks";
+import { reanalyseTracks } from "$lib/api/tracks";
 import { baseName } from "$lib/format";
+import { mixesNote } from "./mixNote";
 import { session } from "./session.svelte";
 
 export type Job = {
@@ -163,30 +164,28 @@ class Jobs {
     return asked;
   }
 
-  async askReanalyse() {
+  /** Confirm re-analysing `only` (any tracks, for example the selection) or, without it, every
+   *  track that needs analysis. */
+  async askReanalyse(only?: number[]) {
     const lib = session.library;
-    if (!lib || session.needs.size === 0) return;
-    const ids = [...session.needs.keys()];
+    if (!lib) return;
+    const ids = only ? [...new Set(only)].filter((id) => lib.tracks.some((t) => t.track_id === id)) : [...session.needs.keys()];
+    if (ids.length === 0) return;
     const n = ids.length;
+    const wanted = new Set(ids);
     // a mix clip keeps the tempo its track had when the mix was made, so a new grid and tempo
     // leaves those mixes out of step: name them in the question
-    let mixNote = "";
-    try {
-      const mixes = await tracksMixesUsing(lib.root, ids);
-      if (mixes.length > 0) {
-        mixNote = ` ${mixes.length === 1 ? "1 mix uses" : `${mixes.length} mixes use`} some of these tracks (${mixes.join(", ")}): a mix clip keeps the tempo the track had when the mix was made, so ${mixes.length === 1 ? "that mix" : "those mixes"} may drift out of step until beatmatched again.`;
-      }
-    } catch (err) {
-      mixNote = ` Could not check which mixes use these tracks (${String(err)}); a mix keeps the tempo its tracks had when it was made.`;
-    }
+    const mixNote = await mixesNote(lib.root, ids);
+    // tracks picked by hand may have a grid or BPM that someone set on purpose
+    const handNote = only ? " A beat grid or BPM you set by hand for these tracks is replaced by the new analysis." : "";
     this.ask({
       kind: "reanalyse",
       root: lib.root,
       count: n,
-      names: lib.tracks.filter((t) => session.needs.has(t.track_id)).map((t) => t.title || baseName(t.location)),
+      names: lib.tracks.filter((t) => wanted.has(t.track_id)).map((t) => t.title || baseName(t.location)),
       title: `Re-analyse ${n} track${n === 1 ? "" : "s"} on ${lib.root} ?`,
       description:
-        "Only the beat grid (.str) and BPM of these tracks are rewritten, from the audio already on the device. No audio is copied." + mixNote,
+        "Only the beat grid (.str) and BPM of these tracks are rewritten, from the audio already on the device. No audio is copied." + handNote + mixNote,
       confirmLabel: `Analyse ${n}`,
       runningLabel: "Analysing",
       doneLabel: "Analysis finished",

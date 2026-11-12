@@ -4,6 +4,7 @@
   import { labelFilterActive } from "$lib/state/labels";
   import { filters } from "$lib/state/filters.svelte";
   import { nav } from "$lib/state/nav.svelte";
+  import { suspects } from "$lib/state/gridSuspects.svelte";
   import { selection } from "$lib/state/selection.svelte";
   import { session } from "$lib/state/session.svelte";
   import { toast } from "$lib/state/toast.svelte";
@@ -25,8 +26,14 @@
   const byId = $derived(new Map(all.map((t) => [t.track_id, t])));
   const focus = $derived(tracksState.focusId === null ? null : (byId.get(tracksState.focusId) ?? null));
   const filtersActive = $derived(
-    !!(filters.query || filters.onlyNeeds || tracksState.genre || tracksState.bpmMin || tracksState.bpmMax || tracksState.keyFilter || tracksState.onlyAnalysed || labelFilterActive(tracksState.labelFilter)),
+    !!(filters.query || filters.onlyNeeds || tracksState.genre || tracksState.bpmMin || tracksState.bpmMax || tracksState.keyFilter || tracksState.onlyAnalysed || labelFilterActive(tracksState.labelFilter) || tracksState.onlySuspect),
   );
+  const suspectIds = $derived(tracksState.onlySuspect ? rows.map((t) => t.track_id) : []);
+
+  // the filter needs a result even when checking on load is switched off, and again after a reload
+  $effect(() => {
+    if (tracksState.onlySuspect && library) void suspects.ensure();
+  });
 
   // favourites belong to the open library; read them when it (or a different one) opens
   $effect(() => {
@@ -74,7 +81,7 @@
 </script>
 
 <div class="tracks">
-  <FilterBar {genres} focusKey={focus ? parseKey(focus.key) : null} shown={rows.length} total={all.length} selected={selection.trackIds.length} />
+  <FilterBar {genres} focusKey={focus ? parseKey(focus.key) : null} shown={rows.length} total={all.length} selected={selection.trackIds.length} {suspectIds} />
   <div class="split">
     <div class="main">
       {#if library}<TrackList bind:this={list} {rows} root={library.root} />{/if}
@@ -84,6 +91,12 @@
             No tracks on this device yet. Use Add tracks… or drop audio files here.
           {:else if filters.query}
             No tracks match the search. Clear the search box (or use Clear filters above) to see them all.
+          {:else if tracksState.onlySuspect && suspects.checking}
+            Checking the beat grids…
+          {:else if tracksState.onlySuspect && suspects.error}
+            Could not check the beat grids: {suspects.error}
+          {:else if tracksState.onlySuspect && !filters.query && !tracksState.genre && !tracksState.bpmMin && !tracksState.bpmMax && !tracksState.keyFilter && !tracksState.onlyAnalysed && !filters.onlyNeeds}
+            No suspect grids under the current rules. The Rules… button changes the genre windows and the confidence floor.
           {:else if filtersActive}
             No tracks match the filters. Use Clear filters above to see them all.
           {/if}

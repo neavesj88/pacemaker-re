@@ -1,6 +1,7 @@
 // Mock of src-tauri/src/commands/analysis.rs. Add one entry per command, keyed by command name;
 // this file is picked up automatically by devmock/index.ts.
 import { emit } from "@tauri-apps/api/event";
+import { canonicalKeyName } from "../state/keyLogic";
 import { tracks } from "./db";
 import { jobLock } from "./jobs";
 import type { Handlers } from "./types";
@@ -14,6 +15,28 @@ function seeded(text: string) {
 const KEYS = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
 
 export const handlers: Handlers = {
+  // like the real quick write: every entry is checked first, then all are written or none; a
+  // Camelot code or free text is refused, flats are stored as the detector spells them (sharps)
+  analysis_set_keys: (a) => {
+    const entries = a.entries as { track_id: number; key: string }[];
+    if (entries.length === 0) throw "No tracks to change.";
+    const wanted = entries.map((e) => {
+      const name = canonicalKeyName(e.key);
+      if (!name) throw `"${String(e.key).trim()}" is not a musical key (for example Am, F#m, Bb or C).`;
+      const t = tracks.find((x) => x.track_id === e.track_id);
+      if (!t) throw `invalid: no track ${e.track_id}`;
+      return { t, name };
+    });
+    let changed = 0;
+    for (const { t, name } of wanted) {
+      if (t.key !== name) {
+        t.key = name;
+        changed++;
+      }
+    }
+    return changed;
+  },
+
   // synthetic but stable per track: a kick-heavy body with quieter intro and outro
   analysis_peaks: (a) => {
     const r = seeded(String(a.location));

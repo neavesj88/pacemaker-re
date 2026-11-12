@@ -33,6 +33,8 @@ class TracksState {
   onlyAnalysed = $state(false);
   /** Tag, colour and energy conditions (app-side labels, see state/labels.ts). */
   labelFilter = $state<LabelFilter>(freshLabelFilter());
+  /** Only tracks flagged by the suspect-grid rules (state/gridSuspects.svelte.ts). */
+  onlySuspect = $state(false);
 
   /** Tracks in the "Favourites" case. */
   favourites = new SvelteSet<number>();
@@ -128,6 +130,7 @@ class TracksState {
     this.keyFilter = "";
     this.onlyAnalysed = false;
     this.labelFilter = freshLabelFilter();
+    this.onlySuspect = false;
   }
 
   /** Every condition that hides tracks: the toolbar, "Missing" and the search box. */

@@ -1,10 +1,14 @@
 <script lang="ts">
   import type { Peak } from "$lib/api/analysis";
   import { bandsOver, clamp, fmtTime, isDownbeat, lowerBound, tickStep } from "./gridMath";
+  import { driftClass, hitBeat } from "./vtempoLogic";
 
   // Zoomable colour waveform with beat lines. Low band pink, mid lilac, high green; bar lines
   // white and bold, other beats thin green; the device cue is a yellow flag; the playhead white.
   // Wheel zooms around the pointer (Shift or sideways wheel pans), drag pans, a click seeks.
+  // With `editable` on, a beat line can be grabbed and dragged (Alt: it takes every later beat
+  // along); the move is only reported on release, `limitsFor` keeps it clear of its neighbours.
+  // `offsets` (ms from each beat line to its onset in the audio) are drawn as short ticks.
   let {
     peaks,
     beatSecs,
@@ -19,6 +23,14 @@
     onseek,
     onuser,
     status = "",
+    editable = false,
+    selected = $bindable(null),
+    limitsFor,
+    onbeatmove,
+    offsets = null,
+    biasMs = 0,
+    thresholdMs = 20,
+    grabPx = 6,
   }: {
     peaks: Peak[] | null;
     beatSecs: ArrayLike<number>;
@@ -36,6 +48,20 @@
     onuser?: () => void;
     /** Shown over the waveform, for example while the peaks load. */
     status?: string;
+    /** Beat lines can be grabbed and dragged. */
+    editable?: boolean;
+    /** The beat line the single-beat tools act on (an index), or null. */
+    selected?: number | null;
+    /** Seconds a beat may be dragged between: `[lo, hi]`, or null when it cannot move. */
+    limitsFor?: (index: number) => [number, number] | null;
+    /** A beat line was dropped at `secs`; `following` (Alt held) asks for every later beat to move too. */
+    onbeatmove?: (index: number, secs: number, following: boolean) => void;
+    /** Per beat: onset minus beat line in ms, null where no onset lies near. */
+    offsets?: (number | null)[] | null;
+    biasMs?: number;
+    thresholdMs?: number;
+    /** How close (px) the pointer must be to pick up a beat line. */
+    grabPx?: number;
   } = $props();
 
   const MAX_PX_PER_SEC = 4000;
@@ -43,6 +69,9 @@
 
   let canvas = $state<HTMLCanvasElement | null>(null);
   let host = $state<HTMLDivElement | null>(null);
+  /** A beat line being dragged: its index, where it is now (seconds) and whether it has moved. */
+  let beatDrag = $state<{ index: number; secs: number; startX: number; moved: boolean } | null>(null);
+  let overBeat = $state(false);
 
   // while the whole track is showing, a resize keeps showing all of it
   let showingAll = true;
@@ -151,10 +180,12 @@
     const showBeats = gapPx >= 4;
     const showBars = gapPx * 4 >= 3;
     g.textBaseline = "top";
+    const dragging = beatDrag;
     for (; i < beatSecs.length && beatSecs[i] <= t1 + 0.01; i++) {
       const down = isDownbeat(i, firstDownbeat);
       if (down ? !showBars : !showBeats) continue;
-      const x = Math.round((beatSecs[i] - t0) * pps);
+      const bt = dragging && dragging.index === i ? dragging.secs : beatSecs[i];
+      const x = Math.round((bt - t0) * pps);
       g.globalAlpha = down ? 0.95 : 0.7;
       g.fillStyle = down ? bar : line;
       g.fillRect(x - (down ? 1 : 0), top, down ? 2 : 1, H - top);
@@ -165,6 +196,40 @@
       }
     }
     g.globalAlpha = 1;
+
+    // where the audio's onsets are against the beat lines (drift): a tick from the line to its onset
+    if (offsets && gapPx >= 6) {
+      const off = css("--bad");
+      const ok = css("--ok");
+      const y = H - 7;
+      for (let k = lowerBound(beatSecs, t0 - 0.2); k < beatSecs.length && beatSecs[k] <= t1 + 0.2; k++) {
+        const o = offsets[k];
+        if (o === null || o === undefined) continue;
+        const bad = driftClass(o, biasMs, thresholdMs) === "off";
+        const xa = (beatSecs[k] - t0) * pps;
+        const xb = xa + (o / 1000) * pps;
+        g.globalAlpha = bad ? 0.95 : 0.55;
+        g.fillStyle = bad ? off : ok;
+        g.fillRect(Math.min(xa, xb), y, Math.max(1, Math.abs(xb - xa)), 2);
+        g.fillRect(Math.round(xb) - 1, y - 3, 3, 8);
+      }
+      g.globalAlpha = 1;
+    }
+
+    // the selected beat line
+    if (selected !== null && selected >= 0 && selected < beatSecs.length) {
+      const st = dragging && dragging.index === selected ? dragging.secs : beatSecs[selected];
+      if (st >= t0 - 0.05 && st <= t1 + 0.05) {
+        const x = Math.round((st - t0) * pps);
+        g.fillStyle = css("--g-cue");
+        g.fillRect(x - 1, top, 3, H - top);
+        g.beginPath();
+        g.moveTo(x - 6, top);
+        g.lineTo(x + 7, top);
+        g.lineTo(x, top + 9);
+        g.fill();
+      }
+    }
 
     // device cue
     if (cue !== null && cue >= t0 - 0.05 && cue <= t1) {
@@ -232,12 +297,37 @@
   let drag: { x: number; start: number; moved: boolean } | null = null;
 
   function down(e: PointerEvent) {
-    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    const el = e.currentTarget as HTMLElement;
+    el.setPointerCapture(e.pointerId);
+    if (editable) {
+      const x = e.clientX - el.getBoundingClientRect().left;
+      const i = hitBeat(beatSecs, viewStart + x / pxPerSec, pxPerSec, grabPx);
+      if (i >= 0) {
+        selected = i;
+        beatDrag = { index: i, secs: beatSecs[i], startX: e.clientX, moved: false };
+        return;
+      }
+    }
     drag = { x: e.clientX, start: viewStart, moved: false };
   }
 
   function move(e: PointerEvent) {
-    if (!drag) return;
+    if (beatDrag) {
+      const d = beatDrag;
+      const x = e.clientX - (e.currentTarget as HTMLElement).getBoundingClientRect().left;
+      const lim = limitsFor?.(d.index) ?? null;
+      const want = viewStart + x / pxPerSec;
+      const secs = lim ? clamp(want, lim[0], Math.max(lim[0], lim[1])) : d.secs;
+      beatDrag = { ...d, secs, moved: d.moved || Math.abs(e.clientX - d.startX) > 2 };
+      return;
+    }
+    if (!drag) {
+      if (editable) {
+        const x = e.clientX - (e.currentTarget as HTMLElement).getBoundingClientRect().left;
+        overBeat = hitBeat(beatSecs, viewStart + x / pxPerSec, pxPerSec, grabPx) >= 0;
+      }
+      return;
+    }
     const dx = e.clientX - drag.x;
     if (Math.abs(dx) > 3) drag.moved = true;
     if (drag.moved) onuser?.();
@@ -245,6 +335,13 @@
   }
 
   function up(e: PointerEvent) {
+    const b = beatDrag;
+    if (b) {
+      beatDrag = null;
+      if (b.moved && b.secs !== beatSecs[b.index]) onbeatmove?.(b.index, b.secs, e.altKey);
+      else onseek?.(clamp(beatSecs[b.index], 0, duration));
+      return;
+    }
     const d = drag;
     drag = null;
     if (d && !d.moved) {
@@ -267,7 +364,12 @@
     onpointerdown={down}
     onpointermove={move}
     onpointerup={up}
-    onpointercancel={() => (drag = null)}
+    onpointercancel={() => {
+      drag = null;
+      beatDrag = null;
+    }}
+    onpointerleave={() => (overBeat = false)}
+    class:grab={editable && overBeat}
   ></canvas>
   {#if status}<div class="status" role="status">{status}</div>{/if}
 </div>
@@ -294,5 +396,8 @@
     display: block;
     cursor: crosshair;
     touch-action: none;
+  }
+  canvas.grab {
+    cursor: ew-resize;
   }
 </style>

@@ -23,7 +23,7 @@ pub const MIN_BPM: f64 = 20.0;
 pub const MAX_BPM: f64 = 400.0;
 
 /// Bars are four beats; `first_downbeat` is the phase of the first bar line, 0..=3 once edited.
-const BAR: i64 = 4;
+pub(crate) const BAR: i64 = 4;
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct GridBeat {
@@ -94,12 +94,12 @@ fn now_ms() -> i64 {
         .unwrap_or(0)
 }
 
-fn invalid<T>(msg: impl Into<String>) -> Result<T, Error> {
+pub(crate) fn invalid<T>(msg: impl Into<String>) -> Result<T, Error> {
     Err(Error::Invalid(msg.into()))
 }
 
 /// Frames in one beat at `bpm`.
-fn period_frames(bpm: f64, sample_rate: u32) -> f64 {
+pub(crate) fn period_frames(bpm: f64, sample_rate: u32) -> f64 {
     f64::from(sample_rate) * 60.0 / bpm
 }
 
@@ -127,7 +127,7 @@ pub fn validate(doc: &GridDoc) -> Result<(), Error> {
 
 /// Result of an edit: the offset follows the first beat (whatever the original relation was,
 /// it is kept constant), the downbeat index is clamped to the beats that remain.
-fn finish(old: &GridDoc, beats: Vec<GridBeat>, first_downbeat: Option<usize>) -> Result<GridDoc, Error> {
+pub(crate) fn finish(old: &GridDoc, beats: Vec<GridBeat>, first_downbeat: Option<usize>) -> Result<GridDoc, Error> {
     let Some(first) = beats.first() else {
         return invalid("the edit would leave the grid empty");
     };
@@ -143,7 +143,7 @@ fn finish(old: &GridDoc, beats: Vec<GridBeat>, first_downbeat: Option<usize>) ->
 }
 
 /// Drops beats before 0 (a prefix) and past the audio end, keeping the bar phase.
-fn clip(mut beats: Vec<GridBeat>, fd: Option<usize>, total: Option<i64>) -> (Vec<GridBeat>, Option<usize>) {
+pub(crate) fn clip(mut beats: Vec<GridBeat>, fd: Option<usize>, total: Option<i64>) -> (Vec<GridBeat>, Option<usize>) {
     let dropped = beats.iter().take_while(|b| b.pos < 0).count();
     beats.drain(..dropped);
     if let Some(t) = total {
