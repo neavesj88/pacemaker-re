@@ -146,7 +146,9 @@ class Interop {
       const dest = await pickSavePath(`${safe}.${ext}`, label, ext);
       if (!dest) return;
       const r = await interopExport(lib.root, format, where, dest);
-      toast.show(`Saved ${plural(r.tracks, "track")} to ${baseName(r.path)}`, "ok");
+      // notes name the smart cases written or left out; longer than a plain "Saved", so it stays up longer
+      const notes = r.notes ?? [];
+      toast.show([`Saved ${plural(r.tracks, "track")} to ${baseName(r.path)}.`, ...notes].join(" "), "ok", notes.length ? 12000 : 4000);
     } catch (e) {
       this.error = String(e);
     } finally {

@@ -1,42 +1,58 @@
 <script lang="ts">
   import { untrack } from "svelte";
   import type { CaseMeta } from "$lib/api/cases";
-  import type { Track } from "$lib/api/types";
   import { mmss } from "$lib/format";
+  import { caseExport } from "$lib/state/caseExport.svelte";
   import { cases } from "$lib/state/cases.svelte";
   import { filters } from "$lib/state/filters.svelte";
   import { jobs } from "$lib/state/jobs.svelte";
   import { metadataEditor } from "$lib/state/metadata.svelte";
   import { playback } from "$lib/state/playback.svelte";
   import { selection } from "$lib/state/selection.svelte";
+  import { toast } from "$lib/state/toast.svelte";
   import { session } from "$lib/state/session.svelte";
+  import { armTrackDrag, trackDrag, trackDropTarget } from "$lib/state/trackDrag.svelte";
   import Button from "$lib/ui/Button.svelte";
+  import ContextMenu, { type MenuItem } from "$lib/ui/ContextMenu.svelte";
   import Stars from "$lib/ui/Stars.svelte";
+  // Read-only reuse of the Tracks view's pure sort / key logic and its small waveform, so a case
+  // reads and sorts like the library.
+  import MiniWave from "../tracks/MiniWave.svelte";
+  import { keyColour, parseKey, sortTracks } from "../tracks/trackLogic";
   import CaseTrackPicker from "./CaseTrackPicker.svelte";
+  import { CASE_COLUMNS, type CaseCol, type Row, copyName, plural, searchRows, sortRows, trackLabel } from "./caseLogic";
+  import { caseView } from "./caseView.svelte";
   import ConfirmDialog from "./ConfirmDialog.svelte";
+  import { exportMenuItems } from "./exportMenu";
+  import MergeDialog from "./MergeDialog.svelte";
   import NameDialog from "./NameDialog.svelte";
+  import TransferDialog from "./TransferDialog.svelte";
 
   // The view only mounts this with a case open; the fallback covers the moment it closes.
   let open = $derived(cases.open ?? { id: -1, name: "", play_time_secs: 0, track_count: 0 });
   let info = $derived(cases.openInfo);
 
   // ---- rows -------------------------------------------------------------------------------
-  type Row = { id: number; t: Track | undefined };
   let byId = $derived(new Map((session.library?.tracks ?? []).map((t) => [t.track_id, t])));
   // a track can sit twice in casetracks (the table has no unique constraint); show it once
   let all = $derived<Row[]>([...new Set(cases.trackIds)].map((id) => ({ id, t: byId.get(id) })));
+  let position = $derived(new Map(all.map((r, i) => [r.id, i + 1])));
   let missing = $derived(all.filter((r) => !r.t));
   let query = $derived(filters.query.trim().toLowerCase());
+  // the case's own order, or a view-only sort (the same sort the Tracks view uses)
+  let viewSorted = $derived(caseView.prefs.sortKey !== "order" || !caseView.prefs.sortAsc);
   let rows = $derived(
-    query ? all.filter((r) => r.t && [r.t.title, r.t.artist, r.t.album, r.t.genre, r.t.key].some((f) => f.toLowerCase().includes(query))) : all,
+    sortRows(searchRows(all, query), caseView.prefs.sortKey, caseView.prefs.sortAsc, sortTracks, (id) => cases.favourites.has(id)),
   );
   let totalSecs = $derived(all.reduce((s, r) => s + (r.t?.play_time_secs ?? 0), 0));
   let selected = $derived(new Set(selection.trackIds));
   let selectedRows = $derived(all.filter((r) => selected.has(r.id)));
-  // dragging needs the whole list on screen and every row to be a real track
-  let canReorder = $derived(jobs.canWrite && !query && missing.length === 0);
+  let cols = $derived(caseView.shown);
+  // dragging to reorder needs the whole list on screen, in the case's order, every row a real track
+  let canReorder = $derived(jobs.canWrite && !query && !viewSorted && missing.length === 0);
 
-  const label = (r: Row) => (r.t ? `${r.t.title}${r.t.artist ? ` by ${r.t.artist}` : ""}` : `track #${r.id} (no longer in the library)`);
+  const label = (r: Row) => trackLabel(r.id, r.t);
+  const sortLabel = $derived(CASE_COLUMNS.find((c) => c.sort === caseView.prefs.sortKey)?.label || (caseView.prefs.sortKey === "fav" ? "favourites" : ""));
 
   // ---- selection --------------------------------------------------------------------------
   let anchor = $state<number | null>(null);
@@ -101,39 +117,51 @@
 
   let drag = $state<{ ids: Set<number>; over: number; after: boolean } | null>(null);
 
-  // Tracks dragged in from the Tracks view carry their ids under this type (JSON number array).
-  const TRACKS_MIME = "application/x-pacemaker-tracks";
+  // Tracks dragged in from a table (see state/trackDrag.svelte.ts) are appended to this case. A
+  // drag that started on a row of this very table is never dropped back here.
   let dropping = $state(false);
+  const dropOptions = {
+    accept: () => jobs.canWrite && trackDrag.from !== `case:${open.id}`,
+    onhover: (hit: Element | null) => (dropping = !!hit),
+    ondrop: (ids: number[]) => {
+      if (ids.length > 0) void cases.dropTracks(open.id, open.name, ids);
+    },
+  };
 
-  function externalOver(e: DragEvent) {
-    if (drag || !jobs.canWrite || !e.dataTransfer?.types.includes(TRACKS_MIME)) return;
-    e.preventDefault();
-    e.dataTransfer.dropEffect = "copy";
-    dropping = true;
-  }
-
-  async function externalDrop(e: DragEvent) {
-    dropping = false;
-    const raw = drag ? "" : e.dataTransfer?.getData(TRACKS_MIME);
-    if (!raw) return;
-    e.preventDefault();
-    let ids: number[] = [];
-    try {
-      const v = JSON.parse(raw);
-      if (Array.isArray(v)) ids = v.filter((x): x is number => Number.isInteger(x));
-    } catch {
-      return;
+  // A drag from a row carries the selected tracks of THIS case (the selection is shared with the
+  // Tracks view and can hold tracks that are not here), or just the row's own track. Read when
+  // the drag starts, after the press has made its selection.
+  function rowDrag(i: number) {
+    const r = rows[i];
+    if (!r?.t) return { ids: [] };
+    if (!selected.has(r.id)) {
+      selection.trackIds = [r.id];
+      anchor = i;
+      return { ids: [r.id] };
     }
-    if (ids.length > 0) await cases.addTracks(open.id, ids);
+    return { ids: all.filter((x) => selected.has(x.id) && x.t).map((x) => x.id) };
   }
 
+  // Reordering inside the table is HTML5 drag and drop from the grip cell (it only works where the
+  // webview delivers in-page drag events); dragging a row anywhere else carries tracks to another
+  // case with the pointer.
   function dragStart(e: DragEvent, i: number) {
     const id = rows[i].id;
-    const ids = selected.has(id) ? new Set(selection.trackIds) : new Set([id]);
-    if (!selected.has(id)) selection.trackIds = [id];
+    if (!selected.has(id)) {
+      selection.trackIds = [id];
+      anchor = i;
+    }
+    const ids = new Set(all.filter((r) => r.id === id || selected.has(r.id)).map((r) => r.id));
     drag = { ids, over: i, after: false };
-    e.dataTransfer?.setData("text/plain", [...ids].join(","));
-    if (e.dataTransfer) e.dataTransfer.effectAllowed = "move";
+    if (e.dataTransfer) {
+      e.dataTransfer.effectAllowed = "move";
+      e.dataTransfer.setData("text/plain", "");
+      e.dataTransfer.setDragImage(e.currentTarget as HTMLElement, 0, 0);
+    }
+  }
+
+  function dragEnd() {
+    drag = null;
   }
 
   function dragOver(e: DragEvent, i: number) {
@@ -144,8 +172,9 @@
   }
 
   function drop(e: DragEvent) {
-    e.preventDefault();
     if (!drag) return;
+    e.preventDefault();
+    e.stopPropagation(); // a reorder is not an "add tracks" drop on the table behind it
     moveBlock(drag.ids, drag.over + (drag.after ? 1 : 0));
     drag = null;
   }
@@ -161,6 +190,15 @@
   let renaming = $state(false);
   let deleting = $state(false);
   let removing = $state<Row[] | null>(null);
+  let duplicating = $state(false);
+  let merging = $state(false);
+  let transfer = $state<{ mode: "copy" | "move"; ids: number[] } | null>(null);
+  let savingOrder = $state(false);
+  let chooser = $state(false);
+  let menu = $state<{ x: number; y: number; items: MenuItem[] } | null>(null);
+
+  const dialogOpen = $derived(adding || renaming || deleting || !!removing || duplicating || merging || !!transfer || savingOrder);
+  const inLibrary = (ids: number[]) => ids.filter((id) => byId.has(id));
 
   function play(id?: number) {
     const target = id ?? selectedRows.find((r) => r.t)?.id ?? all.find((r) => r.t)?.id;
@@ -169,12 +207,64 @@
 
   function onkey(e: KeyboardEvent) {
     // Not while a dialog is up: its keys must not act on the case behind it.
-    if (adding || renaming || deleting || removing) return;
+    if (dialogOpen) return;
     if ((e.target as HTMLElement).closest("input, select, textarea, [role='dialog']")) return;
     if (e.key === "Delete" && jobs.canWrite && selectedRows.length > 0) removing = selectedRows;
-    else if (e.altKey && e.key === "ArrowUp") (e.preventDefault(), nudge(-1));
+    else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "a") {
+      e.preventDefault();
+      selection.trackIds = rows.map((r) => r.id);
+    } else if (e.altKey && e.key === "ArrowUp") (e.preventDefault(), nudge(-1));
     else if (e.altKey && e.key === "ArrowDown") (e.preventDefault(), nudge(1));
   }
+
+  function rowMenu(e: MouseEvent, i: number) {
+    e.preventDefault();
+    e.stopPropagation(); // the menu closes on window events; this one must not reach it
+    focusIdx = i;
+    const id = rows[i].id;
+    if (!selected.has(id)) {
+      selection.trackIds = [id];
+      anchor = i;
+    }
+    const picked = all.filter((r) => selection.trackIds.includes(r.id));
+    const live = picked.filter((r) => r.t);
+    const n = picked.length;
+    const w = jobs.canWrite;
+    menu = {
+      x: Math.max(0, Math.min(e.clientX, innerWidth - 230)),
+      y: Math.max(0, Math.min(e.clientY, innerHeight - 220)),
+      items: [
+        { label: "Play", onclick: () => play(live[0]?.id), disabled: live.length === 0 },
+        { label: live.length === 1 ? "Edit metadata…" : `Edit metadata of ${live.length} tracks…`, onclick: () => metadataEditor.edit(live.map((r) => r.id)), disabled: live.length === 0 },
+        { label: n === 1 ? "Copy to another case…" : `Copy ${n} tracks to another case…`, onclick: () => (transfer = { mode: "copy", ids: live.map((r) => r.id) }), disabled: !w || live.length === 0 },
+        { label: n === 1 ? "Move to another case…" : `Move ${n} tracks to another case…`, onclick: () => (transfer = { mode: "move", ids: live.map((r) => r.id) }), disabled: !w || live.length === 0 },
+        { label: n === 1 ? "Remove from this case…" : `Remove ${n} tracks from this case…`, onclick: () => (removing = picked), disabled: !w, danger: true },
+      ],
+    };
+  }
+
+  function exportMenu(e: MouseEvent) {
+    e.stopPropagation();
+    const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const none = all.every((x) => !x.t);
+    menu = {
+      x: r.left,
+      y: r.bottom + 2,
+      items: exportMenuItems({ run: (f) => cases.exportOne(open, f), options: () => caseExport.show({ caseIds: [open.id], smartIds: [] }), disabled: none }),
+    };
+  }
+
+  const defaultCopyName = $derived(copyName(open.name, cases.infos.map((c) => c.name)));
+
+  // The view-only sort can be written back as the case's real order (the order on the Pacemaker).
+  const orderIds = $derived(rows.map((r) => r.id));
+  const canSaveOrder = $derived(jobs.canWrite && viewSorted && !query && missing.length === 0);
+
+  function sortHeader(c: CaseCol) {
+    if (c.sort) caseView.sortBy(c.sort);
+  }
+
+  const ariaSort = (c: CaseCol) => (c.sort && c.sort === caseView.prefs.sortKey ? (caseView.prefs.sortAsc ? "ascending" : "descending") : "none");
 
   // ---- metadata panel ---------------------------------------------------------------------
   const metaOf = (c: CaseMeta): CaseMeta => ({ name: c.name, genre: c.genre, year: c.year, rating: c.rating, producer: c.producer, remixer: c.remixer, comments: c.comments });
@@ -208,7 +298,7 @@
   const when = (ms: number) => (ms > 0 ? new Date(ms).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" }) : "never");
 </script>
 
-<svelte:window onkeydown={onkey} />
+<svelte:window onkeydown={onkey} onclick={() => (chooser = false)} />
 
 <div class="split">
   <div class="main">
@@ -227,11 +317,39 @@
       <Button onclick={() => nudge(-1)} disabled={!canReorder || selectedRows.length === 0} title="Move up (Alt+Up)">▲</Button>
       <Button onclick={() => nudge(1)} disabled={!canReorder || selectedRows.length === 0} title="Move down (Alt+Down)">▼</Button>
       <Button
+        onclick={() => (transfer = { mode: "copy", ids: inLibrary(selectedRows.map((r) => r.id)) })}
+        disabled={!jobs.canWrite || inLibrary(selectedRows.map((r) => r.id)).length === 0}
+        title="Copy the selected tracks into another case"
+      >Copy to…</Button>
+      <Button
+        onclick={() => (transfer = { mode: "move", ids: inLibrary(selectedRows.map((r) => r.id)) })}
+        disabled={!jobs.canWrite || inLibrary(selectedRows.map((r) => r.id)).length === 0}
+        title="Move the selected tracks into another case (they leave this one)"
+      >Move to…</Button>
+      <Button
         onclick={() => metadataEditor.edit(selectedRows.filter((r) => r.t).map((r) => r.id))}
         disabled={selectedRows.every((r) => !r.t)}
       >Edit tracks…</Button>
-      <span class="muted hint">Drag rows to reorder, or drop tracks here from the Tracks view · the order is the order on the Pacemaker</span>
+      <Button onclick={exportMenu} disabled={all.every((r) => !r.t)} title="Save this case as a playlist or list for other software">Export this case ▾</Button>
+      <span class="chooser" role="presentation" onclick={(e) => e.stopPropagation()}>
+        <Button onclick={() => (chooser = !chooser)} active={chooser} aria-expanded={chooser}>Columns ▾</Button>
+        {#if chooser}
+          <div class="pop" role="group" aria-label="Columns">
+            {#each CASE_COLUMNS.filter((c) => !c.fixed) as c (c.key)}
+              <label><input type="checkbox" checked={caseView.prefs.visible[c.key]} onchange={() => caseView.toggleColumn(c.key)} /> {c.label}</label>
+            {/each}
+          </div>
+        {/if}
+      </span>
     </div>
+
+    {#if viewSorted}
+      <div class="notice">
+        Showing the tracks sorted by {sortLabel || "a column"}{caseView.prefs.sortAsc ? "" : " (descending)"}; the case itself is unchanged and reordering is off.
+        <Button small onclick={() => caseView.useCaseOrder()}>Back to case order</Button>
+        <Button small onclick={() => (savingOrder = true)} disabled={!canSaveOrder} title={canSaveOrder ? "Make this the case's order on the Pacemaker" : "Needs the whole case on screen with every track in the library"}>Save this order to the case…</Button>
+      </div>
+    {/if}
 
     {#if missing.length > 0}
       <div class="warn">
@@ -248,21 +366,32 @@
       tabindex="0"
       role="region"
       aria-label="Tracks in the case"
-      ondragover={externalOver}
-      ondragleave={() => (dropping = false)}
-      ondrop={externalDrop}
+      use:trackDropTarget={dropOptions}
     >
       <table role="grid" aria-multiselectable="true" aria-label="Tracks in the case">
         <thead>
           <tr>
-            <th class="grip">#</th>
-            <th class="heart"></th>
-            <th>Title</th>
-            <th>Artist</th>
-            <th class="num">BPM</th>
-            <th>Key</th>
-            <th>Rating</th>
-            <th class="num">Time</th>
+            <th
+              class="grip sortable"
+              tabindex="0"
+              aria-sort={caseView.prefs.sortKey === "order" ? (caseView.prefs.sortAsc ? "ascending" : "descending") : "none"}
+              title="Position in the case; click to sort by it"
+              onclick={() => caseView.sortBy("order")}
+              onkeydown={(e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), caseView.sortBy("order"))}
+            >#{caseView.prefs.sortKey === "order" && !caseView.prefs.sortAsc ? " ▼" : ""}</th>
+            {#each cols as c (c.key)}
+              <th
+                class:num={c.num}
+                class:heart={c.key === "fav"}
+                class:sortable={!!c.sort}
+                tabindex={c.sort ? 0 : -1}
+                aria-sort={ariaSort(c)}
+                onclick={() => sortHeader(c)}
+                onkeydown={(e) => c.sort && (e.key === "Enter" || e.key === " ") && (e.preventDefault(), sortHeader(c))}
+              >
+                {#if c.key === "fav"}<span title="Favourites">♥</span>{:else}{c.label}{/if}{c.sort && c.sort === caseView.prefs.sortKey ? (caseView.prefs.sortAsc ? " ▲" : " ▼") : ""}
+              </th>
+            {/each}
           </tr>
         </thead>
         <tbody bind:this={tbody}>
@@ -271,51 +400,77 @@
               tabindex={i === Math.min(focusIdx, rows.length - 1) ? 0 : -1}
               aria-selected={selected.has(r.id)}
               onkeydown={(e) => rowKey(e, i)}
-              draggable={canReorder}
               class:sel={selected.has(r.id)}
               class:dim={!r.t || session.needs.has(r.id)}
               class:before={drag && drag.over === i && !drag.after && !drag.ids.has(r.id)}
               class:after={drag && drag.over === i && drag.after && !drag.ids.has(r.id)}
               class:moving={drag?.ids.has(r.id)}
+              class:reorder={canReorder}
               onclick={(e) => pick(i, e)}
               ondblclick={() => r.t && play(r.id)}
+              oncontextmenu={(e) => rowMenu(e, i)}
+              onpointerdown={(e) => armTrackDrag(e, `case:${open.id}`, () => rowDrag(i))}
               ondragstart={(e) => dragStart(e, i)}
               ondragover={(e) => dragOver(e, i)}
               ondrop={drop}
-              ondragend={() => (drag = null)}
+              ondragend={dragEnd}
             >
-              <td class="grip muted">{canReorder ? "≡ " : ""}{all.indexOf(r) + 1}</td>
-              <td class="heart">
-                {#if r.t}
-                  <button
-                    class="fav"
-                    class:on={cases.favourites.has(r.id)}
-                    aria-label={cases.favourites.has(r.id) ? "Remove from Favourites" : "Add to Favourites"}
-                    aria-pressed={cases.favourites.has(r.id)}
-                    disabled={!jobs.canWrite}
-                    onclick={(e) => (e.stopPropagation(), cases.toggleFavourite(r.id))}
-                  >♥</button>
+              <td class="grip muted" draggable={canReorder} data-no-drag={canReorder ? "" : undefined} title={canReorder ? "Drag to reorder" : undefined}>{canReorder ? "≡ " : ""}{position.get(r.id)}</td>
+              {#each cols as c (c.key)}
+                {#if c.key === "fav"}
+                  <td class="heart">
+                    {#if r.t}
+                      <button
+                        class="fav"
+                        class:on={cases.favourites.has(r.id)}
+                        aria-label={cases.favourites.has(r.id) ? "Remove from Favourites" : "Add to Favourites"}
+                        aria-pressed={cases.favourites.has(r.id)}
+                        disabled={!jobs.canWrite}
+                        onclick={(e) => (e.stopPropagation(), cases.toggleFavourite(r.id))}
+                      >♥</button>
+                    {/if}
+                  </td>
+                {:else if !r.t}
+                  {#if c.key === "title"}<td colspan={cols.length - 1}>Track #{r.id} is no longer in the library</td>{/if}
+                {:else if c.key === "title"}
+                  <td>{r.t.title}{#if session.needs.has(r.id)}<span class="badge" title={session.needs.get(r.id)}>needs analysis</span>{/if}</td>
+                {:else if c.key === "artist"}
+                  <td>{r.t.artist}</td>
+                {:else if c.key === "album"}
+                  <td>{r.t.album}</td>
+                {:else if c.key === "genre"}
+                  <td>{r.t.genre}</td>
+                {:else if c.key === "wave"}
+                  <td class="wave">{#if r.t.location && session.library}<MiniWave root={session.library.root} location={r.t.location} />{/if}</td>
+                {:else if c.key === "bpm"}
+                  <td class="num">{r.t.bpm && !session.needs.has(r.id) ? r.t.bpm.toFixed(2) : "–"}</td>
+                {:else if c.key === "key"}
+                  {@const k = parseKey(r.t.key)}
+                  <td>
+                    {#if k}
+                      <span class="key" style:color={keyColour(k)} style:background="color-mix(in srgb, {keyColour(k)} 14%, transparent)" title={r.t.key}>{k.code}</span>
+                    {:else}{r.t.key}{/if}
+                  </td>
+                {:else if c.key === "rating"}
+                  <td><Stars rating={r.t.rating} /></td>
+                {:else if c.key === "plays"}
+                  <td class="num">{r.t.times_played || ""}</td>
+                {:else if c.key === "time"}
+                  <td class="num">{mmss(r.t.play_time_secs)}</td>
                 {/if}
-              </td>
-              {#if r.t}
-                <td>{r.t.title}{#if session.needs.has(r.id)}<span class="badge" title={session.needs.get(r.id)}>needs analysis</span>{/if}</td>
-                <td>{r.t.artist}</td>
-                <td class="num">{r.t.bpm && !session.needs.has(r.id) ? r.t.bpm.toFixed(2) : "–"}</td>
-                <td>{r.t.key}</td>
-                <td><Stars rating={r.t.rating} /></td>
-                <td class="num">{mmss(r.t.play_time_secs)}</td>
-              {:else}
-                <td colspan="6">Track #{r.id} is no longer in the library</td>
-              {/if}
+              {/each}
             </tr>
           {/each}
         </tbody>
       </table>
       {#if rows.length === 0}
         <p class="empty">
-          {query ? "No tracks in this case match the search." : "This case is empty. Use Add tracks…, or select tracks in the Tracks view and make a case from them."}
+          {query ? "No tracks in this case match the search." : "This case is empty. Use Add tracks…, drag tracks onto it from the Tracks view, or select tracks in the Tracks view and make a case from them."}
         </p>
       {/if}
+    </div>
+    <div class="hintbar muted">
+      Drag the ≡ number to reorder (in case order) · drag a row onto a case in the sidebar to copy it there · click a column to sort the view · the order is the order on the Pacemaker
     </div>
   </div>
 
@@ -343,6 +498,8 @@
     {/if}
     <div class="actions">
       <Button onclick={() => (renaming = true)} disabled={!jobs.canWrite}>Rename…</Button>
+      <Button onclick={() => (duplicating = true)} disabled={!jobs.canWrite}>Duplicate…</Button>
+      <Button onclick={() => (merging = true)} disabled={!jobs.canWrite || cases.infos.length < 2} title="Merge this case with others, without repeats">Merge…</Button>
       <Button onclick={() => (deleting = true)} disabled={!jobs.canWrite}>Delete case…</Button>
     </div>
     <div class="note muted">Cases are the Pacemaker's own playlists. Order here is the order on the device.</div>
@@ -358,6 +515,48 @@
       if (n !== undefined) selection.trackIds = ids;
     }}
     onclose={() => (adding = false)}
+  />
+{/if}
+
+{#if menu}
+  <ContextMenu x={menu.x} y={menu.y} items={menu.items} onclose={() => (menu = null)} />
+{/if}
+
+{#if duplicating}
+  <NameDialog
+    title="Duplicate case"
+    initial={defaultCopyName}
+    note={`Makes a new case with the same ${plural(all.length, "track")} in the same order and the same genre, year, rating and notes. “${open.name}” is not changed.`}
+    taken={cases.infos.map((x) => x.name)}
+    confirmLabel="Duplicate"
+    onconfirm={async (name) => {
+      duplicating = false;
+      const id = await cases.duplicate(open.id, name);
+      if (id !== undefined) toast.show(`Made “${name}” with ${plural(cases.infos.find((x) => x.id === id)?.track_count ?? 0, "track")}`, "ok");
+    }}
+    onclose={() => (duplicating = false)}
+  />
+{/if}
+
+{#if merging}
+  <MergeDialog initial={[open.id]} onclose={() => (merging = false)} />
+{/if}
+
+{#if transfer}
+  <TransferDialog mode={transfer.mode} from={open} ids={transfer.ids} onclose={() => (transfer = null)} />
+{/if}
+
+{#if savingOrder}
+  <ConfirmDialog
+    title="Save this order to the case?"
+    message={`Replace the order of the case “${open.name}” on the Pacemaker with the order shown (${plural(orderIds.length, "track")}). The tracks stay the same; only their order changes, and the old order is not kept.`}
+    items={rows.map((r, i) => `${i + 1}. ${label(r)}`)}
+    confirmLabel="Save this order"
+    onconfirm={async () => {
+      await cases.reorder(orderIds);
+      caseView.useCaseOrder();
+    }}
+    onclose={() => (savingOrder = false)}
   />
 {/if}
 
@@ -390,9 +589,10 @@
 {/if}
 
 {#if deleting}
+  {@const smartUsing = cases.smartCasesUsing([open.id])}
   <ConfirmDialog
     title="Delete this case?"
-    message={`Delete the case “${open.name}” (${all.length} track${all.length === 1 ? "" : "s"}) from the Pacemaker? The tracks stay in the library; only the case is removed.${open.name === "Favourites" ? " This is the case the heart on a track uses: deleting it clears every heart, and the next heart click starts a new, empty Favourites case." : ""}`}
+    message={`Delete the case “${open.name}” (${all.length} track${all.length === 1 ? "" : "s"}) from the Pacemaker? The tracks stay in the library; only the case is removed.${open.name === "Favourites" ? " This is the case the heart on a track uses: deleting it clears every heart, and the next heart click starts a new, empty Favourites case." : ""}${smartUsing.length > 0 ? ` ${smartUsing.map((n) => `“${n}”`).join(", ")} ${smartUsing.length === 1 ? "is a smart case that has" : "are smart cases that have"} a rule about this case; ${smartUsing.length === 1 ? "it" : "they"} will report an error until you pick another case in the rule.` : ""}`}
     confirmLabel="Delete case"
     onconfirm={() => cases.remove(open.id)}
     onclose={() => (deleting = false)}
@@ -420,8 +620,44 @@
     border-bottom: 1px solid var(--line);
     flex-wrap: wrap;
   }
-  .hint {
-    margin-left: auto;
+  .hintbar {
+    padding: 4px 10px;
+    border-top: 1px solid var(--line);
+    font-size: 12px;
+  }
+  .notice {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    padding: 6px 10px;
+    background: var(--accent-soft);
+    border-bottom: 1px solid var(--line);
+  }
+  .chooser {
+    position: relative;
+  }
+  .pop {
+    position: absolute;
+    z-index: 5;
+    top: calc(100% + 2px);
+    left: 0;
+    display: grid;
+    gap: 2px;
+    min-width: 140px;
+    padding: 6px 8px;
+    background: var(--panel);
+    border: 1px solid var(--line-hi);
+    border-radius: 6px;
+  }
+  .pop label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+  }
+  .pop input {
+    padding: 0;
   }
   .warn {
     padding: 6px 10px;
@@ -440,6 +676,25 @@
   table {
     width: 100%;
     border-collapse: collapse;
+  }
+  th.sortable {
+    cursor: pointer;
+  }
+  th.sortable:hover {
+    color: var(--text);
+  }
+  th.num {
+    text-align: right;
+  }
+  td.wave {
+    width: 110px;
+    min-width: 100px;
+  }
+  .key {
+    padding: 0 6px;
+    border-radius: 3px;
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
   }
   th {
     position: sticky;
@@ -501,7 +756,7 @@
   tr.after {
     box-shadow: inset 0 -2px 0 var(--accent);
   }
-  tr[draggable="true"] {
+  td.grip[draggable="true"] {
     cursor: grab;
   }
   .fav {

@@ -555,15 +555,7 @@ impl Library {
     /// device, so ids of deleted cases are never reused). Duplicate names are allowed, as on
     /// the device; empty names and names over [`MAX_CASE_NAME_CHARS`] are rejected.
     pub fn create_case(&mut self, name: &str) -> Result<i64, Error> {
-        check_case_name(name)?;
-        let now = now_ms();
-        self.con.execute(
-            "INSERT INTO cases (case_id, name, date_created, times_played, structured_ct, image_id, genre, year,
-                rating, producer, remixer, play_time_secs, last_played, date_modified, comments, creator_id)
-             VALUES (NULL, ?1, ?2, 0, NULL, 0, '', ?3, 0, '', '', 0, 0, ?2, '', ?4)",
-            params![name, now, year_of_ms(now), CASE_CREATOR_ID],
-        )?;
-        Ok(self.con.last_insert_rowid())
+        insert_case_row(&self.con, name)
     }
 
     /// Replaces a case's membership with `track_ids`, in that order (the device lists a case
@@ -623,6 +615,16 @@ impl Library {
 
 #[cfg(test)]
 mod case_ops_tests;
+
+mod track_extra;
+mod dupes;
+pub use dupes::{check_disjoint, plan_group, Blocked, CaseEdit, CaseEditKind, CaseHold, Change, Computed, DupRow, Facts, GroupPlan, MergeGroup, MergeOptions, PlaysRule, RatingRule, RemovedRow, StatEdit, TrackHolds};
+pub use track_extra::TrackExtra;
+
+mod case_bulk;
+pub use case_bulk::{plan_merge, plan_transfer, MergeDest, MergeDone, MergePlan, TransferDone, TransferNewDone, TransferPlan};
+#[cfg(test)]
+mod case_bulk_tests;
 
 impl Library {
     /// Every case with its metadata, ordered by name (the same order as [`Library::cases`]).
@@ -858,6 +860,20 @@ fn case_info_row(r: &rusqlite::Row) -> rusqlite::Result<CaseInfo> {
         play_time_secs: r.get(12)?,
         track_count: r.get(13)?,
     })
+}
+
+/// The row [`Library::create_case`] writes, on any connection or open transaction (the bulk
+/// case operations in `case_bulk.rs` create a case inside their own transaction).
+fn insert_case_row(con: &Connection, name: &str) -> Result<i64, Error> {
+    check_case_name(name)?;
+    let now = now_ms();
+    con.execute(
+        "INSERT INTO cases (case_id, name, date_created, times_played, structured_ct, image_id, genre, year,
+            rating, producer, remixer, play_time_secs, last_played, date_modified, comments, creator_id)
+         VALUES (NULL, ?1, ?2, 0, NULL, 0, '', ?3, 0, '', '', 0, 0, ?2, '', ?4)",
+        params![name, now, year_of_ms(now), CASE_CREATOR_ID],
+    )?;
+    Ok(con.last_insert_rowid())
 }
 
 fn check_case_name(name: &str) -> Result<(), Error> {

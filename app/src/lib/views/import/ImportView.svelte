@@ -1,7 +1,9 @@
 <script lang="ts">
   import { untrack } from "svelte";
+  import { cases } from "$lib/state/cases.svelte";
   import { jobs } from "$lib/state/jobs.svelte";
   import { session } from "$lib/state/session.svelte";
+  import { smartSettings } from "$lib/state/smartSettings.svelte";
   import Button from "$lib/ui/Button.svelte";
   import ImportPreview from "./ImportPreview.svelte";
   import WatchFolders from "./WatchFolders.svelte";
@@ -10,12 +12,15 @@
 
   const lib = $derived(session.library);
 
-  // what the list exports cover: "library", "case:<id>" or "mix:<id>"
+  // what the list exports cover: "library", "case:<id>", "mix:<id>" or "smart:<id>"
   let scope = $state("library");
   $effect(() => {
-    // a case or mix that no longer exists (another library, or deleted) falls back to the library
+    void smartSettings.ensure();
+  });
+  $effect(() => {
+    // a case, mix or smart case that no longer exists (another library, or deleted) falls back to the library
     const [kind, id] = scope.split(":");
-    const list = kind === "case" ? lib?.cases : kind === "mix" ? lib?.mixes : null;
+    const list = kind === "case" ? lib?.cases : kind === "mix" ? lib?.mixes : kind === "smart" ? cases.smart : null;
     if (kind !== "library" && !list?.some((c) => String(c.id) === id)) scope = "library";
   });
 
@@ -29,6 +34,13 @@
   }
 
   function exportList(format: "m3u8" | "csv") {
+    const [kind, id] = scope.split(":");
+    if (kind === "smart") {
+      // a smart case is exported as what it matches right now (the cases area owns that export)
+      const s = cases.smart.find((x) => String(x.id) === id);
+      if (s) cases.exportSmart(s, format);
+      return;
+    }
     const t = target();
     interop.export(format, t.where, t.name);
   }
@@ -53,11 +65,15 @@
 
   <section class="card">
     <h3>rekordbox</h3>
-    <p class="muted">rekordbox.xml: ratings and playlists become ratings and cases (previewed first); cues and grids are not imported yet. Export writes tracks with their tempo grids, ratings, keys and cases.</p>
+    <p class="muted">rekordbox.xml: ratings and playlists become ratings and cases (previewed first); cues and grids are not imported yet. Export writes tracks with their tempo grids, ratings, keys and cases. Smart cases are written as ordinary playlists of the tracks they match now (rekordbox XML cannot hold rules).</p>
     <div class="row">
       <Button onclick={() => interop.pick("Choose a rekordbox XML export")} disabled={!lib || interop.loading}>Import XML…</Button>
       <Button onclick={() => interop.export("rekordbox", { scope: "library" }, "rekordbox")} disabled={!lib || interop.exporting}>Export XML…</Button>
     </div>
+    <label class="opt">
+      <input type="checkbox" checked={smartSettings.value.export_smart} onchange={(e) => smartSettings.set({ export_smart: e.currentTarget.checked })} />
+      Include smart cases{cases.smart.length ? ` (${cases.smart.length})` : ""}
+    </label>
   </section>
 
   <section class="card">
@@ -68,13 +84,18 @@
 
   <section class="card">
     <h3>Playlists and lists</h3>
-    <p class="muted">Save a case, a mix or the whole library as an M3U8 playlist or a CSV list.</p>
+    <p class="muted">Save a case, a smart case, a mix or the whole library as an M3U8 playlist or a CSV list.</p>
     <div class="row">
       <select bind:value={scope} disabled={!lib} aria-label="What to export">
         <option value="library">Whole library</option>
         {#if lib?.cases.length}
           <optgroup label="Cases">
             {#each lib.cases as c (c.id)}<option value={`case:${c.id}`}>{c.name}</option>{/each}
+          </optgroup>
+        {/if}
+        {#if cases.smart.length}
+          <optgroup label="Smart cases (as they match now)">
+            {#each cases.smart as s (s.id)}<option value={`smart:${s.id}`}>{s.name}</option>{/each}
           </optgroup>
         {/if}
         {#if lib?.mixes.length}
@@ -121,6 +142,13 @@
     flex-wrap: wrap;
     gap: 6px;
     align-items: center;
+  }
+  .opt {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    margin-top: 8px;
+    font-size: 13px;
   }
   select {
     background: var(--panel);

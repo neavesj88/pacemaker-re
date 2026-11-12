@@ -1165,6 +1165,16 @@ fn audio_path(lib: &Library, t: &Track) -> String {
     lib.track_paths(&t.location).map(|(a, _)| a.display().to_string()).unwrap_or_else(|| t.location.clone())
 }
 
+/// Where a list export says each track's audio file is: by track id, the text to write in place
+/// of the file's path on the volume (the app uses it for copies of the audio made beside the
+/// export, and for paths relative to the playlist). A track that is not in the map keeps its
+/// path on the volume.
+pub type PathMap = HashMap<i64, String>;
+
+fn audio_path_in(lib: &Library, t: &Track, paths: &PathMap) -> String {
+    paths.get(&t.track_id).cloned().unwrap_or_else(|| audio_path(lib, t))
+}
+
 fn one_line(s: &str) -> String {
     s.chars().map(|c| if c.is_control() { ' ' } else { c }).collect()
 }
@@ -1172,6 +1182,11 @@ fn one_line(s: &str) -> String {
 /// An extended M3U in UTF-8 (the `.m3u8` convention), one entry per track with its length and
 /// "artist - title", pointing at the audio files on the volume.
 pub fn export_m3u8(lib: &Library, tracks: &[Track]) -> String {
+    export_m3u8_with(lib, tracks, &PathMap::new())
+}
+
+/// [`export_m3u8`] with the audio paths in `paths` written instead of the paths on the volume.
+pub fn export_m3u8_with(lib: &Library, tracks: &[Track], paths: &PathMap) -> String {
     let mut s = String::from("#EXTM3U\n");
     for t in tracks {
         let label = match (t.artist.trim().is_empty(), t.title.trim().is_empty()) {
@@ -1180,7 +1195,7 @@ pub fn export_m3u8(lib: &Library, tracks: &[Track]) -> String {
             (false, true) => t.artist.clone(),
             (false, false) => format!("{} - {}", t.artist, t.title),
         };
-        s.push_str(&format!("#EXTINF:{},{}\n{}\n", t.play_time_secs.max(-1), one_line(&label), one_line(&audio_path(lib, t))));
+        s.push_str(&format!("#EXTINF:{},{}\n{}\n", t.play_time_secs.max(-1), one_line(&label), one_line(&audio_path_in(lib, t, paths))));
     }
     s
 }
@@ -1205,6 +1220,11 @@ fn csv_field(s: &str) -> String {
 /// RFC 4180 CSV (CRLF rows, quoted where needed) with a UTF-8 byte-order mark so spreadsheet
 /// programs read the accents correctly.
 pub fn export_csv(lib: &Library, tracks: &[Track]) -> String {
+    export_csv_with(lib, tracks, &PathMap::new())
+}
+
+/// [`export_csv`] with the audio paths in `paths` written instead of the paths on the volume.
+pub fn export_csv_with(lib: &Library, tracks: &[Track], paths: &PathMap) -> String {
     let mut s = String::from("\u{feff}Title,Artist,Album,Genre,BPM,Key,Rating,Duration (s),Format,File\r\n");
     for t in tracks {
         let row = [
@@ -1217,7 +1237,7 @@ pub fn export_csv(lib: &Library, tracks: &[Track]) -> String {
             t.rating.to_string(),
             t.play_time_secs.to_string(),
             csv_text(&t.format),
-            csv_text(&audio_path(lib, t)),
+            csv_text(&audio_path_in(lib, t, paths)),
         ];
         s.push_str(&row.join(","));
         s.push_str("\r\n");
@@ -1333,7 +1353,76 @@ fn tempo_elements(a: &strfile::Analysis, sample_rate: f64) -> String {
 /// folder) as a playlist. The device's single cue point is not exported: its unit is not
 /// confirmed (notes/FINDINGS.md), so a guess could put cues in the wrong place.
 pub fn export_rekordbox(lib: &Library) -> Result<String, Error> {
-    let tracks = lib.tracks()?;
+    export_rekordbox_with(lib, &XmlOptions::default())
+}
+
+/// [`export_rekordbox`] for one case: the collection holds only that case's tracks (in case
+/// order) and the playlist tree only that case, so other software imports just this list.
+pub fn export_rekordbox_case(lib: &Library, case_id: i64) -> Result<String, Error> {
+    export_rekordbox_with(lib, &XmlOptions { only_case: Some(case_id), ..Default::default() })
+}
+
+/// A playlist written into a rekordbox export besides the device's own cases and mixes (the app
+/// uses it for smart cases: rekordbox XML has only folders and plain playlists, so a smart
+/// case travels as the list of tracks it matches right now).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExtraPlaylist {
+    pub name: String,
+    /// Library track ids in playlist order; ids not in the library are left out.
+    pub track_ids: Vec<i64>,
+}
+
+/// What [`export_rekordbox_with`] writes. The default is the whole library with every case
+/// and mix, exactly [`export_rekordbox`].
+#[derive(Debug, Clone, Default)]
+pub struct XmlOptions {
+    /// Only this case (and its tracks), no mixes.
+    pub only_case: Option<i64>,
+    /// Write no cases and no mixes, only `extra`; the collection holds just the tracks the
+    /// extra playlists use.
+    pub extras_only: bool,
+    /// Cases left out of the playlist tree (their tracks stay in the collection).
+    pub skip_cases: HashSet<i64>,
+    /// Tracks left out of the file altogether: not in the collection, not in any playlist
+    /// (the app uses it for tracks whose file location is not a plain path in the music folder).
+    pub exclude_tracks: HashSet<i64>,
+    pub extra: Vec<ExtraPlaylist>,
+    /// Put the extra playlists in a folder of this name instead of beside the cases.
+    pub extra_folder: Option<String>,
+    /// Audio paths to write for these tracks instead of their paths on the volume.
+    pub paths: PathMap,
+}
+
+/// [`export_rekordbox`] with the choices in [`XmlOptions`].
+pub fn export_rekordbox_with(lib: &Library, opts: &XmlOptions) -> Result<String, Error> {
+    let mut tracks = lib.tracks()?;
+    tracks.retain(|t| !opts.exclude_tracks.contains(&t.track_id));
+    let mut cases = lib.cases()?;
+    let mut mixes = lib.mix_infos()?;
+    let restricted = opts.only_case.is_some() || opts.extras_only;
+    if restricted {
+        // the collection: the chosen case's tracks in case order, then the extras' tracks
+        let mut order: Vec<i64> = Vec::new();
+        if let Some(cid) = opts.only_case {
+            if !cases.iter().any(|c| c.id == cid) {
+                return Err(bad(format!("no case {cid}")));
+            }
+            cases.retain(|c| c.id == cid);
+            order = lib.case_track_ids(cid)?;
+        } else {
+            cases.clear();
+        }
+        mixes.clear();
+        for e in &opts.extra {
+            order.extend(e.track_ids.iter().copied());
+        }
+        let mut seen = HashSet::new();
+        order.retain(|id| seen.insert(*id));
+        let pos: HashMap<i64, usize> = order.iter().copied().enumerate().map(|(i, id)| (id, i)).collect();
+        tracks.retain(|t| pos.contains_key(&t.track_id));
+        tracks.sort_by_key(|t| pos[&t.track_id]);
+    }
+    cases.retain(|c| !opts.skip_cases.contains(&c.id));
     let extras = lib.interop_extras()?;
     let mut s = String::from("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<DJ_PLAYLISTS Version=\"1.0.0\">\n");
     s.push_str("  <PRODUCT Name=\"Pacemaker Revival\" Version=\"0.1.0\" Company=\"\"/>\n");
@@ -1361,7 +1450,7 @@ pub fn export_rekordbox(lib: &Library) -> Result<String, Error> {
             xml_escape(e.map_or("", |e| e.comments.as_str())),
             t.times_played,
             t.rating.clamp(0, 5) * 51,
-            xml_escape(&file_url(&audio_path(lib, t))),
+            xml_escape(&file_url(&audio_path_in(lib, t, &opts.paths))),
             xml_escape(e.map_or("", |e| e.label.as_str())),
             xml_escape(&t.key),
         ));
@@ -1377,8 +1466,6 @@ pub fn export_rekordbox(lib: &Library) -> Result<String, Error> {
     }
     s.push_str("  </COLLECTION>\n  <PLAYLISTS>\n");
 
-    let cases = lib.cases()?;
-    let mixes = lib.mix_infos()?;
     let known: HashSet<i64> = tracks.iter().map(|t| t.track_id).collect();
     let playlist = |s: &mut String, indent: &str, name: &str, ids: Vec<i64>| {
         let ids: Vec<i64> = ids.into_iter().filter(|i| known.contains(i)).collect();
@@ -1388,10 +1475,31 @@ pub fn export_rekordbox(lib: &Library) -> Result<String, Error> {
         }
         s.push_str(&format!("{indent}</NODE>\n"));
     };
-    let root_count = cases.len() + usize::from(!mixes.is_empty());
+    let extra_nodes = match (&opts.extra_folder, opts.extra.is_empty()) {
+        (_, true) => 0,
+        (Some(_), false) => 1,
+        (None, false) => opts.extra.len(),
+    };
+    let root_count = cases.len() + extra_nodes + usize::from(!mixes.is_empty());
     s.push_str(&format!("    <NODE Type=\"0\" Name=\"ROOT\" Count=\"{root_count}\">\n"));
     for c in &cases {
         playlist(&mut s, "      ", &c.name, lib.case_track_ids(c.id)?);
+    }
+    match &opts.extra_folder {
+        Some(folder) if !opts.extra.is_empty() => {
+            s.push_str(&format!("      <NODE Type=\"0\" Name=\"{}\" Count=\"{}\">
+", xml_escape(folder), opts.extra.len()));
+            for e in &opts.extra {
+                playlist(&mut s, "        ", &e.name, e.track_ids.clone());
+            }
+            s.push_str("      </NODE>
+");
+        }
+        _ => {
+            for e in &opts.extra {
+                playlist(&mut s, "      ", &e.name, e.track_ids.clone());
+            }
+        }
     }
     if !mixes.is_empty() {
         s.push_str(&format!("      <NODE Type=\"0\" Name=\"Mixes\" Count=\"{}\">\n", mixes.len()));
@@ -1784,6 +1892,92 @@ mod tests {
     }
 
     #[test]
+    fn rekordbox_export_of_one_case_holds_only_that_case() {
+        let (mut lib, dirs, _) = library("expcase", 4);
+        let t = lib.tracks().unwrap();
+        let wanted = lib.create_case("Wanted").unwrap();
+        let other = lib.create_case("Other").unwrap();
+        lib.set_case_tracks(wanted, &[t[3].track_id, t[1].track_id]).unwrap();
+        lib.set_case_tracks(other, &[t[0].track_id]).unwrap();
+        lib.create_mix("A mix").unwrap();
+
+        let xml = export_rekordbox_case(&lib, wanted).unwrap();
+        let back = parse_library(&xml).unwrap();
+        assert_eq!(back.tracks.len(), 2, "only the case's tracks");
+        assert_eq!(back.tracks[0].title, "Synth Title 3", "in case order");
+        assert_eq!(back.tracks[1].title, "Synth Title 1");
+        assert_eq!(back.playlists.len(), 1, "one playlist, no other case, no mixes");
+        assert_eq!(back.playlists[0].name, "Wanted");
+        assert_eq!(back.playlists[0].tracks, vec![0, 1]);
+        assert_eq!(xml.matches("<TEMPO").count(), 2 * 2, "tempo maps of the two tracks");
+        assert!(export_rekordbox_case(&lib, 9999).is_err());
+        // the whole-library export is unchanged by the refactor
+        let all = parse_library(&export_rekordbox(&lib).unwrap()).unwrap();
+        assert_eq!((all.tracks.len(), all.playlists.len()), (4, 3));
+        clean(lib, dirs);
+    }
+
+    #[test]
+    fn rekordbox_export_with_extra_playlists_and_skipped_cases() {
+        let (mut lib, dirs, _) = library("expextra", 4);
+        let t = lib.tracks().unwrap();
+        let id = |n: usize| t[n].track_id;
+        let plain = lib.create_case("Plain").unwrap();
+        let copy = lib.create_case("Copy of a rule").unwrap();
+        lib.set_case_tracks(plain, &[id(0)]).unwrap();
+        lib.set_case_tracks(copy, &[id(1)]).unwrap();
+        lib.create_mix("A mix").unwrap();
+        let extra = vec![
+            ExtraPlaylist { name: "Rule one".into(), track_ids: vec![id(3), id(1), 9999] },
+            ExtraPlaylist { name: "Rule \"two\" & more".into(), track_ids: vec![] },
+        ];
+
+        // whole library, extras beside the cases; the skipped case is not a playlist but its track stays
+        let opts = XmlOptions { skip_cases: HashSet::from([copy]), extra: extra.clone(), ..Default::default() };
+        let xml = export_rekordbox_with(&lib, &opts).unwrap();
+        assert!(xml.contains("Name=\"ROOT\" Count=\"4\""), "Plain + two extras + Mixes folder
+{xml}");
+        let back = parse_library(&xml).unwrap();
+        assert_eq!(back.tracks.len(), 4);
+        let names: Vec<&str> = back.playlists.iter().map(|p| p.name.as_str()).collect();
+        assert_eq!(names, ["Plain", "Rule one", "Rule \"two\" & more", "Mixes / A mix"]);
+        assert_eq!(back.playlists[1].tracks, vec![3, 1], "order kept, the unknown id left out");
+        assert!(back.playlists[2].tracks.is_empty());
+
+        // in a folder: the folder is one root child and the parser reads "Folder / name"
+        let opts = XmlOptions { extra: extra.clone(), extra_folder: Some("Smart cases".into()), ..Default::default() };
+        let xml = export_rekordbox_with(&lib, &opts).unwrap();
+        assert!(xml.contains("Name=\"ROOT\" Count=\"4\""), "Plain, Copy of a rule, Smart cases folder, Mixes folder");
+        assert!(xml.contains("<NODE Type=\"0\" Name=\"Smart cases\" Count=\"2\">"));
+        let names: Vec<String> = parse_library(&xml).unwrap().playlists.into_iter().map(|p| p.name).collect();
+        assert!(names.contains(&"Smart cases / Rule one".to_string()), "{names:?}");
+
+        // extras only: no cases, no mixes, the collection is the union of the extras' tracks in order
+        let opts = XmlOptions { extras_only: true, extra: extra.clone(), ..Default::default() };
+        let back = parse_library(&export_rekordbox_with(&lib, &opts).unwrap()).unwrap();
+        assert_eq!(back.tracks.iter().map(|t| t.title.as_str()).collect::<Vec<_>>(), ["Synth Title 3", "Synth Title 1"]);
+        assert_eq!(back.playlists.len(), 2);
+
+        // excluded tracks are in neither the collection nor any playlist (cases, extras, mixes)
+        let opts = XmlOptions { exclude_tracks: HashSet::from([id(1)]), extra: extra.clone(), ..Default::default() };
+        let xml = export_rekordbox_with(&lib, &opts).unwrap();
+        let back = parse_library(&xml).unwrap();
+        assert_eq!(back.tracks.len(), 3);
+        assert!(back.tracks.iter().all(|t| t.title != "Synth Title 1"), "{xml}");
+        assert_eq!(back.playlists.iter().find(|p| p.name == "Rule one").unwrap().tracks.len(), 1, "the other id of the rule is kept");
+        assert_eq!(back.playlists.iter().find(|p| p.name == "Copy of a rule").unwrap().tracks.len(), 0);
+
+        // nothing extra and no options is exactly the plain export
+        assert_eq!(export_rekordbox_with(&lib, &XmlOptions::default()).unwrap(), export_rekordbox(&lib).unwrap());
+        // one case plus an extra: the case's tracks first, then the extra's
+        let opts = XmlOptions { only_case: Some(plain), extra, ..Default::default() };
+        let back = parse_library(&export_rekordbox_with(&lib, &opts).unwrap()).unwrap();
+        assert_eq!(back.tracks.iter().map(|t| t.title.as_str()).collect::<Vec<_>>(), ["Synth Title 0", "Synth Title 3", "Synth Title 1"]);
+        assert_eq!(back.playlists.len(), 3);
+        clean(lib, dirs);
+    }
+
+    #[test]
     fn m3u8_and_csv_exports() {
         let (mut lib, dirs, _) = library("lists", 3);
         let t = lib.tracks().unwrap();
@@ -1810,6 +2004,26 @@ mod tests {
         let mid = lib.create_mix("Empty mix").unwrap();
         assert_eq!(scope_tracks(&lib, Scope::Mix(mid)).unwrap().1.len(), 0);
         assert!(scope_tracks(&lib, Scope::Case(9999)).is_err());
+        clean(lib, dirs);
+    }
+
+    #[test]
+    fn a_path_map_replaces_the_audio_path_in_every_list_format() {
+        let (lib, dirs, _) = library("pathmap", 2);
+        let tracks = lib.tracks().unwrap();
+        let mut paths = PathMap::new();
+        paths.insert(tracks[0].track_id, "Audio/copy one.mp3".to_string());
+        // a track that is not in the map keeps its path on the volume
+        let m3u = export_m3u8_with(&lib, &tracks, &paths);
+        let lines: Vec<&str> = m3u.lines().collect();
+        assert_eq!(lines[2], "Audio/copy one.mp3");
+        assert!(lines[4].contains(".Pacemaker"), "{}", lines[4]);
+        let csv = export_csv_with(&lib, &tracks, &paths);
+        assert!(csv.contains(",Audio/copy one.mp3\r\n"), "{csv}");
+        let xml = export_rekordbox_with(&lib, &XmlOptions { paths, ..Default::default() }).unwrap();
+        assert!(xml.contains("Location=\"file://localhost/Audio/copy%20one.mp3\""), "{xml}");
+        // the plain writers are the same as writers with an empty map
+        assert_eq!(export_m3u8(&lib, &tracks), export_m3u8_with(&lib, &tracks, &PathMap::new()));
         clean(lib, dirs);
     }
 

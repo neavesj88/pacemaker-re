@@ -3,18 +3,30 @@
 // a light refresh (the case list only, not the whole library) that also patches the case
 // counts the sidebar reads from `session.library.cases`.
 import {
+  type CaseExportFormat,
   type CaseInfo,
   type CaseMeta,
+  type MergeDone,
+  type MergePlan,
+  type MergeTarget,
   type SmartCase,
+  type TransferDone,
+  type TransferNewDone,
+  type TransferPlan,
   addTracksToCase,
   caseTracks,
   createCase,
   deleteCase,
+  deleteCases,
   deleteSmartCase,
+  duplicateCase,
+  exportCase,
+  exportSmartCase,
   favouriteIds,
   listCases,
   listSmartCases,
-  refreshSmartDeviceCases,
+  mergeCases,
+  mergePreview,
   removeTracksFromCase,
   renameCase,
   saveSmartCase,
@@ -23,10 +35,18 @@ import {
   setSmartCaseOnDevice,
   smartCaseCounts,
   toggleFavourite,
+  transferPreview,
+  transferToNewCase,
+  transferTracks,
 } from "$lib/api/cases";
+import { pickSavePath } from "$lib/api/import";
 import type { Collection } from "$lib/api/types";
+import { baseName } from "$lib/format";
+import { caseExport } from "./caseExport.svelte";
+import { EXT, FORMAT_LABEL, saveSuggestion } from "./exportLogic";
 import { jobs } from "./jobs.svelte";
 import { session } from "./session.svelte";
+import { referencedCases } from "./smartRules";
 import { toast } from "./toast.svelte";
 
 class Cases {
@@ -42,6 +62,8 @@ class Cases {
   smart = $state<SmartCase[]>([]);
   /** Match count per smart case id. */
   smartCounts = $state<Record<number, number>>({});
+  /** Why a smart case cannot be evaluated right now (a rule names a case that was deleted), by id. */
+  smartErrors = $state<Record<number, string>>({});
   /** The smart case being viewed: its id, 0 for a new unsaved one, null for none. */
   smartOpen = $state<number | null>(null);
   busy = $state(false);
@@ -180,6 +202,106 @@ class Cases {
     }
   }
 
+  // ---- organising ---------------------------------------------------------------------------
+
+  /** A copy of a case under a new name (same tracks, order and metadata); returns its id. */
+  duplicate(caseId: number, name: string) {
+    return this.#write((root) => duplicateCase(root, caseId, name.trim()));
+  }
+
+  /** What a merge would add, computed by the same code the merge runs. */
+  async previewMerge(sourceIds: number[], target: number | null): Promise<MergePlan | undefined> {
+    const root = this.#root();
+    if (!root) return undefined;
+    try {
+      return await mergePreview(root, sourceIds, target);
+    } catch (e) {
+      session.error = String(e);
+      return undefined;
+    }
+  }
+
+  /** Merges cases without repeats into a new or an existing case; optionally deletes the sources.
+   *  The open case follows: reloaded if it received tracks, closed if it was deleted. */
+  async merge(sourceIds: number[], to: MergeTarget, deleteSources: boolean): Promise<MergeDone | undefined> {
+    const done = await this.#write((root) => mergeCases(root, sourceIds, to, deleteSources));
+    if (done && this.open) await this.#reloadOpen();
+    return done;
+  }
+
+  /** What copying / moving tracks between cases would do. */
+  async previewTransfer(from: number | null, to: number, ids: number[], move: boolean): Promise<TransferPlan | undefined> {
+    const root = this.#root();
+    if (!root) return undefined;
+    try {
+      return await transferPreview(root, from, to, ids, move);
+    } catch (e) {
+      session.error = String(e);
+      return undefined;
+    }
+  }
+
+  /** Copies (or moves, taking them out of `from`) tracks into case `to`. */
+  async transfer(from: number | null, to: number, ids: number[], move: boolean): Promise<TransferDone | undefined> {
+    const done = await this.#write((root) => transferTracks(root, from, to, ids, move));
+    if (done && this.open && (this.open.id === from || this.open.id === to)) await this.#reloadOpen();
+    return done;
+  }
+
+  /** Copies / moves tracks into a case created by the same write (nothing is left behind if it
+   *  fails); returns what was done, with the new case's id. */
+  async transferToNew(from: number | null, name: string, ids: number[], move: boolean): Promise<TransferNewDone | undefined> {
+    const done = await this.#write((root) => transferToNewCase(root, from, name.trim(), ids, move));
+    if (done && this.open && this.open.id === from) await this.#reloadOpen();
+    return done;
+  }
+
+  /** Deletes several cases in one transaction; returns how many went. */
+  async removeMany(caseIds: number[]) {
+    return this.#write((root) => deleteCases(root, caseIds));
+  }
+
+  /** Tracks dropped on a case (from a table): appended, repeats skipped; says what happened. */
+  async dropTracks(caseId: number, name: string, ids: number[]) {
+    const n = await this.addTracks(caseId, ids);
+    if (n === undefined) return;
+    const noun = (k: number) => `${k} track${k === 1 ? "" : "s"}`;
+    toast.show(n === 0 ? `Already in “${name}”` : n < ids.length ? `Added ${noun(n)} to “${name}” (${ids.length - n} already there)` : `Added ${noun(n)} to “${name}”`, "ok");
+  }
+
+  /** Asks where to save, then writes the case as M3U8, CSV or rekordbox XML. */
+  async exportOne(c: { id: number; name: string }, format: CaseExportFormat) {
+    const root = this.#root();
+    if (!root) return;
+    try {
+      await caseExport.ensure();
+      const dest = await pickSavePath(saveSuggestion(caseExport.saved, c.name, EXT[format]), FORMAT_LABEL[format], EXT[format]);
+      if (!dest) return;
+      const r = await exportCase(root, c.id, format, dest);
+      toast.show(`Saved ${r.tracks} track${r.tracks === 1 ? "" : "s"} to ${baseName(r.path)}`, "ok");
+      void caseExport.rememberQuick(dest, format);
+    } catch (e) {
+      toast.show(`Could not export: ${e}`, "bad", 8000);
+    }
+  }
+
+  /** Asks where to save, then writes a smart case as it matches right now (M3U8, CSV or rekordbox
+   *  XML: rekordbox XML cannot hold rules, so it is an ordinary playlist of those tracks). */
+  async exportSmart(s: { id: number; name: string }, format: CaseExportFormat) {
+    const root = this.#root();
+    if (!root) return;
+    try {
+      await caseExport.ensure();
+      const dest = await pickSavePath(saveSuggestion(caseExport.saved, s.name, EXT[format], "smart case"), FORMAT_LABEL[format], EXT[format]);
+      if (!dest) return;
+      const r = await exportSmartCase(root, s.id, format, dest);
+      toast.show(`Saved ${r.tracks} track${r.tracks === 1 ? "" : "s"} that “${s.name}” matches now to ${baseName(r.path)}`, "ok", 6000);
+      void caseExport.rememberQuick(dest, format);
+    } catch (e) {
+      toast.show(`Could not export: ${e}`, "bad", 8000);
+    }
+  }
+
   /** The heart on a track: adds it to / removes it from the "Favourites" case. */
   async toggleFavourite(trackId: number) {
     const now = await this.#write((root) => toggleFavourite(root, trackId));
@@ -205,14 +327,24 @@ class Cases {
     const root = this.#root();
     if (!root || this.smart.length === 0) {
       this.smartCounts = {};
+      this.smartErrors = {};
       return;
     }
     try {
       const counts = await smartCaseCounts(root);
-      if (this.#root() === root) this.smartCounts = Object.fromEntries(counts.map((c) => [c.id, c.count]));
+      if (this.#root() === root) {
+        this.smartCounts = Object.fromEntries(counts.filter((c) => !c.error).map((c) => [c.id, c.count]));
+        this.smartErrors = Object.fromEntries(counts.filter((c) => c.error).map((c) => [c.id, c.error as string]));
+      }
     } catch (e) {
       session.error = String(e);
     }
+  }
+
+  /** Names of the smart cases whose rules read any of these cases (deleting one breaks them until fixed). */
+  smartCasesUsing(caseIds: number[]): string[] {
+    const gone = new Set(caseIds);
+    return this.smart.filter((s) => [...referencedCases(s.rules)].some((id) => gone.has(id))).map((s) => s.name);
   }
 
   openSmart(id: number) {
@@ -260,16 +392,6 @@ class Cases {
     return copy;
   }
 
-  /** Re-runs every smart case that is on the Pacemaker and rewrites its device case. */
-  async refreshDeviceCopies() {
-    const done = await this.#write((root) => refreshSmartDeviceCases(root));
-    if (done) {
-      await this.loadSmart();
-      toast.show(done.length === 0 ? "No smart case is on the Pacemaker" : `Refreshed ${done.length} smart case${done.length === 1 ? "" : "s"} on the Pacemaker`, "ok");
-    }
-    return done;
-  }
-
   reset() {
     this.close();
     this.infos = [];
@@ -277,6 +399,7 @@ class Cases {
     this.favourites = new Set();
     this.smart = [];
     this.smartCounts = {};
+    this.smartErrors = {};
   }
 }
 

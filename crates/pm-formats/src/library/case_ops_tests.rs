@@ -4,7 +4,7 @@ use super::*;
 
 /// A library in a temp dir with one synthetic track per entry of `secs`; returns it, the
 /// dirs to clean up and the track ids.
-fn library_with_tracks(tag: &str, secs: &[i64]) -> (Library, Vec<PathBuf>, Vec<i64>) {
+pub(super) fn library_with_tracks(tag: &str, secs: &[i64]) -> (Library, Vec<PathBuf>, Vec<i64>) {
     let base = std::env::temp_dir();
     let vol = base.join(format!("pm-caseops-{tag}-vol-{}", std::process::id()));
     let src_dir = base.join(format!("pm-caseops-{tag}-src-{}", std::process::id()));
@@ -29,7 +29,7 @@ fn library_with_tracks(tag: &str, secs: &[i64]) -> (Library, Vec<PathBuf>, Vec<i
     (lib, vec![vol, src_dir], ids)
 }
 
-fn cleanup(lib: Library, dirs: Vec<PathBuf>) {
+pub(super) fn cleanup(lib: Library, dirs: Vec<PathBuf>) {
     drop(lib); // Windows won't delete a database file that is still open
     for d in dirs {
         std::fs::remove_dir_all(d).unwrap();

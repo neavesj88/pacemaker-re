@@ -2,44 +2,31 @@
 //! device case. The rules live in the app's config dir (one JSON file per library), never on
 //! the device; only an explicit "Put on Pacemaker" writes anything to music.db, and that goes
 //! through pm-formats `Library` like every other case write.
+//!
+//! The rule engine (rules, nested groups, order, limit, validation, evaluation) is in
+//! `smart/rules.rs`; this file is the store and the device copy.
 
-use std::collections::HashSet;
+mod rules;
+#[cfg(test)]
+mod rules_tests;
+
 use std::path::{Path, PathBuf};
 
-use pm_formats::library::{Error, Library, MAX_CASE_NAME_CHARS, MAX_RATING, Track};
+use pm_formats::library::{Error, Library, MAX_CASE_NAME_CHARS};
 use serde::{Deserialize, Serialize};
+
+pub use rules::{Data, Eval, Query, evaluate, migrate, referenced_cases, validate_query};
+#[cfg(test)]
+pub use rules::{Rule, Sort, SortField};
 
 /// Prefix of the device case a smart case is materialised as, so it is recognisable on the
 /// device and in the Cases list. (How the device's font draws the star is not verified.)
 pub const DEVICE_PREFIX: &str = "\u{2605} ";
 
-const MS_PER_DAY: i64 = 86_400_000;
-
-/// One condition. A smart case matches a track when every one of its rules does.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
-pub enum Rule {
-    /// Rating of at least `stars` (1 to 5).
-    RatingMin { stars: u8 },
-    /// In the "Favourites" case (`value` true) or not in it (false).
-    Favourite { value: bool },
-    /// Never played.
-    PlaysZero,
-    /// Played at least `n` times.
-    PlaysMin { n: i64 },
-    /// Last played within the last `days` days.
-    PlayedWithin { days: i64 },
-    /// BPM between `min` and `max`, either optional. Tracks without a BPM never match.
-    BpmRange { min: Option<f64>, max: Option<f64> },
-    /// The track's key is exactly this one (any notation, compared as Camelot).
-    Key { key: String },
-    /// The track's key mixes with this one: same, +-1 on the wheel, or the relative key.
-    KeyCompatible { key: String },
-    /// Genre contains this text, ignoring case.
-    Genre { text: String },
-    /// Has been analysed (`true`) or has not (`false`).
-    Analysed { value: bool },
-}
+/// The version the store file is written as. 1 (no `version` field) held a flat AND list of the
+/// original rules and no order or limit; every one of its fields is still read, and the old
+/// genre rule is rewritten as a text rule on load (see [`rules::migrate`]).
+const STORE_VERSION: u32 = 2;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SmartCase {
@@ -47,7 +34,9 @@ pub struct SmartCase {
     #[serde(default)]
     pub id: u32,
     pub name: String,
-    pub rules: Vec<Rule>,
+    /// The rules (a flat list read as before: `mode` defaults to "all"), order and limit.
+    #[serde(flatten)]
+    pub query: Query,
     /// The user asked for this to exist as a case on the Pacemaker.
     #[serde(default)]
     pub on_device: bool,
@@ -56,81 +45,16 @@ pub struct SmartCase {
     pub device_case_id: Option<i64>,
 }
 
-#[derive(Debug, Default, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 struct SmartFile {
+    /// Absent in files written before smart cases had groups, order and limits (= 1).
+    #[serde(default)]
+    version: u32,
     smart_cases: Vec<SmartCase>,
 }
 
-// ---- keys --------------------------------------------------------------------------------
-
-/// A key on the Camelot wheel: number 1 to 12 and `minor` (the "A" ring) or major ("B").
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Camelot {
-    pub number: u8,
-    pub minor: bool,
-}
-
-// Camelot number by pitch class (C = 0 ... B = 11).
-const MINOR_NUMBER: [u8; 12] = [5, 12, 7, 2, 9, 4, 11, 6, 1, 8, 3, 10];
-const MAJOR_NUMBER: [u8; 12] = [8, 3, 10, 5, 12, 7, 2, 9, 4, 11, 6, 1];
-
-impl Camelot {
-    /// Parses "8A", "08b", "Am", "A minor", "F#m", "Ab Minor", "C", "C major", "Cmaj", "Dbmin".
-    /// `None` for anything else, including the empty string.
-    pub fn parse(text: &str) -> Option<Camelot> {
-        let t = text.trim();
-        let b = t.as_bytes();
-        let digits = b.iter().take_while(|c| c.is_ascii_digit()).count();
-        if (1..=2).contains(&digits) && b.len() == digits + 1 {
-            let number: u8 = t[..digits].parse().ok()?;
-            let minor = match b[digits].to_ascii_lowercase() {
-                b'a' => true,
-                b'b' => false,
-                _ => return None,
-            };
-            return ((1..=12).contains(&number)).then_some(Camelot { number, minor });
-        }
-        let mut chars = t.chars();
-        let mut pc: i32 = match chars.next()?.to_ascii_uppercase() {
-            'C' => 0,
-            'D' => 2,
-            'E' => 4,
-            'F' => 5,
-            'G' => 7,
-            'A' => 9,
-            'B' => 11,
-            _ => return None,
-        };
-        let rest = chars.as_str();
-        let (accidental, rest) = match rest.chars().next() {
-            Some('#' | '\u{266f}') => (1, &rest[rest.chars().next()?.len_utf8()..]),
-            Some('b' | '\u{266d}') => (-1, &rest[rest.chars().next()?.len_utf8()..]),
-            _ => (0, rest),
-        };
-        pc = (pc + accidental).rem_euclid(12);
-        let minor = match rest.trim().to_lowercase().as_str() {
-            "" | "maj" | "major" => false,
-            "m" | "min" | "minor" => true,
-            _ => return None,
-        };
-        let number = if minor { MINOR_NUMBER[pc as usize] } else { MAJOR_NUMBER[pc as usize] };
-        Some(Camelot { number, minor })
-    }
-
-    /// Same key, one step either way round the wheel, or the relative major/minor.
-    pub fn compatible(self, other: Camelot) -> bool {
-        if self.number == other.number {
-            return true;
-        }
-        let step = (i32::from(self.number) - i32::from(other.number)).rem_euclid(12);
-        self.minor == other.minor && (step == 1 || step == 11)
-    }
-}
-
-// ---- rules -------------------------------------------------------------------------------
-
-/// Why a rule set cannot be saved or run; worded for the user.
-pub fn validate(name: &str, rules: &[Rule]) -> Result<(), String> {
+/// Why a smart case cannot be saved or run; worded for the user.
+pub fn validate(name: &str, q: &Query) -> Result<(), String> {
     if name.trim().is_empty() {
         return Err("The smart case needs a name.".into());
     }
@@ -139,73 +63,15 @@ pub fn validate(name: &str, rules: &[Rule]) -> Result<(), String> {
         let max = MAX_CASE_NAME_CHARS - DEVICE_PREFIX.chars().count();
         return Err(format!("The smart case name is too long (at most {max} characters)."));
     }
-    validate_rules(rules)
+    validate_query(q)
 }
 
-/// The rule half of [`validate`]: what the rule builder needs for its live count.
-pub fn validate_rules(rules: &[Rule]) -> Result<(), String> {
-    if rules.is_empty() {
-        return Err("Add at least one rule.".into());
-    }
-    for r in rules {
-        match r {
-            Rule::RatingMin { stars } if !(1..=MAX_RATING).contains(stars) => {
-                return Err(format!("A rating rule needs 1 to {MAX_RATING} stars."));
-            }
-            Rule::PlaysMin { n } if *n < 1 => return Err("A plays rule needs a count of 1 or more.".into()),
-            Rule::PlayedWithin { days } if *days < 1 => return Err("A last-played rule needs 1 day or more.".into()),
-            Rule::BpmRange { min, max } => {
-                if min.is_none() && max.is_none() {
-                    return Err("A BPM rule needs a minimum, a maximum or both.".into());
-                }
-                if min.is_some_and(|v| !v.is_finite() || v < 0.0) || max.is_some_and(|v| !v.is_finite() || v < 0.0) {
-                    return Err("BPM values must be positive numbers.".into());
-                }
-                if let (Some(lo), Some(hi)) = (min, max)
-                    && lo > hi
-                {
-                    return Err("The BPM minimum is above the maximum.".into());
-                }
-            }
-            Rule::Key { key } | Rule::KeyCompatible { key } if Camelot::parse(key).is_none() => {
-                return Err(format!("\"{key}\" is not a key (try 8A or Am)."));
-            }
-            Rule::Genre { text } if text.trim().is_empty() => return Err("A genre rule needs some text.".into()),
-            _ => {}
-        }
-    }
-    Ok(())
-}
-
-/// What the rules need to know besides the track itself.
-pub struct Context<'a> {
-    pub favourites: &'a HashSet<i64>,
-    pub now_ms: i64,
-}
-
-pub fn rule_matches(rule: &Rule, t: &Track, cx: &Context) -> bool {
-    match rule {
-        Rule::RatingMin { stars } => t.rating >= i64::from(*stars),
-        Rule::Favourite { value } => cx.favourites.contains(&t.track_id) == *value,
-        Rule::PlaysZero => t.times_played == 0,
-        Rule::PlaysMin { n } => t.times_played >= *n,
-        Rule::PlayedWithin { days } => t.last_played > 0 && t.last_played >= cx.now_ms - days.saturating_mul(MS_PER_DAY),
-        Rule::BpmRange { min, max } => t.bpm > 0.0 && min.is_none_or(|lo| t.bpm >= lo) && max.is_none_or(|hi| t.bpm <= hi),
-        Rule::Key { key } => matches!((Camelot::parse(key), Camelot::parse(&t.key)), (Some(a), Some(b)) if a == b),
-        Rule::KeyCompatible { key } => {
-            matches!((Camelot::parse(key), Camelot::parse(&t.key)), (Some(a), Some(b)) if a.compatible(b))
-        }
-        Rule::Genre { text } => t.genre.to_lowercase().contains(&text.trim().to_lowercase()),
-        Rule::Analysed { value } => t.analysed == *value,
-    }
-}
-
-/// Ids of the tracks matching every rule, ordered by artist, title, then id so a materialised
-/// case comes out in a stable, readable order. Invalid rules match nothing.
-pub fn evaluate(rules: &[Rule], tracks: &[Track], cx: &Context) -> Vec<i64> {
-    let mut hits: Vec<&Track> = tracks.iter().filter(|t| rules.iter().all(|r| rule_matches(r, t, cx))).collect();
-    hits.sort_by_cached_key(|t| (t.artist.to_lowercase(), t.title.to_lowercase(), t.track_id));
-    hits.into_iter().map(|t| t.track_id).collect()
+/// Whether the rules refer to this case id (a smart case must not read its own device copy:
+/// the copy is rebuilt from the rules, so the answer would depend on the last refresh).
+pub fn refers_to_case(q: &Query, case_id: i64) -> bool {
+    let mut ids = std::collections::HashSet::new();
+    referenced_cases(&q.rules, &mut ids);
+    ids.contains(&case_id)
 }
 
 // ---- storage -----------------------------------------------------------------------------
@@ -224,9 +90,13 @@ pub fn store_path(dir: &Path, root: &str) -> PathBuf {
 pub fn load(dir: &Path, root: &str) -> Result<Vec<SmartCase>, String> {
     let p = store_path(dir, root);
     match std::fs::read_to_string(&p) {
-        Ok(s) => serde_json::from_str::<SmartFile>(&s)
-            .map(|f| f.smart_cases)
-            .map_err(|e| format!("{} is not readable: {e}", p.display())),
+        Ok(s) => {
+            let mut f = serde_json::from_str::<SmartFile>(&s).map_err(|e| format!("{} is not readable: {e}", p.display()))?;
+            for sc in &mut f.smart_cases {
+                migrate(&mut sc.query.rules);
+            }
+            Ok(f.smart_cases)
+        }
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Vec::new()),
         Err(e) => Err(format!("{}: {e}", p.display())),
     }
@@ -235,26 +105,44 @@ pub fn load(dir: &Path, root: &str) -> Result<Vec<SmartCase>, String> {
 fn save_all(dir: &Path, root: &str, list: Vec<SmartCase>) -> Result<(), String> {
     std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
     let p = store_path(dir, root);
+    keep_old_version(&p)?;
     let tmp = p.with_extension("json.tmp");
-    let text = serde_json::to_string_pretty(&SmartFile { smart_cases: list }).map_err(|e| e.to_string())?;
+    let text = serde_json::to_string_pretty(&SmartFile { version: STORE_VERSION, smart_cases: list }).map_err(|e| e.to_string())?;
     std::fs::write(&tmp, text).map_err(|e| e.to_string())?;
     std::fs::rename(&tmp, &p).map_err(|e| e.to_string())
+}
+
+/// Before the first write over a file an older version of the app wrote, keeps a copy of it
+/// next to it (`...json.v1.bak`), so a downgrade or a bad migration loses nothing. An existing
+/// backup is never overwritten.
+fn keep_old_version(p: &Path) -> Result<(), String> {
+    let Ok(text) = std::fs::read_to_string(p) else {
+        return Ok(()); // no file yet (an unreadable one makes `load` refuse before we get here)
+    };
+    let old = serde_json::from_str::<serde_json::Value>(&text).ok().and_then(|v| v.get("version").and_then(|n| n.as_u64())).unwrap_or(1);
+    let bak = p.with_extension("json.v1.bak");
+    if old < u64::from(STORE_VERSION) && !bak.exists() {
+        std::fs::write(&bak, text).map_err(|e| e.to_string())?;
+    }
+    Ok(())
 }
 
 /// Saves a new (id 0) or existing smart case. The on-device fields of an existing one are kept
 /// from the store, not taken from the caller, so an editor holding a stale copy cannot detach
 /// or re-attach a device case. Returns the stored smart case.
 pub fn save(dir: &Path, root: &str, incoming: SmartCase) -> Result<SmartCase, String> {
-    validate(&incoming.name, &incoming.rules)?;
+    let mut incoming = incoming;
+    migrate(&mut incoming.query.rules);
+    validate(&incoming.name, &incoming.query)?;
     let mut list = load(dir, root)?;
     let name = incoming.name.trim().to_string();
     let stored = if let Some(cur) = list.iter_mut().find(|s| s.id == incoming.id && incoming.id != 0) {
         cur.name = name;
-        cur.rules = incoming.rules;
+        cur.query = incoming.query;
         cur.clone()
     } else {
         let id = list.iter().map(|s| s.id).max().unwrap_or(0) + 1;
-        let fresh = SmartCase { id, name, rules: incoming.rules, on_device: false, device_case_id: None };
+        let fresh = SmartCase { id, name, query: incoming.query, on_device: false, device_case_id: None };
         list.push(fresh.clone());
         fresh
     };
@@ -293,7 +181,7 @@ pub fn device_name(sc: &SmartCase) -> String {
 /// The device case a smart case remembers, but only while it is still ours: the id must exist
 /// and the case must still carry [`DEVICE_PREFIX`]. A different card mounted at the same path,
 /// or a case the user renamed and repurposed, fails this and is left alone.
-fn owned_device_case(lib: &Library, sc: &SmartCase) -> Result<Option<i64>, Error> {
+pub(super) fn owned_device_case(lib: &Library, sc: &SmartCase) -> Result<Option<i64>, Error> {
     let Some(id) = sc.device_case_id else {
         return Ok(None);
     };
@@ -329,206 +217,8 @@ pub fn take_off_device(lib: &mut Library, sc: &SmartCase) -> Result<bool, Error>
 
 #[cfg(test)]
 mod tests {
+    use super::rules::Rule;
     use super::*;
-
-    fn track(id: i64) -> Track {
-        Track {
-            track_id: id,
-            title: format!("T{id}"),
-            artist: "A".into(),
-            album: String::new(),
-            genre: "House".into(),
-            bpm: 128.0,
-            key: "8A".into(),
-            play_time_secs: 200,
-            rating: 3,
-            location: String::new(),
-            file_size: 0,
-            format: "MP3".into(),
-            analysed: true,
-            times_played: 0,
-            last_played: -1,
-            year: 0,
-            label: String::new(),
-            remixer: String::new(),
-            composer: String::new(),
-            comments: String::new(),
-            date_added: -1,
-            bit_rate: 0,
-        }
-    }
-
-    fn cx(favs: &HashSet<i64>) -> Context<'_> {
-        Context { favourites: favs, now_ms: 100 * MS_PER_DAY }
-    }
-
-    fn only(rule: Rule, t: &Track) -> bool {
-        let favs = HashSet::from([t.track_id]);
-        rule_matches(&rule, t, &cx(&favs))
-    }
-
-    #[test]
-    fn camelot_parsing_covers_every_notation() {
-        let c = |n, minor| Some(Camelot { number: n, minor });
-        assert_eq!(Camelot::parse("8A"), c(8, true));
-        assert_eq!(Camelot::parse(" 08b "), c(8, false));
-        assert_eq!(Camelot::parse("12a"), c(12, true));
-        assert_eq!(Camelot::parse("13A"), None);
-        assert_eq!(Camelot::parse("0A"), None);
-        assert_eq!(Camelot::parse("8C"), None);
-        assert_eq!(Camelot::parse("Am"), c(8, true));
-        assert_eq!(Camelot::parse("A minor"), c(8, true));
-        assert_eq!(Camelot::parse("C"), c(8, false));
-        assert_eq!(Camelot::parse("C major"), c(8, false));
-        assert_eq!(Camelot::parse("Cmaj"), c(8, false));
-        assert_eq!(Camelot::parse("F#m"), c(11, true));
-        assert_eq!(Camelot::parse("Gbm"), c(11, true));
-        assert_eq!(Camelot::parse("Ab Minor"), c(1, true));
-        assert_eq!(Camelot::parse("G#min"), c(1, true));
-        assert_eq!(Camelot::parse("Bb"), c(6, false));
-        assert_eq!(Camelot::parse("B"), c(1, false));
-        assert_eq!(Camelot::parse("Bm"), c(10, true));
-        assert_eq!(Camelot::parse("Cb"), c(1, false)); // Cb = B
-        assert_eq!(Camelot::parse("E#m"), c(4, true)); // E# = F
-        assert_eq!(Camelot::parse("A\u{266d}m"), c(1, true));
-        assert_eq!(Camelot::parse(""), None);
-        assert_eq!(Camelot::parse("H"), None);
-        assert_eq!(Camelot::parse("Amajor7"), None);
-        // relative keys share a number
-        assert_eq!(Camelot::parse("Am").unwrap().number, Camelot::parse("C").unwrap().number);
-        assert_eq!(Camelot::parse("F#m").unwrap().number, Camelot::parse("A").unwrap().number);
-    }
-
-    #[test]
-    fn camelot_compatibility_wraps_the_wheel() {
-        let k = |s: &str| Camelot::parse(s).unwrap();
-        assert!(k("8A").compatible(k("8A")));
-        assert!(k("8A").compatible(k("9A")));
-        assert!(k("8A").compatible(k("7A")));
-        assert!(k("8A").compatible(k("8B")));
-        assert!(!k("8A").compatible(k("9B")));
-        assert!(!k("8A").compatible(k("10A")));
-        assert!(k("12A").compatible(k("1A")), "wraps 12 -> 1");
-        assert!(k("1B").compatible(k("12B")));
-        assert!(!k("12A").compatible(k("2A")));
-        assert!(k("Am").compatible(k("Dm")), "7A is next to 8A");
-    }
-
-    #[test]
-    fn each_rule_matches_what_it_says() {
-        let mut t = track(1);
-        assert!(only(Rule::RatingMin { stars: 3 }, &t));
-        assert!(!only(Rule::RatingMin { stars: 4 }, &t));
-        assert!(only(Rule::Favourite { value: true }, &t));
-        assert!(!only(Rule::Favourite { value: false }, &t));
-        let none = HashSet::new();
-        assert!(rule_matches(&Rule::Favourite { value: false }, &t, &cx(&none)));
-
-        assert!(only(Rule::PlaysZero, &t));
-        assert!(!only(Rule::PlaysMin { n: 1 }, &t));
-        t.times_played = 5;
-        assert!(!only(Rule::PlaysZero, &t));
-        assert!(only(Rule::PlaysMin { n: 5 }, &t));
-        assert!(!only(Rule::PlaysMin { n: 6 }, &t));
-
-        // last played: never (-1) and 0 never match; the window is inclusive
-        assert!(!only(Rule::PlayedWithin { days: 30 }, &t));
-        t.last_played = 0;
-        assert!(!only(Rule::PlayedWithin { days: 30 }, &t));
-        t.last_played = 100 * MS_PER_DAY - 10 * MS_PER_DAY;
-        assert!(only(Rule::PlayedWithin { days: 10 }, &t));
-        assert!(!only(Rule::PlayedWithin { days: 9 }, &t));
-
-        assert!(only(Rule::BpmRange { min: Some(128.0), max: Some(128.0) }, &t));
-        assert!(only(Rule::BpmRange { min: Some(120.0), max: None }, &t));
-        assert!(only(Rule::BpmRange { min: None, max: Some(130.0) }, &t));
-        assert!(!only(Rule::BpmRange { min: Some(128.5), max: None }, &t));
-        assert!(!only(Rule::BpmRange { min: None, max: Some(127.9) }, &t));
-        t.bpm = 0.0;
-        assert!(!only(Rule::BpmRange { min: None, max: Some(200.0) }, &t), "no BPM never matches");
-
-        t.key = "Am".into();
-        assert!(only(Rule::Key { key: "8A".into() }, &t), "notation does not matter");
-        assert!(!only(Rule::Key { key: "9A".into() }, &t));
-        assert!(only(Rule::KeyCompatible { key: "9A".into() }, &t));
-        assert!(only(Rule::KeyCompatible { key: "C".into() }, &t));
-        assert!(!only(Rule::KeyCompatible { key: "3B".into() }, &t));
-        t.key = String::new();
-        assert!(!only(Rule::Key { key: "8A".into() }, &t), "unknown key never matches");
-        assert!(!only(Rule::KeyCompatible { key: "8A".into() }, &t));
-        assert!(!only(Rule::Key { key: "nonsense".into() }, &track(2)), "invalid rule key matches nothing");
-
-        assert!(only(Rule::Genre { text: "hou".into() }, &t));
-        assert!(only(Rule::Genre { text: " HOUSE ".into() }, &t));
-        assert!(!only(Rule::Genre { text: "techno".into() }, &t));
-
-        assert!(only(Rule::Analysed { value: true }, &t));
-        assert!(!only(Rule::Analysed { value: false }, &t));
-        t.analysed = false;
-        assert!(only(Rule::Analysed { value: false }, &t));
-    }
-
-    #[test]
-    fn evaluate_ands_the_rules_and_orders_by_artist_title() {
-        let mut a = track(1);
-        a.artist = "zed".into();
-        a.rating = 5;
-        let mut b = track(2);
-        b.artist = "Alpha".into();
-        b.title = "second".into();
-        b.rating = 5;
-        let mut c = track(3);
-        c.artist = "alpha".into();
-        c.title = "First".into();
-        c.rating = 5;
-        let mut d = track(4);
-        d.rating = 2;
-        let tracks = vec![a, b, c, d];
-        let favs = HashSet::from([1, 2, 3]);
-        let rules = [Rule::RatingMin { stars: 4 }, Rule::Favourite { value: true }];
-        assert_eq!(evaluate(&rules, &tracks, &cx(&favs)), vec![3, 2, 1]);
-        let rules = [Rule::RatingMin { stars: 4 }, Rule::BpmRange { min: Some(200.0), max: None }];
-        assert!(evaluate(&rules, &tracks, &cx(&favs)).is_empty());
-        assert_eq!(evaluate(&[], &tracks, &cx(&favs)).len(), 4, "no rules = every track (validate refuses to save that)");
-    }
-
-    #[test]
-    fn validate_explains_every_refusal() {
-        let ok = [Rule::PlaysZero];
-        assert!(validate("Name", &ok).is_ok());
-        assert!(validate("  ", &ok).is_err());
-        assert!(validate("Name", &[]).is_err());
-        for bad in [
-            Rule::RatingMin { stars: 0 },
-            Rule::RatingMin { stars: 6 },
-            Rule::PlaysMin { n: 0 },
-            Rule::PlayedWithin { days: 0 },
-            Rule::BpmRange { min: None, max: None },
-            Rule::BpmRange { min: Some(140.0), max: Some(120.0) },
-            Rule::BpmRange { min: Some(-1.0), max: None },
-            Rule::BpmRange { min: Some(f64::NAN), max: None },
-            Rule::Key { key: "x".into() },
-            Rule::KeyCompatible { key: String::new() },
-            Rule::Genre { text: "  ".into() },
-        ] {
-            assert!(validate("Name", std::slice::from_ref(&bad)).is_err(), "{bad:?}");
-        }
-        assert!(validate("Name", &[Rule::BpmRange { min: Some(120.0), max: Some(120.0) }, Rule::Key { key: "Am".into() }]).is_ok());
-    }
-
-    #[test]
-    fn rules_round_trip_through_json_in_the_shape_the_ui_sends() {
-        let json = r#"[{"kind":"rating_min","stars":4},{"kind":"plays_zero"},{"kind":"bpm_range","min":120,"max":null},
-                       {"kind":"bpm_range"},{"kind":"key_compatible","key":"8A"},{"kind":"played_within","days":30}]"#;
-        let rules: Vec<Rule> = serde_json::from_str(json).unwrap();
-        assert_eq!(rules[0], Rule::RatingMin { stars: 4 });
-        assert_eq!(rules[1], Rule::PlaysZero);
-        assert_eq!(rules[2], Rule::BpmRange { min: Some(120.0), max: None });
-        assert_eq!(rules[3], Rule::BpmRange { min: None, max: None });
-        let back: Vec<Rule> = serde_json::from_str(&serde_json::to_string(&rules).unwrap()).unwrap();
-        assert_eq!(back, rules);
-        assert!(serde_json::from_str::<Rule>(r#"{"kind":"nope"}"#).is_err());
-    }
 
     fn temp_dir(tag: &str) -> PathBuf {
         let d = std::env::temp_dir().join(format!("pmr-smart-{tag}-{}", std::process::id()));
@@ -537,7 +227,7 @@ mod tests {
     }
 
     fn sc(name: &str) -> SmartCase {
-        SmartCase { id: 0, name: name.into(), rules: vec![Rule::PlaysZero], on_device: false, device_case_id: None }
+        SmartCase { id: 0, name: name.into(), query: Query { rules: vec![Rule::PlaysZero], ..Default::default() }, on_device: false, device_case_id: None }
     }
 
     #[test]
@@ -559,15 +249,15 @@ mod tests {
         attached.on_device = true;
         attached.device_case_id = Some(9);
         update(&dir, "P:\\", &attached).unwrap();
-        let edited = save(&dir, "P:\\", SmartCase { id: 1, name: " Renamed ".into(), rules: vec![Rule::PlaysMin { n: 3 }], on_device: false, device_case_id: None }).unwrap();
+        let edited = save(&dir, "P:\\", SmartCase { id: 1, name: " Renamed ".into(), query: Query { rules: vec![Rule::PlaysMin { n: 3 }], ..Default::default() }, on_device: false, device_case_id: None }).unwrap();
         assert_eq!((edited.name.as_str(), edited.on_device, edited.device_case_id), ("Renamed", true, Some(9)));
-        assert_eq!(edited.rules, vec![Rule::PlaysMin { n: 3 }]);
+        assert_eq!(edited.query.rules, vec![Rule::PlaysMin { n: 3 }]);
 
         // an unknown id is stored as a new one rather than overwriting; invalid input never writes
         let c = save(&dir, "P:\\", SmartCase { id: 77, ..sc("Three") }).unwrap();
         assert_eq!(c.id, 3);
         assert!(save(&dir, "P:\\", sc("")).is_err());
-        assert!(save(&dir, "P:\\", SmartCase { rules: vec![], ..sc("Empty") }).is_err());
+        assert!(save(&dir, "P:\\", SmartCase { query: Query::default(), ..sc("Empty") }).is_err());
         assert_eq!(load(&dir, "P:\\").unwrap().len(), 3);
         assert!(update(&dir, "P:\\", &SmartCase { id: 99, ..sc("x") }).is_err());
 
@@ -580,6 +270,62 @@ mod tests {
         std::fs::write(store_path(&dir, "P:\\"), "not json").unwrap();
         assert!(load(&dir, "P:\\").is_err(), "a corrupt file is reported, not silently emptied");
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_version_1_file_loads_migrates_and_is_backed_up_before_its_first_rewrite() {
+        use rules::{Mode, Sort, SortField, TextField, TextOp};
+        let dir = temp_dir("legacy");
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = store_path(&dir, "P:\\");
+        // exactly the shape the first version wrote: no version, a flat rules list, no mode/sort/limit
+        let old = r#"{"smart_cases":[
+            {"id":1,"name":"Old","rules":[{"kind":"rating_min","stars":4},{"kind":"genre","text":"house"},{"kind":"bpm_range","min":120,"max":null}],"on_device":true,"device_case_id":5},
+            {"id":2,"name":"Plain","rules":[{"kind":"plays_zero"}]}]}"#;
+        std::fs::write(&path, old).unwrap();
+
+        let list = load(&dir, "P:\\").unwrap();
+        assert_eq!(list.len(), 2);
+        let first = &list[0];
+        assert_eq!((first.query.mode, first.query.sort, first.query.limit), (Mode::All, None, None));
+        assert_eq!((first.on_device, first.device_case_id), (true, Some(5)));
+        assert_eq!(first.query.rules[0], Rule::RatingMin { stars: 4 });
+        assert_eq!(first.query.rules[1], Rule::Text { field: TextField::Genre, op: TextOp::Contains, text: "house".into() }, "genre rule migrated");
+        assert_eq!(first.query.rules[2], Rule::BpmRange { min: Some(120.0), max: None });
+        assert!(list.iter().all(|s| validate(&s.name, &s.query).is_ok()));
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), old, "reading never rewrites the file");
+        assert!(!path.with_extension("json.v1.bak").exists());
+
+        // the first write keeps the old file once, then upgrades the store
+        let grouped = Query {
+            mode: Mode::Any,
+            rules: vec![Rule::Group { mode: Mode::None, items: vec![Rule::Favourite { value: true }] }, Rule::AddedWithin { days: 7 }],
+            sort: Some(Sort { field: SortField::DateAdded, descending: true }),
+            limit: Some(25),
+        };
+        let saved = save(&dir, "P:\\", SmartCase { id: 2, query: grouped.clone(), ..sc("Plain") }).unwrap();
+        assert_eq!(saved.query, grouped);
+        assert_eq!(std::fs::read_to_string(path.with_extension("json.v1.bak")).unwrap(), old);
+        let now: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(now["version"], 2);
+        assert_eq!(now["smart_cases"][1]["limit"], 25);
+        assert_eq!(now["smart_cases"][1]["rules"][0]["kind"], "group");
+
+        // everything survives a reload, the untouched case included; a second write keeps the first backup
+        let again = load(&dir, "P:\\").unwrap();
+        assert_eq!(again[1].query, grouped);
+        assert_eq!(again[0], list[0]);
+        save(&dir, "P:\\", SmartCase { id: 2, name: "Again".into(), query: grouped, ..sc("x") }).unwrap();
+        assert_eq!(std::fs::read_to_string(path.with_extension("json.v1.bak")).unwrap(), old);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn rules_that_would_read_their_own_device_copy_are_noticed() {
+        let q = Query { rules: vec![Rule::Group { mode: rules::Mode::Any, items: vec![Rule::InCase { case_id: 12, value: false, case_name: None }] }], ..Default::default() };
+        assert!(refers_to_case(&q, 12));
+        assert!(!refers_to_case(&q, 13));
+        assert!(!refers_to_case(&sc("x").query, 12));
     }
 
     fn library(tag: &str, n: usize) -> (Library, PathBuf, Vec<i64>) {
@@ -607,6 +353,65 @@ mod tests {
         }
         std::fs::remove_dir_all(&src).unwrap();
         (lib, vol, ids)
+    }
+
+    #[test]
+    fn rules_run_against_a_real_library_including_extra_columns_and_case_membership() {
+        use pm_formats::{library::TrackMeta, strfile};
+        use rules::{Mode, Sort, SortField, TextField, TextOp};
+        let base = std::env::temp_dir();
+        let vol = base.join(format!("pmr-smart-real-vol-{}", std::process::id()));
+        let src = base.join(format!("pmr-smart-real-src-{}", std::process::id()));
+        for d in [&vol, &src] {
+            let _ = std::fs::remove_dir_all(d);
+            std::fs::create_dir_all(d).unwrap();
+        }
+        let analysis = strfile::Analysis {
+            normalize_factor: 1.0,
+            beat_start_offset: 0,
+            beats: (0..8).map(|i| strfile::Beat { pos: i * 20000, bpm: 128.0 }).collect(),
+            first_downbeat: Some(0),
+        };
+        let mut lib = Library::create(&vol).unwrap();
+        let mut ids = Vec::new();
+        for (i, (label, year, secs)) in [("Synthetic Alpha", 1998, 120), ("Synthetic Beta", 2008, 300), ("", 0, 0)].into_iter().enumerate() {
+            let f = src.join(format!("synthetic {i}.mp3"));
+            std::fs::write(&f, vec![0u8; 3000 + i]).unwrap();
+            let meta = TrackMeta { title: format!("t{i}"), format: "MP3".into(), play_time_secs: secs, label: label.into(), year, remixer: format!("Remixer {i}"), ..Default::default() };
+            ids.push(lib.add_track(&f, &meta, &analysis).unwrap());
+        }
+        let case = lib.create_case_with_tracks("Synthetic case", &[ids[1], ids[2]]).unwrap();
+
+        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() as i64;
+        let run = |lib: &Library, q: &Query| -> Result<Vec<i64>, String> {
+            let data = Data::load(lib, &[q], now).map_err(|e| e.to_string())?;
+            evaluate(q, &data).map(|e| e.ids)
+        };
+        let rules = |rules| Query { rules, ..Default::default() };
+
+        assert_eq!(run(&lib, &rules(vec![Rule::Text { field: TextField::Label, op: TextOp::StartsWith, text: "synthetic a".into() }])).unwrap(), vec![ids[0]]);
+        assert_eq!(run(&lib, &rules(vec![Rule::YearRange { min: Some(2000), max: None }])).unwrap(), vec![ids[1]], "year 0 is unknown and never matches");
+        assert_eq!(run(&lib, &rules(vec![Rule::Text { field: TextField::Remixer, op: TextOp::Is, text: "remixer 2".into() }])).unwrap(), vec![ids[2]]);
+        assert_eq!(run(&lib, &rules(vec![Rule::AddedWithin { days: 1 }])).unwrap().len(), 3, "add_track stamps date_added with now");
+        assert!(run(&lib, &rules(vec![Rule::AddedBefore { days: 1 }])).unwrap().is_empty());
+        assert_eq!(run(&lib, &rules(vec![Rule::DurationRange { min_secs: Some(1), max_secs: Some(200) }])).unwrap(), vec![ids[0]]);
+        assert_eq!(run(&lib, &rules(vec![Rule::InCase { case_id: case, value: true, case_name: None }])).unwrap(), vec![ids[1], ids[2]]);
+        assert_eq!(run(&lib, &rules(vec![Rule::InCase { case_id: case, value: false, case_name: None }])).unwrap(), vec![ids[0]]);
+        let ordered = Query {
+            mode: Mode::Any,
+            rules: vec![Rule::InCase { case_id: case, value: true, case_name: None }, Rule::Text { field: TextField::Title, op: TextOp::Is, text: "t0".into() }],
+            sort: Some(Sort { field: SortField::Duration, descending: true }),
+            limit: Some(2),
+        };
+        assert_eq!(run(&lib, &ordered).unwrap(), vec![ids[1], ids[0]], "300 s, 120 s; the track with no length is last and cut by the limit");
+
+        // deleting the case turns the rule into an explanation, not into "everything"
+        let gone = rules(vec![Rule::InCase { case_id: case, value: false, case_name: None }]);
+        lib.delete_case(case).unwrap();
+        assert!(run(&lib, &gone).unwrap_err().contains("no longer exists"));
+        drop(lib);
+        std::fs::remove_dir_all(&vol).unwrap();
+        std::fs::remove_dir_all(&src).unwrap();
     }
 
     #[test]
@@ -660,8 +465,8 @@ mod tests {
         assert_eq!(lib.case_track_ids(foreign).unwrap(), vec![ids[1]]);
 
         // the name limit counts the star prefix
-        assert!(validate(&"x".repeat(MAX_CASE_NAME_CHARS - 2), &[Rule::PlaysZero]).is_ok());
-        assert!(validate(&"x".repeat(MAX_CASE_NAME_CHARS - 1), &[Rule::PlaysZero]).is_err());
+        assert!(validate(&"x".repeat(MAX_CASE_NAME_CHARS - 2), &sc("x").query).is_ok());
+        assert!(validate(&"x".repeat(MAX_CASE_NAME_CHARS - 1), &sc("x").query).is_err());
 
         // an over-long name is refused before any write
         let long = SmartCase { name: "x".repeat(300), device_case_id: None, ..s.clone() };

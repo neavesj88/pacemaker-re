@@ -11,6 +11,7 @@
   import Stars from "$lib/ui/Stars.svelte";
   import ColourSwatch from "./ColourSwatch.svelte";
   import EnergyBar from "./EnergyBar.svelte";
+  import CaseChips from "../cases/CaseChips.svelte";
   import { cachedPeaks, requestPeaks } from "./peakCache";
   import { addToCase } from "./addToCase.svelte";
   import { addToMix, editGrid, editMetadata, playTrack, rate, revealInExplorer } from "./trackActions";
@@ -132,6 +133,7 @@
     <div class="field"><span class="label">Genre</span><span>{track.genre || "–"}</span></div>
     <div class="field"><span class="label">Length</span><span>{mmss(track.play_time_secs)}</span></div>
     <div class="field"><span class="label">File</span><span>{[track.format, track.file_size ? megabytes(track.file_size) : ""].filter(Boolean).join(" · ") || "–"}</span></div>
+    <div class="field"><span class="label">In cases</span><CaseChips trackId={track.track_id} /></div>
 
     <div class="buttons">
       <Button variant="primary" small onclick={() => playTrack(track.track_id)}>Play</Button>
