@@ -10,7 +10,9 @@ import { playback } from "$lib/state/playback.svelte";
 import { session } from "$lib/state/session.svelte";
 import { toast } from "$lib/state/toast.svelte";
 
-export const playTrack = (trackId: number) => playback.load(trackId, true);
+// An empty queue: next / previous walk the Tracks table as it is shown when they are pressed,
+// not a list left over from playing somewhere else.
+export const playTrack = (trackId: number) => playback.load(trackId, true, []);
 
 export const editMetadata = (ids: number[]) => metadataEditor.edit([...ids]);
 

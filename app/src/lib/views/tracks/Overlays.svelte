@@ -7,6 +7,7 @@
   import Button from "$lib/ui/Button.svelte";
   import Modal from "$lib/ui/Modal.svelte";
   import { addToCase } from "./addToCase.svelte";
+  import ViewSync from "./ViewSync.svelte";
 
   const ids = $derived(addToCase.ids);
   const list = $derived(session.library?.cases ?? []);
@@ -33,6 +34,8 @@
     if (id !== undefined) toast.show(`Created “${t}” with ${noun(ids.length)}`, "ok");
   }
 </script>
+
+<ViewSync />
 
 {#if ids}
   <Modal title={`Add ${noun(ids.length)} to a case`} onclose={() => addToCase.close()}>

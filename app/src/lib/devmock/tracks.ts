@@ -26,11 +26,55 @@ if (extra > tracks.length) {
       format: "MP3",
       analysed: true,
       times_played: (i * 11) % 9,
+      last_played: i % 3 === 0 ? -1 : Date.UTC(2026, 3, 1) + (i % 200) * 86_400_000,
+      year: i % 11 === 0 ? 0 : 1995 + (i % 30),
+      label: i % 4 === 0 ? "" : `Example Label ${1 + (i % 12)}`,
+      remixer: i % 9 === 0 ? `Example Remixer ${1 + (i % 5)}` : "",
+      composer: i % 7 === 0 ? `Example Composer ${1 + (i % 6)}` : "",
+      comments: i % 13 === 0 ? `Demo note ${i}` : "",
+      date_added: Date.UTC(2024, 0, 1) + (i % 700) * 86_400_000,
+      bit_rate: [320, 256, 192, 128, 0][i % 5],
     });
   }
 }
 
+// Saved filter presets and the remembered view, per library, in memory (the real ones are a JSON
+// file per library in the app config dir). Same rules as commands/tracks/views.rs: names are
+// trimmed and unique ignoring case, a taken name needs `replace`.
+type MockPreset = { id: string; name: string; state: unknown };
+const views = new Map<string, { presets: MockPreset[]; state: unknown | null }>();
+const viewsOf = (root: string) => {
+  let v = views.get(root);
+  if (!v) views.set(root, (v = { presets: [], state: null }));
+  return v;
+};
+const payload = (root: string) => ({ presets: [...viewsOf(root).presets].sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase())), state: viewsOf(root).state, notice: null });
+let presetSeq = 0;
+
 export const handlers: Handlers = {
+  tracks_views_load: (a) => payload(a.root),
+  tracks_views_save_preset: (a) => {
+    const name = String(a.name).split(/\s+/).filter(Boolean).join(" ");
+    if (!name) throw "A preset needs a name.";
+    if (name.length > 60) throw "The preset name is longer than 60 characters.";
+    if (!a.state || typeof a.state !== "object" || Array.isArray(a.state)) throw "The filter state is not an object.";
+    const v = viewsOf(a.root);
+    const same = v.presets.find((p) => p.name.toLowerCase() === name.toLowerCase());
+    if (same && !a.replace) throw `A preset named "${same.name}" already exists.`;
+    if (same) Object.assign(same, { name, state: a.state });
+    else v.presets.push({ id: `p${++presetSeq}`, name, state: a.state });
+    return payload(a.root);
+  },
+  tracks_views_delete_preset: (a) => {
+    const v = viewsOf(a.root);
+    if (!v.presets.some((p) => p.id === a.id)) throw "That preset no longer exists.";
+    v.presets = v.presets.filter((p) => p.id !== a.id);
+    return payload(a.root);
+  },
+  tracks_views_set_state: (a) => {
+    viewsOf(a.root).state = a.state ?? null;
+    return null;
+  },
   tracks_mixes_using: (a) => mixNamesUsing(a.trackIds as number[]),
   reanalyse_tracks: (a) => {
     if (jobLock.running) throw "Another job is still running.";

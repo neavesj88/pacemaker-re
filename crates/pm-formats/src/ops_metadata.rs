@@ -202,6 +202,17 @@ impl TrackEdit {
 }
 
 impl Library {
+    /// `(track_id, global_id, location)` of every live track, by track id. `global_id` is the
+    /// random UUID the Editor and this app assign at import (empty on a row that has none).
+    /// The app-side tag store keys tracks by it, so labels survive a changed `track_id`.
+    pub fn track_identities(&self) -> Result<Vec<(i64, String, String)>, Error> {
+        let mut st = self
+            .con
+            .prepare("SELECT track_id, IFNULL(global_id,''), IFNULL(location,'') FROM tracks WHERE track_id >= 0 ORDER BY track_id")?;
+        let rows = st.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
+        Ok(rows.collect::<Result<_, _>>()?)
+    }
+
     /// The editable fields of the given tracks, in the order asked. Errors on an unknown id.
     pub fn track_details(&self, ids: &[i64]) -> Result<Vec<TrackDetail>, Error> {
         let mut st = self.con.prepare(SELECT_DETAIL)?;
@@ -316,6 +327,19 @@ mod tests {
 
     fn text(s: &str) -> Value {
         Value::Text(s.into())
+    }
+
+    #[test]
+    fn identities_list_every_live_track_with_a_distinct_global_id() {
+        let f = fixture("idents", 3);
+        let rows = f.lib.track_identities().unwrap();
+        assert_eq!(rows.iter().map(|r| r.0).collect::<Vec<_>>(), f.ids);
+        let mut uuids: Vec<&str> = rows.iter().map(|r| r.1.as_str()).collect();
+        assert!(uuids.iter().all(|u| u.len() == 32), "32 hex characters each");
+        uuids.sort();
+        uuids.dedup();
+        assert_eq!(uuids.len(), 3);
+        assert!(rows.iter().all(|r| r.2.starts_with("/pmdb_tracks/")));
     }
 
     #[test]

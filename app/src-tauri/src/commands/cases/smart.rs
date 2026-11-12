@@ -348,6 +348,13 @@ mod tests {
             analysed: true,
             times_played: 0,
             last_played: -1,
+            year: 0,
+            label: String::new(),
+            remixer: String::new(),
+            composer: String::new(),
+            comments: String::new(),
+            date_added: -1,
+            bit_rate: 0,
         }
     }
 

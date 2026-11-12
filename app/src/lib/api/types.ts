@@ -16,6 +16,18 @@ export type Track = {
   format: string;
   analysed: boolean;
   times_played: number;
+  /** Unix milliseconds of the last play; -1 = never. */
+  last_played: number;
+  /** Release year; 0 = not set. */
+  year: number;
+  label: string;
+  remixer: string;
+  composer: string;
+  comments: string;
+  /** Unix milliseconds the track was added; -1 = unknown. */
+  date_added: number;
+  /** Kilobits per second; 0 = unknown. */
+  bit_rate: number;
 };
 
 export type Collection = { id: number; name: string; play_time_secs: number; track_count: number };

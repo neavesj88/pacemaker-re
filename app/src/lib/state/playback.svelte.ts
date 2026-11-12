@@ -2,7 +2,7 @@
 // area (the engine in lib/player reads and drives these fields); every other area, the mix
 // editor and the grid editor included, only calls the methods and reads the fields. This is
 // the one place the "now playing" state lives, so views never talk to the engine directly.
-import { visibleTracks } from "$lib/views/tracks/trackFilter";
+import { tracksViewRows } from "$lib/views/tracks/trackFilter";
 import { session } from "./session.svelte";
 
 /** A rendered mix being previewed instead of a single track. `path` is the rendered audio file
@@ -33,7 +33,7 @@ class Playback {
   /** Why the loaded track cannot play (file missing, cannot decode), or "". */
   error = $state("");
 
-  /** Track ids that next/previous walk through; empty = the library order. */
+  /** Track ids that next/previous walk through; empty = the Tracks table as it is shown now. */
   queue = $state<number[]>([]);
   /** A seek the engine has not applied yet (seconds on the same scale as `position`). */
   seekRequest = $state<{ secs: number } | null>(null);
@@ -107,8 +107,9 @@ class Playback {
   /** The ids next/previous walk through. */
   #order(): number[] {
     if (this.queue.length) return this.queue;
-    // no list was given: the library as the tracks table shows it (search, filter and sort)
-    return session.library ? visibleTracks(session.library.tracks).map((t) => t.track_id) : [];
+    // no list was given: the library as the Tracks table shows it right now (search, filters and
+    // every sort key), worked out when asked so that a change made while a track plays counts
+    return session.library ? tracksViewRows(session.library.tracks).map((t) => t.track_id) : [];
   }
 
   /** The track after the loaded one in the list, or null at the end / when nothing is loaded. */

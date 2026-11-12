@@ -19,6 +19,14 @@ export const tracks = Array.from({ length: 24 }, (_, i) => ({
   format: "MP3",
   analysed: i % 7 !== 3,
   times_played: i % 4,
+  last_played: i % 4 === 0 ? -1 : Date.UTC(2026, 4, 1) + i * 86_400_000,
+  year: i % 7 === 0 ? 0 : 2008 + (i % 15),
+  label: i % 3 === 0 ? "" : `Example Label ${String.fromCharCode(65 + (i % 4))}`,
+  remixer: i % 5 === 0 ? `Example Remixer ${1 + (i % 3)}` : "",
+  composer: i % 4 === 1 ? `Example Composer ${1 + (i % 2)}` : "",
+  comments: i % 6 === 2 ? `Demo note ${i}` : "",
+  date_added: i % 9 === 8 ? -1 : Date.UTC(2025, 9, 1) + i * 5 * 86_400_000,
+  bit_rate: [320, 256, 192, 0][i % 4],
 }));
 
 // tracks whose .str is bad, with the reasons the real backend reports
