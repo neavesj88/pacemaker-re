@@ -100,8 +100,17 @@ class Mixes {
   // Document lifecycle
   // ------------------------------------------------------------------------------------------
 
+  /** Re-reads the mix list, and hands it to the open library too: the sidebar count and the
+   *  Libraries view's left pane read `session.library.mixes`, so a mix made, saved, renamed or
+   *  deleted here would otherwise be missing there until the library was opened again. */
   async refreshList() {
-    if (this.root) this.list = await mixList(this.root);
+    const root = this.root;
+    if (!root) return;
+    const list = await mixList(root);
+    // a different library may have been opened while the list was being read
+    if (this.root !== root) return;
+    this.list = list;
+    session.setMixes(list.map((m) => ({ ...m })));
   }
 
   /** Opens a mix from the library (the caller handles unsaved changes first: see `dirty`). */

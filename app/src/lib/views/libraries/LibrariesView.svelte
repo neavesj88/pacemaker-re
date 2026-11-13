@@ -27,9 +27,6 @@
 <div class="page">
   <div class="top">
     <h2>Libraries</h2>
-    <p class="muted lead">
-      Drag tracks, mixes or cases across to copy them. You see the list before anything is written.
-    </p>
   </div>
 
   {#if libs.error}
@@ -39,8 +36,10 @@
     </p>
   {/if}
 
-  <!-- a strip of fixed height, so the panes do not move when a check, a copy or its result shows -->
-  <div class="strip">
+  <!-- a strip of fixed height once a copy has been asked for, so the panes do not move between the
+       check, the progress and the result; before that it is just the how-to line, not an empty band
+       (the one move happens after the drop, when the pointer is already released) -->
+  <div class="strip" class:idle={!libs.running && !libs.planning && !libs.result}>
     {#if libs.running}
       <section class="card" aria-label="Copy progress">
         <JobProgress kind={JOB_SYNC} />
@@ -49,6 +48,10 @@
       <p class="muted" role="status">Checking what would be copied…</p>
     {:else if libs.result}
       <p class="result" role="status">{libs.result}</p>
+    {:else}
+      <p class="muted lead">
+        Drag tracks, mixes or cases across to copy them. You see the list before anything is written.
+      </p>
     {/if}
   </div>
 
@@ -89,6 +92,9 @@
     flex: none;
     display: flex;
     align-items: center;
+  }
+  .strip.idle {
+    min-height: 0;
   }
   .strip > * {
     flex: 1;
