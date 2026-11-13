@@ -89,6 +89,9 @@
 
   <select aria-label="Key" bind:value={tracksState.keyFilter}>
     <option value="">Any key</option>
+    <!-- never shown: it keeps the menu as wide as its longest entry, so choosing a track (which adds
+         "Compatible with ..." for its key) does not widen the menu and re-wrap the toolbar -->
+    <option value="__width" disabled hidden>Compatible with 12B</option>
     {#each compatOptions as code (code)}<option value="compat:{code}">Compatible with {code}</option>{/each}
     <optgroup label="Exactly">
       {#each ALL_CAMELOT as k (k.code)}<option value="is:{k.code}">{k.code}</option>{/each}
@@ -115,10 +118,16 @@
 
   <span class="spacer"></span>
   <span class="muted count" aria-live="polite">
-    {shown === total ? `${total} tracks` : `${shown} of ${total} tracks`}{selected > 1 ? ` · ${selected} selected` : ""}
+    {shown === total ? `${total} tracks` : `${shown} of ${total} tracks`}
   </span>
-  <span class="legend muted" aria-hidden="true">
-    <span><i class="low"></i>kick/bass</span><span><i class="mid"></i>mids</span><span><i class="high"></i>highs</span>
+  <!-- The waveform colour key and the selection count share one slot, so picking rows swaps one for the
+       other in the same space: the toolbar never gets wider or taller (and the table never jumps)
+       when the selection changes. Both are always laid out; the one not shown is hidden. -->
+  <span class="slot">
+    <span class="legend muted" class:off={selected > 1} aria-hidden="true">
+      <span><i class="low"></i>kick/bass</span><span><i class="mid"></i>mids</span><span><i class="high"></i>highs</span>
+    </span>
+    <span class="muted picked" class:off={selected <= 1} aria-live="polite">{selected > 1 ? `${selected} selected` : ""}</span>
   </span>
 
   <PresetsMenu />
@@ -164,6 +173,21 @@
   }
   .count {
     font-variant-numeric: tabular-nums;
+  }
+  .slot {
+    display: inline-grid;
+    white-space: nowrap;
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+  }
+  .slot > * {
+    grid-area: 1 / 1;
+  }
+  .slot .off {
+    visibility: hidden;
+  }
+  .picked {
+    text-align: right;
   }
   .legend {
     display: inline-flex;
