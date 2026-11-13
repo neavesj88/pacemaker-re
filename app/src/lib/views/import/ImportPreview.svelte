@@ -1,11 +1,12 @@
 <script lang="ts">
-  // The preview of an import from rekordbox / iTunes: every rating change, every case that would
-  // be created or extended, the cues left alone and the files that found no match. Nothing is
-  // written from here; "Apply" opens the confirmation that names every change again.
-  import type { CaseAction } from "$lib/api/import";
-  import { mmss } from "$lib/format";
+  // The preview of an import from rekordbox / iTunes / Traktor / Serato / an M3U playlist: every
+  // rating change, every case that would be created or extended, the cue points (written only in
+  // the mode the user picks) and the files that found no match. Nothing is written from here;
+  // "Apply" opens the confirmation that names every change again.
+  import type { CaseAction, CueAction, CueMode } from "$lib/api/import";
   import { jobs } from "$lib/state/jobs.svelte";
   import Button from "$lib/ui/Button.svelte";
+  import { cueApplies, cueTime } from "./importLogic";
   import { interop } from "./interop.svelte";
 
   const ACTION: Record<CaseAction, string> = {
@@ -14,6 +15,12 @@
     unchanged: "Already complete",
     skip: "No tracks on the device",
   };
+  const CUE_MODES: [CueMode, string][] = [
+    ["off", "Leave cue points alone"],
+    ["empty", "Set cue points where the track has none"],
+    ["overwrite", "Set cue points, replacing existing ones"],
+  ];
+  const CUE_STATE: Record<CueAction, string> = { set: "no cue yet", replace: "has a different cue", same: "already this cue" };
   const stars = (n: number) => (n > 0 ? `${n}★` : "unrated");
   const who = (title: string, artist: string) => (title || "(untitled)") + (artist ? ` · ${artist}` : "");
 
@@ -88,19 +95,40 @@
       </div>
     {/if}
 
-    {#if plan.cues_skipped.length}
-      <details>
-        <summary>Memory cues left alone ({plan.cues_skipped.length})</summary>
-        <p class="muted">
-          The device keeps a single cue point per track and this version has no operation to set it, so these cues are
-          reported, not imported.
+    {#if plan.cues.length}
+      <div class="cues">
+        <h4>Cue points ({plan.cues.length})</h4>
+        <label>
+          <select bind:value={interop.cueMode} aria-label="What to do with cue points">
+            {#each CUE_MODES as [v, label] (v)}<option value={v}>{label}</option>{/each}
+          </select>
+        </label>
+        <p class="muted hint">
+          The device keeps one cue point per track, and this writes it in the same unit as the beat grid editor does (the
+          unit is inferred, not yet checked on a device). Only the first plain cue of each track is considered. Applied
+          cues show on the device, not as extra markers.
         </p>
-        <ul class="rows">
-          {#each plan.cues_skipped as c (c.track_id)}
-            <li><span class="t">{who(c.title, c.artist)}</span><span class="num">first memory cue at {mmss(Math.round(c.cue_secs))}</span></li>
-          {/each}
-        </ul>
-      </details>
+        <details open={plan.cues.length <= 8}>
+          <summary>{interop.cueSteps.length} of {plan.cues.length} would be written</summary>
+          <ul class="rows">
+            {#each plan.cues as c (c.track_id)}
+              <li>
+                <span class="t">{who(c.title, c.artist)}</span>
+                <span class="num">
+                  {cueTime(c.cue_secs)} · {CUE_STATE[c.action]} ·
+                  <b>{cueApplies(interop.cueMode, c.action) ? "will be set" : "left alone"}</b>
+                </span>
+              </li>
+            {/each}
+          </ul>
+        </details>
+      </div>
+    {/if}
+
+    {#if plan.notes.length}
+      <ul class="notes" aria-label="Notes from reading the file">
+        {#each plan.notes as n, i (i)}<li>{n}</li>{/each}
+      </ul>
     {/if}
 
     {#if plan.unmatched_total}
@@ -110,7 +138,7 @@
           {#each plan.unmatched as u, i (i)}
             <li>
               <span class="t">{who(u.title, u.artist)}{#if u.in_playlist} <span class="badge create">in a playlist</span>{/if}</span>
-              <span class="muted why">{u.reason}{u.path ? ` · ${u.on_disk ? "file found" : "file not found"}: ${u.path}` : ""}</span>
+              <span class="muted why">{u.reason}{u.path ? ` · ${u.path_checked ? (u.on_disk ? "file found" : "file not found") : "location"}: ${u.path}` : ""}</span>
             </li>
           {/each}
           {#if plan.unmatched_total > plan.unmatched.length}
@@ -230,6 +258,23 @@
   }
   .spacer {
     flex: 1;
+  }
+  .cues select {
+    background: var(--panel);
+    color: var(--text);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 5px 8px;
+    font: inherit;
+    max-width: 100%;
+  }
+  .notes {
+    margin: 8px 0;
+    padding: 6px 12px 6px 28px;
+    border-radius: 6px;
+    background: var(--row);
+    border: 1px solid var(--line);
+    overflow-wrap: anywhere;
   }
   .hint {
     margin: 6px 0 0;

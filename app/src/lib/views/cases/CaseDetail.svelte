@@ -20,6 +20,8 @@
   // reads and sorts like the library.
   import MiniWave from "../tracks/MiniWave.svelte";
   import { keyColour, parseKey, sortTracks } from "../tracks/trackLogic";
+  import { setlist } from "../setlist/setlist.svelte";
+  import { vdj } from "../vdj/vdj.svelte";
   import CaseTrackPicker from "./CaseTrackPicker.svelte";
   import { CASE_COLUMNS, type CaseCol, type Row, copyName, plural, searchRows, sortRows, trackLabel } from "./caseLogic";
   import { caseView } from "./caseView.svelte";
@@ -343,6 +345,8 @@
           </div>
         {/if}
       </span>
+      <Button onclick={() => setlist.openCase(open.id)} disabled={all.length === 0} title="A printable setlist of this case">Setlist…</Button>
+      <Button onclick={() => vdj.openCase(open.id, open.name)} disabled={all.length === 0} title="Export this case as a VirtualDJ list, with copies of the audio if you want them">VirtualDJ…</Button>
     </div>
 
     {#if viewSorted}

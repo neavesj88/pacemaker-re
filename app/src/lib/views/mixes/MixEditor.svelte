@@ -16,6 +16,7 @@
   import Timeline from "./Timeline.svelte";
   import TrackPicker from "./TrackPicker.svelte";
   import { mv } from "./view.svelte";
+  import { setlist } from "../setlist/setlist.svelte";
 
   const doc = $derived(mixes.doc!);
   let saving = $state(false);
@@ -212,6 +213,7 @@
         <span class="problem" title={mixes.problems.join("\n")}>⚠ {mixes.problems.length} problem{mixes.problems.length === 1 ? "" : "s"} blocking save</span>
       {/if}
       <Button disabled={doc.clips.length === 0} onclick={() => (tracklist.open = true)} title="Start times of the tracks as text, CSV, YouTube chapters or a CUE sheet. Its settings also say whether Export audio writes a .cue beside the audio.">Track list</Button>
+      <Button disabled={doc.clips.length === 0} onclick={() => setlist.openMix(doc.id)} title="A printable setlist of this mix">Setlist…</Button>
       <Button
         disabled={mv.exporting || doc.clips.length === 0}
         onclick={openExport}

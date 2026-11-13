@@ -8,17 +8,30 @@ import {
   pickLibraryFile,
   pickSavePath,
   type ExportFormat,
+  type CueMode,
+  type CueNote,
   type ExportScope,
   type ImportOptions,
   type ImportPlan,
+  type InteropSource,
+  type PickKind,
 } from "$lib/api/import";
 import { baseName } from "$lib/format";
 import { jobs } from "$lib/state/jobs.svelte";
 import { session } from "$lib/state/session.svelte";
 import { toast } from "$lib/state/toast.svelte";
+import { cueApplies, cueSecs, cueTime } from "./importLogic";
 
 const stars = (n: number) => (n > 0 ? `${n}★` : "unrated");
 const plural = (n: number, one: string, many = one + "s") => `${n} ${n === 1 ? one : many}`;
+
+const SOURCE_LABEL: Record<InteropSource, string> = {
+  rekordbox: "rekordbox",
+  itunes: "iTunes / Music",
+  traktor: "Traktor",
+  serato: "Serato",
+  m3u: "M3U playlist",
+};
 
 class Interop {
   path = $state("");
@@ -28,11 +41,13 @@ class Interop {
   error = $state("");
   ratings = $state(true);
   playlists = $state(true);
+  /** What an import may do with cue points; off unless the user picks otherwise. */
+  cueMode = $state<CueMode>("off");
   /** Source-file indexes of the playlists the user left ticked. */
   chosen = $state<number[]>([]);
 
   fileName = $derived(baseName(this.path));
-  label = $derived(this.plan?.source === "itunes" ? "iTunes / Music" : "rekordbox");
+  label = $derived(this.plan ? SOURCE_LABEL[this.plan.source] : "");
 
   /** Cases that would be created or extended with the current ticks. */
   caseSteps = $derived(
@@ -41,18 +56,20 @@ class Interop {
       : [],
   );
   ratingSteps = $derived(this.ratings && this.plan ? this.plan.ratings : []);
-  changes = $derived(this.ratingSteps.length + this.caseSteps.length);
+  /** Cue points the chosen mode would write. */
+  cueSteps = $derived(this.plan ? this.plan.cues.filter((c) => cueApplies(this.cueMode, c.action)) : []);
+  changes = $derived(this.ratingSteps.length + this.cueSteps.length + this.caseSteps.length);
 
   private options(): ImportOptions {
-    return { ratings: this.ratings, playlists: this.playlists, playlist_indexes: [...this.chosen] };
+    return { ratings: this.ratings, playlists: this.playlists, playlist_indexes: [...this.chosen], cues: this.cueMode };
   }
 
   /** Pick a library file and preview it. */
-  async pick(title: string) {
+  async pick(kind: PickKind) {
     this.error = "";
     let path: string | null;
     try {
-      path = await pickLibraryFile(title);
+      path = await pickLibraryFile(kind);
     } catch (e) {
       this.error = String(e);
       return;
@@ -71,7 +88,7 @@ class Interop {
     this.error = "";
     try {
       // always ask for the full plan: ticking and unticking is done here, without a round trip
-      const plan = await interopPreview(lib.root, this.path, { ratings: true, playlists: true, playlist_indexes: null });
+      const plan = await interopPreview(lib.root, this.path, { ratings: true, playlists: true, playlist_indexes: null, cues: "off" });
       this.plan = plan;
       const doable = plan.cases.filter((c) => c.action === "create" || c.action === "extend").map((c) => c.index);
       this.chosen = fresh ? doable : this.chosen.filter((i) => doable.includes(i));
@@ -108,6 +125,11 @@ class Interop {
     for (const r of this.ratingSteps) {
       names.push(`Rating of ${r.title || "(untitled)"}${r.artist ? " by " + r.artist : ""}: ${stars(r.from)} to ${stars(r.to)}`);
     }
+    for (const c of this.cueSteps) {
+      const to = cueTime(c.cue_secs);
+      const from = c.existing_frames === null ? "none" : cueTime(cueSecs(c, c.existing_frames));
+      names.push(`Cue point of ${c.title || "(untitled)"}${c.artist ? " by " + c.artist : ""}: ${from} to ${to}`);
+    }
     for (const c of this.caseSteps) {
       names.push(
         c.action === "create"
@@ -115,7 +137,7 @@ class Interop {
           : `Add ${plural(c.tracks.length, "track")} to the existing case "${c.name}"`,
       );
     }
-    const steps = (this.ratingSteps.length ? 1 : 0) + this.caseSteps.length;
+    const steps = (this.ratingSteps.length ? 1 : 0) + (this.cueSteps.length ? 1 : 0) + this.caseSteps.length;
     const path = this.path;
     const options = this.options();
     jobs.ask({
@@ -125,7 +147,7 @@ class Interop {
       names,
       title: `Import from ${this.label} into ${lib.root} ?`,
       description:
-        "Exactly the changes listed here are written: ratings in one step, then each case. Tracks are only ever added to an existing case, never removed, and no audio files are touched.",
+        "Exactly the changes listed here are written: ratings in one step, cue points in one step, then each case. Tracks are only ever added to an existing case, never removed, and no audio files are touched.",
       confirmLabel: `Apply ${plural(this.changes, "change")}`,
       runningLabel: "Importing",
       doneLabel: "Import finished",

@@ -33,12 +33,16 @@ export const onFileDrag = (cb: (s: DragState) => void) =>
     else if (t === "drop") cb({ type: "drop", paths: e.payload.paths });
   });
 
-// ---- other libraries: rekordbox XML, iTunes / Music Library.xml, M3U8 / CSV out ----
+// ---- other libraries: rekordbox XML, iTunes / Music Library.xml, Traktor NML, Serato crates, M3U / M3U8 in; M3U8 / CSV out ----
 
-export type InteropSource = "rekordbox" | "itunes";
+export type InteropSource = "rekordbox" | "itunes" | "traktor" | "serato" | "m3u";
+
+/** What an import may do with a track's cue point (the device keeps one per track):
+ *  "off" writes none, "empty" sets it only where the track has none, "overwrite" also replaces. */
+export type CueMode = "off" | "empty" | "overwrite";
 
 /** Which parts of a library file to apply. `playlist_indexes` null = every playlist. */
-export type ImportOptions = { ratings: boolean; playlists: boolean; playlist_indexes: number[] | null };
+export type ImportOptions = { ratings: boolean; playlists: boolean; playlist_indexes: number[] | null; cues: CueMode };
 
 export type RatingChange = { track_id: number; title: string; artist: string; from: number; to: number };
 export type PlannedTrack = { track_id: number; title: string; artist: string };
@@ -54,12 +58,27 @@ export type CasePlan = {
   unmatched: number;
   selected: boolean;
 };
-export type CueNote = { track_id: number; title: string; artist: string; cue_secs: number };
+/** "set": the track has no cue; "replace": it has a different one; "same": it already has this one. */
+export type CueAction = "set" | "replace" | "same";
+export type CueNote = {
+  track_id: number;
+  title: string;
+  artist: string;
+  cue_secs: number;
+  /** The cue in source frames at the track's sample rate (what the device row stores). */
+  cue_frames: number;
+  existing_frames: number | null;
+  /** The track's sample rate: the unit of `cue_frames` and `existing_frames`. */
+  sample_rate: number;
+  action: CueAction;
+};
 export type UnmatchedTrack = {
   title: string;
   artist: string;
   path: string;
   reason: string;
+  /** False when the location is a network, device, URL or relative path: it is never looked up. */
+  path_checked: boolean;
   on_disk: boolean;
   in_playlist: boolean;
 };
@@ -74,7 +93,9 @@ export type ImportPlan = {
   ratings: RatingChange[];
   ratings_unchanged: number;
   cases: CasePlan[];
-  cues_skipped: CueNote[];
+  cues: CueNote[];
+  /** What the reader skipped (damaged crates, smart crates...). */
+  notes: string[];
   unmatched_total: number;
   /** The first 1000 unmatched tracks, those in playlists first. */
   unmatched: UnmatchedTrack[];
@@ -104,9 +125,27 @@ export const interopExport = (root: string, format: ExportFormat, where: ExportS
     dest,
   });
 
-/** Pick a rekordbox XML or iTunes / Music Library.xml (null if cancelled). */
-export async function pickLibraryFile(title: string): Promise<string | null> {
-  const sel = await open({ multiple: false, title, filters: [{ name: "Library export (XML)", extensions: ["xml"] }] });
+/** What the file picker offers for each kind of import. */
+export type PickKind = "rekordbox" | "itunes" | "traktor" | "m3u" | "serato-crate" | "serato-folder";
+
+const PICKERS: Record<PickKind, { title: string; filter?: { name: string; extensions: string[] } }> = {
+  rekordbox: { title: "Choose a rekordbox XML export", filter: { name: "rekordbox XML", extensions: ["xml"] } },
+  itunes: { title: "Choose an iTunes / Music Library.xml", filter: { name: "Library export (XML)", extensions: ["xml"] } },
+  traktor: { title: "Choose a Traktor collection.nml", filter: { name: "Traktor collection", extensions: ["nml"] } },
+  m3u: { title: "Choose an M3U / M3U8 playlist", filter: { name: "Playlist", extensions: ["m3u8", "m3u"] } },
+  "serato-crate": { title: "Choose a Serato .crate file", filter: { name: "Serato crate", extensions: ["crate"] } },
+  "serato-folder": { title: "Choose the _Serato_ folder (it holds the Subcrates)" },
+};
+
+/** Pick the file (or, for Serato's folder, the folder) to import from (null if cancelled). */
+export async function pickLibraryFile(kind: PickKind): Promise<string | null> {
+  const p = PICKERS[kind];
+  const sel = await open({
+    multiple: false,
+    directory: kind === "serato-folder",
+    title: p.title,
+    filters: p.filter ? [p.filter] : undefined,
+  });
   return typeof sel === "string" ? sel : null;
 }
 

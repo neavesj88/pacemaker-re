@@ -16,6 +16,7 @@
   import { listPrefs } from "./listPrefs.svelte";
   import { SORT_LABELS, clickRow, defaultAscending, filterMixes, prune, sortMixes, toggleRow, type SortKey } from "./mixlist";
   import { mv } from "./view.svelte";
+  import { setlist } from "../setlist/setlist.svelte";
 
   let selected = $state.raw<ReadonlySet<number>>(new Set());
   let anchor = $state<number | null>(null);
@@ -140,6 +141,7 @@
     <Button disabled={!one} onclick={() => one && openMix(one.id)}>Open</Button>
     <Button disabled={!one} onclick={() => one && renameMix(one)}>Rename…</Button>
     <Button disabled={!one} onclick={() => one && duplicateMix(one, afterDuplicate)} title="Make a copy of the saved mix under a new name">Duplicate…</Button>
+    <Button disabled={!one} onclick={() => one && setlist.openMix(one.id)} title="A printable setlist of the picked mix">Setlist…</Button>
     <Button disabled={chosen.length === 0} onclick={exportChosen} title="Write the saved mixes as .pmk files">
       {chosen.length > 1 ? `Export ${chosen.length}…` : "Export .pmk…"}
     </Button>
