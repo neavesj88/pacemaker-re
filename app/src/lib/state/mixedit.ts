@@ -22,6 +22,7 @@ import type {
   TransitionDoc,
   TransitionSuggestion,
 } from "../api/mixes";
+import type { SectionKind, SectionOut } from "../api/analysis";
 import type { VocalMode } from "../api/device";
 import type { Kit } from "./transitionRecipes";
 
@@ -33,7 +34,10 @@ export const PHRASE_BARS = 8;
 /** Shortest audible clip or process an edit may leave, in samples (0.05 s). */
 export const MIN_LENGTH = 2205;
 
-export type SnapMode = "off" | "beat" | "bar" | "phrase";
+/** "section": snap to the boundaries of detected sections (intro / build / drop / ...) where a
+ * clip has them, and to its phrase lines where it has none, so tracks without sections snap as in
+ * "phrase". */
+export type SnapMode = "off" | "beat" | "bar" | "phrase" | "section";
 
 const secOf = (samples: number) => samples / SR;
 
@@ -235,7 +239,65 @@ export function clipBeatPoints(c: Clip): BeatPoint[] {
 export const clipBeats = (c: Clip): number[] => clipBeatPoints(c).map((b) => b.time);
 
 const rank: Record<BeatKind, number> = { beat: 0, bar: 1, phrase: 2 };
-const wanted: Record<Exclude<SnapMode, "off">, number> = { beat: 0, bar: 1, phrase: 2 };
+const wanted: Record<Exclude<SnapMode, "off">, number> = { beat: 0, bar: 1, phrase: 2, section: 2 };
+
+// ---- sections (app-side phrase detection, see state/sections.svelte.ts) -------------------------
+
+/** A track's sections by track id, or null when it has none. The store passes `sections.of`; this
+ * file takes it as a function so it stays free of stores. */
+export type SectionsLookup = (trackId: number) => readonly SectionOut[] | null;
+
+/** A boundary between two sections of a clip, placed on the timeline. */
+export type SectionPoint = {
+  /** Timeline samples. */
+  time: number;
+  before: SectionKind;
+  after: SectionKind;
+  /** How strong the boundary is, 0 to 1. */
+  confidence: number;
+};
+
+/** The boundaries of a clip's sections on the timeline (the start of every section but the
+ * first), ascending. Section times are seconds in the beat grid's time base, i.e. source samples
+ * at `SR`, so the clip's tempo curve carries them to the timeline exactly as it does its beats.
+ * All of them are returned, including those outside the audible range. */
+export function clipSectionPoints(c: Clip, sections: readonly SectionOut[] | null | undefined): SectionPoint[] {
+  if (!sections || sections.length < 2) return [];
+  const tm = new TempoMap(c.tempo);
+  const out: SectionPoint[] = [];
+  for (let i = 1; i < sections.length; i++) {
+    const s = sections[i];
+    if (!Number.isFinite(s.start_secs)) continue;
+    out.push({ time: c.start + tm.localAt(s.start_secs * SR), before: sections[i - 1].kind, after: s.kind, confidence: s.start_confidence });
+  }
+  return out.sort((a, b) => a.time - b.time);
+}
+
+/** One section of a clip in clip-local samples (before the clip's `start` is added). */
+export type SectionSpan = { from: number; to: number; kind: SectionKind; confidence: number };
+
+/** The sections of a clip as clip-local sample ranges, for drawing on its waveform. */
+export function clipSectionSpans(c: Clip, sections: readonly SectionOut[] | null | undefined): SectionSpan[] {
+  if (!sections || sections.length === 0) return [];
+  const tm = new TempoMap(c.tempo);
+  return sections
+    .filter((s) => Number.isFinite(s.start_secs) && Number.isFinite(s.end_secs) && s.end_secs > s.start_secs)
+    .map((s) => ({ from: tm.localAt(s.start_secs * SR), to: tm.localAt(s.end_secs * SR), kind: s.kind, confidence: s.confidence }));
+}
+
+/** The points of a clip that a mode snaps to, on the timeline and inside its audible range: beats
+ * of the mode's class or higher, or, in "section" mode, its section boundaries (its phrase lines
+ * where it has no sections). */
+function snapPointsOf(c: Clip, mode: Exclude<SnapMode, "off">, sections?: SectionsLookup): number[] {
+  if (mode === "section") {
+    const pts = clipSectionPoints(c, sections?.(c.trackId));
+    if (pts.length > 0) return pts.map((p) => p.time).filter((t) => t >= c.visibleStart - 1 && t <= c.visibleEnd + 1);
+  }
+  const min = wanted[mode];
+  return clipBeatPoints(c)
+    .filter((b) => rank[b.kind] >= min && b.time >= c.visibleStart - 1 && b.time <= c.visibleEnd + 1)
+    .map((b) => b.time);
+}
 
 /** Evenly spaced lines of the reference tempo from timeline 0 (beat / bar / phrase), for the
  * ruler and as snap targets where no clip has a grid. */
@@ -254,19 +316,19 @@ export type SnapOptions = {
   threshold: number;
   /** Clip ids that are being dragged and must not be snap targets. */
   exclude?: string[];
+  /** Where to find a track's sections; used by the "section" mode only. */
+  sections?: SectionsLookup;
 };
 
-/** Sorted snap targets: the audible beats of the other clips at or above the mode's class, or
- * the reference tempo's grid when no other clip has one. */
-export function snapTargets(doc: MixDoc, mode: SnapMode, exclude: string[] = [], range: [number, number] | null = null): number[] {
+/** Sorted snap targets: the audible beats of the other clips at or above the mode's class (their
+ * section boundaries in "section" mode), or the reference tempo's grid when no other clip has
+ * one. */
+export function snapTargets(doc: MixDoc, mode: SnapMode, exclude: string[] = [], range: [number, number] | null = null, sections?: SectionsLookup): number[] {
   if (mode === "off") return [];
-  const min = wanted[mode];
   const out: number[] = [];
   for (const c of doc.clips) {
     if (exclude.includes(c.id)) continue;
-    for (const b of clipBeatPoints(c)) {
-      if (rank[b.kind] >= min && b.time >= c.visibleStart - 1 && b.time <= c.visibleEnd + 1) out.push(b.time);
-    }
+    out.push(...snapPointsOf(c, mode, sections));
   }
   if (out.length === 0 && doc.tempoBpm) {
     const [from, to] = range ?? [0, Math.max(doc.length, 60 * SR)];
@@ -303,13 +365,11 @@ export function snapClipStart(doc: MixDoc, clipId: string, newStart: number, opt
   const c = clipOf(doc, clipId);
   if (!c || opts.mode === "off") return newStart;
   const exclude = [clipId, ...(opts.exclude ?? [])];
-  const targets = snapTargets(doc, opts.mode, exclude, [newStart, newStart + c.length]);
+  const targets = snapTargets(doc, opts.mode, exclude, [newStart, newStart + c.length], opts.sections);
   if (targets.length === 0) return newStart;
-  const min = wanted[opts.mode];
-  // the dragged clip's own points, relative to its start: audible beats and the audible start
-  const own = clipBeatPoints(c)
-    .filter((b) => rank[b.kind] >= min && b.time >= c.visibleStart - 1 && b.time <= c.visibleEnd + 1)
-    .map((b) => b.time - c.start);
+  // the dragged clip's own points, relative to its start: audible beats (section boundaries in
+  // "section" mode) and the audible start
+  const own = snapPointsOf(c, opts.mode, opts.sections).map((t) => t - c.start);
   own.push(c.trimStart);
   let best = Infinity;
   for (const rel of own) {
@@ -358,7 +418,7 @@ export function freeChannel(doc: MixDoc, from: number, to: number, exclude: stri
 export function resizeClip(doc: MixDoc, id: string, edge: "left" | "right", pos: number, opts?: SnapOptions): MixDoc {
   const c = clipOf(doc, id);
   if (!c) return doc;
-  const targets = opts && opts.mode !== "off" ? snapTargets(doc, opts.mode, [id, ...(opts.exclude ?? [])], [pos - SR, pos + SR]) : [];
+  const targets = opts && opts.mode !== "off" ? snapTargets(doc, opts.mode, [id, ...(opts.exclude ?? [])], [pos - SR, pos + SR], opts.sections) : [];
   const p = opts ? snap(pos, targets, opts.threshold) : pos;
   if (edge === "left") {
     const v = Math.min(Math.max(p, c.start), c.visibleEnd - MIN_LENGTH);
@@ -458,7 +518,7 @@ export function moveProcess(doc: MixDoc, clipId: string, id: string, newStart: n
   if (!c || !p) return doc;
   let s = newStart;
   if (opts && opts.mode !== "off") {
-    const targets = snapTargets(doc, opts.mode, opts.exclude ?? [], [c.start + s - SR, c.start + s + SR]);
+    const targets = snapTargets(doc, opts.mode, opts.exclude ?? [], [c.start + s - SR, c.start + s + SR], opts.sections);
     // snap the start, or the end if that is nearer
     const a = snap(c.start + s, targets, opts.threshold) - c.start;
     const b = snap(c.start + s + p.length, targets, opts.threshold) - c.start - p.length;
@@ -475,7 +535,7 @@ export function resizeProcess(doc: MixDoc, clipId: string, id: string, edge: "le
   if (!c || !p) return doc;
   let q = pos;
   if (opts && opts.mode !== "off") {
-    q = snap(c.start + pos, snapTargets(doc, opts.mode, opts.exclude ?? [], [c.start + pos - SR, c.start + pos + SR]), opts.threshold) - c.start;
+    q = snap(c.start + pos, snapTargets(doc, opts.mode, opts.exclude ?? [], [c.start + pos - SR, c.start + pos + SR], opts.sections), opts.threshold) - c.start;
   }
   const end = p.start + p.length;
   const [start, stop] =
@@ -631,7 +691,7 @@ export function setCurve(doc: MixDoc, id: string, curve: CurveNode[]): MixDoc {
 /** Moves / resizes a transition on the timeline, snapped when asked. */
 export function moveTransition(doc: MixDoc, id: string, start: number, length: number | null, opts?: SnapOptions): MixDoc {
   return updateTransition(doc, id, (t) => {
-    const targets = opts && opts.mode !== "off" ? snapTargets(doc, opts.mode, [], [start - SR, start + SR]) : [];
+    const targets = opts && opts.mode !== "off" ? snapTargets(doc, opts.mode, [], [start - SR, start + SR], opts.sections) : [];
     const s = Math.max(0, opts ? snap(start, targets, opts.threshold) : start);
     return { ...t, start: s, length: Math.max(MIN_LENGTH, length ?? t.length) };
   });

@@ -6,8 +6,10 @@
 // actions the view asks for (cases.create, createMix.ts).
 import { caseTracks } from "$lib/api/cases";
 import type { Track } from "$lib/api/types";
+import { sections } from "$lib/state/sections.svelte";
 import { selection } from "$lib/state/selection.svelte";
 import { session } from "$lib/state/session.svelte";
+import { mixSides } from "$lib/views/analysis/sectionLogic";
 import { parseKey } from "$lib/views/tracks/trackLogic";
 import { energyOf } from "./energy";
 import { setPrefs } from "./prefs.svelte";
@@ -35,7 +37,14 @@ export function toSetTrack(t: Track, needsAnalysis: boolean): SetTrack {
     key: key ? { num: key.num, letter: key.letter } : null,
     secs: t.play_time_secs,
     energy: energyOf(t.track_id),
+    ...sideFlags(t.track_id),
   };
+}
+
+/** Whether a track has an intro / outro to mix over; nothing (not false) when it has no sections. */
+function sideFlags(trackId: number): { intro?: boolean; outro?: boolean } {
+  const s = mixSides(sections.of(trackId));
+  return s ? { intro: s.intro, outro: s.outro } : {};
 }
 
 class SetBuilder {

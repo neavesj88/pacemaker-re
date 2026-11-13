@@ -4,6 +4,7 @@
   import * as E from "$lib/state/mixedit";
   import { mixExport } from "$lib/state/mixexport.svelte";
   import { mixes } from "$lib/state/mixes.svelte";
+  import { sections } from "$lib/state/sections.svelte";
   import { tracklist } from "$lib/state/tracklist.svelte";
   import { toast } from "$lib/state/toast.svelte";
   import Button from "$lib/ui/Button.svelte";
@@ -187,12 +188,16 @@
     <Button disabled={mixes.redoDepth === 0} onclick={() => mixes.redo()} title={mixes.redoLabel ? `Redo ${mixes.redoLabel} (Ctrl+Y)` : "Nothing to redo"} aria-label="Redo">↷</Button>
     <span class="sep"></span>
     <label class="ctl">Snap
-      <select bind:value={mixes.snap}>
+      <select bind:value={mixes.snap} title="Section snaps to where detected sections begin (intro, build, drop, breakdown, outro; Tracks, Sections panel). A clip whose track has none snaps to its phrase lines instead.">
         <option value="beat">Beat</option>
         <option value="bar">Bar</option>
         <option value="phrase">Phrase (8 bars)</option>
+        <option value="section">Section</option>
         <option value="off">Off</option>
       </select>
+    </label>
+    <label class="ctl follow" title={sections.showMarkers ? "Draw the detected sections (intro, build, drop, breakdown, outro) on the clips. Clips of tracks without sections show nothing." : "Turned off in the Sections panel's settings (show markers on waveforms)"}>
+      <input type="checkbox" checked={mv.sectionMarkers && sections.showMarkers} disabled={!sections.showMarkers} onchange={(e) => mv.setSectionMarkers(e.currentTarget.checked)} /> sections
     </label>
     <label class="ctl">Zoom
       <input

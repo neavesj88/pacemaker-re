@@ -12,7 +12,7 @@
   import SetSettings from "./SetSettings.svelte";
   import { setPrefs } from "./prefs.svelte";
   import { setBuilder } from "./setbuilder.svelte";
-  import { clock, lengthLine, playSecs, solverOptions, type Transition } from "./solver";
+  import { clock, lengthLine, playSecs, sectionFitText, solverOptions, type Transition } from "./solver";
 
   // The set builder: pick a case (or the selected tracks), order them into a set, adjust it by
   // hand, then save it as a case or lay it out as a mix. Nothing here changes the device until
@@ -318,6 +318,7 @@
                       <span class:bad={t.keyOk === false}>{t.fromKey} → {t.toKey} · {t.moveLabel}</span>
                       <span class:bad={t.bpmOk === false}>{tempoText(t)}</span>
                       {#if t.energyDelta !== null}<span class="muted">energy {t.energyDelta >= 0 ? "+" : "−"}{Math.abs(t.energyDelta)}</span>{/if}
+                      {#if sectionFitText(t)}<span class="muted" title="From the tracks' detected sections (estimates)">{sectionFitText(t)}</span>{/if}
                     </div>
                   </td>
                 </tr>

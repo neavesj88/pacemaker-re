@@ -281,7 +281,7 @@
       return;
     }
     let at = sampleAt(e);
-    const targets = E.snapTargets(doc, mixes.snap, [], [at - SR, at + SR]);
+    const targets = E.snapTargets(doc, mixes.snap, [], [at - SR, at + SR], mixes.sectionLookup);
     at = E.snap(at, targets, mixes.threshold);
     void addTracks(ids, at, deck);
   }

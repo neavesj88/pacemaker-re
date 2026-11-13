@@ -6,6 +6,18 @@ import { HEADER_W, PPS_MAX, PPS_MIN, SR, clamp, fromPx, toPx } from "./layout";
 
 export type EnvLaneId = "tempo" | "key" | "gain";
 
+const SECTION_MARKERS_KEY = "pm.mixes.sectionMarkers.v1";
+
+/** The remembered "draw section markers on the clips" choice (default on). Browser storage can be
+ * unavailable or corrupt: then the default is used and the choice is not kept. */
+function loadSectionMarkers(): boolean {
+  try {
+    return localStorage.getItem(SECTION_MARKERS_KEY) !== "0";
+  } catch {
+    return true;
+  }
+}
+
 class MixView {
   /** Zoom: pixels per second of the timeline. */
   pps = $state(24);
@@ -27,9 +39,21 @@ class MixView {
   rangeBand = $state<{ from: number; to: number } | null>(null);
   /** A stretch marked by Shift-dragging the ruler (samples, from < to); the export dialog can take it as its time range. */
   marked = $state<{ from: number; to: number } | null>(null);
+  /** Draw detected sections on the clips (also needs "show markers on waveforms" in the Sections
+   * panel's settings). Clips of tracks without sections draw nothing either way. */
+  sectionMarkers = $state(loadSectionMarkers());
   lanes = $state<Record<EnvLaneId, boolean>>({ tempo: false, key: false, gain: true });
   /** Library tracks the tracks view asked to add; consumed when a mix is open. */
   pending = $state.raw<number[]>([]);
+
+  setSectionMarkers(on: boolean) {
+    this.sectionMarkers = on;
+    try {
+      localStorage.setItem(SECTION_MARKERS_KEY, on ? "1" : "0");
+    } catch {
+      // not remembered this time
+    }
+  }
 
   x(samples: number) {
     return toPx(samples, this.pps);

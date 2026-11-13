@@ -16,7 +16,9 @@ import {
   type TrackInfo,
 } from "$lib/api/mixes";
 import * as E from "$lib/state/mixedit";
-import { buildRecipe, recipeDef, requestedBars, type RecipePrefs } from "$lib/state/transitionRecipes";
+import { sections } from "$lib/state/sections.svelte";
+import { alignSuggestion } from "$lib/state/sectionTransition";
+import { buildRecipe, recipeDef, requestedBars, sectionEdgeWords, type RecipePrefs } from "$lib/state/transitionRecipes";
 import { buildSetDoc, type BuildKit, type BuildResult } from "./buildMix";
 import { planMix, type MixPlan, type SetPrefs, type SetTrack } from "./solver";
 
@@ -56,10 +58,13 @@ export function planFor(pre: Preflight, prefs: SetPrefs): MixPlan {
 /** The recipe and length the new mix will use, in words (they are the Mixes view's auto-transition settings). */
 export function transitionWords(rp: RecipePrefs): string {
   const bars = requestedBars(rp.recipe, rp);
-  return `${recipeDef(rp.recipe).label}, ${bars < 1 ? `${Math.round(bars * 4)} beat${Math.round(bars * 4) === 1 ? "" : "s"}` : `${bars} bar${bars === 1 ? "" : "s"}`}`;
+  const edge = sectionEdgeWords(rp.sectionEdge);
+  return `${recipeDef(rp.recipe).label}, ${bars < 1 ? `${Math.round(bars * 4)} beat${Math.round(bars * 4) === 1 ? "" : "s"}` : `${bars} bar${bars === 1 ? "" : "s"}`}${edge ? `, ${edge} where sections are detected` : ""}`;
 }
 
-const kit: BuildKit = {
+/** The editing functions for a build with these transition settings. The recipe step honours the
+ * "start / end on a section boundary" setting the same way the mix editor's Auto buttons do. */
+const kitFor = (rp: RecipePrefs): BuildKit => ({
   SR: E.SR,
   addClip: E.addClip,
   setClipBpm: E.setClipBpm,
@@ -68,8 +73,11 @@ const kit: BuildKit = {
   applyTransition: E.applyTransition,
   clipOf: E.clipOf,
   effectiveBpm: E.effectiveBpm,
-  recipe: (doc, base, recipe, cutAt) => buildRecipe(doc, base, recipe, { cutAt }, E.recipeKit),
-};
+  recipe: (doc, base, recipe, cutAt) => {
+    const aligned = alignSuggestion(doc, base, rp, (id) => sections.of(id), recipeDef(recipe).lengths[0] * 4 * base.beat);
+    return buildRecipe(doc, aligned.suggestion, recipe, { cutAt, moved: aligned.moved }, E.recipeKit);
+  },
+});
 
 export type Created = { saved: MixSaved; result: BuildResult };
 
@@ -101,7 +109,7 @@ export async function createMix(
         beatmatch: (doc, clipId) => mixBeatmatch(root, doc, clipId),
         autoTransition: (doc, from, to, bars) => mixAutoTransition(root, doc, from, to, bars),
       },
-      kit,
+      kitFor(recipe),
       progress,
     );
     const problems = await mixValidate(root, result.doc);

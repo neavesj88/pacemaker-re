@@ -1,8 +1,8 @@
 <script lang="ts">
   // The auto-transition settings: which recipe the Auto buttons build, how long, where a hard cut
   // falls, and what happens to tools of yours that are in the way. Remembered between sessions.
-  import { RECIPES, lengthLabel, nearestLength, recipeDef, requestedBars, type RecipeId } from "$lib/state/transitionRecipes";
-  import type { CutAt, ConflictPolicy } from "$lib/state/transitionRecipes";
+  import { RECIPES, SECTION_REACH, lengthLabel, nearestLength, recipeDef, requestedBars, sectionEdgeWords, type RecipeId } from "$lib/state/transitionRecipes";
+  import type { CutAt, ConflictPolicy, SectionEdge } from "$lib/state/transitionRecipes";
   import { recipePrefs } from "./recipePrefs.svelte";
 
   const p = $derived(recipePrefs.value);
@@ -41,6 +41,35 @@
     <option value="replace">Replace mine (Undo restores)</option>
   </select>
 </div>
+<div class="field">
+  <label for="rs-sec">Sections</label>
+  <select id="rs-sec" value={p.sectionEdge} onchange={(e) => recipePrefs.set({ sectionEdge: e.currentTarget.value as SectionEdge })}>
+    <option value="off">Ignore sections (start on the beat-matched start)</option>
+    <option value="start">Start on the nearest section boundary</option>
+    <option value="end">End on the nearest section boundary</option>
+    <option value="both">Start and end on section boundaries</option>
+  </select>
+</div>
+{#if p.sectionEdge !== "off"}
+  <div class="field">
+    <label for="rs-reach">Boundary within (bars)</label>
+    <input
+      id="rs-reach"
+      type="number"
+      min={SECTION_REACH.min}
+      max={SECTION_REACH.max}
+      step="1"
+      value={p.sectionReachBars}
+      onchange={(e) => {
+        recipePrefs.set({ sectionReachBars: e.currentTarget.valueAsNumber });
+        e.currentTarget.value = String(recipePrefs.value.sectionReachBars);
+      }}
+    />
+  </div>
+  <div class="muted small">
+    The transition {sectionEdgeWords(p.sectionEdge)} (of either clip) within {p.sectionReachBars} bar{p.sectionReachBars === 1 ? "" : "s"} of where it would otherwise {p.sectionEdge === "end" ? "end" : "start"}, so its length can change. Only for clips whose tracks have detected sections (Sections panel); the notes after building say what moved. Without sections it builds exactly as above.
+  </div>
+{/if}
 <div class="muted small">These apply to every Auto button and menu entry in this editor. The result is always ordinary tools and a crossfade curve you can edit.</div>
 
 <style>

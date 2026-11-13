@@ -22,6 +22,10 @@ export type RecipeId = "bassSwap" | "longBlend" | "echoOut" | "filterSweep" | "d
 export type CutAt = "start" | "end";
 /** What to do when a tool the recipe wants to add would overlap one the user already has. */
 export type ConflictPolicy = "ask" | "skip" | "replace";
+/** Which end of an auto transition may move onto the nearest section boundary (detected sections
+ * of the two clips, state/sectionTransition.ts). "off" keeps the beat-matched geometry. */
+export type SectionEdge = "off" | "start" | "end" | "both";
+export const SECTION_EDGES: SectionEdge[] = ["off", "start", "end", "both"];
 
 export type RecipeDef = {
   id: RecipeId;
@@ -127,9 +131,22 @@ export type RecipePrefs = {
   cutAt: CutAt;
   /** What to do about tools of the same kind already in the way. */
   onConflict: ConflictPolicy;
+  /** Start and/or end the transition on the nearest section boundary of the clips (only where
+   * they have detected sections). */
+  sectionEdge: SectionEdge;
+  /** How far a boundary may be from where the transition would otherwise start or end, in bars. */
+  sectionReachBars: number;
 };
 
-export const DEFAULT_RECIPE_PREFS: RecipePrefs = { recipe: "bassSwap", bars: null, cutAt: "end", onConflict: "ask" };
+/** The setting's words: "starts on a section boundary" (empty when off). */
+export function sectionEdgeWords(edge: SectionEdge): string {
+  return edge === "start" ? "starts on a section boundary" : edge === "end" ? "ends on a section boundary" : edge === "both" ? "starts and ends on section boundaries" : "";
+}
+
+/** The range of `sectionReachBars`. */
+export const SECTION_REACH = { min: 1, max: 32 } as const;
+
+export const DEFAULT_RECIPE_PREFS: RecipePrefs = { recipe: "bassSwap", bars: null, cutAt: "end", onConflict: "ask", sectionEdge: "off", sectionReachBars: 8 };
 
 /** Saved prefs merged over the defaults, ignoring anything unknown or malformed. */
 export function mergeRecipePrefs(saved: unknown): RecipePrefs {
@@ -140,6 +157,10 @@ export function mergeRecipePrefs(saved: unknown): RecipePrefs {
   if (typeof s.bars === "number" && Number.isFinite(s.bars) && s.bars >= 0.25 && s.bars <= 128) out.bars = s.bars;
   if (s.cutAt === "start" || s.cutAt === "end") out.cutAt = s.cutAt;
   if (s.onConflict === "ask" || s.onConflict === "skip" || s.onConflict === "replace") out.onConflict = s.onConflict;
+  if (typeof s.sectionEdge === "string" && (SECTION_EDGES as string[]).includes(s.sectionEdge)) out.sectionEdge = s.sectionEdge as SectionEdge;
+  if (typeof s.sectionReachBars === "number" && Number.isFinite(s.sectionReachBars) && s.sectionReachBars >= SECTION_REACH.min && s.sectionReachBars <= SECTION_REACH.max) {
+    out.sectionReachBars = Math.round(s.sectionReachBars);
+  }
   return out;
 }
 
@@ -159,7 +180,12 @@ export type Kit = {
   conflicts: (clip: Clip, tool: ToolDoc) => string[];
 };
 
-export type RecipeOptions = { cutAt: CutAt };
+export type RecipeOptions = {
+  cutAt: CutAt;
+  /** The window was moved off the backend's (onto section boundaries): its stock bass-swap tools
+   * no longer fit it, so the bass swap is built here like the other recipes. */
+  moved?: boolean;
+};
 
 /** The step of a hard cut, in samples (about ten milliseconds at 44.1 kHz), so it does not click. */
 export const CUT_RAMP = 441;
@@ -215,8 +241,8 @@ function stepCurve(length: number, at: CutAt): CurveNode[] {
 export function buildRecipe(doc: MixDoc, base: TransitionSuggestion, recipe: RecipeId, opts: RecipeOptions, kit: Kit): TransitionSuggestion {
   const def = recipeDef(recipe);
   // the bass swap is the backend's own suggestion and works on any overlap (under a bar it has no tools)
-  if (recipe === "bassSwap" && base.transition.between) return { ...base, transition: { ...base.transition, curve: curveOf([[0, 0], [1, 1]]) } };
-  if (base.bars < def.lengths[0]) {
+  if (recipe === "bassSwap" && base.transition.between && !opts.moved) return { ...base, transition: { ...base.transition, curve: curveOf([[0, 0], [1, 1]]) } };
+  if (base.bars < def.lengths[0] && !(recipe === "bassSwap" && opts.moved)) {
     throw new Error(
       `Only ${lengthLabel(base.bars)} of the two clips overlap here; a ${def.label.toLowerCase()} needs at least ${lengthLabel(def.lengths[0])}. Move the later clip earlier, or pick a shorter recipe.`,
     );
@@ -247,6 +273,20 @@ export function buildRecipe(doc: MixDoc, base: TransitionSuggestion, recipe: Rec
   const notes = base.notes.filter((n) => !n.includes("no bass swap tools"));
 
   switch (recipe) {
+    case "bassSwap": {
+      // the backend's own bass swap (timing.rs `eq_swap_tool`) on a moved window: Lo held, then
+      // killed over the beat before the middle (outgoing) or opened over the beat after it
+      // (incoming); under a bar there are no tools
+      curve = curveOf([[0, 0], [1, 1]]);
+      if (base.bars >= 1) {
+        const swap = at(0.5);
+        eqLo(from, [[0, 0], [Math.max(0, swap - B), 0], [swap, LO_KILL], [last, LO_KILL]]);
+        eqLo(to, [[0, LO_KILL], [swap, LO_KILL], [Math.min(last, swap + B), 0], [last, 0]]);
+      } else {
+        notes.push(`${Math.round(base.bars * 4)} beat(s) is under a bar: no bass swap tools`);
+      }
+      break;
+    }
     case "longBlend": {
       curve = curveOf([[0, 0], [0.25, 0.15], [0.75, 0.85], [1, 1]]);
       eqLo(from, [[0, 0], [at(0.45), 0], [at(0.65), LO_KILL], [last, LO_KILL]]);

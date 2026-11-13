@@ -171,6 +171,23 @@ export function neighbourBoundary(sections: readonly SectionOut[], secs: number,
   return null;
 }
 
+// ---- what a track offers a mix (the set builder) ---------------------------------------------
+
+/** Shortest intro or outro that counts as something to mix over: a phrase. */
+export const MIN_MIX_BARS = 8;
+
+/** Does the track open with an intro and end on an outro long enough to blend over? null when it
+ * has no sections at all (so a caller can tell "no outro" from "unknown"). */
+export function mixSides(sections: readonly SectionOut[] | null | undefined, minBars = MIN_MIX_BARS): { intro: boolean; outro: boolean } | null {
+  if (!sections || sections.length === 0) return null;
+  const first = sections[0];
+  const last = sections[sections.length - 1];
+  return {
+    intro: first.kind === "intro" && first.end_bar - first.start_bar >= minBars,
+    outro: last.kind === "outro" && last.end_bar - last.start_bar >= minBars,
+  };
+}
+
 // ---- wording ---------------------------------------------------------------------------------
 
 /** Tracks a default run would analyse: never analysed, or the file has changed since. A track

@@ -99,6 +99,7 @@
   <fieldset>
     <legend>Behaviour</legend>
     <label class="check"><input type="checkbox" checked={p.solveOnLoad} onchange={(e) => patch({ solveOnLoad: e.currentTarget.checked })} /><span>Order the set as soon as tracks are loaded</span></label>
+    <label class="check" title="Needs sections: Tracks, Sections panel. Only a tie-breaker between hops that are otherwise alike; tracks without sections are not penalised."><input type="checkbox" checked={p.preferSections} onchange={(e) => patch({ preferSections: e.currentTarget.checked })} /><span>Prefer leaving a track on its outro and arriving on an intro, where sections are detected</span></label>
     <label class="check"><input type="checkbox" checked={p.lockOnDrag} onchange={(e) => patch({ lockOnDrag: e.currentTarget.checked })} /><span>Lock a track where I drop it</span></label>
   </fieldset>
 

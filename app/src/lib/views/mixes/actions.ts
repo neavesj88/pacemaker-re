@@ -3,6 +3,7 @@
 import type { Clip, MixDoc } from "$lib/api/mixes";
 import * as E from "$lib/state/mixedit";
 import { mixes } from "$lib/state/mixes.svelte";
+import { alignSuggestion } from "$lib/state/sectionTransition";
 import { toast } from "$lib/state/toast.svelte";
 import { vocal } from "$lib/state/vocal.svelte";
 import {
@@ -214,7 +215,10 @@ export async function autoTransition(fromId: string, toId: string, opts: AutoOpt
     const base = await mixes.autoTransition(fromId, toId, false, bars);
     const doc = mixes.doc;
     if (!doc) return;
-    const built = buildRecipe(doc, base, recipe, { cutAt: prefs.cutAt }, E.recipeKit);
+    // with the section setting on, the window may move onto section boundaries first (the backend
+    // knows nothing of sections); off, or without sections near, this is the backend's own window
+    const aligned = alignSuggestion(doc, base, prefs, mixes.sectionLookup, def.lengths[0] * 4 * base.beat);
+    const built = buildRecipe(doc, aligned.suggestion, recipe, { cutAt: prefs.cutAt, moved: aligned.moved }, E.recipeKit);
     const old = opts.replacing ? E.find(doc, opts.replacing) : null;
     const replacing = old?.kind === "transition" ? old.transition : null;
     const way = toolsInTheWay(doc, built, replacing);

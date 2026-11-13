@@ -27,6 +27,11 @@ export type SetTrack = {
   secs: number;
   /** 1..10, or null when no energy value exists for the track. */
   energy: number | null;
+  /** The track has a detected outro long enough to mix out over (sections, state/sections.svelte.ts).
+   * Absent = the track has no sections, which is neither good nor bad. */
+  outro?: boolean;
+  /** Likewise for an intro to mix into. */
+  intro?: boolean;
 };
 
 export const keyCode = (k: KeyPos) => `${k.num}${k.letter}`;
@@ -116,7 +121,15 @@ export type SolverOptions = {
   maxTrackSecs: number | null;
   /** Length to aim for, seconds. null = use every track. */
   targetSecs: number | null;
+  /** Prefer mixing out of a track that has an outro into one that has an intro, where sections
+   * exist. Only a tie-breaker (see `SECTION_BONUS`); a track without sections is not penalised. */
+  sectionPref?: boolean;
 };
+
+/** What a side of a hop that sits on an outro (leaving) or an intro (arriving) takes off its search
+ * cost. Two points a side keeps it below the 5-point step between key moves, so it chooses between
+ * hops that are otherwise alike and never trades a key or tempo limit for sections. */
+export const SECTION_BONUS = 2;
 
 export const DEFAULT_SOLVER: SolverOptions = {
   allowedMoves: ["same", "relative", "adjacent"],
@@ -128,6 +141,7 @@ export const DEFAULT_SOLVER: SolverOptions = {
   energyWeight: 0.5,
   maxTrackSecs: null,
   targetSecs: null,
+  sectionPref: false,
 };
 
 /** Seconds a track occupies in the set (its length, capped by the per-track maximum). */
@@ -199,7 +213,20 @@ export type Transition = {
   score: number;
   /** Short reasons the transition is weak, in words. */
   concerns: string[];
+  /** Where the hop sits against the tracks' sections: leaving an outro, arriving at an intro. null
+   * when the preference is off or neither track has sections. It never changes `score`. */
+  sectionFit: { out: boolean; in: boolean } | null;
 };
+
+/** The hop's section fit in words, "" when there is nothing to say. */
+export function sectionFitText(t: Pick<Transition, "sectionFit">): string {
+  const f = t.sectionFit;
+  if (!f) return "";
+  if (f.out && f.in) return "outro into intro";
+  if (f.out) return "leaves on an outro";
+  if (f.in) return "arrives on an intro";
+  return "";
+}
 
 const clamp = (x: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, x));
 
@@ -245,6 +272,7 @@ export function transitionBetween(a: SetTrack, b: SetTrack, o: SolverOptions): T
   const w = clamp(o.keyWeight, 0, 1);
   const score = Math.round(w * keyScore + (1 - w) * bScore);
   const energyDelta = a.energy != null && b.energy != null ? b.energy - a.energy : null;
+  const sectionFit = o.sectionPref && (a.outro !== undefined || b.intro !== undefined) ? { out: a.outro === true, in: b.intro === true } : null;
   return {
     from: a.id,
     to: b.id,
@@ -263,13 +291,15 @@ export function transitionBetween(a: SetTrack, b: SetTrack, o: SolverOptions): T
     bpmScore: bScore,
     score,
     concerns,
+    sectionFit,
   };
 }
 
 /** Search cost of a transition: low is good. A broken limit costs extra on top of a low score so
  * the search prefers a clean pair over a slightly better-scoring one that breaks a limit. */
 function costOf(t: Transition): number {
-  return 100 - t.score + (t.keyOk === false ? 60 : 0) + (t.bpmOk === false ? 60 : 0);
+  const sections = t.sectionFit ? (t.sectionFit.out ? SECTION_BONUS : 0) + (t.sectionFit.in ? SECTION_BONUS : 0) : 0;
+  return 100 - t.score + (t.keyOk === false ? 60 : 0) + (t.bpmOk === false ? 60 : 0) - sections;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -722,6 +752,8 @@ export type SetPrefs = {
   solveOnLoad: boolean;
   /** Dragging a track to a new place also locks it there. */
   lockOnDrag: boolean;
+  /** Prefer mixing out at an outro and into an intro where tracks have detected sections. */
+  preferSections: boolean;
   /** Creating a mix: beat-match each track to the one before it. */
   beatmatch: boolean;
   /** Creating a mix: the tempo it runs at, BPM; null = the middle tempo of the set. */
@@ -747,6 +779,7 @@ export const DEFAULT_PREFS: SetPrefs = {
   targetMins: null,
   solveOnLoad: true,
   lockOnDrag: true,
+  preferSections: false,
   beatmatch: true,
   mixTempo: null,
   blendJumpPct: null,
@@ -794,6 +827,7 @@ export function mergePrefs(saved: unknown, base: SetPrefs = DEFAULT_PREFS): SetP
   out.targetMins = s.targetMins === null ? null : (inRange(s.targetMins, "targetMins") ?? out.targetMins);
   if (typeof s.solveOnLoad === "boolean") out.solveOnLoad = s.solveOnLoad;
   if (typeof s.lockOnDrag === "boolean") out.lockOnDrag = s.lockOnDrag;
+  if (typeof s.preferSections === "boolean") out.preferSections = s.preferSections;
   if (typeof s.beatmatch === "boolean") out.beatmatch = s.beatmatch;
   out.mixTempo = s.mixTempo === null ? null : (inRange(s.mixTempo, "mixTempo") ?? out.mixTempo);
   out.blendJumpPct = s.blendJumpPct === null ? null : (inRange(s.blendJumpPct, "blendJumpPct") ?? out.blendJumpPct);
@@ -814,6 +848,7 @@ export function solverOptions(p: SetPrefs): SolverOptions {
     energyWeight: p.energyWeight,
     maxTrackSecs: p.maxTrackMins != null ? p.maxTrackMins * 60 : null,
     targetSecs: p.targetMins != null ? p.targetMins * 60 : null,
+    sectionPref: p.preferSections,
   };
 }
 

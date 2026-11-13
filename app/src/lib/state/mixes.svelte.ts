@@ -30,6 +30,7 @@ import {
   type TransitionSuggestion,
 } from "$lib/api/mixes";
 import { renderMixPreview, type PreviewGains } from "$lib/api/export";
+import { sections } from "./sections.svelte";
 import { session } from "./session.svelte";
 import { toast } from "./toast.svelte";
 import * as E from "./mixedit";
@@ -319,8 +320,12 @@ class Mixes {
   // Editing actions (thin wrappers over mixedit.ts)
   // ------------------------------------------------------------------------------------------
 
+  /** Detected sections of a track (app-side estimates), for the "section" snap mode and the
+   * auto-transition option; null for a track without any. */
+  readonly sectionLookup: E.SectionsLookup = (trackId) => sections.of(trackId);
+
   #snapOpts(exclude: string[] = []): E.SnapOptions {
-    return { mode: this.snap, threshold: this.threshold, exclude };
+    return { mode: this.snap, threshold: this.threshold, exclude, sections: this.sectionLookup };
   }
 
   setName(name: string) {
