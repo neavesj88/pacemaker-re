@@ -8,7 +8,7 @@
 
 {#snippet section(id: "library" | "tools", title: string)}
   <div class="sect">{title}</div>
-  {#each views.filter((v) => v.section === id) as v (v.id)}
+  {#each views.filter((v) => v.section === id && (!v.visible || v.visible())) as v (v.id)}
     <button class:active={nav.view === v.id} onclick={() => nav.go(v.id)}>
       {v.label}
       {#if v.count && session.library}<span>{v.count(session.library)}</span>{/if}

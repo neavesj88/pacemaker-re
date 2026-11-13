@@ -1,6 +1,7 @@
 <script lang="ts">
   import { filters } from "$lib/state/filters.svelte";
   import { jobs } from "$lib/state/jobs.svelte";
+  import { nav } from "$lib/state/nav.svelte";
   import { pickerOptions, sameRoot } from "$lib/state/place";
   import { session } from "$lib/state/session.svelte";
   import Button from "$lib/ui/Button.svelte";
@@ -35,6 +36,12 @@
     <Button onclick={() => session.refreshVolumes()} title="Look for a connected Pacemaker">Rescan</Button>
     <Button onclick={() => session.openFolder()}>Open folder…</Button>
   </div>
+  {#if session.library && session.isComputer && session.volumes.length > 0}
+    <Button
+      onclick={() => nav.go("sync", { direction: "send", other: session.volumes[0] })}
+      title="Copy tracks, mixes and cases from this computer to the Pacemaker. You see what would change first."
+    >Send to Pacemaker</Button>
+  {/if}
   {#if session.library}
     <Button
       variant="primary"

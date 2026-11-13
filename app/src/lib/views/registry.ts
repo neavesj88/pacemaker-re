@@ -13,6 +13,8 @@ export type ViewDef = {
   /** Position in the sidebar within its section (lower first). */
   order: number;
   component: Component;
+  /** Sidebar entry shown only while this is true (a view that needs something to exist first). */
+  visible?: () => boolean;
   /** Number shown beside the label, if the view has one. */
   count?: (lib: LibraryView) => number;
 };
