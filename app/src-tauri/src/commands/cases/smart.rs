@@ -17,7 +17,7 @@ use serde::{Deserialize, Serialize};
 
 pub use rules::{Data, Eval, Query, evaluate, migrate, referenced_cases, validate_query};
 #[cfg(test)]
-pub use rules::TagMatch;
+pub use rules::{Mode, TagMatch};
 #[cfg(test)]
 pub use rules::{Rule, Sort, SortField};
 

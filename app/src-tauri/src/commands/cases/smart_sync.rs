@@ -370,6 +370,42 @@ mod tests {
     }
 
     #[test]
+    fn a_damaged_labels_file_skips_label_smart_cases_and_never_rewrites_their_device_copy() {
+        use crate::commands::cases::smart::TagMatch;
+        let (mut lib, vol, ids) = library("badlabels", 3);
+        let dir = temp_dir("badlabels-cfg");
+        lib.set_track_ratings(&[(ids[0], 5)]).unwrap();
+        let root = vol.to_string_lossy().to_string();
+        let by_tag = SmartCase { query: Query { rules: vec![Rule::Tags { how: TagMatch::None, tags: vec!["x".into()] }], ..Default::default() }, ..starred(0, "No x", 1) };
+        let list = stored(&dir, vec![by_tag, starred(0, "Top", 5)]);
+
+        // labels file fine (absent): "none of x" holds for every track, so its copy has all three
+        apply(&mut lib, &dir, "P:\\", &list, 0).unwrap();
+        let list = smart::load(&dir, "P:\\").unwrap();
+        let copy = list.iter().find(|s| s.name == "No x").unwrap().device_case_id.unwrap();
+        assert_eq!(lib.case_track_ids(copy).unwrap().len(), 3);
+        // then the labels file is damaged
+        let file = crate::commands::tags::labels_file(&dir, &root);
+        std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+        std::fs::write(&file, "{ not json").unwrap();
+
+        let pre = preview(&lib, &list, 0, Some(&dir)).unwrap();
+        let tagged = pre.items.iter().find(|i| i.name == "No x").unwrap();
+        assert_eq!(tagged.action, Action::Skip, "{tagged:?}");
+        assert!(tagged.error.as_deref().unwrap().contains("could not be read"));
+        let plain = pre.items.iter().find(|i| i.name == "Top").unwrap();
+        assert_ne!(plain.action, Action::Skip, "a case without label rules is unaffected");
+        let done = apply(&mut lib, &dir, "P:\\", &list, 0).unwrap();
+        assert_eq!(done.items.iter().find(|i| i.name == "No x").unwrap().action, Action::Skip);
+        assert_eq!(lib.case_track_ids(copy).unwrap().len(), 3, "the device copy was left as it was");
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), "{ not json");
+
+        drop(lib);
+        std::fs::remove_dir_all(&vol).unwrap();
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
     fn a_renamed_reordered_or_deleted_device_copy_is_noticed_and_a_foreign_one_is_left_alone() {
         let (mut lib, vol, ids) = library("states", 3);
         let dir = temp_dir("states-cfg");

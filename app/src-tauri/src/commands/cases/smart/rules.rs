@@ -439,6 +439,16 @@ fn uses_labels(rules: &[Rule]) -> bool {
     })
 }
 
+/// Does any rule (groups included) read energy (the energy choice and the estimates as well as
+/// the labels)?
+fn uses_energy(rules: &[Rule]) -> bool {
+    rules.iter().any(|r| match r {
+        Rule::EnergyRange { .. } => true,
+        Rule::Group { items, .. } => uses_energy(items),
+        _ => false,
+    })
+}
+
 impl Data {
     /// Reads the library and the membership of every case any of `queries` mentions. When a rule
     /// reads labels, they are read too from the app config dir `config` (the labels file, the
@@ -458,7 +468,7 @@ impl Data {
             cases.insert(id, members);
         }
         let labels = match config {
-            Some(dir) if queries.iter().any(|q| uses_labels(&q.rules)) => tags::snapshot(dir, lib).map_err(Error::Invalid)?,
+            Some(dir) if queries.iter().any(|q| uses_labels(&q.rules)) => tags::snapshot(dir, lib, queries.iter().any(|q| uses_energy(&q.rules))).map_err(Error::Invalid)?,
             _ => LabelSnapshot::default(),
         };
         Ok(Data {
@@ -657,6 +667,18 @@ pub fn evaluate(q: &Query, d: &Data) -> Result<Eval, String> {
     if !missing.is_empty() {
         missing.sort_unstable();
         return Err(format!("A rule refers to a case that no longer exists (case {}). Pick another case.", missing[0]));
+    }
+    // a labels source that could not be read is not "no labels": refuse, so "tags: none of X"
+    // never matches everything and a smart case's device copy is never rewritten from it
+    if uses_labels(&q.rules) {
+        if let Some(why) = &d.labels.problem {
+            return Err(format!("Tags, colours and energy cannot be read right now, so this smart case was not worked out. {why}"));
+        }
+    }
+    if uses_energy(&q.rules) {
+        if let Some(why) = &d.labels.energy_problem {
+            return Err(format!("Energy cannot be read right now, so this smart case was not worked out. {why}"));
+        }
     }
     let cx = Context { favourites: &d.favourites, cases: &d.cases, labels: &d.labels, now_ms: d.now_ms };
     let no_extra = TrackExtra::default();

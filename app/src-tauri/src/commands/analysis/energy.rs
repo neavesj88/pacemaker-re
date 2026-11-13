@@ -347,11 +347,19 @@ fn refs_of(lib: &Library) -> Result<Vec<TrackRef>, pm_formats::library::Error> {
 /// The auto energy (1.0 to 10.0) of every track of the library at `root` that has one, by
 /// track id. The read API for other features (set builder, smart cases): it is the same number
 /// the table shows, under the settings in force. It is not the user's own energy rating.
-#[allow(dead_code)] // the read API for the set builder and smart cases; no caller yet
+#[allow(dead_code)] // the read API for the set builder; the smart-case snapshot uses the checked form
 pub fn energy_by_track(dir: &Path, root: &str, lib: &Library) -> Result<HashMap<i64, f32>, String> {
+    energy_by_track_checked(dir, root, lib).map(|(map, _)| map)
+}
+
+/// [`energy_by_track`] plus the sentence saying so when the saved results could not be used (an
+/// unreadable file, or results from an older method). The map is then short or empty, so a
+/// caller whose answer would change for the worse (a smart case that writes to the card) must
+/// not carry on as if those tracks simply had no estimate.
+pub fn energy_by_track_checked(dir: &Path, root: &str, lib: &Library) -> Result<(HashMap<i64, f32>, Option<String>), String> {
     let (cache, problem) = load_cache(dir, root);
-    let state = compute_state(&refs_of(lib).map_err(|e| e.to_string())?, &cache, &load_settings(dir), problem);
-    Ok(state.entries.into_iter().map(|e| (e.track_id, e.energy)).collect())
+    let state = compute_state(&refs_of(lib).map_err(|e| e.to_string())?, &cache, &load_settings(dir), problem.clone());
+    Ok((state.entries.into_iter().map(|e| (e.track_id, e.energy)).collect(), problem))
 }
 
 // ---- the job ---------------------------------------------------------------------------------

@@ -5,17 +5,19 @@
 // The Pacemaker has no track colours, so these go to the app's own label store (the same eight
 // colour labels as Tracks > Tags, colour, energy), never to the device. The reader hands over the
 // other program's colour as a bare index; this module turns indexes into label colours with a
-// table the user can change. The default table is a GUESS in palette order: what Traktor calls
-// each index is UNVERIFIED (no Traktor file or NI document was available), which is why the
-// preview shows the table and every track it would colour before anything is written.
+// table the user fills in. What Traktor calls each index is UNVERIFIED (no Traktor file or NI
+// document was available), so the table STARTS EMPTY (every index is "no colour") and nothing is
+// set until the user maps it. A guess in palette order is on offer as a button, never applied on
+// its own; the preview shows the table and every track it would colour before anything is written.
 import type { ColourNote } from "../../api/import";
 import { LABEL_COLOURS, colourName, type LabelColour } from "../../state/labels.ts";
 
 /** Index -> label colour; a missing or null entry means "do not set a colour for this index". */
 export type ColourMap = Record<number, LabelColour | null>;
 
-/** Traktor's indexes 1 to 7 in the order of the palette (UNVERIFIED, see the file header). */
-export const DEFAULT_TRAKTOR_MAP: Readonly<ColourMap> = Object.freeze({
+/** A guess for Traktor's indexes 1 to 7 in the order of the palette (UNVERIFIED, see the file
+ *  header). Only ever applied when the user asks for it (`suggestedMap`). */
+export const SUGGESTED_TRAKTOR_MAP: Readonly<ColourMap> = Object.freeze({
   1: "red",
   2: "orange",
   3: "yellow",
@@ -34,10 +36,18 @@ export function mapIndex(map: ColourMap, index: number): LabelColour | null {
 /** The indexes the file uses, ascending: the rows of the mapping table. */
 export const usedIndexes = (notes: readonly Pick<ColourNote, "index">[]): number[] => [...new Set(notes.map((n) => n.index))].sort((a, b) => a - b);
 
-/** A starting table for these indexes: the default where there is one, else no colour. */
+/** The starting table for these indexes: every one is "no colour", so nothing is set until the
+ *  user maps it (the real meaning of Traktor's numbers is unverified). */
 export function startingMap(indexes: readonly number[]): ColourMap {
   const m: ColourMap = {};
-  for (const i of indexes) m[i] = DEFAULT_TRAKTOR_MAP[i] ?? null;
+  for (const i of indexes) m[i] = null;
+  return m;
+}
+
+/** The palette-order guess for these indexes (null where it has none): offered, never applied unasked. */
+export function suggestedMap(indexes: readonly number[]): ColourMap {
+  const m: ColourMap = {};
+  for (const i of indexes) m[i] = SUGGESTED_TRAKTOR_MAP[i] ?? null;
   return m;
 }
 

@@ -590,6 +590,7 @@ mod label_rules {
             ]),
             auto_energy: HashMap::from([(1, 8.2), (2, 6.5)]),
             source,
+            ..Default::default()
         }
     }
 

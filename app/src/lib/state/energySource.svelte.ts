@@ -26,18 +26,17 @@ class EnergySourceState {
     }
   }
 
-  /** Saves the choice; true when it is in force. Anything that shows a smart case's matches
-   *  re-reads them when `source` changes. */
+  /** Saves the choice; true when it is in force. `source` changes only once the backend has
+   *  saved it: the smart-case counts and previews re-run when it changes and the Rust side reads
+   *  the saved file, so changing it first could count under the wrong source. A failed save
+   *  leaves `source` as it was. */
   async set(source: EnergySource): Promise<boolean> {
-    const before = this.source;
-    this.source = source; // the lists change at once; put back if the save fails
     try {
       const v = await energySourceSet(source);
       this.source = v.source;
       this.problem = "";
       return true;
     } catch (e) {
-      this.source = before;
       toast.show(`Could not save the energy source: ${e}`, "bad");
       return false;
     }

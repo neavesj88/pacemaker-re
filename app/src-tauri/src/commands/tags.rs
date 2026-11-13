@@ -379,11 +379,21 @@ pub fn energy_source_set(app: tauri::AppHandle, source: EnergySource) -> AppResu
 /// The labels, auto energy estimates and energy choice of one library, read once. The smart-case
 /// rules (tag, colour and energy rules) run on this, so the live preview, the sidebar count and
 /// the rewrite of a smart case's Pacemaker copy all see the same labels the Tracks view shows.
+///
+/// A source that could not be read is NOT treated as "no labels": a rule like "tags: none of X"
+/// would then match every track and rewrite the smart case's device copy wrongly. The reason is
+/// kept in `problem` / `energy_problem` instead, and a smart case whose rules read the missing
+/// part refuses to evaluate (it is skipped, its device copy left as it was) while the other
+/// smart cases carry on.
 #[derive(Debug, Clone, Default)]
 pub struct LabelSnapshot {
     pub labels: HashMap<i64, Labels>,
     pub auto_energy: HashMap<i64, f32>,
     pub source: EnergySource,
+    /// Why the labels file could not be used (tag, colour and energy rules all read it).
+    pub problem: Option<String>,
+    /// Why the energy choice or the saved energy estimates could not be used (energy rules only).
+    pub energy_problem: Option<String>,
 }
 
 impl LabelSnapshot {
@@ -394,9 +404,11 @@ impl LabelSnapshot {
     }
 }
 
-/// Reads the snapshot for the library `lib` was opened on. A labels file that cannot be read is
-/// an empty one here (the Tracks view says why); the rules then see no labels.
-pub fn snapshot(dir: &Path, lib: &Library) -> Result<LabelSnapshot, String> {
+/// Reads the snapshot for the library `lib` was opened on. A labels file, energy choice or
+/// energy cache that cannot be used is reported in the snapshot's problem fields, not hidden as
+/// an empty one (see [`LabelSnapshot`]). `uses_energy` says whether any rule reads energy: the
+/// energy choice and the estimates are only read, and only held against, when one does.
+pub fn snapshot(dir: &Path, lib: &Library, uses_energy: bool) -> Result<LabelSnapshot, String> {
     let root = lib.root().to_string_lossy().to_string();
     let idents = build_keys(&lib.track_identities().map_err(|e| e.to_string())?);
     let loaded = {
@@ -404,8 +416,25 @@ pub fn snapshot(dir: &Path, lib: &Library) -> Result<LabelSnapshot, String> {
         store::load(dir, &volume(&root))
     };
     let labels = idents.iter().filter_map(|(id, key)| loaded.store.get(Kind::Track, key).map(|l| (*id, l.clone()))).collect();
-    let auto_energy = super::analysis::energy::energy_by_track(dir, &root, lib)?;
-    Ok(LabelSnapshot { labels, auto_energy, source: energy_source::load(dir).0 })
+    let mut snap = LabelSnapshot { labels, problem: loaded.notice, ..Default::default() };
+    if uses_energy {
+        let (source, source_problem) = energy_source::load(dir);
+        snap.source = source;
+        snap.energy_problem = source_problem;
+        // the estimates only matter when the choice reads them
+        if source != EnergySource::Mine {
+            let (auto, cache_problem) = super::analysis::energy::energy_by_track_checked(dir, &root, lib)?;
+            snap.auto_energy = auto;
+            snap.energy_problem = snap.energy_problem.or(cache_problem);
+        }
+    }
+    Ok(snap)
+}
+
+/// Where the labels file of the library at `root` lives (tests set one up, or damage it).
+#[cfg(test)]
+pub(crate) fn labels_file(dir: &Path, root: &str) -> PathBuf {
+    store::store_path(dir, &volume(root))
 }
 
 /// This area's command paths, one per line, written `$crate::commands::tags::name,`.
@@ -670,7 +699,7 @@ mod tests {
         apply_core(&cfg, &volume(&root), &idents, &[ids[0]], &[add(&["Peak"]), Op::SetColour { colour: Some("red".into()) }, Op::SetEnergy { energy: Some(8) }]).unwrap();
         apply_core(&cfg, &volume(&root), &idents, &[ids[1]], &[add(&["peak"])]).unwrap();
 
-        let snap = snapshot(&cfg, &lib).unwrap();
+        let snap = snapshot(&cfg, &lib, true).unwrap();
         assert_eq!(snap.source, EnergySource::MineElseAuto, "no file = the default choice");
         assert_eq!(snap.labels.len(), 2);
         assert_eq!(snap.energy_level(ids[0]), Some(8));
@@ -696,6 +725,55 @@ mod tests {
         // with no config dir (tests only) there are no labels at all
         let d = Data::load(&lib, &[&energy], 0, None).unwrap();
         assert!(evaluate(&energy, &d).unwrap().ids.is_empty());
+        let _ = std::fs::remove_dir_all(&vol);
+        let _ = std::fs::remove_dir_all(&cfg);
+    }
+
+    #[test]
+    fn unreadable_label_sources_refuse_the_rules_that_read_them_instead_of_matching_everything() {
+        use crate::commands::cases::smart::{evaluate, Data, Mode, Query, Rule, TagMatch};
+        let (lib, vol, ids) = synthetic_library("snapbad", 3);
+        let cfg = tmp_dir("snapbad-cfg");
+        let root = vol.to_string_lossy().to_string();
+        let idents = build_keys(&lib.track_identities().unwrap());
+        apply_core(&cfg, &volume(&root), &idents, &[ids[0]], &[add(&["Peak"]), Op::SetEnergy { energy: Some(8) }]).unwrap();
+        let q = |r| Query { rules: vec![r], ..Default::default() };
+        let none_of = q(Rule::Tags { how: TagMatch::None, tags: vec!["peak".into()] });
+        let not_red = q(Rule::Colour { colours: vec!["red".into()], value: false });
+        let group = q(Rule::Group { mode: Mode::None, items: vec![Rule::EnergyRange { min: Some(1), max: None }] });
+        let plain = q(Rule::RatingMin { stars: 1 });
+        let all = [&none_of, &not_red, &group, &plain];
+
+        // a damaged labels file: every label rule refuses, the other smart cases are untouched
+        let file = labels_file(&cfg, &root);
+        std::fs::write(&file, "{ this is not json").unwrap();
+        let snap = snapshot(&cfg, &lib, true).unwrap();
+        assert!(snap.problem.is_some(), "the notice is kept, not dropped");
+        let d = Data::load(&lib, &all, 0, Some(&cfg)).unwrap();
+        for bad in [&none_of, &not_red, &group] {
+            assert!(evaluate(bad, &d).unwrap_err().contains("could not be read"), "{bad:?}");
+        }
+        assert!(evaluate(&plain, &d).unwrap().ids.is_empty(), "a rule that reads no labels still runs");
+        // the file is left exactly as it was
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), "{ this is not json");
+
+        // an unreadable file (a directory where the file should be) is the same
+        std::fs::remove_file(&file).unwrap();
+        std::fs::create_dir(&file).unwrap();
+        let d = Data::load(&lib, &[&none_of], 0, Some(&cfg)).unwrap();
+        assert!(evaluate(&none_of, &d).is_err());
+        std::fs::remove_dir(&file).unwrap();
+
+        // a good file again: back to normal
+        let d = Data::load(&lib, &[&none_of], 0, Some(&cfg)).unwrap();
+        assert_eq!(evaluate(&none_of, &d).unwrap().ids.len(), 3, "no labels file at all is a real, empty set of labels");
+
+        // a damaged energy choice blocks energy rules only, and only when something reads energy
+        apply_core(&cfg, &volume(&root), &idents, &[ids[0]], &[add(&["Peak"]), Op::SetEnergy { energy: Some(8) }]).unwrap();
+        std::fs::write(cfg.join("energy-source.json"), "{\"source\": \"sideways\"}").unwrap();
+        let d = Data::load(&lib, &[&none_of, &group], 0, Some(&cfg)).unwrap();
+        assert_eq!(evaluate(&none_of, &d).unwrap().ids.len(), 2);
+        assert!(evaluate(&group, &d).unwrap_err().contains("Energy cannot be read"));
         let _ = std::fs::remove_dir_all(&vol);
         let _ = std::fs::remove_dir_all(&cfg);
     }

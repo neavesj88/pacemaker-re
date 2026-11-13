@@ -11,17 +11,20 @@
   const help = $derived(ENERGY_SOURCES.find((s) => s.id === energySource.source)?.help ?? "");
   let busy = $state(false);
 
-  async function change(value: string) {
+  async function change(select: HTMLSelectElement) {
+    const value = select.value;
     if (!isEnergySource(value) || busy) return;
     busy = true;
     await energySource.set(value);
     busy = false;
+    // the choice only changes once it is saved: show what is in force if the save failed
+    select.value = energySource.source;
   }
 </script>
 
 <label class="src" class:compact title={help}>
   <span class="lbl">Energy source</span>
-  <select value={energySource.source} disabled={busy} aria-label="Energy source" onchange={(e) => change(e.currentTarget.value)}>
+  <select value={energySource.source} disabled={busy} aria-label="Energy source" onchange={(e) => change(e.currentTarget)}>
     {#each ENERGY_SOURCES as s (s.id)}<option value={s.id}>{s.label}</option>{/each}
   </select>
 </label>

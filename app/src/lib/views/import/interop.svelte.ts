@@ -23,7 +23,7 @@ import { toast } from "$lib/state/toast.svelte";
 import { labels } from "$lib/state/labels.svelte";
 import type { LabelColour } from "$lib/state/labels";
 import { cueApplies, cueSecs, cueTime } from "./importLogic";
-import { groupByColour, planColours, startingMap, usedIndexes, type ColourMap } from "./colourImport";
+import { groupByColour, planColours, startingMap, suggestedMap, usedIndexes, type ColourMap } from "./colourImport";
 
 const stars = (n: number) => (n > 0 ? `${n}★` : "unrated");
 const plural = (n: number, one: string, many = one + "s") => `${n} ${n === 1 ? one : many}`;
@@ -130,6 +130,14 @@ class Interop {
     this.colourLabels = false;
     this.colourMap = {};
     this.replaceColours = false;
+    this.askingColours = false;
+  }
+
+  /** Fills the table with the palette-order guess (unverified); the user checks it before setting anything. */
+  useSuggestedColours() {
+    const plan = this.plan;
+    if (!plan) return;
+    this.colourMap = { ...this.colourMap, ...suggestedMap(usedIndexes(plan.colours ?? [])) };
     this.askingColours = false;
   }
 

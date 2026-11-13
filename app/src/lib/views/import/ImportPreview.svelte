@@ -28,6 +28,8 @@
   const who = (title: string, artist: string) => (title || "(untitled)") + (artist ? ` · ${artist}` : "");
 
   let plan = $derived(interop.plan);
+  /** Colour labels the ticked option would set but that the Apply button below does not cover. */
+  let pendingColours = $derived(interop.colourLabels ? (interop.colourPlan?.changes.length ?? 0) : 0);
 </script>
 
 {#if plan}
@@ -132,11 +134,11 @@
       {@const cp = interop.colourPlan}
       <div class="colours">
         <h4>Track colours ({plan.colours.length})</h4>
-        <label><input type="checkbox" bind:checked={interop.colourLabels} /> Also set colour labels from the colours {interop.label} gave these tracks</label>
+        <label><input type="checkbox" bind:checked={interop.colourLabels} /> Also set colour labels from the colours {interop.label} gave these tracks (a separate step with its own button, not part of Apply below)</label>
         <p class="muted hint">
           Colour labels belong to this app (Tracks, Tags, colour, energy); the Pacemaker has no track colours, so nothing is
           written to the device. The file stores a colour number, not a name, and what {interop.label} calls each number is not
-          verified here: the table below starts in palette order, so check it against the colours you see in {interop.label}.
+          verified here: the table below starts with every number set to "No colour", so nothing is set until you choose. "Fill in palette order" is a guess; check it against the colours you see in {interop.label}.
         </p>
         {#if interop.colourLabels && cp}
           <table class="map" aria-label="Colour numbers in the file and the label colour each becomes">
@@ -158,6 +160,7 @@
               {/each}
             </tbody>
           </table>
+          <Button onclick={() => interop.useSuggestedColours()}>Fill in palette order (a guess)</Button>
           <label class="repl"><input type="checkbox" bind:checked={interop.replaceColours} /> Replace a colour label a track already has</label>
           <details open={cp.changes.length > 0 && cp.changes.length <= 10}>
             <summary>{cp.changes.length} colour label{cp.changes.length === 1 ? "" : "s"} would be set</summary>
@@ -221,9 +224,15 @@
       <span class="spacer"></span>
       {#if interop.loading}<span class="muted">Reading…</span>{/if}
       <Button variant="primary" disabled={!jobs.canWrite || interop.loading || interop.changes === 0} onclick={() => interop.ask()}>
-        {interop.changes === 0 ? "Nothing to apply" : `Apply ${interop.changes} change${interop.changes === 1 ? "" : "s"}…`}
+        {interop.changes === 0 ? (pendingColours > 0 ? "No ratings, cues or cases to apply" : "Nothing to apply") : `Apply ${interop.changes} change${interop.changes === 1 ? "" : "s"}…`}
       </Button>
     </footer>
+    {#if pendingColours > 0}
+      <p class="muted hint" role="status">
+        {pendingColours} colour label{pendingColours === 1 ? " is" : "s are"} not set yet: use the "Set {pendingColours} colour label{pendingColours === 1 ? "" : "s"}…" button in the Track colours section.
+        Apply only writes ratings, cue points and cases.
+      </p>
+    {/if}
     {#if plan.addable_paths.length}
       <p class="muted hint">Adding files first lets more playlist entries match: the preview re-reads when the add finishes.</p>
     {/if}
