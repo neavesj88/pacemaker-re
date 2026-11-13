@@ -28,7 +28,7 @@ import {
   type ProcessDoc,
   type TransitionSuggestion,
 } from "$lib/api/mixes";
-import { renderMixPreview } from "$lib/api/export";
+import { renderMixPreview, type PreviewGains } from "$lib/api/export";
 import { session } from "./session.svelte";
 import { toast } from "./toast.svelte";
 import * as E from "./mixedit";
@@ -488,11 +488,13 @@ class Mixes {
   }
 
   /** Renders `[fromSec, toSec]` of the open (possibly unsaved) document to a temporary file for
-   * preview; play it with `playback`. The audio area implements `export_render_preview`. */
-  async renderPreview(fromSec: number, toSec: number) {
+   * preview; play it with `playback`. The audio area implements `export_render_preview`.
+   * `gains` are the loudness gains an export would apply; `edgeFadeMs` fades the window's cuts (a
+   * range preview). */
+  async renderPreview(fromSec: number, toSec: number, gains?: PreviewGains, edgeFadeMs?: number) {
     const root = this.root;
     if (!root || !this.doc) throw new Error("no mix is open");
-    return renderMixPreview(root, this.doc, fromSec, toSec);
+    return renderMixPreview(root, this.doc, fromSec, toSec, gains, edgeFadeMs);
   }
 
   // ------------------------------------------------------------------------------------------

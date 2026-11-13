@@ -16,6 +16,7 @@ use crate::audio::{self, Source};
 use crate::clip::ClipStream;
 use crate::env::Env;
 use crate::fx::PeqMode;
+use crate::loudness::{Measure, Meter};
 use crate::master::Limiter;
 use crate::Error;
 
@@ -56,6 +57,20 @@ pub struct Options {
     /// What `Wah` tools render as. The default is the stock Wah stand-in; the app sets the mode
     /// of the library the mix belongs to (the same for a preview and an export).
     pub peq: PeqMode,
+    /// Gain in dB applied to each clip before it meets the crossfader, by index into
+    /// `mix.tracks` (a missing entry, or a non-finite one, is 0 dB). Used for per-clip levelling.
+    pub clip_gain_db: Vec<f64>,
+    /// Gain in dB on the sum of all clips, applied just before the master limiter. Used for the
+    /// target loudness. Non-finite counts as 0.
+    pub master_gain_db: f64,
+    /// Length in frames of the fade at a cut made by `from` / `to`: a fade-in when the range
+    /// starts after the first audible frame of the mix, a fade-out when it ends before the end of
+    /// the last clip (so a partial export does not click). 0 = hard cut, the default; previews
+    /// leave it at 0 so that a window equals the same part of the full render.
+    pub edge_fade_frames: i64,
+    /// Measure the loudness and peaks of the limiter input and of the output (reported in
+    /// [`Rendered::loudness`]). Costs a few percent of the render time.
+    pub measure: bool,
 }
 
 /// Receiver of the master output: left and right samples of one block.
@@ -80,10 +95,63 @@ pub struct Rendered {
     pub clips_rendered: usize,
     /// Clips left out because their audio could not be loaded.
     pub clips_failed: usize,
+    /// Loudness and peaks of what was rendered; set when `Options::measure` was.
+    pub loudness: Option<RenderLoudness>,
+}
+
+/// The two measurements of a render: the signal entering the master limiter (after clip and
+/// master gain) and the output (after the limiter), over the frames that were rendered.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct RenderLoudness {
+    pub pre_limiter: Measure,
+    pub output: Measure,
 }
 
 fn r(x: f64) -> i64 {
     x.round() as i64
+}
+
+/// Linear factor of a gain in dB (non-finite = unity).
+pub fn lin(db: f64) -> f32 {
+    if db.is_finite() { 10f64.powf(db.clamp(-120.0, 60.0) / 20.0) as f32 } else { 1.0 }
+}
+
+/// The audible part of one mix track on the timeline, in frames at [`crate::RATE`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AudibleClip {
+    /// Index into `mix.tracks`.
+    pub index: usize,
+    /// First audible frame (`start + LOffset`, rounded).
+    pub start: i64,
+    /// End of the audible part, exclusive (`start + length - ROffset`, rounded).
+    pub end: i64,
+}
+
+/// The tracks the engine renders, in document order: not bypassed, with a non-empty audible
+/// range that ends after frame 0. [`render`] builds its clips from this list, and anything that
+/// has to agree with a render (the track list and cue sheet of an export, its length) reads it
+/// too, so the two cannot disagree about where a clip starts.
+pub fn audible_clips(mix: &Mix) -> Vec<AudibleClip> {
+    mix.tracks
+        .iter()
+        .enumerate()
+        .filter_map(|(index, t)| {
+            if t.clip_bypassed {
+                return None;
+            }
+            let start = r(t.position.start + t.position.l_offset);
+            let end = r(t.position.start + t.position.length - t.position.r_offset);
+            (end > start && end > 0).then_some(AudibleClip { index, start, end })
+        })
+        .collect()
+}
+
+/// The timeline frames `[from, to)` a render with `skip_leading_silence` (every export) covers:
+/// the audio file is `to - from` frames long and its frame 0 is timeline frame `from`. `None`
+/// when no clip is audible.
+pub fn export_span(mix: &Mix) -> Option<(i64, i64)> {
+    let a = audible_clips(mix);
+    Some((a.iter().map(|c| c.start).min()?, a.iter().map(|c| c.end).max()?))
 }
 
 /// A clip as the engine sees it.
@@ -96,6 +164,8 @@ struct Slot<'a> {
     stream: Option<ClipStream>,
     dead: bool,
     finished: bool,
+    /// Per-clip levelling factor (1 = none).
+    trim: f32,
 }
 
 /// One crossfade a clip takes part in.
@@ -167,17 +237,9 @@ pub fn render(
     sink: &mut Sink,
 ) -> Result<Rendered, Error> {
     let mut warnings = Vec::new();
-    let mut slots: Vec<Slot> = mix
-        .tracks
-        .iter()
-        .filter_map(|t| {
-            if t.clip_bypassed {
-                return None;
-            }
-            let vs = r(t.position.start + t.position.l_offset);
-            let ve = r(t.position.start + t.position.length - t.position.r_offset);
-            (ve > vs && ve > 0).then(||Slot { track: t, vs, ve, fades: Vec::new(), stream: None, dead: false, finished: false })
-        })
+    let mut slots: Vec<Slot> = audible_clips(mix)
+        .into_iter()
+        .map(|a| Slot { track: &mix.tracks[a.index], vs: a.start, ve: a.end, fades: Vec::new(), stream: None, dead: false, finished: false, trim: lin(opts.clip_gain_db.get(a.index).copied().unwrap_or(0.0)) })
         .collect();
     if slots.is_empty() {
         return Err(Error::Invalid("the mix has no audible clips".into()));
@@ -199,6 +261,12 @@ pub fn render(
     let mut skip = (from - begin) as usize;
     let total = (to - begin) as f64;
 
+    let first_audible = slots.iter().map(|s| s.vs).min().unwrap();
+    let master = lin(opts.master_gain_db);
+    let edge = opts.edge_fade_frames.max(0);
+    let fade_in = edge > 0 && from > first_audible;
+    let fade_out = edge > 0 && to < end_all;
+    let mut meters = opts.measure.then(|| (Meter::new(crate::RATE), Meter::new(crate::RATE)));
     let mut limiter = Limiter::new();
     let (mut ml, mut mr) = (vec![0.0f32; BLOCK as usize], vec![0.0f32; BLOCK as usize]);
     let (mut cl, mut cr) = (vec![0.0f32; BLOCK as usize], vec![0.0f32; BLOCK as usize]);
@@ -246,6 +314,12 @@ pub fn render(
             let off = (lo - b0) as usize;
             let stream = slot.stream.as_mut().unwrap();
             stream.render(lo - start, &mut cl[..m], &mut cr[..m]);
+            if slot.trim != 1.0 {
+                for k in 0..m {
+                    cl[k] *= slot.trim;
+                    cr[k] *= slot.trim;
+                }
+            }
             if slot.fades.is_empty() {
                 for k in 0..m {
                     ml[off + k] += cl[k];
@@ -264,6 +338,37 @@ pub fn render(
                 slot.finished = true;
             }
         }
+        if master != 1.0 {
+            for k in 0..n {
+                ml[k] *= master;
+                mr[k] *= master;
+            }
+        }
+        if fade_in && b0 < from + edge {
+            for k in 0..n {
+                let t = b0 + k as i64;
+                if t < from + edge {
+                    let g = ((t - from) as f32 / edge as f32).clamp(0.0, 1.0);
+                    ml[k] *= g;
+                    mr[k] *= g;
+                }
+            }
+        }
+        if fade_out && b1 > to - edge {
+            for k in 0..n {
+                let t = b0 + k as i64;
+                if t >= to - edge {
+                    let g = ((to - t) as f32 / edge as f32).clamp(0.0, 1.0);
+                    ml[k] *= g;
+                    mr[k] *= g;
+                }
+            }
+        }
+        if let Some((pre, _)) = meters.as_mut() {
+            // the lead-in before `from` is rendered but not part of the result, so it is not measured
+            let lead = ((from - b0).max(0) as usize).min(n);
+            pre.push(&ml[lead..n], &mr[lead..n]);
+        }
         ol.clear();
         or.clear();
         for k in 0..n {
@@ -277,6 +382,9 @@ pub fn render(
         skip -= drop;
         if ol.len() > drop {
             sink(&ol[drop..], &or[drop..])?;
+            if let Some((_, out)) = meters.as_mut() {
+                out.push(&ol[drop..], &or[drop..]);
+            }
             written += (ol.len() - drop) as u64;
         }
         b0 = b1;
@@ -299,9 +407,69 @@ pub fn render(
     let drop = skip.min(ol.len());
     if ol.len() > drop {
         sink(&ol[drop..], &or[drop..])?;
+        if let Some((_, out)) = meters.as_mut() {
+            out.push(&ol[drop..], &or[drop..]);
+        }
         written += (ol.len() - drop) as u64;
     }
-    Ok(Rendered { frames: written, warnings, clips_rendered, clips_failed })
+    let loudness = meters.map(|(pre, out)| RenderLoudness { pre_limiter: pre.finish(), output: out.finish() });
+    Ok(Rendered { frames: written, warnings, clips_rendered, clips_failed, loudness })
+}
+
+/// The loudness of one clip on its own: what it contributes before the crossfader, the clip
+/// levelling and the master bus.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ClipMeasure {
+    /// Index into `mix.tracks`.
+    pub index: usize,
+    /// Loudness and peaks of the clip's audible part, rendered exactly as the mix renders it
+    /// (tempo, key, loops, tools, the clip's own volume envelope, the audible window). `None`
+    /// when the clip's audio could not be loaded.
+    pub measure: Option<Measure>,
+    /// Why `measure` is `None`.
+    pub error: Option<String>,
+}
+
+/// Measures every audible clip alone, one after the other (only one is held in memory at a time).
+/// The clip is rendered by the same [`ClipStream`] a mix render uses, so tools and the volume
+/// envelope count, but crossfades, `Options::clip_gain_db` and the master gain do not. Only the
+/// clips heard somewhere in `[opts.from, opts.to)` are measured (their whole audible part, not just
+/// the part inside the range, so a clip's reading does not depend on where a range cuts it).
+/// `progress` receives 0..1 (weighted by clip length) and returns `false` to cancel.
+pub fn measure_clips(mix: &Mix, res: &dyn Resolver, opts: &Options, progress: &mut dyn FnMut(f64) -> bool) -> Result<Vec<ClipMeasure>, Error> {
+    let (lo, hi) = (opts.from.max(0), opts.to.unwrap_or(i64::MAX));
+    let clips: Vec<AudibleClip> = audible_clips(mix).into_iter().filter(|c| c.end > lo && c.start < hi).collect();
+    let total: f64 = clips.iter().map(|c| (c.end - c.start) as f64).sum::<f64>().max(1.0);
+    let mut done = 0.0;
+    let mut out = Vec::with_capacity(clips.len());
+    let (mut cl, mut cr) = (vec![0.0f32; BLOCK as usize], vec![0.0f32; BLOCK as usize]);
+    for c in clips {
+        let track = &mix.tracks[c.index];
+        let start = r(track.position.start);
+        let src = match res.source(track) {
+            Ok(s) => s,
+            Err(e) => {
+                out.push(ClipMeasure { index: c.index, measure: None, error: Some(e.to_string()) });
+                done += (c.end - c.start) as f64;
+                continue;
+            }
+        };
+        let mut stream = ClipStream::new(track, src, c.start - start, opts.peq);
+        let mut meter = Meter::new(crate::RATE);
+        let mut t = c.start;
+        while t < c.end {
+            let m = (c.end - t).min(BLOCK) as usize;
+            stream.render(t - start, &mut cl[..m], &mut cr[..m]);
+            meter.push(&cl[..m], &cr[..m]);
+            t += m as i64;
+            if !progress((done + (t - c.start) as f64) / total) {
+                return Err(Error::Cancelled);
+            }
+        }
+        done += (c.end - c.start) as f64;
+        out.push(ClipMeasure { index: c.index, measure: Some(meter.finish()), error: None });
+    }
+    Ok(out)
 }
 
 /// Renders into memory (tests, short previews): planar left and right.
