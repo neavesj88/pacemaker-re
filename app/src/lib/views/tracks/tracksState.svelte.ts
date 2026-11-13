@@ -149,6 +149,7 @@ class TracksState {
       query: filters.query,
       onlyNeeds: filters.onlyNeeds,
       onlyAnalysed: this.onlyAnalysed,
+      onlySuspect: this.onlySuspect,
       genre: this.genre,
       bpmMin: this.bpmMin,
       bpmMax: this.bpmMax,
@@ -164,6 +165,7 @@ class TracksState {
     filters.query = s.query;
     filters.onlyNeeds = s.onlyNeeds;
     this.onlyAnalysed = s.onlyAnalysed;
+    this.onlySuspect = s.onlySuspect;
     this.genre = s.genre;
     this.bpmMin = s.bpmMin;
     this.bpmMax = s.bpmMax;

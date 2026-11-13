@@ -26,7 +26,7 @@ files.
 | `lib/shell/overlays.ts`, `startup.ts` | Auto-discover `views/*/Overlays.svelte` and `views/*/init.ts` (see below) | integration |
 | `lib/views/registry.ts`, `ids.ts` | Auto-discovers `views/*/view.ts`; `ViewDef` type; `ViewId` is a string | integration |
 | `lib/views/<area>/view.ts` | One row for the area's sidebar entry (id, label, section, order, component, count) | that area |
-| `lib/views/tracks/` (`TracksView`, `TrackTable`, `trackFilter.ts`, `NeedsAnalysis`) | Tracks view, the reusable track table, the sidebar "need analysis" block | tracks |
+| `lib/views/tracks/` (`TracksView`, `trackFilter.ts`, `NeedsAnalysis`) | Tracks view, the sidebar "need analysis" block | tracks |
 | `lib/views/tracks/query.ts`, `columns.ts`, `viewState.ts`, `trackLogic.ts` | Pure logic, run by plain node (`npm test`): the typed search language (`field:value`, ranges, comparisons, `key:~8A`, `-not`, `OR`; every help example is compiled by the tests); columns, their order and the multi-key sort prefs (browser storage); what a filter preset / remembered view holds and how it is read back safely; multi-key sort. Backend: `commands/tracks/views.rs`, one JSON file per library in the app config dir (presets + the remembered search / filters / sort), same safety rules as the tag store; wrappers in `lib/api/tracks.ts`. `trackFilter.tracksViewRows` is the one pipeline (search, toolbar filters, label filter, sort) behind both the Tracks table and the player's next / previous | tracks |
 | `lib/views/mixes/` (`MixesView`, `MixEditor`, `MixList`, `Timeline`, `flow.ts`, `preview.svelte.ts`, `init.ts`, ...) | Mix list and editor; plays previews through the shared player (`playback.previewMix`); follows the `mix-export` job in `init.ts`. Backend: `commands/mixes.rs` plus `mixes/{doc,timing,info}.rs`; `lib/api/mixes.ts`; store `lib/state/mixes.svelte.ts` (`mixes`); pure edit logic `lib/state/mixedit.ts`; tests `app/scripts/test-mixedit.mjs` (`npm run test:mixedit`, Node >= 22.6). Audio engine: `crates/pm-mixer`, commands in `commands/export.rs` (the part of the mix to export in `export/range.rs`, loudness policy in `export/loudness.rs`; export dialog `views/mixes/ExportDialog.svelte`, store `lib/state/mixexport.svelte.ts`, pure settings `lib/state/exportprefs.ts` with `exportprefs.test.mjs`) | mixes |
 | `lib/views/cases/` (`CasesView`, `SmartCases`) | Cases; the sidebar "Smart cases" section | cases |
@@ -84,7 +84,7 @@ Crates in `crates/` are not part of the app layout; the app only calls them.
 2. A shared file needs a change only when you cross an area boundary; write the request in your
    hand-off note and let the integration step make it. Never edit a shared file in parallel.
 3. A view may import another view's *exported component* only where listed here (the Cases view
-   uses `views/tracks/TrackTable.svelte` and `trackFilter.ts`). Everything else goes through
+   uses `trackFilter.ts`). Everything else goes through
    `lib/state` and `lib/api`.
 4. Use the CSS variables in `tokens.css`; do not write raw colours. Keep the R mark and palette.
 5. Never put real track, artist, case or mix names, or serial numbers, in code, mocks or tests.
@@ -96,8 +96,8 @@ Crates in `crates/` are not part of the app layout; the app only calls them.
    `app.asset_protocol_scope().allow_file(..)` at run time); waveform peaks come from
    `pm-analysis` decode in Rust; tag and rating edits go through the `pm-formats` `Library` (no
    tag-writing crate); exports are plain text formats (M3U, CSV) written with `std::fs`.
-7. **Public surfaces others depend on.** `TrackTable` props and `trackFilter.ts` exports are
-   frozen for existing callers: tracks may add props only with defaults that keep current
+7. **Public surfaces others depend on.** `trackFilter.ts` exports are
+   frozen for existing callers: tracks may add exports only with defaults that keep current
    behaviour. `ui/Waveform.svelte` is integration-owned: an area that needs more (zoom, cues,
    editable grid lines) wraps it or copies it into its own folder (e.g. `views/grid/`), it does
    not edit it. The `Track` and `LibraryView` payloads are frozen: new per-track data comes from

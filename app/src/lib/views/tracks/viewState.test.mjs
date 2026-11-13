@@ -15,6 +15,7 @@ test("a full state round trips through JSON", () => {
     query: "bpm:120-128 key:~8A",
     onlyNeeds: false,
     onlyAnalysed: true,
+    onlySuspect: true,
     genre: "House",
     bpmMin: "120",
     bpmMax: "128.5",
@@ -59,6 +60,17 @@ test("analysed and missing are opposites: a file with both on keeps neither", ()
   const s = sanitiseViewState({ onlyNeeds: true, onlyAnalysed: true });
   assert.equal(s.onlyNeeds, false);
   assert.equal(s.onlyAnalysed, false);
+});
+
+test("suspect grid is part of the state: saved, read back, compared, described; old files read as off", () => {
+  assert.equal(emptyViewState().onlySuspect, false);
+  assert.equal(sanitiseViewState({}).onlySuspect, false, "a file saved before the toggle existed");
+  assert.equal(sanitiseViewState({ onlySuspect: "yes" }).onlySuspect, false);
+  const on = sanitiseViewState({ onlySuspect: true });
+  assert.equal(on.onlySuspect, true);
+  assert.ok(!viewStateIsClear(on), "it hides tracks, so the state is not clear");
+  assert.ok(!sameViewState(on, emptyViewState()));
+  assert.ok(describeViewState(on).includes("only suspect beat grids"));
 });
 
 test("the sort is cleaned and only present when something usable is left", () => {

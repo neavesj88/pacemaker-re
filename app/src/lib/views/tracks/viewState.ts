@@ -14,6 +14,8 @@ export type ViewState = {
   onlyNeeds: boolean;
   /** "Analysed": only tracks with a beat grid. */
   onlyAnalysed: boolean;
+  /** "Suspect grid": only tracks whose beat grid failed the grid check. Absent in files saved before it existed. */
+  onlySuspect: boolean;
   genre: string;
   bpmMin: string;
   bpmMax: string;
@@ -27,7 +29,7 @@ export type ViewState = {
 export const MAX_QUERY_CHARS = 500;
 
 export function emptyViewState(): ViewState {
-  return { query: "", onlyNeeds: false, onlyAnalysed: false, genre: "", bpmMin: "", bpmMax: "", keyFilter: "", labelFilter: freshLabelFilter() };
+  return { query: "", onlyNeeds: false, onlyAnalysed: false, onlySuspect: false, genre: "", bpmMin: "", bpmMax: "", keyFilter: "", labelFilter: freshLabelFilter() };
 }
 
 const str = (v: unknown, max: number): string => (typeof v === "string" ? v.slice(0, max) : "");
@@ -49,6 +51,7 @@ export function sanitiseViewState(raw: unknown): ViewState | null {
     query: str(r.query, MAX_QUERY_CHARS),
     onlyNeeds: bool(r.onlyNeeds),
     onlyAnalysed: bool(r.onlyAnalysed),
+    onlySuspect: bool(r.onlySuspect),
     genre: str(r.genre, 200),
     bpmMin: str(r.bpmMin, 12),
     bpmMax: str(r.bpmMax, 12),
@@ -68,7 +71,7 @@ export function sameViewState(a: ViewState, b: ViewState): boolean {
 }
 
 function canonical(s: ViewState) {
-  return [s.query, s.onlyNeeds, s.onlyAnalysed, s.genre, s.bpmMin, s.bpmMax, s.keyFilter, s.labelFilter.tags, s.labelFilter.tagMode, s.labelFilter.colours, s.labelFilter.energyMin, s.labelFilter.energyMax, s.sort ?? null];
+  return [s.query, s.onlyNeeds, s.onlyAnalysed, s.onlySuspect, s.genre, s.bpmMin, s.bpmMax, s.keyFilter, s.labelFilter.tags, s.labelFilter.tagMode, s.labelFilter.colours, s.labelFilter.energyMin, s.labelFilter.energyMax, s.sort ?? null];
 }
 
 /** True when the state would show every track (no search, no filter). The sort does not count. */
@@ -90,6 +93,7 @@ export function describeViewState(s: ViewState, sortLabel?: (spec: SortSpec) => 
   if (labels) parts.push(labels);
   if (s.onlyAnalysed) parts.push("only analysed");
   if (s.onlyNeeds) parts.push("only missing a beat grid");
+  if (s.onlySuspect) parts.push("only suspect beat grids");
   if (s.sort && s.sort.length > 0) parts.push(`sorted by ${s.sort.map((k) => (sortLabel ? sortLabel(k) : k.field) + (k.asc ? " ↑" : " ↓")).join(", ")}`);
   return parts.length > 0 ? parts.join("; ") : "no filters";
 }
