@@ -129,7 +129,8 @@
         g.fillRect(x, 0, 2, HEIGHT);
         g.beginPath();
         g.moveTo(x, 0);
-        const flag = 10 * Math.max(1, HEIGHT / 48);
+        // a marker, not a feature: it grows a little with a tall bar but never past 2x, or it becomes a wedge over the wave
+        const flag = 10 * Math.min(2, Math.max(1, HEIGHT / 48));
         g.lineTo(x + flag, 0);
         g.lineTo(x, flag);
         g.fill();
