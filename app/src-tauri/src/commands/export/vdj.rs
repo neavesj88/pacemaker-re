@@ -491,7 +491,9 @@ pub fn plan_from(root: &Path, tracks: &[Track], ids: &[i64], list_name: &str, de
 // ---- the list file -----------------------------------------------------------------------
 
 /// Text for an XML attribute value: the five markup characters escaped, control characters (not
-/// allowed in XML 1.0) dropped, line breaks and tabs turned into spaces.
+/// allowed in XML 1.0) dropped, line breaks and tabs turned into spaces. Not the same rule as
+/// `pm_formats::interop`'s escaper (no apostrophe escape, controls become spaces, tabs stay):
+/// each is what its target program reads.
 fn esc(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for c in s.chars() {

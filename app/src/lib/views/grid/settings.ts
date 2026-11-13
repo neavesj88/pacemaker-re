@@ -1,5 +1,6 @@
 import { suspects } from "$lib/state/gridSuspects.svelte";
 import type { SettingsEntry } from "../settings/types";
+import TempoSettingsFields from "./TempoSettingsFields.svelte";
 
 const entries: SettingsEntry[] = [
   {
@@ -13,6 +14,15 @@ const entries: SettingsEntry[] = [
     open: () => (suspects.editing = true),
     button: "Change…",
     summary: () => `Flags grids below ${suspects.rules.min_confidence_pct}% confidence. ${suspects.auto ? "Checks the library whenever it loads." : "Checks only when asked."}`,
+  },
+  {
+    id: "tempo-tools",
+    area: "Analysis",
+    title: "Tempo tools",
+    help: "When the beat grid starts a new tempo section, how far a beat may drift before it is reported, how onsets are matched and how tap tempo averages.",
+    keywords: "grid tempo section drift onset tap beat variable bpm follow audio",
+    how: "inline",
+    component: TempoSettingsFields,
   },
 ];
 

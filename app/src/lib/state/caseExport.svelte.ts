@@ -15,7 +15,7 @@ import {
   startExport,
 } from "$lib/api/cases";
 import type { DoneEvent, ProgressEvent } from "$lib/api/types";
-import { afterQuickExport, planIsCurrent, prefsToSave, requestOf, startingPrefs } from "./exportLogic";
+import { afterQuickExport, planIsCurrent, prefsToSave, requestOf, safeConflict, startingPrefs } from "./exportLogic";
 import { session } from "./session.svelte";
 import { toast } from "./toast.svelte";
 
@@ -89,6 +89,11 @@ class CaseExport {
     } catch (e) {
       toast.show(`Could not save the export choices: ${e}`, "bad", 8000);
     }
+  }
+
+  /** Saves the starting choices of the export dialog as they are (Settings view; "replace" is never kept). */
+  async saveChoices(p: ExportPrefs) {
+    await this.#save({ ...p, conflict: safeConflict(p.conflict) });
   }
 
   /** Opens the dialog with these cases and smart cases ticked. */

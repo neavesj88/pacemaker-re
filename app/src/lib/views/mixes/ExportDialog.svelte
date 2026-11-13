@@ -4,35 +4,19 @@
   // `export_loudness_analyse`), and the editor's preview plays with the analysed gains, so what is
   // measured and heard is what is written. The settings are kept on this computer; nothing here is
   // written to the device.
-  import { open as openFile } from "@tauri-apps/plugin-dialog";
-  import { exportCancel, exportCoverCheck } from "$lib/api/export";
-  import {
-    AUDIO_FORMATS,
-    clockText,
-    durationText,
-    estimateBytes,
-    FLAC_LEVELS,
-    gainText,
-    lufsText,
-    MP3_CBR_KBPS,
-    MP3_EFFORT_DEFAULT,
-    MP3_VBR_LEVELS,
-    OGG_QUALITY_DEFAULT,
-    OGG_QUALITY_RANGE,
-    peakText,
-    sizeText,
-    TAG_LIMITS,
-    tagNote,
-    TARGET_PRESETS,
-    yearOf,
-  } from "$lib/state/exportprefs";
-  import { baseName } from "$lib/state/tracklistprefs";
+  import { exportCancel } from "$lib/api/export";
+  import { clockText, durationText, estimateBytes, gainText, lufsText, peakText, sizeText } from "$lib/state/exportprefs";
   import { mixExport as X } from "$lib/state/mixexport.svelte";
   import { mixes } from "$lib/state/mixes.svelte";
   import { toast } from "$lib/state/toast.svelte";
   import Button from "$lib/ui/Button.svelte";
   import Modal from "$lib/ui/Modal.svelte";
   import { clipTitle, errText } from "./actions";
+  import ExportEndAt from "./ExportEndAt.svelte";
+  import ExportFileFields from "./ExportFileFields.svelte";
+  import ExportLimitFields from "./ExportLimitFields.svelte";
+  import ExportLoudnessFields from "./ExportLoudnessFields.svelte";
+  import ExportTagFields from "./ExportTagFields.svelte";
   import { exportAudio } from "./flow";
   import { SR, mmss } from "./layout";
   import { preview } from "./preview.svelte";
@@ -111,40 +95,6 @@
     X.open = false;
   }
 
-  async function pickCover() {
-    try {
-      const f = await openFile({ title: "Choose the cover image", multiple: false, directory: false, filters: [{ name: "JPEG or PNG image", extensions: ["jpg", "jpeg", "png"] }] });
-      if (typeof f === "string" && f) {
-        X.prefs.coverPath = f;
-        changed();
-      }
-    } catch (e) {
-      toast.show(`Could not open the file dialog: ${errText(e)}`, "bad", 7000);
-    }
-  }
-
-  // the remembered cover may have moved or been deleted since: say so now, with the sentence the
-  // export would refuse with (the same check), not after the save window
-  let coverProblem = $state("");
-  $effect(() => {
-    const path = X.open && X.prefs.writeTags ? X.prefs.coverPath.trim() : "";
-    coverProblem = "";
-    if (!path) return;
-    let stale = false;
-    exportCoverCheck(path)
-      .then((m) => {
-        if (!stale) coverProblem = m ?? "";
-      })
-      .catch(() => {});
-    return () => (stale = true);
-  });
-
-  function removeCover() {
-    X.prefs.coverPath = "";
-    changed();
-  }
-
-  const fmt = $derived(AUDIO_FORMATS.find((f) => f.id === X.prefs.format));
   const sizeGuess = $derived(X.info ? estimateBytes(X.prefs, X.info.durationSecs) : null);
 
   async function exportNow() {
@@ -205,13 +155,7 @@
               {#each heard as c, i (c.id)}<option value={c.id}>{label(c, i)}</option>{/each}
             </select>
           </div>
-          <div class="row indent">
-            <label for="xr-end">The range ends</label>
-            <select id="xr-end" bind:value={X.prefs.endAt} onchange={changed}>
-              <option value="clipEnd">when the last track ends (the next track is cut off)</option>
-              <option value="nextEnters">just before the next track comes in</option>
-            </select>
-          </div>
+          <div class="indent"><ExportEndAt /></div>
         {/if}
 
         {#if X.infoError}
@@ -231,28 +175,7 @@
 
       <fieldset>
         <legend>Loudness</legend>
-        <div class="row">
-          <label for="xl-target">Target loudness</label>
-          <select id="xl-target" bind:value={X.prefs.targetPreset} onchange={changed}>
-            {#each TARGET_PRESETS as t (t.id)}<option value={t.id} title={t.hint}>{t.label}</option>{/each}
-          </select>
-          {#if X.prefs.targetPreset === "custom"}
-            <input class="num-in" type="number" step="0.5" bind:value={X.prefs.customTarget} onchange={changed} aria-label="Target loudness in LUFS" />
-            <span class="muted">LUFS</span>
-          {/if}
-        </div>
-        <div class="row">
-          <label for="xl-clip">Level the tracks</label>
-          <select id="xl-clip" bind:value={X.prefs.clipLevel} onchange={changed}>
-            <option value="off">no, keep each track as it is</option>
-            <option value="median">to the median loudness of the tracks</option>
-            <option value="fixed">to a fixed loudness</option>
-          </select>
-          {#if X.prefs.clipLevel === "fixed"}
-            <input class="num-in" type="number" step="0.5" bind:value={X.prefs.clipFixedLufs} onchange={changed} aria-label="Loudness every track is moved to, in LUFS" />
-            <span class="muted">LUFS</span>
-          {/if}
-        </div>
+        <ExportLoudnessFields />
         <div class="muted small">
           The gain is applied before the master limiter, which still keeps the peaks under -0.2 dBFS. A target the limiter would have to fight for is missed, and the result says by how much.
           Levelling measures each track as the mix plays it (tools and gain envelope included, crossfades not).
@@ -322,66 +245,7 @@
 
       <fieldset>
         <legend>File</legend>
-        <div class="row">
-          <label for="xf-format">Format</label>
-          <select id="xf-format" bind:value={X.prefs.format} onchange={changed}>
-            {#each AUDIO_FORMATS as f (f.id)}<option value={f.id}>{f.label}</option>{/each}
-          </select>
-          <span class="muted small">{fmt?.hint ?? ""}</span>
-        </div>
-        {#if X.prefs.format === "ogg"}
-          <div class="row">
-            <label for="xf-ogg">Quality</label>
-            <select id="xf-ogg" bind:value={X.prefs.oggQuality} onchange={changed}>
-              {#each Array.from({ length: OGG_QUALITY_RANGE[1] - OGG_QUALITY_RANGE[0] + 1 }, (_, i) => OGG_QUALITY_RANGE[0] + i) as q (q)}
-                <option value={q}>{(q / 10).toFixed(1)}{q === OGG_QUALITY_DEFAULT ? " (default)" : q === OGG_QUALITY_RANGE[0] ? " (smallest)" : q === OGG_QUALITY_RANGE[1] ? " (best)" : ""}</option>
-              {/each}
-            </select>
-            <span class="muted small">higher is better and bigger</span>
-          </div>
-        {:else if X.prefs.format === "mp3"}
-          <div class="row">
-            <label for="xf-mode">Bitrate</label>
-            <select id="xf-mode" bind:value={X.prefs.mp3Mode} onchange={changed}>
-              <option value="cbr">Constant (the same every second)</option>
-              <option value="vbr">Variable (by quality)</option>
-            </select>
-            {#if X.prefs.mp3Mode === "cbr"}
-              <select aria-label="Constant bitrate" bind:value={X.prefs.mp3Kbps} onchange={changed}>
-                {#each MP3_CBR_KBPS as k (k)}<option value={k}>{k} kbit/s</option>{/each}
-              </select>
-            {:else}
-              <select aria-label="Variable bitrate quality" bind:value={X.prefs.mp3Quality} onchange={changed}>
-                {#each MP3_VBR_LEVELS as l (l.quality)}<option value={l.quality}>V{l.quality}: about {l.kbps} kbit/s{l.quality === 0 ? " (best)" : l.quality === 9 ? " (smallest)" : ""}</option>{/each}
-              </select>
-            {/if}
-          </div>
-          <div class="row">
-            <label for="xf-stereo">Channels</label>
-            <select id="xf-stereo" bind:value={X.prefs.mp3Stereo} onchange={changed}>
-              <option value="joint">Joint stereo (smaller at the same quality)</option>
-              <option value="stereo">Stereo (each channel coded on its own)</option>
-            </select>
-            <label for="xf-effort">Encoder effort</label>
-            <select id="xf-effort" bind:value={X.prefs.mp3Effort} onchange={changed}>
-              {#each Array.from({ length: 10 }, (_, i) => i) as e (e)}
-                <option value={e}>{e}{e === MP3_EFFORT_DEFAULT ? " (default)" : e === 0 ? " (best, slowest)" : e === 9 ? " (fastest)" : ""}</option>
-              {/each}
-            </select>
-          </div>
-        {:else if X.prefs.format === "flac"}
-          <div class="row">
-            <label for="xf-bits">Sample size</label>
-            <select id="xf-bits" bind:value={X.prefs.flacBits} onchange={changed}>
-              <option value={16}>16-bit (dithered, like a WAV)</option>
-              <option value={24}>24-bit</option>
-            </select>
-            <label for="xf-level">Compression</label>
-            <select id="xf-level" bind:value={X.prefs.flacLevel} onchange={changed}>
-              {#each FLAC_LEVELS as l (l.id)}<option value={l.id}>{l.label}</option>{/each}
-            </select>
-          </div>
-        {/if}
+        <ExportFileFields />
         <div class="muted small">
           {#if sizeGuess !== null}About {sizeText(sizeGuess)} for {durationText(X.info?.durationSecs ?? 0)} of audio. {/if}
           The format is chosen again in the save window; a file name ending in another format's extension uses that format.
@@ -390,34 +254,7 @@
 
       <fieldset>
         <legend>Tags</legend>
-        <label class="check"><input type="checkbox" bind:checked={X.prefs.writeTags} onchange={changed} /> Write tags into the file</label>
-        {#if X.prefs.writeTags}
-          <div class="grid">
-            <label for="xt-title">Title</label>
-            <input id="xt-title" type="text" maxlength={TAG_LIMITS.text} placeholder={doc.name} bind:value={X.titleText} autocomplete="off" />
-            <label for="xt-artist">Artist (your DJ name)</label>
-            <input id="xt-artist" type="text" maxlength={TAG_LIMITS.text} bind:value={X.prefs.djName} onchange={changed} autocomplete="off" />
-            <label for="xt-album">Album</label>
-            <input id="xt-album" type="text" maxlength={TAG_LIMITS.text} bind:value={X.prefs.album} onchange={changed} autocomplete="off" />
-            <label for="xt-year">Year</label>
-            <input id="xt-year" class="num-in" type="text" inputmode="numeric" maxlength="4" placeholder={yearOf(X.prefs)} bind:value={X.prefs.year} onchange={changed} autocomplete="off" />
-            <label for="xt-comment">Comment</label>
-            <input id="xt-comment" type="text" maxlength={TAG_LIMITS.comment} bind:value={X.prefs.comment} onchange={changed} autocomplete="off" />
-            <span class="lbl">Cover image</span>
-            <span class="cover">
-              <Button small onclick={() => void pickCover()}>{X.prefs.coverPath ? "Change…" : "Choose image…"}</Button>
-              {#if X.prefs.coverPath}
-                <span class="name" title={X.prefs.coverPath}>{baseName(X.prefs.coverPath)}</span>
-                <Button small onclick={removeCover}>Remove</Button>
-              {:else}
-                <span class="muted small">JPEG or PNG, up to 8 MB</span>
-              {/if}
-            </span>
-          </div>
-          <label class="check"><input type="checkbox" bind:checked={X.prefs.chapters} onchange={changed} /> Put the track list in the file as chapters (the same list and times as the CUE sheet)</label>
-          {#if coverProblem}<div class="note-warn" role="alert">{coverProblem}</div>{/if}
-          <div class="muted small">{tagNote(X.prefs.format)}</div>
-        {/if}
+        <ExportTagFields mixTitle={doc.name} />
         <div class="muted small">Tags are written into the exported file only; nothing is added to the device. These settings are kept on this computer.</div>
       </fieldset>
 
@@ -431,24 +268,7 @@
 
       <details class="settings">
         <summary>More settings</summary>
-        <div class="grid">
-          <label for="xs-boost">Most the master gain may raise the mix</label>
-          <span><input id="xs-boost" class="num-in" type="number" step="1" min="0" max="40" bind:value={X.prefs.maxBoostDb} onchange={changed} /> dB</span>
-          <label for="xs-cut">Most it may lower it</label>
-          <span><input id="xs-cut" class="num-in" type="number" step="1" min="0" max="60" bind:value={X.prefs.maxCutDb} onchange={changed} /> dB</span>
-          <label for="xs-clipmax">Most levelling may change one track</label>
-          <span><input id="xs-clipmax" class="num-in" type="number" step="1" min="0" max="30" bind:value={X.prefs.clipMaxDb} onchange={changed} /> dB</span>
-          <label for="xs-fade">Fade at a cut inside the audio (partial export)</label>
-          <span><input id="xs-fade" class="num-in" type="number" step="5" min="0" max="2000" bind:value={X.prefs.edgeFadeMs} onchange={changed} /> ms (0 = hard cut)</span>
-        </div>
-        <label class="check"><input type="checkbox" bind:checked={X.prefs.capAtPeak} onchange={changed} /> Never raise the mix past a true-peak ceiling (the target may then not be reached)</label>
-        {#if X.prefs.capAtPeak}
-          <div class="grid">
-            <label for="xs-ceil">Ceiling</label>
-            <span><input id="xs-ceil" class="num-in" type="number" step="0.5" min="-20" max="0" bind:value={X.prefs.peakCeilingDb} onchange={changed} /> dBTP</span>
-          </div>
-          <div class="muted small">The true-peak reading is accurate to about 0.3 dB, so leave that much room under the ceiling you need.</div>
-        {/if}
+        <ExportLimitFields />
         <div class="muted small">These settings are kept on this computer. They change how the audio file is made; nothing is written to the device.</div>
       </details>
 
@@ -506,9 +326,6 @@
   }
   .time {
     width: 92px;
-  }
-  .num-in {
-    width: 78px;
   }
   .small {
     font-size: 12px;
@@ -602,35 +419,5 @@
   .settings summary {
     cursor: pointer;
     color: var(--muted);
-  }
-  .grid {
-    display: grid;
-    grid-template-columns: max-content 1fr;
-    gap: 6px 12px;
-    align-items: center;
-    margin: 8px 0;
-  }
-  .grid label,
-  .grid .lbl {
-    color: var(--muted);
-  }
-  .grid input[type="text"] {
-    width: 100%;
-    min-width: 0;
-  }
-  .grid input.num-in[type="text"] {
-    width: 78px;
-  }
-  .cover {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    min-width: 0;
-  }
-  .cover .name {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    max-width: 320px;
   }
 </style>

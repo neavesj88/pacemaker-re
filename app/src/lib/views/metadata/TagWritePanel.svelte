@@ -5,15 +5,12 @@
   import { plural, tickKey } from "./cleanupLogic";
   import { cleanup } from "./cleanupState.svelte";
   import DiffText from "./DiffText.svelte";
+  import TagWriteFields from "./TagWriteFields.svelte";
   import { STATUS_WORDS, fieldLabel, tagWrite } from "./tagwriteState.svelte";
 
   // Writes the library's tags into the audio files themselves, for other software to read. It
   // reads the files first and lists every file and field it would change; only ticked lines are
   // written, and only after a confirmation that names every file. Off unless the user comes here.
-  const FIELDS = [
-    "title", "artist", "album_artist", "album", "composer", "genre", "label", "remixer", "producer", "comments", "year",
-    "track_number", "number_of_tracks", "disc_number", "number_of_discs",
-  ];
   const PAGE = 300;
   let shown = $state(PAGE);
   let showFormats = $state(false);
@@ -27,11 +24,6 @@
   const nItems = $derived(tagWrite.items.length);
   const nFields = $derived(tagWrite.items.reduce((n, it) => n + Object.keys(it).length - 1, 0));
   const isOn = (id: number, f: string) => !tagWrite.unticked[tickKey(id, f)];
-
-  function toggleField(f: string, on: boolean) {
-    if (!s) return;
-    s.write_fields = on ? FIELDS.filter((k) => k === f || s!.write_fields.includes(k)) : s.write_fields.filter((k) => k !== f);
-  }
 
   function check() {
     shown = PAGE;
@@ -66,17 +58,7 @@
   </p>
 </div>
 
-{#if s}
-  <fieldset class="fields">
-    <legend>Fields to write (saved)</legend>
-    {#each FIELDS as f (f)}
-      <label>
-        <input type="checkbox" checked={s.write_fields.includes(f)} onchange={(e) => toggleField(f, e.currentTarget.checked)} />
-        {fieldLabel(f)}
-      </label>
-    {/each}
-  </fieldset>
-{/if}
+<TagWriteFields />
 
 <div class="bar">
   <Button onclick={check} disabled={tagWrite.checking || cleanup.ids.length === 0 || !s || s.write_fields.length === 0}>
@@ -180,25 +162,6 @@
     border-radius: 9px;
     background: color-mix(in srgb, var(--green) 10%, transparent);
     color: var(--green);
-  }
-  .fields {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 2px 14px;
-    border: 1px solid var(--line);
-    border-radius: 6px;
-    padding: 6px 12px 8px;
-    margin: 6px 0;
-    font-size: 12px;
-  }
-  .fields legend {
-    color: var(--muted);
-    padding: 0 4px;
-  }
-  .fields label {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
   }
   .bar {
     display: flex;

@@ -1,7 +1,8 @@
 import { energySource } from "$lib/state/energySource.svelte";
 import type { SettingsEntry } from "../settings/types";
-import CleanupRecipes from "./CleanupRecipes.svelte";
+import CleanupSettingsPane from "./CleanupSettingsPane.svelte";
 import EnergySourceSelect from "./EnergySourceSelect.svelte";
+import TagWriteFields from "./TagWriteFields.svelte";
 import { cleanup } from "./cleanupState.svelte";
 
 const entries: SettingsEntry[] = [
@@ -23,7 +24,17 @@ const entries: SettingsEntry[] = [
     keywords: "tidy tags titles artists feat promo replace rename write back id3",
     load: () => cleanup.load(),
     how: "inline",
-    component: CleanupRecipes,
+    component: CleanupSettingsPane,
+  },
+  {
+    id: "tag-write",
+    area: "Library",
+    title: "Write tags to files",
+    help: "Which of the library's tag fields are written into the audio files' own tags when you write tags back (nothing is written until you confirm the list of files).",
+    keywords: "tags write back id3 audio files fields title artist album",
+    load: () => cleanup.load(),
+    how: "inline",
+    component: TagWriteFields,
   },
 ];
 

@@ -59,21 +59,25 @@ class RelinkStore {
     this.inspecting = null;
   }
 
+  /** Reads the saved options once and keeps them (throws if they cannot be read). */
+  async loadSettings() {
+    if (this.settings) return;
+    const v = await deviceRelinkSettings();
+    this.settings = v.settings;
+    this.settingsWarning = v.warning;
+  }
+
   /** Opens the dialog at its first step. The settings are read once and kept. */
   async open() {
     this.clear();
     device.relinkOpen = true;
-    if (!this.settings) {
-      try {
-        const v = await deviceRelinkSettings();
-        this.settings = v.settings;
-        this.settingsWarning = v.warning;
-      } catch (e) {
-        this.error = String(e);
-        return;
-      }
+    try {
+      await this.loadSettings();
+    } catch (e) {
+      this.error = String(e);
+      return;
     }
-    if (!this.folder) this.folder = this.settings.last_folder;
+    if (!this.folder && this.settings) this.folder = this.settings.last_folder;
   }
 
   close() {
@@ -94,14 +98,14 @@ class RelinkStore {
     this.folder = cardMusicFolder(root);
   }
 
-  async #saveSettings() {
+  /** Saves the options (with the folder last searched). Failing to must not stop a search, so it says so and returns. */
+  async saveSettings() {
     if (!this.settings) return;
     try {
-      const v = await deviceRelinkSettingsSet({ ...this.settings, last_folder: this.folder.trim() });
+      const v = await deviceRelinkSettingsSet({ ...this.settings, last_folder: this.folder.trim() || this.settings.last_folder });
       this.settings = v.settings;
       this.settingsWarning = v.warning;
     } catch (e) {
-      // not being able to remember the options must not stop the search
       toast.show(`Could not save the options: ${String(e)}`, "bad", 8000);
     }
   }
@@ -111,7 +115,7 @@ class RelinkStore {
     this.error = "";
     this.progress = null;
     this.stage = "scanning";
-    await this.#saveSettings();
+    await this.saveSettings();
     try {
       const plan = await deviceRelinkScan(root, this.folder.trim(), this.settings);
       this.plan = plan;

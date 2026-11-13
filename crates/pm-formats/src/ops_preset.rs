@@ -115,10 +115,7 @@ pub fn file_name_for(name: &str) -> String {
     let slug = slug.trim_end_matches('-');
     let slug: String = slug.chars().take(40).collect();
     let slug = if slug.is_empty() { "preset".to_string() } else { slug.trim_end_matches('-').to_string() };
-    let mut h: u64 = 0xcbf2_9ce4_8422_2325; // FNV-1a
-    for b in key.bytes() {
-        h = (h ^ u64::from(b)).wrapping_mul(0x0100_0000_01b3);
-    }
+    let h = crate::appfile::fnv1a(&key);
     format!("{slug}-{h:016x}.json")
 }
 

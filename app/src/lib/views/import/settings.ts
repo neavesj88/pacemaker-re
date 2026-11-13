@@ -13,16 +13,6 @@ const entries: SettingsEntry[] = [
     how: "inline",
     component: WatchFolders,
   },
-  {
-    id: "interop",
-    area: "Import and export",
-    title: "Playlist, setlist and VirtualDJ import and export",
-    help: "The choices of each import preview and export (cue points, colours, smart cases, formats, paths) are made in the import and export dialogs, which need a file or a case to work on.",
-    keywords: "import export rekordbox m3u serato traktor virtualdj setlist matcher csv",
-    how: "view",
-    view: "import",
-    button: "Go to Import",
-  },
 ];
 
 export default entries;

@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { nav } from "$lib/state/nav.svelte";
   import { toast } from "$lib/state/toast.svelte";
   import Button from "$lib/ui/Button.svelte";
   import { settingsEntries } from "./registry";
@@ -41,9 +40,7 @@
   }
 
   async function act(e: SettingsEntry) {
-    if (e.how === "view") {
-      nav.go(e.view);
-    } else if (e.how === "open") {
+    if (e.how === "open") {
       if (await ready(e)) await e.open();
     } else if (e.how === "dialog") {
       if (await ready(e)) dialogId = e.id;

@@ -1,5 +1,9 @@
+import { mixExport } from "$lib/state/mixexport.svelte";
+import { tracklist } from "$lib/state/tracklist.svelte";
 import type { SettingsEntry } from "../settings/types";
+import MixExportSettings from "./MixExportSettings.svelte";
 import RecipeSettings from "./RecipeSettings.svelte";
+import TracklistFields from "./TracklistFields.svelte";
 
 const entries: SettingsEntry[] = [
   {
@@ -14,12 +18,22 @@ const entries: SettingsEntry[] = [
   {
     id: "mix-export",
     area: "Mixes",
-    title: "Mix audio export, track list and setlist",
-    help: "Format, loudness, range, tags and chapters of an exported mix, and the layout of the track list and CUE sheet. They apply to the mix being exported, so they are set in its dialogs.",
-    keywords: "export flac mp3 wav loudness lufs cue chapters track list setlist print",
-    how: "view",
-    view: "mixes",
-    button: "Go to Mixes",
+    title: "Mix audio export",
+    help: "Format and quality, target loudness, tags and cover, the gain limits and how a part of a mix ends. They are the values the export dialog opens with.",
+    keywords: "export flac mp3 ogg wav loudness lufs peak tags cover chapters limiter",
+    load: () => mixExport.ensureLoaded(),
+    how: "inline",
+    component: MixExportSettings,
+  },
+  {
+    id: "tracklist",
+    area: "Mixes",
+    title: "Track list and CUE sheet",
+    help: "Where a track's start time falls, how seconds are rounded, how close tracks are joined for YouTube, and whether a CUE sheet is written next to every audio export.",
+    keywords: "track list cue sheet youtube chapters mixcloud csv numbered",
+    load: () => tracklist.ensureLoaded(),
+    how: "inline",
+    component: TracklistFields,
   },
 ];
 

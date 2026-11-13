@@ -12,6 +12,7 @@
 //! Nothing here touches Tauri or the device; the commands are in `export.rs`.
 
 
+use pm_formats::textfmt::csv_text as csv_cell;
 use pm_mixer::RATE;
 use pm_mixer::engine::{audible_clips, export_span};
 use serde::{Deserialize, Serialize};
@@ -329,13 +330,6 @@ pub fn plain_text(tl: &Tracklist, opts: &TracklistOptions) -> String {
 pub fn mixcloud_text(tl: &Tracklist, opts: &TracklistOptions) -> String {
     let hours = uses_hours(tl, opts);
     tl.entries.iter().map(|e| format!("{}. {} ({})\n", e.number, name_of(e), clock(whole_secs(e.start_frames, opts.rounding), hours, true))).collect()
-}
-
-/// A CSV cell: quoted when it needs to be, and a leading `= + - @` (or a tab / return) gets an
-/// apostrophe so a spreadsheet shows the text instead of running it as a formula.
-fn csv_cell(s: &str) -> String {
-    let s = if s.starts_with(['=', '+', '-', '@', '\t', '\r']) { format!("'{s}") } else { s.to_string() };
-    if s.contains([',', '"', '\n', '\r']) { format!("\"{}\"", s.replace('"', "\"\"")) } else { s }
 }
 
 pub fn csv_text(tl: &Tracklist, opts: &TracklistOptions) -> String {

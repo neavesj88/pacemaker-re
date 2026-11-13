@@ -380,6 +380,13 @@ pub fn pick_keeper(members: &[&DupRow], rule: KeeperRule, present: &dyn Fn(i64) 
     members.iter().copied().max_by_key(key).map(|r| r.track_id).expect("a group has members")
 }
 
+/// Where a group goes in a list: by the suggested copy's artist, then title (case ignored), then
+/// the group's id. The Duplicates view and `pm duplicates` both sort by this, so the first group
+/// is the same one in both.
+pub fn display_order(keeper: Option<&DupRow>, group_id: i64) -> (String, String, i64) {
+    (keeper.map(|r| r.artist.to_lowercase()).unwrap_or_default(), keeper.map(|r| r.title.to_lowercase()).unwrap_or_default(), group_id)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

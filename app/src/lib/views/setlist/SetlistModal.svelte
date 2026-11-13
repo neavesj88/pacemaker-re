@@ -10,9 +10,9 @@
   import { toast } from "$lib/state/toast.svelte";
   import { keyName, parseKey } from "$lib/views/tracks/trackLogic";
   import Button from "$lib/ui/Button.svelte";
+  import SetlistOptions from "./SetlistOptions.svelte";
   import { setlist } from "./setlist.svelte";
   import {
-    COLUMNS,
     EMPTY_SHEET,
     MAX_ENERGY,
     type Built,
@@ -234,12 +234,7 @@
 
           <section>
             <h3>Times</h3>
-            <label>Show
-              <select bind:value={setlist.options.timeMode}>
-                <option value="elapsed">Time since the start of the set</option>
-                <option value="clock">Clock time</option>
-              </select>
-            </label>
+            <SetlistOptions part="time" />
             <label class:off={opts.timeMode !== "clock"}>Set starts at
               <input type="time" bind:value={sheet.start_clock} disabled={opts.timeMode !== "clock"} />
             </label>
@@ -248,50 +243,12 @@
 
           <section>
             <h3>Columns</h3>
-            <div class="checks">
-              {#each COLUMNS as c (c.id)}
-                <label class="chk" title={c.id === "title" ? "The title is always printed" : undefined}>
-                  <input type="checkbox" bind:checked={setlist.options.columns[c.id]} disabled={c.id === "title"} />
-                  {c.label}
-                  {#if setlist.options.columns[c.id] && !shown.has(c.id)}<span class="muted small">(empty, left out)</span>{/if}
-                </label>
-              {/each}
-            </div>
-            {#if kind === "mix"}<p class="muted small">BPM is the tempo stored for each track, not the speed it is stretched to in the mix.</p>{/if}
-            <label class="chk"><input type="checkbox" bind:checked={setlist.options.hideEmpty} /> Leave out a column that is empty for every track</label>
-            <label>Key as
-              <select bind:value={setlist.options.keyNotation}>
-                <option value="stored">Stored on the device</option>
-                <option value="camelot">Camelot (8A)</option>
-                <option value="name">Name (A minor)</option>
-              </select>
-            </label>
+            <SetlistOptions part="columns" {kind} {shown} />
           </section>
 
           <section>
             <h3>Page</h3>
-            <div class="two">
-              <label>Paper
-                <select bind:value={setlist.options.paper}>
-                  <option value="auto">Printer default</option>
-                  <option value="a4">A4</option>
-                  <option value="letter">US Letter</option>
-                </select>
-              </label>
-              <label>Text size
-                <select bind:value={setlist.options.size}>
-                  <option value="normal">Normal</option>
-                  <option value="large">Large</option>
-                  <option value="xlarge">Extra large (for the booth)</option>
-                </select>
-              </label>
-            </div>
-            <label class="chk"><input type="checkbox" bind:checked={setlist.options.landscape} /> Landscape</label>
-            <label class="chk"><input type="checkbox" bind:checked={setlist.options.zebra} /> Shade every other row</label>
-            <label class="chk"><input type="checkbox" bind:checked={setlist.options.showTotals} /> Show the track count and total time</label>
-            {#if kind === "mix"}
-              <label class="chk"><input type="checkbox" bind:checked={setlist.options.includeMuted} /> Include muted clips</label>
-            {/if}
+            <SetlistOptions part="page" {kind} />
           </section>
 
           <section>
@@ -439,18 +396,6 @@
   }
   label.off {
     opacity: 0.5;
-  }
-  label.chk {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    margin-top: 4px;
-    color: var(--text);
-    font-size: 13px;
-  }
-  .checks {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
   }
   .two {
     display: grid;

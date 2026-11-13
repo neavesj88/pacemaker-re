@@ -1,5 +1,7 @@
 import { undo } from "$lib/state/undo.svelte";
 import type { SettingsEntry } from "../settings/types";
+import { relink } from "./relink.svelte";
+import RelinkSettings from "./RelinkSettings.svelte";
 import SafetyCard from "./SafetyCard.svelte";
 
 const entries: SettingsEntry[] = [
@@ -17,11 +19,11 @@ const entries: SettingsEntry[] = [
     id: "device-relink",
     area: "Device",
     title: "Finding missing audio",
-    help: "Whether files are also matched by their tags, how far their length may differ and how deep the search goes. They are options of the search dialog, which needs the missing tracks of an open card.",
-    keywords: "relink missing audio search folder tags length tolerance",
-    how: "view",
-    view: "device",
-    button: "Go to Device",
+    help: "Whether files are also matched by their tags, how far their length may differ, how deep the search goes and which matches are ticked at the start.",
+    keywords: "relink missing audio search folder tags length tolerance preselect",
+    load: () => relink.loadSettings(),
+    how: "inline",
+    component: RelinkSettings,
   },
 ];
 

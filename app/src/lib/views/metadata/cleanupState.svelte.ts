@@ -115,13 +115,19 @@ class CleanupState {
   /** Called whenever `signature` changed: saves the recipes and recomputes the preview, a moment later. */
   schedule() {
     if (!this.settings) return;
-    clearTimeout(this.#saveTimer);
     clearTimeout(this.#previewTimer);
+    this.scheduleSave();
+    this.#previewTimer = setTimeout(() => void this.refresh(), 350);
+  }
+
+  /** Saves the recipes a moment after they changed, without a preview (the Settings view has none). */
+  scheduleSave() {
+    if (!this.settings) return;
+    clearTimeout(this.#saveTimer);
     if (JSON.stringify(this.settings) !== this.#lastSaved) {
       this.saved = "saving";
       this.#saveTimer = setTimeout(() => void this.#save(), 700);
     }
-    this.#previewTimer = setTimeout(() => void this.refresh(), 350);
   }
 
   async #save() {

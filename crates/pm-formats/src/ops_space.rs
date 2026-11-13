@@ -31,6 +31,7 @@ use serde::{Deserialize, Serialize};
 use crate::library::{atomic_write, Error, Library, Track};
 use crate::ops_device::{copy_hashed, inside, sha256_file, utc_stamp, volume_space, Storage, MANIFEST_NAME};
 use crate::ops_fix::{checked_track_paths, delete_track_rows, membership, track_label};
+use crate::textfmt::csv_quoted as csv_cell;
 
 pub const DAY_MS: i64 = 86_400_000;
 /// An average month (30.4375 days) in milliseconds, for "not played for N months".
@@ -858,12 +859,6 @@ fn archive_items(
         ok.push(Archived { track_id: it.track_id, name, sum, bytes, grid, complete });
     }
     (ok, failed, cancelled)
-}
-
-fn csv_cell(s: &str, text: bool) -> String {
-    // a text cell that starts like a formula would run as one when the file is opened in a spreadsheet
-    let guarded = if text && s.starts_with(['=', '+', '-', '@', '\t', '\r']) { format!("'{s}") } else { s.to_string() };
-    format!("\"{}\"", guarded.replace('"', "\"\""))
 }
 
 fn iso(ms: i64) -> String {

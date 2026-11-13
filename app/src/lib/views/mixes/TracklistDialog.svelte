@@ -12,6 +12,7 @@
   import Button from "$lib/ui/Button.svelte";
   import Modal from "$lib/ui/Modal.svelte";
   import { errText } from "./actions";
+  import TracklistFields from "./TracklistFields.svelte";
   import { clock } from "./layout";
 
   const doc = $derived(mixes.doc);
@@ -83,10 +84,6 @@
 
   function pick(f: TracklistFormat) {
     tracklist.format = f;
-    tracklist.save();
-  }
-
-  function changed() {
     tracklist.save();
   }
 
@@ -215,35 +212,7 @@
 
       <details class="settings">
         <summary>Settings</summary>
-        <div class="grid">
-          <label for="tl-stamp">A track starts</label>
-          <select id="tl-stamp" bind:value={tracklist.options.stampAt} onchange={changed}>
-            <option value="enters">when it enters (the crossfade begins)</option>
-            <option value="crossfadeMid">in the middle of the crossfade</option>
-          </select>
-          <label for="tl-round">Seconds</label>
-          <select id="tl-round" bind:value={tracklist.options.rounding} onchange={changed}>
-            <option value="floor">round down (never after the real start)</option>
-            <option value="nearest">round to the nearest second</option>
-          </select>
-          <label for="tl-close">YouTube, tracks under 10 s apart</label>
-          <select id="tl-close" bind:value={tracklist.options.closeEntries} onchange={changed}>
-            <option value="merge">join the later name to the earlier chapter</option>
-            <option value="drop">leave the later track out</option>
-          </select>
-        </div>
-        <label class="check"><input type="checkbox" bind:checked={tracklist.options.numbered} onchange={changed} /> Number the lines of the text list</label>
-        <label class="check"><input type="checkbox" bind:checked={tracklist.options.includeUnavailable} onchange={changed} /> List tracks whose audio is not on the device (they are silent in the export)</label>
-        <label class="check"><input type="checkbox" bind:checked={tracklist.options.csvBom} onchange={changed} /> CSV file starts with a byte-order mark (Excel needs it for accented names)</label>
-        <label class="check"><input type="checkbox" bind:checked={tracklist.writeCue} onchange={changed} /> Write a CUE sheet next to every audio export</label>
-        <div class="grid">
-          <label for="tl-cueex">When that .cue file is already there</label>
-          <select id="tl-cueex" bind:value={tracklist.cueIfExists} onchange={changed} disabled={!tracklist.writeCue}>
-            <option value="ask">ask before replacing it</option>
-            <option value="replace">replace it without asking</option>
-          </select>
-        </div>
-        <div class="muted small">These settings are kept on this computer. Lists are text you copy or save; nothing here is written to the device.</div>
+        <TracklistFields />
       </details>
 
       {#snippet actions()}
@@ -388,23 +357,6 @@
   .settings summary {
     cursor: pointer;
     color: var(--muted);
-  }
-  .grid {
-    display: grid;
-    grid-template-columns: max-content 1fr;
-    gap: 6px 12px;
-    align-items: center;
-    margin: 8px 0;
-  }
-  .grid label {
-    color: var(--muted);
-  }
-  .check {
-    display: block;
-    margin: 4px 0;
-  }
-  .small {
-    margin-top: 8px;
   }
   .busy {
     margin-right: auto;

@@ -266,7 +266,7 @@ pub fn tags_json(volume: &Path, config_dir: &Path, tag: Option<&str>, list_track
     let loaded = ops_labels::load(config_dir, &volume_key);
     let by_id: HashMap<i64, Track> = lib.tracks()?.into_iter().map(|t| (t.track_id, t)).collect();
     let want = match tag {
-        Some(t) => Some(ops_labels::tag_key(&ops_labels::normalise_tag(t)?)),
+        Some(t) => Some(ops_labels::tag_key(&ops_labels::normalise_tag(t).map_err(Usage)?)),
         None => None,
     };
     let listing = list_tracks || want.is_some();
@@ -338,7 +338,8 @@ pub fn tags(args: &[String]) -> Res<Done> {
 /// The ways of finding copies that need no audio decoding (tags, size and length), with the
 /// finder's settings (`duplicate-settings.json` in `config_dir` when given, else the defaults) and
 /// the copy it would suggest keeping. The sound check is not run here: it needs the app's
-/// fingerprint job. `by` limits the run to one way. The second value is true when copies were found.
+/// fingerprint job. `by` limits the run to one way. Groups are in the order the app lists them
+/// (suggested copy's artist, title, then group id). The second value is true when copies were found.
 pub fn duplicates_json(volume: &Path, config_dir: Option<&Path>, by: Option<&str>) -> Res<(Value, bool)> {
     let (mut s, settings_warning) = match config_dir {
         Some(d) => ops_dupes::load(d),
@@ -371,7 +372,7 @@ pub fn duplicates_json(volume: &Path, config_dir: Option<&Path>, by: Option<&str
         Some((audio, _)) if audio.is_file() => "present",
         Some(_) => "missing",
     };
-    let groups: Vec<Value> = ops_dupes::group(links)
+    let mut groups: Vec<((String, String, i64), Value)> = ops_dupes::group(links)
         .into_iter()
         .map(|g| {
             let members: Vec<&DupRow> = g.ids.iter().map(|id| by_id[id]).collect();
@@ -379,7 +380,8 @@ pub fn duplicates_json(volume: &Path, config_dir: Option<&Path>, by: Option<&str
             let mut modes: Vec<ops_dupes::Mode> = g.links.iter().map(|l| l.mode).collect();
             modes.sort();
             modes.dedup();
-            json!({
+            let order = ops_dupes::display_order(members.iter().copied().find(|r| r.track_id == keeper), g.ids[0]);
+            let doc = json!({
                 "id": g.ids[0],
                 "suggested_keeper": keeper,
                 "modes": modes,
@@ -390,9 +392,13 @@ pub fn duplicates_json(volume: &Path, config_dir: Option<&Path>, by: Option<&str
                     "location": r.location, "file": file_state(r.track_id),
                 })).collect::<Vec<_>>(),
                 "links": g.links.iter().map(|l| json!({ "a": l.a, "b": l.b, "mode": l.mode })).collect::<Vec<_>>(),
-            })
+            });
+            (order, doc)
         })
         .collect();
+    // the order the app lists them in
+    groups.sort_by(|a, b| a.0.cmp(&b.0));
+    let groups: Vec<Value> = groups.into_iter().map(|(_, g)| g).collect();
     let found = !groups.is_empty();
     Ok((
         json!({
@@ -657,7 +663,7 @@ mod tests {
         assert_eq!((rows[0]["track_id"].as_i64(), rows[0]["title"].as_str(), rows[0]["energy"].as_u64()), (Some(ids[1]), Some("Title B"), Some(8)));
         let (doc, _) = tags_json(&vol, &cfg, None, true).unwrap();
         assert_eq!(doc["track_labels"].as_array().unwrap().len(), 2);
-        assert!(tags_json(&vol, &cfg, Some("   "), false).is_err(), "an empty tag is an error, not 'every track'");
+        assert!(tags_json(&vol, &cfg, Some("   "), false).unwrap_err().downcast_ref::<Usage>().is_some(), "an empty tag is a usage error, not 'every track'");
         let _ = std::fs::remove_dir_all(vol);
     }
 
@@ -690,8 +696,8 @@ mod tests {
             &[
                 ("Same Title", "Same Artist", 200, 5000),
                 ("same title (feat. Guest)", "SAME ARTIST", 202, 5001), // tags match after normalising
-                ("Other One", "Other Artist", 300, 7000),
-                ("Different Name", "Someone", 300, 7000), // same size and length as the one above
+                ("Other One", "Aaa Artist", 300, 7000),
+                ("Different Name", "Aab Artist", 300, 7000), // same size and length as the one above
                 ("Unrelated", "Nobody", 90, 1234),
             ],
         );
@@ -701,10 +707,12 @@ mod tests {
         assert_eq!(doc["settings_warning"], Value::Null);
         let groups = doc["groups"].as_array().unwrap();
         let ids_of = |g: &Value| g["members"].as_array().unwrap().iter().map(|m| m["track_id"].as_i64().unwrap()).collect::<Vec<_>>();
-        assert_eq!(groups.iter().map(ids_of).collect::<Vec<_>>(), vec![vec![ids[0], ids[1]], vec![ids[2], ids[3]]]);
-        assert_eq!(groups[0]["modes"], json!(["tags"]));
-        assert_eq!(groups[1]["modes"], json!(["size"]));
-        assert!(groups[0]["members"][0]["file"] == "present");
+        // listed as the app lists them: by the suggested copy's artist, so the size group
+        // ("Aaa/Aab Artist") comes before the tag group ("Same Artist") although its ids are higher
+        assert_eq!(groups.iter().map(ids_of).collect::<Vec<_>>(), vec![vec![ids[2], ids[3]], vec![ids[0], ids[1]]]);
+        assert_eq!(groups[0]["modes"], json!(["size"]));
+        assert_eq!(groups[1]["modes"], json!(["tags"]));
+        assert!(groups[1]["members"][0]["file"] == "present");
 
         // one way at a time
         assert_eq!(duplicates_json(&vol, None, Some("tags")).unwrap().0["groups"].as_array().unwrap().len(), 1);
@@ -713,7 +721,7 @@ mod tests {
 
         // the suggested keeper never has its file missing while another copy has one
         let music = vol.join(".Pacemaker").join("Music");
-        let keeper = groups[0]["suggested_keeper"].as_i64().unwrap();
+        let keeper = groups[1]["suggested_keeper"].as_i64().unwrap();
         let lib = Library::open_read_only(&vol).unwrap();
         let loc = lib.tracks().unwrap().into_iter().find(|t| t.track_id == keeper).unwrap().location;
         let (audio, _) = ops_fix::checked_track_paths(&vol, &loc).unwrap();

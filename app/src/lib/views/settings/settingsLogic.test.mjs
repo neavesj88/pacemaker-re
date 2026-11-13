@@ -89,13 +89,63 @@ test("every component an entry imports exists", () => {
   }
 });
 
+test("no entry is only a link: every setting can be changed in this view", () => {
+  for (const f of areaFiles()) {
+    assert.doesNotMatch(readFileSync(f.file, "utf8"), /how:\s*"view"/, `${f.dir}/settings.ts: put the option fields in a component and show it inline`);
+  }
+});
+
+// A setting kept in the browser storage of the app window (`loadPref` / `savePref`) is a feature
+// setting too, unless it only remembers how a view looks. Each key is either an entry or one of
+// the view-state keys below, with the reason; a new key must be added to one of the two.
+const PREF_ENTRIES = {
+  "pacemaker.keyDetect": "key-detection",
+  "pm.gridSuspects.v1": "suspect-grid",
+  "pacemaker-revival.mixexport": "mix-export",
+  "pacemaker-revival.tracklist": "tracklist",
+  "pm.mixes.recipes.v1": "auto-transitions",
+  "pm.setbuilder.prefs.v1": "set-builder",
+  "pacemaker-revival.setlist.v1": "setlist-print",
+  "pacemaker-revival.vdj.v1": "virtualdj-export",
+  "pacemaker-revival.matcher.v1": "request-matcher",
+  "pm.insights.gap.v1": "gap-map",
+  "pacemaker.grid.vtempo.v1": "tempo-tools",
+};
+const VIEW_STATE = {
+  "pm.tracks.view.v1": "which columns the track table shows and how it is sorted",
+  "pm.cases.view.v1": "the case table's columns and sort, and the last choice in the merge dialog",
+  "pm.mixes.list.v1": "how the mix list is sorted and filtered",
+  "pm.mixes.tools.v1": "whether transitions are shown in the mix editor",
+  "pm.mixes.sectionMarkers.v1": "whether section markers are drawn on clips",
+  "pm.gridBatchNudgeMs": "the last nudge typed into the grid batch dialog",
+};
+
+function sourceFiles(dir) {
+  return readdirSync(dir, { withFileTypes: true }).flatMap((d) => (d.isDirectory() ? sourceFiles(join(dir, d.name)) : /\.(ts|svelte)$/.test(d.name) && !d.name.includes("test") ? [join(dir, d.name)] : []));
+}
+
+test("every setting kept in browser storage has an entry, or is listed as view state", () => {
+  const keys = new Set();
+  for (const f of sourceFiles(join(appRoot, "src", "lib"))) {
+    if (f.includes("devmock")) continue;
+    for (const m of readFileSync(f, "utf8").matchAll(/(?:STORAGE|_KEY|KEY)\w*\s*=\s*"((?:pm|pacemaker)[a-zA-Z0-9.-]*)"/g)) keys.add(m[1]);
+  }
+  assert.ok(keys.size >= 15, `found ${[...keys]}`);
+  const ids = new Set(all.map((x) => x.id));
+  for (const k of keys) {
+    assert.ok(PREF_ENTRIES[k] || VIEW_STATE[k], `${k} is stored in the browser: give it a Settings entry (PREF_ENTRIES) or say why it is view state (VIEW_STATE)`);
+    if (PREF_ENTRIES[k]) assert.ok(ids.has(PREF_ENTRIES[k]), `${k} points at the entry "${PREF_ENTRIES[k]}", which does not exist`);
+  }
+  for (const k of [...Object.keys(PREF_ENTRIES), ...Object.keys(VIEW_STATE)]) assert.ok(keys.has(k), `${k} is listed here but no code stores it`);
+});
+
 // A settings file the backend keeps in the app's config folder is a feature setting. Each must
 // be reachable from the Settings view; add the entry (and its row here) when a new one appears.
 const FILES = {
   "duplicate-settings.json": "duplicates",
   "energy-settings.json": "energy-auto",
   "energy-source.json": "energy-source",
-  "export-prefs.json": "interop",
+  "export-prefs.json": "case-export",
   "metadata-cleanup.json": "metadata-cleanup",
   "playlog-settings.json": "play-log",
   "relink.json": "device-relink",

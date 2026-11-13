@@ -16,7 +16,6 @@
 //! library in [`Store`].
 
 use std::collections::HashMap;
-use std::io::Write;
 use std::path::Path;
 
 use rustfft::{num_complex::Complex, FftPlanner};
@@ -319,21 +318,9 @@ impl Store {
         }
     }
 
-    /// Writes the store through a temp file and a rename, so a crash leaves the old file.
+    /// Writes the store through [`pm_formats::appfile::write_atomic`], so a crash leaves the old file.
     pub fn save(&self, path: &Path) -> std::io::Result<()> {
-        if let Some(dir) = path.parent() {
-            std::fs::create_dir_all(dir)?;
-        }
-        let tmp = path.with_extension("fp.tmp");
-        let res = std::fs::File::create(&tmp).and_then(|mut f| {
-            f.write_all(&self.encode())?;
-            f.sync_all()
-        });
-        let res = res.and_then(|()| std::fs::rename(&tmp, path));
-        if res.is_err() {
-            let _ = std::fs::remove_file(&tmp);
-        }
-        res
+        pm_formats::appfile::write_atomic(path, &self.encode())
     }
 }
 

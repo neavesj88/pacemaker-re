@@ -22,6 +22,7 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 
 use crate::library::{Error, Library, Track};
+use crate::textfmt::csv_text;
 use crate::{naming, strfile};
 
 pub mod m3u;
@@ -1436,23 +1437,6 @@ pub fn export_m3u8_with(lib: &Library, tracks: &[Track], paths: &PathMap) -> Str
     s
 }
 
-fn csv_text(s: &str) -> String {
-    // spreadsheets evaluate cells starting with these as formulas; a leading quote makes it text
-    if s.starts_with(['=', '+', '-', '@', '\t', '\r']) {
-        csv_field(&format!("'{s}"))
-    } else {
-        csv_field(s)
-    }
-}
-
-fn csv_field(s: &str) -> String {
-    if s.contains(['"', ',', '\n', '\r']) {
-        format!("\"{}\"", s.replace('"', "\"\""))
-    } else {
-        s.to_string()
-    }
-}
-
 /// RFC 4180 CSV (CRLF rows, quoted where needed) with a UTF-8 byte-order mark so spreadsheet
 /// programs read the accents correctly.
 pub fn export_csv(lib: &Library, tracks: &[Track]) -> String {
@@ -1481,6 +1465,10 @@ pub fn export_csv_with(lib: &Library, tracks: &[Track], paths: &PathMap) -> Stri
     s
 }
 
+/// Text for an XML element or attribute value in the rekordbox-style XML export: the four markup
+/// characters escaped, line breaks and other control characters turned into spaces (tabs stay).
+/// The VirtualDJ writer has its own rule (`commands/export/vdj.rs`) because that reader wants
+/// apostrophes escaped and controls dropped, and `mix.rs` writes the Pacemaker's fixed format.
 fn xml_escape(s: &str) -> String {
     let mut o = String::with_capacity(s.len());
     for c in s.chars() {
@@ -2287,14 +2275,6 @@ mod tests {
         assert!(again.cases.iter().all(|c| c.action == CaseAction::Unchanged), "{:?}", again.cases.iter().map(|c| c.action).collect::<Vec<_>>());
         assert_ne!(again.cases[0].case_id, again.cases[1].case_id);
         clean(lib, dirs);
-    }
-
-    #[test]
-    fn csv_text_fields_cannot_become_formulas() {
-        assert_eq!(csv_text("=SUM(1,2)"), "\"'=SUM(1,2)\"");
-        assert_eq!(csv_text("@x"), "'@x");
-        assert_eq!(csv_text("-1"), "'-1");
-        assert_eq!(csv_text("plain"), "plain");
     }
 
     // ---- the new sources, end to end -----------------------------------------------------

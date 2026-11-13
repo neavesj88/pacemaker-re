@@ -229,8 +229,7 @@ fn find_in(root: &Path, fp_file: &Path, s: &DupSettings) -> AppResult<FindResult
         })
         .collect();
     groups.sort_by_cached_key(|g| {
-        let k = g.members.iter().find(|m| m.row.track_id == g.suggested_keeper).map(|m| &m.row);
-        (k.map(|r| r.artist.to_lowercase()).unwrap_or_default(), k.map(|r| r.title.to_lowercase()).unwrap_or_default(), g.id)
+        logic::display_order(g.members.iter().find(|m| m.row.track_id == g.suggested_keeper).map(|m| &m.row), g.id)
     });
     Ok(FindResult { groups, pending, fingerprinted, tracks: all.len(), warnings })
 }

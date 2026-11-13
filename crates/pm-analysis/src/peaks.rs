@@ -10,7 +10,6 @@
 //! bands stay visible. Bands come from 4th-order Butterworth filters (two cascaded biquads): a
 //! sine at 0.4x or 2.5x a band edge leaks about -32 dB into the neighbouring band.
 
-use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
 
@@ -177,20 +176,14 @@ pub fn stamp_of(path: &Path) -> std::io::Result<Stamp> {
 
 const MAGIC: &[u8; 5] = b"PMPK\x01";
 
-/// FNV-1a: stable across runs and platforms, unlike `DefaultHasher`.
-fn fnv1a(text: &str) -> u64 {
-    text.bytes().fold(0xcbf2_9ce4_8422_2325u64, |h, b| (h ^ b as u64).wrapping_mul(0x0000_0100_0000_01b3))
-}
-
 /// Cache file for a track identity (`id`: volume plus `tracks.location`). The stamp is stored
 /// inside the file, not in its name, so a changed file overwrites its old entry instead of
 /// leaving it behind.
 pub fn cache_path(dir: &Path, id: &str) -> PathBuf {
-    dir.join(format!("{:016x}.peaks", fnv1a(id)))
+    dir.join(format!("{:016x}.peaks", pm_formats::appfile::fnv1a(id)))
 }
 
 pub fn store(dir: &Path, id: &str, stamp: Stamp, fine: &[Column]) -> std::io::Result<()> {
-    std::fs::create_dir_all(dir)?;
     let mut bytes = Vec::with_capacity(MAGIC.len() + 8 + 16 + 4 + 4 + 4 + id.len() + fine.len() * 3);
     bytes.extend_from_slice(MAGIC);
     bytes.extend_from_slice(&COLUMNS_PER_SEC.to_le_bytes());
@@ -202,13 +195,7 @@ pub fn store(dir: &Path, id: &str, stamp: Stamp, fine: &[Column]) -> std::io::Re
     for c in fine {
         bytes.extend_from_slice(c);
     }
-    let path = cache_path(dir, id);
-    let tmp = path.with_extension("peaks.tmp");
-    let written = std::fs::File::create(&tmp).and_then(|mut f| f.write_all(&bytes)).and_then(|_| std::fs::rename(&tmp, &path));
-    if written.is_err() {
-        let _ = std::fs::remove_file(&tmp);
-    }
-    written
+    pm_formats::appfile::write_atomic(&cache_path(dir, id), &bytes)
 }
 
 /// The cached fine columns, or `None` when there is no entry, it belongs to another track

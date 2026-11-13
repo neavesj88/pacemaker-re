@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use pm_analysis::fingerprint::{self, Fingerprint};
 use pm_formats::library::DupRow;
 
-pub use pm_formats::ops_dupes::{group, pick_keeper, size_links, tag_links, DupSettings, Link, Mode};
+pub use pm_formats::ops_dupes::{display_order, group, pick_keeper, size_links, tag_links, DupSettings, Link, Mode};
 
 // ---- sound ---------------------------------------------------------------------------------
 
