@@ -217,3 +217,12 @@ lang files equal stock + intended edits only). Image checks done on the built .p
 byte-identical to the patched output, the wrapper identical to 073's, notices/GPL-2/LGPL-2.1 byte-identical to their
 sources, and a file-level diff against the 073 image shows only pmplayer.real, the three lang files, system.xml (x2),
 cramfs.little and the new licenses directory.
+
+If the Model value clips on the device, shorten `MODEL` in `scripts/patch-about.py` (the slot holds about 18 bytes), e.g. to `Revival`.
+
+## Image file modes
+
+`build-pfw.sh replace()` used to write `mode 0100$m` with `m=0755` (debugfs prints the permission bits with a leading 0), which
+came out as 0777, so every replaced file was world-writable (073 had this for english/japanese.lang and the kernel modules too).
+It now builds the mode as `0100000 | 8#$m`, so replaced files keep the mode of the file they replace. Checked in the built
+074 image: pmplayer and pmplayer.real 0755, the three lang files 0644, zImage 0755, cramfs.little 0644.

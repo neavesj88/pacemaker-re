@@ -40,16 +40,19 @@ meta() {  # meta <image path> -> "mode uid gid" in octal/decimal
          /User:/ {u=$2; g=$4} END {print m, u, g}'
 }
 replace() {  # replace <image path> <local file> [mode]
-  local dst="$1" src="$2" dir base m u g
+  local dst="$1" src="$2" dir base m u g fmode
   dir="$(dirname "$dst")"; base="$(basename "$dst")"
   read -r m u g < <(meta "$dst")
   [[ -n "${3:-}" ]] && m="$3"
   [[ -n "$m" ]] || { echo "no such file in image: $dst" >&2; exit 1; }
+  # debugfs prints the permission bits with a leading 0 (0755), so "0100$m" is the wrong number (it came out as
+  # 0777): build the regular-file mode arithmetically
+  fmode=$(printf '0%o' $((0100000 | 8#$m)))
   debugfs -w -f - "$img" > "$work/debugfs.log" 2>&1 <<EOF
 cd "$dir"
 rm "$base"
 write "$src" "$base"
-sif "$base" mode 0100$m
+sif "$base" mode $fmode
 sif "$base" uid $u
 sif "$base" gid $g
 EOF
