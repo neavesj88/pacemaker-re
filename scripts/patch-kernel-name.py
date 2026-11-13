@@ -8,6 +8,15 @@ characters + NUL = 24 bytes in the decompressed kernel, directly followed by "pm
 written over it in place and zero-filled: the pointer in machine_desc, the type number and every other byte of
 the kernel stay as they are.
 
+The kernel also carries its build configuration (IKCONFIG, served as /proc/config.gz): a gzip stream between the
+markers IKCFG_ST and IKCFG_ED inside the decompressed kernel, 7 347 bytes in the stock one. It contains the symbol
+name CONFIG_LOGO_TONIUM_CLUT224=y, the only "Tonium" left once the name is changed (a literal scan of the
+decompressed kernel does not see it because the stream is compressed twice). The line is rewritten as
+CONFIG_LOGO_CUSTOM_CLUT224=y (same length), the stream is recompressed with zlib -9 and padded to exactly the old
+length with a gzip FCOMMENT field, so the marker positions and every other kernel byte stay where they are and
+`zcat /proc/config.gz` still reads one clean gzip member. The compiled-in logo identifier (logo_tonium_clut224 in
+the symbol table) is not text in the image that can be edited in place and is not touched; see the notes.
+
 The input kernel is the one 180096073 already proved boots (patch-kernel-logo.py output, the Revival logo); the
 stock zImage supplies the gzip header and the compressed span. The new stream is recompressed exactly like the
 logo patch does it (same header, zero-filled up to the end of the original span, CRC32/ISIZE trailer, 7-Zip
@@ -43,16 +52,65 @@ OLD_NAME = b"Tonium Pacemaker (MX31)\0"            # 24 bytes, "pm_keypad" follo
 NEW_NAME = b"Pacemaker Revival"                    # ASCII, 17 chars; at most 23 fit
 NEXT = b"pm_keypad\0"
 SLOT = len(OLD_NAME)
+CFG_START, CFG_END = b"IKCFG_ST", b"IKCFG_ED"       # markers around the gzip'd build config (/proc/config.gz)
+OLD_CFG_LINE = b"CONFIG_LOGO_TONIUM_CLUT224=y\n"
+NEW_CFG_LINE = b"CONFIG_LOGO_CUSTOM_CLUT224=y\n"    # same length
 
 assert len(NEW_NAME) < SLOT and all(32 <= c < 127 for c in NEW_NAME)
+assert len(OLD_CFG_LINE) == len(NEW_CFG_LINE)
 
 
 def sha(b):
     return hashlib.sha256(b).hexdigest()
 
 
+def config_span(k):
+    """(start, end) of the gzip'd build config between IKCFG_ST and IKCFG_ED, or exit."""
+    if k.count(CFG_START) != 1 or k.count(CFG_END) != 1:
+        sys.exit("refusing: expected exactly one IKCFG_ST and one IKCFG_ED in the kernel")
+    a, b = k.index(CFG_START) + len(CFG_START), k.index(CFG_END)
+    if not 0 < b - a < 65536:
+        sys.exit("refusing: implausible build config span")
+    return a, b
+
+
+def read_config(gz):
+    """The text of a gzip member that must fill `gz` exactly, as the zcat of /proc/config.gz sees it."""
+    d = zlib.decompressobj(16 + zlib.MAX_WBITS)
+    text = d.decompress(gz)
+    if not d.eof or d.unused_data:
+        sys.exit("refusing: build config is not exactly one gzip member")
+    return text
+
+
+def patch_config(gz):
+    """The build config gzip member with the logo symbol renamed, recompressed to exactly len(gz) bytes."""
+    text = read_config(gz)
+    if text.count(OLD_CFG_LINE) != 1 or text.lower().count(b"tonium") != 1:
+        sys.exit("refusing: build config does not hold exactly one stock CONFIG_LOGO_TONIUM_CLUT224=y line")
+    if gz[3] != 0:
+        sys.exit("refusing: build config gzip header has flags set")
+    new_text = text.replace(OLD_CFG_LINE, NEW_CFG_LINE)
+    c = zlib.compressobj(9, zlib.DEFLATED, -zlib.MAX_WBITS, 9)
+    body = c.compress(new_text) + c.flush()
+    trailer = struct.pack("<II", zlib.crc32(new_text) & 0xFFFFFFFF, len(new_text) & 0xFFFFFFFF)
+    pad = len(gz) - (10 + len(body) + 8)
+    if pad < 0:
+        sys.exit(f"refusing: recompressed build config is {-pad} bytes too long")
+    # pad == 0: keep the 10-byte header as is. Otherwise set FCOMMENT and let the comment fill the difference
+    # (the comment is `pad - 1` filler bytes plus its NUL).
+    hdr = bytearray(gz[:10])
+    comment = b""
+    if pad:
+        hdr[3] = 0x10
+        comment = b"." * (pad - 1) + b"\0"
+    out = bytes(hdr) + comment + body + trailer
+    assert len(out) == len(gz) and read_config(out) == new_text
+    return out
+
+
 def patch_kernel(k):
-    """The decompressed 073 kernel with only the name slot changed. Exits on any mismatch."""
+    """The decompressed 073 kernel with only the name slot and the build config's logo symbol changed. Exits on any mismatch."""
     def refuse(msg):
         sys.exit("refusing: " + msg)
 
@@ -70,9 +128,32 @@ def patch_kernel(k):
         refuse("expected exactly one 'tonium' in the kernel")
     new = bytearray(k)
     new[NAME_OFF:NAME_OFF + SLOT] = NEW_NAME + bytes(SLOT - len(NEW_NAME))
+    a, b = config_span(k)
+    new[a:b] = patch_config(bytes(k[a:b]))
     new = bytes(new)
     assert b"tonium" not in new.lower()
+    assert b"tonium" not in read_config(new[a:b]).lower()
     return new
+
+
+def check_kernel(lk, ok):
+    """Raise AssertionError unless `ok` is the logo kernel `lk` with only the name slot and the build config's logo
+    symbol changed. Structural on purpose (no recompression), so it gives the same answer on any zlib build.
+    Returns (bytes changed in the name slot, bytes changed in the config stream)."""
+    assert len(ok) == len(lk), "kernel size differs"
+    a, b = config_span(lk)
+    assert config_span(ok) == (a, b), "IKCFG markers moved"
+    assert ok[NAME_OFF:NAME_OFF + SLOT] == NEW_NAME + bytes(SLOT - len(NEW_NAME)), "machine name wrong"
+    assert lk[NAME_OFF + SLOT:NAME_OFF + SLOT + len(NEXT)] == ok[NAME_OFF + SLOT:NAME_OFF + SLOT + len(NEXT)] == NEXT
+    assert struct.unpack_from("<I", ok, MACHINE_DESC)[0] == MACHINE_NR, "machine type number changed"
+    assert struct.unpack_from("<I", ok, NAME_PTR)[0] == BASE + NAME_OFF, "machine_desc.name pointer changed"
+    diff = [i for i in range(len(lk)) if lk[i] != ok[i]]
+    in_name = [i for i in diff if NAME_OFF <= i < NAME_OFF + SLOT]
+    in_cfg = [i for i in diff if a <= i < b]
+    assert in_name and in_cfg and len(in_name) + len(in_cfg) == len(diff), "kernel changed outside the name slot and the config"
+    assert read_config(ok[a:b]) == read_config(lk[a:b]).replace(OLD_CFG_LINE, NEW_CFG_LINE), "config text wrong"
+    assert b"tonium" not in ok.lower() and b"tonium" not in read_config(ok[a:b]).lower()
+    return len(in_name), len(in_cfg)
 
 
 def check_inputs(stock, logo):
@@ -112,12 +193,10 @@ def verify(stock, logo, out):
     ostart, ohdr_end, oend, ok = pkl.gzip_parts(out)
     assert (ostart, ohdr_end) == (start, hdr_end) and oend <= end, "payload does not fit the stock span"
     assert out[oend:end] == bytes(end - oend), "span tail is not zero-filled"
-    assert len(ok) == len(lk) and ok == patch_kernel(lk), "decompressed kernel is not logo kernel + name only"
-    diff = [i for i in range(len(lk)) if lk[i] != ok[i]]
-    assert diff and NAME_OFF <= diff[0] and diff[-1] < NAME_OFF + SLOT, "kernel changed outside the name slot"
+    n_name, n_cfg = check_kernel(lk, ok)
     trailer = struct.unpack_from("<II", out, oend - 8)
     assert trailer == (zlib.crc32(ok) & 0xFFFFFFFF, len(ok)), "gzip trailer wrong"
-    return len(diff), oend - start, end - start
+    return n_name, n_cfg, oend - start, end - start
 
 
 def main():
@@ -131,14 +210,14 @@ def main():
     out_p = args[2] if len(args) > 2 else d("work", "build", "074", "zImage-revival-name")
     stock, logo = open(stock_p, "rb").read(), open(logo_p, "rb").read()
     if check:
-        n, used, span = verify(stock, logo, open(out_p, "rb").read())
-        print(f"verified: {out_p}: {n} kernel bytes differ from the logo kernel (all in the name slot), "
-              f"payload {used} of {span} bytes, zImage {len(stock)} bytes, sha256 {sha(open(out_p, 'rb').read())}")
+        n, c, used, span = verify(stock, logo, open(out_p, "rb").read())
+        print(f"verified: {out_p}: {n} kernel bytes differ from the logo kernel in the name slot and {c} in the "
+              f"build config stream, payload {used} of {span} bytes, zImage {len(stock)} bytes, sha256 {sha(open(out_p, 'rb').read())}")
         return
     out, used, span = make(stock, logo)
     open(out_p, "wb").write(out)
-    n, _, _ = verify(stock, logo, out)
-    print(f"machine name: {n} kernel bytes changed; payload {used} of {span} bytes ({span - used} zero-filled); "
+    n, c, _, _ = verify(stock, logo, out)
+    print(f"machine name: {n} kernel bytes changed in the name slot, {c} in the build config stream; payload {used} of {span} bytes ({span - used} zero-filled); "
           f"zImage {len(out)} bytes, sha256 {sha(out)}")
 
 

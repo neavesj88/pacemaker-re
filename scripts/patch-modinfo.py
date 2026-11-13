@@ -9,7 +9,11 @@ kept, NUL padding to a multiple of 4 as the section alignment says). If that fit
 in place and nothing else changes. If not (the case for "Revival contributors" in both modules) the section is
 moved to the end of the file, 4-byte aligned, and only its sh_offset and sh_size in the section header are
 updated; the old bytes are zeroed so no "Tonium" is left in the file. A relocatable .ko has no program headers and
-nothing refers to .modinfo by file offset (it has no relocations and no symbols), so no other byte changes.
+no relocations refer to .modinfo. Its .symtab does hold local OBJECT symbols in that section (__mod_author45,
+__mod_description46, __mod_license47, __mod_vermagic5, __module_depends, __mod_alias51: st_value = offset of the entry
+in the section, st_size = length + 1). The loader never uses them (.modinfo has SHF_ALLOC cleared and 2.6.19
+simplify_symbols only adds sh_addr), but they would be stale debug symbols, so their st_value and st_size are
+rewritten to the new entry positions as well; those are the only other bytes that change.
 
   patch-modinfo.py IN.ko OUT.ko [AUTHOR]        default AUTHOR: Revival contributors
 """
@@ -47,6 +51,31 @@ def pack(es):
     return blob + bytes(-len(blob) % 4)
 
 
+def modinfo_symbols(d, secs, i):
+    """[(file offset of the symbol entry, st_value, st_size, name)] of the local OBJECT symbols defined in section i."""
+    out = []
+    for n, h in secs:
+        if h[1] != 2:       # SHT_SYMTAB
+            continue
+        strtab = secs[h[6]][1][4]
+        for k in range(h[5] // 16):
+            at = h[4] + k * 16
+            name, value, size, info, _, shndx = struct.unpack_from("<IIIBBH", d, at)
+            if shndx == i and info & 0xF == 1:
+                s = strtab + name
+                out.append((at, value, size, d[s:d.index(b"\0", s)]))
+    return out
+
+
+def entry_layout(es):
+    """{start offset: entry length + 1} of the NUL-terminated entries of pack(es)."""
+    out, p = {}, 0
+    for e in es:
+        out[p] = len(e) + 1
+        p += len(e) + 1
+    return out
+
+
 def patch(d, author=AUTHOR):
     """Return the patched module. Exits on any mismatch."""
     if any(c < 32 or c > 126 for c in author) or not author:
@@ -70,6 +99,20 @@ def patch(d, author=AUTHOR):
     new_es = [b"author=" + author if e == authors[0] else e for e in es]
     new = pack(new_es)
     out = bytearray(d)
+    # the OBJECT symbols follow their entries: each must sit exactly on an old entry (st_size = len + 1)
+    old_start, p = [], 0
+    for e in es:
+        p = blob.index(e + b"\0", p)
+        old_start.append(p)
+        p += len(e) + 1
+    new_layout = entry_layout(new_es)
+    new_start = sorted(new_layout)
+    syms = modinfo_symbols(d, secs, i)
+    for at, value, sym_size, name in syms:
+        if value not in old_start or sym_size != len(es[old_start.index(value)]) + 1:
+            sys.exit(f"refusing: symbol {name!r} does not describe one .modinfo entry")
+        n = old_start.index(value)
+        struct.pack_into("<II", out, at + 4, new_start[n], new_layout[new_start[n]])
     hdr_at = shoff + i * shentsize
     if len(new) <= size:
         out[off:off + size] = new + bytes(size - len(new))
@@ -109,7 +152,20 @@ def check(old, new, author):
     keep[hdr + 16:hdr + 24] = old[hdr + 16:hdr + 24]
     if nh[4] < len(old):
         keep[nh[4]:nh[4] + nh[5]] = old[nh[4]:nh[4] + nh[5]]
-    assert bytes(keep) == old, "bytes changed outside .modinfo and its header entry"
+    # the OBJECT symbols of .modinfo: same set, same names, in the same order; only st_value and st_size are new, and
+    # each now describes exactly one entry of the new blob (st_size = length + 1, the entry NUL included)
+    oidx = [n for n, _ in osecs].index(".modinfo")
+    osyms, nsyms = modinfo_symbols(old, osecs, oidx), modinfo_symbols(new, nsecs, oidx)
+    assert [(a, n) for a, _, _, n in osyms] == [(a, n) for a, _, _, n in nsyms], "symbol set changed"
+    nblob = new[nh[4]:nh[4] + nh[5]]
+    for (at, ov, osz, name), (_, nv, nsz, _) in zip(osyms, nsyms):
+        keep[at + 4:at + 12] = old[at + 4:at + 12]
+        assert nv + nsz <= nh[5] and nblob[nv + nsz - 1] == 0 and 0 not in nblob[nv:nv + nsz - 1], name
+        assert nblob[nv:nv + nsz - 1] in nes, name
+        o_entry = old[oh[4] + ov:oh[4] + ov + osz - 1]
+        n_entry = nblob[nv:nv + nsz - 1]
+        assert (o_entry == n_entry) == (not name.startswith(b"__mod_author")), name   # only the author entry changed
+    assert bytes(keep) == old, "bytes changed outside .modinfo, its header entry and the .modinfo symbols"
     assert b"tonium" not in new.lower()
 
 

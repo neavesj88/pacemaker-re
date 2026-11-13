@@ -2,7 +2,9 @@
 (notes/about-screen.md, "Tonium sweep").
 
 Looks in every file under the given directories, case-insensitively, as narrow text, UTF-16LE and UTF-32LE, and in
-file names; --zimage also looks inside the gzip payload of a zImage. Each hit is a whole printable token, so the
+file names. Every gzip member found by its magic inside a file (the kernel payload of a zImage, and the compressed
+build config /proc/config.gz inside that kernel, which is gzip inside gzip) is decompressed and swept the same way,
+recursively; the label shows the path, e.g. zImage[gz@12696][gz@2363580]. Each hit is a whole printable token, so the
 keep list names exact strings, not files. The keep list is what must not change or was deliberately left:
 
   functional  toniumId (boost serialization tag of every mix), Tonium;Device; (creator id in music.db),
@@ -13,6 +15,7 @@ keep list names exact strings, not files. The keep list is what must not change 
               "Tonium AB" in /bin/resources/licenses/THIRD-PARTY-NOTICES.txt (the verbatim original legal text)
 
   sweep-tonium.py [--zimage FILE] DIR [DIR ...]       exit 0 = nothing outside the keep list
+  (--zimage FILE is the same as one more file to sweep; nested gzip members are looked at for every file anyway)
 """
 import os
 import re
@@ -53,10 +56,32 @@ def tokens(d):
     return out
 
 
-def gunzip_payload(z):
-    start = z.find(b"\x1f\x8b\x08")
-    dd = zlib.decompressobj(16 + zlib.MAX_WBITS)
-    return dd.decompress(z[start:])
+MAX_DEPTH = 4
+GZIP_MAGIC = bytes([0x1F, 0x8B, 0x08])
+
+
+def nested_gzip(d, label="", depth=0):
+    """(label, decompressed bytes) of every complete gzip member inside `d`, found by magic, and of the gzip members
+    inside those, up to MAX_DEPTH levels. Magic bytes that are not a whole valid member (compressed data, text) are skipped."""
+    if depth >= MAX_DEPTH:
+        return
+    view = memoryview(d)
+    pos = 0
+    while True:
+        i = d.find(GZIP_MAGIC, pos)
+        if i < 0:
+            return
+        pos = i + 1
+        o = zlib.decompressobj(16 + zlib.MAX_WBITS)
+        try:
+            out = o.decompress(view[i:])
+        except zlib.error:
+            continue
+        if not o.eof or not out:
+            continue
+        pos = len(d) - len(o.unused_data)
+        yield f"{label}[gz@{i}]", out
+        yield from nested_gzip(out, f"{label}[gz@{i}]", depth + 1)
 
 
 def main():
@@ -78,11 +103,13 @@ def main():
                 if os.path.isfile(p) and not os.path.islink(p):
                     targets.append((p, None))
     if zimage:
-        targets.append((zimage + " (gunzipped kernel)", gunzip_payload(open(zimage, "rb").read())))
+        targets.append((zimage, None))
     for p, data in targets:
         d = data if data is not None else open(p, "rb").read()
-        for t in sorted(tokens(d)):
-            (kept if t in KEEP.get(os.path.basename(p), ()) else bad).append((p, t))
+        allowed = KEEP.get(os.path.basename(p), ())
+        for label, blob in [("", d)] + list(nested_gzip(d)):
+            for t in sorted(tokens(blob)):
+                (kept if t in allowed else bad).append((p + label, t))
     for p, t in kept:
         print("kept   ", p, t)
     for p, t in bad:

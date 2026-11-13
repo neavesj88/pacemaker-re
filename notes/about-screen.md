@@ -234,12 +234,15 @@ Request: replace every remaining "Tonium" in the firmware with Pacemaker Revival
 identifiers and the bootloader. Three independent read-only sweeps (Ghidra on pwrApplication and pmplayer, a raw scan
 of the unpacked image, the extracted cramfs and the decompressed kernel, narrow / UTF-16 / UTF-32, case-insensitive,
 file names too) found the same set; `scripts/sweep-tonium.py` repeats that scan on any unpacked tree and fails on
-anything outside its keep list. On the stock 180096069 tree it reports 22 unexpected hits (rows 1 to 7 below) and 10
-kept ones; on the built 074 image it reports 0 unexpected and 11 kept. Nothing below has run on hardware.
+anything outside its keep list. It also unpacks every gzip member it finds inside a file, recursively (the kernel payload, and the gzip'd build
+config inside the kernel; added after the review found the nested one). On the stock 180096069 tree it reports 23
+unexpected hits (rows 1 to 7 below, row 1b being the nested one) and 10 kept ones; on the built 074 image it reports 0
+unexpected and 11 kept. Nothing below has run on hardware.
 
 | # | where (stock offsets) | text | who sees it | decision | patch |
 |---|---|---|---|---|---|
 | 1 | kernel (decompressed 0x24df14, gzip payload of boot/zImage) | `Tonium Pacemaker (MX31)` = `machine_desc.name` of MX31ADS | dmesg `Machine:` line and `Hardware` in /proc/cpuinfo only; nothing parses it | patched | `scripts/patch-kernel-name.py` -> `Pacemaker Revival` |
+| 1b | kernel build config, a gzip stream inside the decompressed kernel (`IKCFG_ST` ... `IKCFG_ED`, served as /proc/config.gz) | `CONFIG_LOGO_TONIUM_CLUT224=y` (Kconfig symbol name only) | `zcat /proc/config.gz` from a shell only | patched | same script -> `CONFIG_LOGO_CUSTOM_CLUT224=y`, recompressed to exactly the old length |
 | 2 | rootfs `evrout.ko` .modinfo | `author=Tonium AB.` | `modinfo` from a shell only | patched | `scripts/patch-modinfo.py` -> `author=Revival contributors` |
 | 3 | rootfs `pmic_input.ko` .modinfo | `author=Tonium AB` | same | patched | same script, same wording |
 | 4 | rootfs cramfs `/usr/local/share/fonts/english.lang` | `49 "(c) Tonium"` | nobody: pwrApplication never fetches string 49 | patched | `patch-about.py lang` -> `49 "(c) Revival contributors"`, passed to build-rootfs.sh; first asserted byte-identical to the image's stock english.lang |
@@ -255,6 +258,13 @@ kept ones; on the built 074 image it reports 0 unexpected and 11 kept. Nothing b
 Nothing else exists: no other .ko, no other binary, no Tonium in /etc, no file name, ext3 label or .pfw trailer text. The
 compressed `boot/zImage` and `boot/cramfs.little` are swept in their decompressed form (rows 1 to 4). The four-dot P logo
 bitmaps in the rootfs are a mark, not text, and FINDINGS 5c records them as unused; they are not touched.
+
+Not covered, stated once: the kernel was built with `CONFIG_KALLSYMS=y`, so its symbol table very probably holds the
+identifier of the compiled-in logo (`logo_tonium_clut224` in the Tonium logo patch). kallsyms names are stored as
+token sequences, so no literal "tonium" exists in the image and the sweep cannot see it. A quick attempt to locate and
+decode the kallsyms token table in the decompressed kernel found nothing, so whether it is there is unverified. It could
+only show in /proc/kallsyms, and renaming it is not an in-place text edit (token sequences change length, the name
+block is length-prefixed and indexed by the markers table), so it is left. The rows above cover everything that exists as text.
 
 ### Row 1: kernel machine name
 
@@ -272,14 +282,29 @@ the kernel 073 proved on hardware (`work/build/073/zImage-revival`, sha256 `547d
 header and the compressed span from the stock zImage (sha256 `4d7ad831...a1df3`), recompresses with the same chooser
 as the logo step (zlib -9 or 7-Zip, whichever is smaller; zlib alone is about 1 435 900 bytes against a span of
 1 429 194 and does not fit, 7-Zip gives 1 370 584), zero-fills to the end of the span and keeps the CRC32/ISIZE trailer.
-Result: 1 442 000 bytes (same as stock), payload 1 370 601 of 1 429 194 (58 593 spare), 23 kernel bytes differ from the
-073 kernel, all inside the name slot; sha256 `1178c1310cab8956519d16f2a2a3c49b9d0a77209c98c904c0bfa9dfb7fca46b`.
-`--verify` re-checks that without 7-Zip (the 074 build script calls it, because WSL has no 7-Zip); the recompression
+Result (with row 1b below): 1 442 000 bytes (same as stock), payload 1 370 575 of 1 429 194 (58 619 spare), 23 kernel
+bytes differ from the 073 kernel in the name slot and 7 301 inside the build config stream, nowhere else; sha256
+`c66f221863a0d27ae3abff9cf00e984beeb101f96c74dd9a0ab3173b8964748b`.
+`--verify` re-checks that without 7-Zip and without recompressing anything (it compares structurally, so it does not
+depend on the zlib build; the 074 build script calls it, because WSL has no 7-Zip); the recompression
 itself runs on Windows:
 
     tools/venv/Scripts/python scripts/patch-kernel-name.py work/fw-180096069/boot/zImage work/build/073/zImage-revival work/build/074/zImage-revival-name
 
 No Pillow is needed for it (`patch-kernel-logo.py` now imports it only inside its own main()).
+
+### Row 1b: build config inside the kernel
+
+The review of the first sweep found one more: the kernel embeds its build configuration (IKCONFIG, `/proc/config.gz`) as a
+gzip member between the markers `IKCFG_ST` and `IKCFG_ED` (decompressed kernel offsets 2 363 580 to 2 370 927, 7 347
+bytes). It holds `CONFIG_LOGO_TONIUM_CLUT224=y` once, which a scan of the decompressed kernel misses because the stream is
+compressed a second time. `patch-kernel-name.py` rewrites that line to `CONFIG_LOGO_CUSTOM_CLUT224=y` (same length),
+recompresses the text with zlib -9 and fills the old 7 347 bytes exactly, using a gzip FCOMMENT field of filler dots for
+the difference, so the markers, the span and every other kernel byte stay put and `zcat` reads one clean member (checked
+with `gzip -t` and `zcat | diff`: one changed line). Only `/proc/config.gz` reads those bytes. It is a name in a Kconfig
+listing, not a functional setting: the symbol no longer matches the Tonium logo patch's Kconfig name, which does not
+matter because nothing re-reads the config. The patch refuses a config that is not one gzip member filling the span, that
+has flags set, or whose Tonium line is not exactly the stock one.
 
 The kernel is flashed to NOR (mtd2/3) by the update, so a bad stream would not boot; DFU recovery exists. Mitigation: the
 decompressed result is asserted equal to the 073 kernel plus the name, every byte outside the payload span is asserted
@@ -292,19 +317,31 @@ identical to stock, and the gzip CRC/length are checked. The boot itself needs a
 (evrout) and 133 bytes (pmic_input) against sections of 184 and 140 bytes, so `author=Revival contributors` (27 bytes with
 its NUL) does not fit in either. `patch-modinfo.py` therefore moves `.modinfo` to the end of the file (4-byte aligned),
 changes only that section's `sh_offset` and `sh_size` in the section header, and zeroes the old bytes so no Tonium is left.
-A relocatable .ko has no program headers, `.modinfo` has no relocations or symbols and nothing refers to it by offset, so
-no other byte changes (asserted: only the .modinfo header entry differs, all other bytes identical, alignment and bounds
-checked). evrout.ko 13 256 -> 13 444 bytes, pmic_input.ko 5 208 -> 5 352 bytes. If the new author did fit, the script
+A relocatable .ko has no program headers and no relocation refers to `.modinfo`. Correction to the first write-up, which
+said it had no symbols: `.symtab` holds local OBJECT symbols in that section (`__mod_author45`, `__mod_description46`,
+`__mod_license47`, `__mod_vermagic5`, `__module_depends`, and `__mod_alias51` in evrout; `st_value` = entry offset,
+`st_size` = length + 1) plus a SECTION symbol. After the repack they would have been stale (right names, wrong offsets).
+The loader never looks at them (the section has SHF_ALLOC cleared, see below), so it was harmless, but the patch now
+rewrites their `st_value` and `st_size` to the new entry positions as well (`readelf -s` and the tests check that each
+symbol describes exactly one entry of the new blob). Asserted: only the .modinfo header entry and those symbol fields
+differ, all other bytes identical, alignment and bounds checked. evrout.ko 13 256 -> 13 444 bytes, pmic_input.ko 5 208 -> 5 352 bytes. If the new author did fit, the script
 writes it in place instead (tested with a short author).
 
 Checked on the built rootfs: readelf parses both files (21 sections, `.modinfo` at 0x33c8 and 0x1458) and the real
 module-init-tools `modinfo` from the device rootfs, run under qemu-arm-static in a chroot of the extracted cramfs, prints
 `author: Revival contributors` plus unchanged description, license, `vermagic: 2.6.19.2 preempt mod_unload ARMv6`,
-`depends` and `alias`. Not verified: that the 2.6.19.2 kernel's own `load_module` accepts the moved section. The kernel
-source is not in the GPL drop here; from memory it reads sections only through `sh_offset`/`sh_size`, checks
-`sh_offset + sh_size <= len` and clears SHF_ALLOC on `.modinfo`, but that was not re-read. A module that failed to load
-would cost the event router or the PMIC input driver (no buttons). The fallback is a short author that fits in place:
-`patch-modinfo.py IN OUT "Revival crew"` writes it without moving anything.
+`depends` and `alias`.
+
+Whether the 2.6.19.2 kernel accepts the moved section: upstream `kernel/module.c` of v2.6.19 was read this time
+(github.com/torvalds/linux, tag v2.6.19). `load_module` only requires `sh_offset + sh_size <= len` for every section
+(`goto truncated` otherwise), sets `sh_addr = hdr + sh_offset` for all of them, clears SHF_ALLOC on `.modinfo` (so it is
+never copied into module memory and its position is irrelevant), and `get_modinfo` walks `sh_addr` for `sh_size` bytes
+through `next_string`, which skips any run of NULs (single NUL separators included). `simplify_symbols` only adds
+`sh_addr` to symbols, no range check. Nothing orders sections by file offset, and the file simply grew at the end. The
+GPL drop has no kernel source, so Tonium's own patches to module.c cannot be ruled out, and nothing has been loaded on
+the device or in an emulator: **first boot check: `lsmod` (or dmesg) must list evrout and pmic_input**. A module that
+failed to load would cost the event router or the PMIC input driver (no buttons); DFU recovery exists. The no-move
+fallback is a short author that fits in place: `patch-modinfo.py IN OUT "Revival crew"` (verified to build).
 
 ### Row 4: cramfs english.lang
 
@@ -358,23 +395,35 @@ slot without moving the pointer.
 (`/lib/modules/.../evrout.ko=`, `.../pmic_input.ko=`, `/usr/local/share/fonts/english.lang=`) and the libraries to
 build-pfw.sh (`/bin/<lib>=`), and after the build extracts the image and the cramfs and checks: redboot.bin stock,
 `/boot/zImage` equals the verified kernel, trailer `bootloaderver=12838`, `fwver=180096074`, md5 OK, then
-`sweep-tonium.py --zimage ...` over the image tree, the rootfs and the decompressed kernel (11 kept, 0 unexpected).
+`sweep-tonium.py` over the image tree (which now unpacks the kernel and its nested build config by itself) and the rootfs
+(11 kept, 0 unexpected).
 
-Tests: `PM_WORK=<work dir> python scripts/test-tonium-sweep.py` (18 tests: name slot, type number and pointer; only the
-name differs from the 073 kernel; refusal of patched or wrong zImages; the built zImage re-verified and independently
+Tests: `PM_WORK=<work dir> python scripts/test-tonium-sweep.py` (22 tests: name slot, type number and pointer; only the
+name and the build config's logo line differ from the 073 kernel; the config is one gzip member of the old length with one
+line changed, refusals for patched, trailing, truncated or duplicated-marker configs; the sweep unpacks nested gzip;
+modinfo symbols follow their entries in both variants; refusal of patched or wrong zImages; the built zImage re-verified and independently
 gunzipped; modinfo of both modules read back the way the loader walks it, in-place and moved variants, refusals, no other
 module mentions Tonium; all 14 libraries and 22 strings, wording, coverage of every stock Tonium string, refusals; cramfs
 english.lang equals stock plus string 49 only; build script wiring and no redboot replacement; sweep tokenizer and keep
 list) and `scripts/test-patch-about.py` (14 tests, unchanged), all passing.
 
 Built image `work/build/pacemaker-revival-180096074.pfw`, 51 200 512 bytes (the trailer uid is random per build, so the
-hash changes with every rebuild): sha256 `5925b2ccc7ce928122d48697a676bc376508893382f40c07d597dee6fec6f26f`; cramfs
-(deterministic) `work/build/cramfs-180096074.little`, 10 715 136 bytes, sha256
-`2b59737df7b7e2f866975fadc1a6c1dab8b4c08761080431c975490d263440e6`. e2fsck clean. A file-level diff against the first 074
+hash changes with every rebuild unless the content is unchanged): sha256 `16c819128a693c81a083610c76b304430370d74cc8ea51f0701e32b232250128`;
+cramfs (deterministic) `work/build/cramfs-180096074.little`, 10 715 136 bytes, sha256
+`663dcadeb94c45c852d8fc5bdf54fbcca432448ba26a171599f2d00dc7e3ce8f` (changed from `2b59737d...` by the module symbol fix). e2fsck clean. A file-level diff against the first 074
 build (kept as `pacemaker-revival-180096074.pfw.prev-pre-sweep`, sha256 `62c9e21d...b2b15`) shows only the 14 plugin
 libraries, `boot/zImage`, `boot/cramfs.little` and, inside the cramfs, evrout.ko, pmic_input.ko and
 `/usr/local/share/fonts/english.lang`. The version stays 180096074 because it has not been installed yet.
 
 Unverified: everything on hardware (boot with the renamed kernel, loading the two modules with the moved `.modinfo`, music
-playback with the patched plugin libraries); the "dead data" verdict for the plugin strings is static analysis; whether
-the 2.6.19.2 loader treats the moved section as described above.
+playback with the patched plugin libraries); the "dead data" verdict for the plugin strings is static analysis; the moved
+`.modinfo` against Tonium's actual 2.6.19.2 build (upstream source read, see rows 2 and 3); whether the kallsyms table holds
+`logo_tonium_clut224` (not located).
+
+### Still open: the bootloader string, an owner decision
+
+The one item of the request that is not done is the `Tonium` USB manufacturer string in `boot/redboot.bin` (row 8): the
+image keeps it byte-identical on purpose (see row 8 for why a patched copy would be ignored, and why forcing a flash
+carries a brick risk with no rollback). Doing it needs three things together: a `bootloaderver` bump in the trailer and the
+two 12838 constants in RedBoot, the 8-byte patch (`Revival`), and a hardware recovery path for mtd0 (programmer, JTAG or
+serial boot, none verified on this board). It needs the owner's explicit yes as its own opt-in image.

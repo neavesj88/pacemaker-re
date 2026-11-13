@@ -69,18 +69,52 @@ class KernelName(unittest.TestCase):
         cls.logo = rd(os.path.join(WORK, "build", "073", "zImage-revival"))
         _, _, _, cls.lk = pkn.pkl.gzip_parts(cls.logo)
 
-    def test_patch_changes_only_the_name(self):
+    def test_patch_changes_only_the_name_and_the_config_symbol(self):
         new = pkn.patch_kernel(self.lk)
         self.assertEqual(len(new), len(self.lk))
+        a, b = pkn.config_span(self.lk)
         diff = [i for i in range(len(new)) if new[i] != self.lk[i]]
-        self.assertTrue(pkn.NAME_OFF <= diff[0] and diff[-1] < pkn.NAME_OFF + pkn.SLOT)
+        self.assertTrue(all(pkn.NAME_OFF <= i < pkn.NAME_OFF + pkn.SLOT or a <= i < b for i in diff))
+        self.assertEqual(pkn.check_kernel(self.lk, new)[0], len([i for i in diff if i >= pkn.NAME_OFF]))
         self.assertEqual(new[pkn.NAME_OFF:pkn.NAME_OFF + pkn.SLOT], b"Pacemaker Revival" + bytes(7))
         self.assertEqual(new[pkn.NAME_OFF + pkn.SLOT:pkn.NAME_OFF + pkn.SLOT + 10], b"pm_keypad\0")
         # the machine type number and the name pointer (so the board is still matched) are as before
         self.assertEqual(struct.unpack_from("<I", new, pkn.MACHINE_DESC)[0], 0x1BF)
         self.assertEqual(struct.unpack_from("<I", new, pkn.NAME_PTR)[0], pkn.BASE + pkn.NAME_OFF)
-        self.assertEqual(new[:pkn.NAME_OFF], self.lk[:pkn.NAME_OFF])
+        self.assertEqual(new[:a], self.lk[:a])
+        self.assertEqual(new[b:pkn.NAME_OFF], self.lk[b:pkn.NAME_OFF])
         self.assertEqual(new.lower().count(b"tonium"), 0)
+
+    def test_embedded_build_config(self):
+        # /proc/config.gz: a second gzip layer inside the kernel; same length, one clean member, one line changed
+        a, b = pkn.config_span(self.lk)
+        old_text = pkn.read_config(self.lk[a:b])
+        self.assertEqual(old_text.count(b"CONFIG_LOGO_TONIUM_CLUT224=y\n"), 1)
+        new = pkn.patch_kernel(self.lk)
+        self.assertEqual(pkn.config_span(new), (a, b))
+        gz = new[a:b]
+        self.assertEqual(len(gz), len(self.lk[a:b]))
+        new_text = pkn.read_config(gz)                       # raises unless it is exactly one member filling gz
+        self.assertEqual(new_text, old_text.replace(b"CONFIG_LOGO_TONIUM_CLUT224=y\n", b"CONFIG_LOGO_CUSTOM_CLUT224=y\n"))
+        self.assertNotIn(b"tonium", new_text.lower())
+        self.assertEqual(new[a - 8:a], b"IKCFG_ST")
+        self.assertEqual(new[b:b + 8], b"IKCFG_ED")
+        # and the sweep sees it, through the nested gzip walk: the logo kernel's stream is reported, the patched one is not
+        self.assertIn(("narrow", "CONFIG_LOGO_TONIUM_CLUT224=y"), st.tokens(old_text))
+        self.assertEqual(st.tokens(new_text), set())
+        self.assertTrue(any(t[1].startswith("CONFIG_LOGO_TONIUM") for _, blob in st.nested_gzip(self.lk) for t in st.tokens(blob)))
+        self.assertFalse(any(st.tokens(blob) for _, blob in st.nested_gzip(new)))
+
+    def test_config_refusals(self):
+        a, b = pkn.config_span(self.lk)
+        with self.assertRaises(SystemExit):
+            pkn.patch_config(pkn.patch_config(self.lk[a:b]))    # already patched
+        with self.assertRaises(SystemExit):
+            pkn.patch_config(self.lk[a:b] + b"x")               # trailing byte after the member
+        with self.assertRaises(SystemExit):
+            pkn.patch_config(self.lk[a:b - 20])                 # truncated
+        with self.assertRaises(SystemExit):
+            pkn.config_span(self.lk + pkn.CFG_START)            # marker twice
 
     def test_logo_region_untouched(self):
         # the logo kernel differs from stock only in the logo, and the name patch keeps that
@@ -88,8 +122,9 @@ class KernelName(unittest.TestCase):
         new = pkn.patch_kernel(self.lk)
         d1 = [i for i in range(len(sk)) if sk[i] != self.lk[i]]
         d2 = [i for i in range(len(sk)) if sk[i] != new[i]]
-        self.assertEqual(sorted(set(d2) - set(d1)), [i for i in range(pkn.NAME_OFF, pkn.NAME_OFF + pkn.SLOT)
-                                                      if sk[i] != new[i]])
+        a, b = pkn.config_span(self.lk)
+        extra = sorted(set(d2) - set(d1))
+        self.assertTrue(all(pkn.NAME_OFF <= i < pkn.NAME_OFF + pkn.SLOT or a <= i < b for i in extra))
         self.assertTrue(set(d1) <= set(d2))
 
     def test_refuses_patched_and_stock_kernels(self):
@@ -119,14 +154,16 @@ class KernelName(unittest.TestCase):
         if not os.path.isfile(p):
             self.skipTest("work/build/074/zImage-revival-name not built")
         out = rd(p)
-        n, used, span = pkn.verify(self.stock, self.logo, out)
+        n, c, used, span = pkn.verify(self.stock, self.logo, out)
         self.assertGreater(n, 0)
         self.assertLessEqual(n, 24)
+        self.assertGreater(c, 0)
+        self.assertLessEqual(c, 7347)
         self.assertLessEqual(used, span)
         self.assertEqual(len(out), len(self.stock))
         # an independent decompression (zlib on the gzip member) gives the patched kernel
         k = zlib.decompressobj(16 + zlib.MAX_WBITS).decompress(out[pkn.pkl.gzip_parts(out)[0]:])
-        self.assertEqual(k, pkn.patch_kernel(self.lk))
+        self.assertEqual(pkn.check_kernel(self.lk, k)[0], n)   # structural: independent of the zlib build
         # the decompressor stub and everything after the payload are stock
         start, _, end, _ = pkn.pkl.gzip_parts(self.stock)
         self.assertEqual(out[:start], self.stock[:start])
@@ -166,6 +203,36 @@ class Modinfo(unittest.TestCase):
             osecs, _, _ = pmi.sections(d)
             self.assertEqual([n for n, a in osecs if a != dict(secs)[n]], [".modinfo"])
 
+    def test_symbols_follow_the_entries(self):
+        # .symtab holds local OBJECT symbols for each .modinfo entry (st_value = entry offset, st_size = length + 1):
+        # after the repack they must point at the new entries, in the moved and the in-place variant
+        for name in MODULES:
+            d = self.mod(name)
+            for out in (pmi.patch(d), pmi.patch(d, b"Revival")):
+                secs, _, _ = pmi.sections(out)
+                i = [n for n, _ in secs].index(".modinfo")
+                h = secs[i][1]
+                blob = out[h[4]:h[4] + h[5]]
+                syms = pmi.modinfo_symbols(out, secs, i)
+                osecs, _, _ = pmi.sections(d)
+                osyms = pmi.modinfo_symbols(d, osecs, i)
+                self.assertEqual(len(syms), len(osyms))
+                self.assertGreaterEqual(len(syms), 4)
+                self.assertTrue(any(n.startswith(b"__mod_author") for _, _, _, n in syms))
+                tags = [b"author", b"description", b"license", b"vermagic", b"depends", b"alias"]
+                for (_, v, sz, n), (_, ov, osz, on) in zip(syms, osyms):
+                    self.assertEqual(n, on)
+                    entry = blob[v:v + sz - 1]
+                    self.assertEqual(blob[v + sz - 1:v + sz], b"\0", n)
+                    self.assertNotIn(b"\0", entry, n)
+                    self.assertIn(entry.split(b"=")[0], tags, n)
+                    if not n.startswith(b"__mod_author"):
+                        # untouched entries: the symbol still describes the same text as before
+                        oblob = d[osecs[i][1][4]:osecs[i][1][4] + osecs[i][1][5]]
+                        self.assertEqual(entry, oblob[ov:ov + osz - 1], n)
+                    # the symbol of a given entry is found through the loader's walk too
+                    self.assertEqual(modinfo_like_kernel(out, entry.split(b"=")[0]), entry.split(b"=", 1)[1], n)
+
     def test_in_place_when_it_fits(self):
         d = self.mod("evrout")
         out = pmi.patch(d, b"Revival")
@@ -174,7 +241,11 @@ class Modinfo(unittest.TestCase):
         self.assertEqual(dict(pmi.sections(out)[0])[".modinfo"][4], dict(pmi.sections(d)[0])[".modinfo"][4])
         diff = [i for i in range(len(d)) if d[i] != out[i]]
         h = dict(pmi.sections(d)[0])[".modinfo"]
-        self.assertTrue(all(h[4] <= i < h[4] + h[5] for i in diff))
+        secs, _, _ = pmi.sections(d)
+        i_mod = [n for n, _ in secs].index(".modinfo")
+        sym_bytes = {at + k for at, _, _, _ in pmi.modinfo_symbols(d, secs, i_mod) for k in range(4, 12)}
+        # only the .modinfo bytes and the st_value / st_size of its symbols change
+        self.assertTrue(all(h[4] <= i < h[4] + h[5] or i in sym_bytes for i in diff))
 
     def test_deterministic_and_refuses(self):
         d = self.mod("pmic_input")
@@ -286,6 +357,35 @@ class Sweep(unittest.TestCase):
         self.assertIn(("utf-32-le", "toniumId"), t)
         self.assertIn(("utf-16-le", "ToNiUm"), t)
         self.assertEqual(st.tokens(b"nothing here" * 100), set())
+
+    def test_nested_gzip(self):
+        # a gzip member inside a gzip member inside a file: found, labelled, swept; random magic bytes are skipped
+        def gz(b):
+            c = zlib.compressobj(9, zlib.DEFLATED, 31)
+            return c.compress(b) + c.flush()
+        inner = gz(b"prefix CONFIG_LOGO_TONIUM_CLUT224=y suffix" + bytes(100))
+        outer = gz(b"IKCFG_ST" + inner + b"IKCFG_ED" + bytes(200))
+        data = b"junk" + bytes([0x1F, 0x8B, 0x08]) + b"not gzip at all" + outer + bytes(64)
+        found = list(st.nested_gzip(data))
+        self.assertEqual([lab for lab, _ in found].count(""), 0)
+        self.assertEqual(len(found), 2)
+        self.assertTrue(found[0][0].count("[gz@") == 1 and found[1][0].count("[gz@") == 2)
+        self.assertIn(("narrow", "CONFIG_LOGO_TONIUM_CLUT224=y"), st.tokens(found[1][1]))
+        self.assertEqual(st.tokens(found[0][1]), set())      # the outer layer alone has no literal Tonium
+        with tempfile.TemporaryDirectory() as t:
+            open(os.path.join(t, "zImage"), "wb").write(data)
+            sys_argv = sys.argv
+            try:
+                sys.argv = ["sweep-tonium.py", t]
+                with self.assertRaises(SystemExit) as c:
+                    st.main()
+                self.assertEqual(c.exception.code, 1)
+                open(os.path.join(t, "zImage"), "wb").write(b"junk" + gz(b"clean " + bytes(100)))
+                with self.assertRaises(SystemExit) as c:
+                    st.main()
+                self.assertEqual(c.exception.code, 0)
+            finally:
+                sys.argv = sys_argv
 
     def test_walk_and_keep_list(self):
         with tempfile.TemporaryDirectory() as t:

@@ -6,9 +6,10 @@
 # original Legal text plus GPL-2 and LGPL-2.1 ship in /bin/resources/licenses/. The Tonium sweep (notes/about-screen.md)
 # takes the rest of the visible or tag "Tonium" text out as well: the kernel's machine name, the author tag of
 # evrout.ko and pmic_input.ko, string 49 of the cramfs english.lang, and the 22 description strings of the 14 audio
-# plugin libraries. Left as they are on purpose: the functional identifiers (toniumId, Tonium;Device;, com.tonium.*),
-# the verbatim notices file, and boot/redboot.bin (byte-identical, bootloaderver 12838: this image never flashes the
-# bootloader). scripts/sweep-tonium.py lists what is left in the built image and fails on anything unexpected.
+# plugin libraries, plus the logo symbol name in the kernel's embedded build config (/proc/config.gz). Left as they
+# are on purpose: the functional identifiers (toniumId, Tonium;Device;, com.tonium.*), the verbatim notices file,
+# and boot/redboot.bin (byte-identical, bootloaderver 12838: this image never flashes the bootloader).
+# scripts/sweep-tonium.py lists what is left in the built image and fails on anything unexpected.
 # Runs as root in WSL Debian from the repo checkout (a git worktree is fine):
 #   wsl.exe -d Debian -u root bash scripts/build-180096074.sh
 # Needs what build-180096073.sh needs (e2fsprogs, util-linux-extra, python3, gcc-arm-linux-gnueabi), plus
@@ -144,5 +145,5 @@ cmp "$chk/img/boot/zImage" "$ZIMAGE"
 python3 scripts/pfw-trailer.py "$O" | tee "$chk/trailer.txt"
 grep -q 'bootloaderver=12838 ' "$chk/trailer.txt" && grep -q "fwver=$FW " "$chk/trailer.txt" && grep -q 'md5=OK' "$chk/trailer.txt"
 fsck.cramfs --extract="$chk/rootfs" "$W/build/cramfs-$FW.little" >/dev/null
-python3 scripts/sweep-tonium.py --zimage "$chk/img/boot/zImage" "$chk/img" "$chk/rootfs"
+python3 scripts/sweep-tonium.py "$chk/img" "$chk/rootfs"
 sha256sum "$O" "$W/build/cramfs-$FW.little"
