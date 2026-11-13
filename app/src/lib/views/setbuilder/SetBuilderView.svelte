@@ -3,6 +3,8 @@
   import { jobs } from "$lib/state/jobs.svelte";
   import { nav } from "$lib/state/nav.svelte";
   import { selection } from "$lib/state/selection.svelte";
+  import { insertIndex } from "$lib/state/dragLogic";
+  import { armReorder } from "$lib/state/pointerReorder.svelte";
   import { session } from "$lib/state/session.svelte";
   import Button from "$lib/ui/Button.svelte";
   import ConfirmDialog from "$lib/views/cases/ConfirmDialog.svelte";
@@ -121,27 +123,26 @@
   // ---- drag to reorder ---------------------------------------------------------------------
   let drag = $state<{ ids: Set<number>; over: number; after: boolean } | null>(null);
 
-  function dragStart(e: DragEvent, i: number) {
+  // Pointer events, not HTML5 drag and drop (see state/pointerReorder.svelte.ts): the Windows app
+  // does not get in-page dragover / drop events.
+  function armDrag(e: PointerEvent, i: number) {
     const id = rows[i];
-    const ids = selSet.has(id) ? new Set(sel) : new Set([id]);
-    if (!selSet.has(id)) sel = [id];
-    drag = { ids, over: i, after: false };
-    e.dataTransfer?.setData("text/plain", [...ids].join(","));
-    if (e.dataTransfer) e.dataTransfer.effectAllowed = "move";
-  }
-
-  function dragOver(e: DragEvent, i: number) {
-    if (!drag) return;
-    e.preventDefault();
-    const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    drag = { ...drag, over: i, after: e.clientY > r.top + r.height / 2 };
-  }
-
-  function drop(e: DragEvent) {
-    e.preventDefault();
-    if (!drag) return;
-    setBuilder.move([...drag.ids], drag.over + (drag.after ? 1 : 0));
-    drag = null;
+    armReorder(e, {
+      rows: () => [...(tbody?.querySelectorAll<HTMLElement>("tr.track") ?? [])],
+      scroller: () => tbody?.closest<HTMLElement>(".scroll"),
+      begin: () => {
+        const ids = selSet.has(id) ? new Set(sel) : new Set([id]);
+        if (!selSet.has(id)) sel = [id];
+        drag = { ids, over: i, after: false };
+      },
+      over: (p) => {
+        if (drag) drag = { ...drag, ...p };
+      },
+      drop: (p) => {
+        if (drag) setBuilder.move([...drag.ids], insertIndex(p));
+      },
+      end: () => (drag = null),
+    });
   }
 
   // ---- strip words -------------------------------------------------------------------------
@@ -273,17 +274,13 @@
                 class="track"
                 tabindex={i === Math.min(focusIdx, rows.length - 1) ? 0 : -1}
                 aria-selected={selSet.has(id)}
-                draggable="true"
                 class:sel={selSet.has(id)}
                 class:before={drag && drag.over === i && !drag.after && !drag.ids.has(id)}
                 class:after={drag && drag.over === i && drag.after && !drag.ids.has(id)}
                 class:moving={drag?.ids.has(id)}
                 onclick={(e) => pick(i, e)}
                 onkeydown={(e) => rowKey(e, i)}
-                ondragstart={(e) => dragStart(e, i)}
-                ondragover={(e) => dragOver(e, i)}
-                ondrop={drop}
-                ondragend={() => (drag = null)}
+                onpointerdown={(e) => armDrag(e, i)}
               >
                 <td class="grip muted">≡ {i + 1}</td>
                 <td class="lock">

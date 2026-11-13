@@ -1,5 +1,5 @@
 <script lang="ts">
-  // While tracks are being dragged (from the Tracks table or from rows of an open case), this
+  // While tracks are being dragged (from the Tracks table or from rows of an open case; not the mix picker's drag), this
   // strip lists the cases on the left of the window so they can be dropped on one. Tracks and
   // Cases are separate views, so without it there would be nothing to drop on. It floats over
   // the sidebar's lower part (no layout shift under the cursor) and exists only during a drag.
@@ -29,7 +29,7 @@
   }
 </script>
 
-{#if trackDrag.active}
+{#if trackDrag.active && trackDrag.scope === "cases"}
   <div class="strip" role="group" aria-label="Drop the tracks on a case">
     <div class="head">Drop {trackDrag.count > 0 ? plural(trackDrag.count, "track") : "tracks"} on a case</div>
     {#if !jobs.canWrite}

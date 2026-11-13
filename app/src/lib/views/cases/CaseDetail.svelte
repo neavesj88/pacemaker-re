@@ -12,6 +12,8 @@
   import { selection } from "$lib/state/selection.svelte";
   import { toast } from "$lib/state/toast.svelte";
   import { session } from "$lib/state/session.svelte";
+  import { insertIndex } from "$lib/state/dragLogic";
+  import { armReorder } from "$lib/state/pointerReorder.svelte";
   import { armTrackDrag, trackDrag, trackDropTarget } from "$lib/state/trackDrag.svelte";
   import Button from "$lib/ui/Button.svelte";
   import ContextMenu, { type MenuItem } from "$lib/ui/ContextMenu.svelte";
@@ -147,41 +149,31 @@
     return { ids: all.filter((x) => selected.has(x.id) && x.t).map((x) => x.id) };
   }
 
-  // Reordering inside the table is HTML5 drag and drop from the grip cell (it only works where the
-  // webview delivers in-page drag events); dragging a row anywhere else carries tracks to another
-  // case with the pointer.
-  function dragStart(e: DragEvent, i: number) {
+  // Reordering inside the table is a pointer drag from the grip cell (state/pointerReorder.svelte.ts;
+  // HTML5 drag and drop does not reach the page in the Windows app); dragging a row anywhere else
+  // carries tracks to another case (state/trackDrag.svelte.ts).
+  function armDrag(e: PointerEvent, i: number) {
+    if (!canReorder) return;
     const id = rows[i].id;
-    if (!selected.has(id)) {
-      selection.trackIds = [id];
-      anchor = i;
-    }
-    const ids = new Set(all.filter((r) => r.id === id || selected.has(r.id)).map((r) => r.id));
-    drag = { ids, over: i, after: false };
-    if (e.dataTransfer) {
-      e.dataTransfer.effectAllowed = "move";
-      e.dataTransfer.setData("text/plain", "");
-      e.dataTransfer.setDragImage(e.currentTarget as HTMLElement, 0, 0);
-    }
-  }
-
-  function dragEnd() {
-    drag = null;
-  }
-
-  function dragOver(e: DragEvent, i: number) {
-    if (!drag) return;
-    e.preventDefault();
-    const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    drag = { ...drag, over: i, after: e.clientY > r.top + r.height / 2 };
-  }
-
-  function drop(e: DragEvent) {
-    if (!drag) return;
-    e.preventDefault();
-    e.stopPropagation(); // a reorder is not an "add tracks" drop on the table behind it
-    moveBlock(drag.ids, drag.over + (drag.after ? 1 : 0));
-    drag = null;
+    armReorder(e, {
+      rows: () => [...(tbody?.querySelectorAll<HTMLElement>("tr") ?? [])],
+      scroller: () => tbody?.closest<HTMLElement>(".scroll"),
+      begin: () => {
+        if (!selected.has(id)) {
+          selection.trackIds = [id];
+          anchor = i;
+        }
+        const ids = new Set(all.filter((r) => r.id === id || selected.has(r.id)).map((r) => r.id));
+        drag = { ids, over: i, after: false };
+      },
+      over: (p) => {
+        if (drag) drag = { ...drag, ...p };
+      },
+      drop: (p) => {
+        if (drag) moveBlock(drag.ids, insertIndex(p));
+      },
+      end: () => (drag = null),
+    });
   }
 
   function nudge(dir: -1 | 1) {
@@ -418,12 +410,8 @@
               ondblclick={() => r.t && play(r.id)}
               oncontextmenu={(e) => rowMenu(e, i)}
               onpointerdown={(e) => armTrackDrag(e, `case:${open.id}`, () => rowDrag(i))}
-              ondragstart={(e) => dragStart(e, i)}
-              ondragover={(e) => dragOver(e, i)}
-              ondrop={drop}
-              ondragend={dragEnd}
             >
-              <td class="grip muted" draggable={canReorder} data-no-drag={canReorder ? "" : undefined} title={canReorder ? "Drag to reorder" : undefined}>{canReorder ? "≡ " : ""}{position.get(r.id)}</td>
+              <td class="grip muted" onpointerdown={(e) => armDrag(e, i)} data-no-drag={canReorder ? "" : undefined} title={canReorder ? "Drag to reorder" : undefined}>{canReorder ? "≡ " : ""}{position.get(r.id)}</td>
               {#each cols as c (c.key)}
                 {#if c.key === "fav"}
                   <td class="heart">
@@ -768,8 +756,9 @@
   tr.after {
     box-shadow: inset 0 -2px 0 var(--accent);
   }
-  td.grip[draggable="true"] {
+  td.grip[data-no-drag] {
     cursor: grab;
+    touch-action: none;
   }
   .fav {
     background: none;

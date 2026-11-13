@@ -7,6 +7,8 @@
   import type { Clip, EnvNode, ProcessDoc, TransitionDoc } from "$lib/api/mixes";
   import * as E from "$lib/state/mixedit";
   import { mixes } from "$lib/state/mixes.svelte";
+  import { laneOffset } from "$lib/state/dragLogic";
+  import { trackDropTarget, type DropOptions } from "$lib/state/trackDrag.svelte";
   import { vocal } from "$lib/state/vocal.svelte";
   import ContextMenu, { type MenuItem } from "$lib/ui/ContextMenu.svelte";
   import { addProcessAt, addTracks, autoTransition, beatmatch, clipTitle, duplicateSelection, neighbours, pasteAtPlayhead } from "./actions";
@@ -198,7 +200,7 @@
   }
 
   /** Timeline sample under a pointer on a lane's track element. */
-  function sampleAt(e: MouseEvent | DragEvent): number {
+  function sampleAt(e: MouseEvent): number {
     const track = (e.currentTarget as HTMLElement).getBoundingClientRect();
     return Math.max(0, Math.round(mv.samples(e.clientX - track.left)));
   }
@@ -263,27 +265,20 @@
 
   // ---- dropping tracks from the picker --------------------------------------------------------
 
-  const MIME = "application/x-pm-tracks";
-  function dragover(e: DragEvent) {
-    if (e.dataTransfer?.types.includes(MIME)) {
-      e.preventDefault();
-      e.dataTransfer.dropEffect = "copy";
-    }
-  }
-  function drop(e: DragEvent, deck: number) {
-    const raw = e.dataTransfer?.getData(MIME);
-    if (!raw) return;
-    e.preventDefault();
-    let ids: number[] = [];
-    try {
-      ids = JSON.parse(raw);
-    } catch {
-      return;
-    }
-    let at = sampleAt(e);
-    const targets = E.snapTargets(doc, mixes.snap, [], [at - SR, at + SR], mixes.sectionLookup);
-    at = E.snap(at, targets, mixes.threshold);
-    void addTracks(ids, at, deck);
+  // Pointer drag from the picker (state/trackDrag.svelte.ts; HTML5 drag and drop does not reach the
+  // page in the Windows app). The lane under the pointer is the deck, the pointer's x the time.
+  function laneDrop(deck: number): DropOptions {
+    return {
+      scope: "mix",
+      accept: () => true,
+      ondrop: (ids, _hit, p) => {
+        if (ids.length === 0) return;
+        let at = Math.max(0, Math.round(mv.samples(laneOffset(p.x, p.node.getBoundingClientRect().left))));
+        const targets = E.snapTargets(doc, mixes.snap, [], [at - SR, at + SR], mixes.sectionLookup);
+        at = E.snap(at, targets, mixes.threshold);
+        void addTracks(ids, at, deck);
+      },
+    };
   }
 
   // ---- envelope lane helpers ------------------------------------------------------------------
@@ -342,8 +337,7 @@
             style:width="{contentW}px"
             onpointerdown={bgDown}
             oncontextmenu={(e) => trackMenu(e, deck, "deck")}
-            ondragover={dragover}
-            ondrop={(e) => drop(e, deck)}
+            use:trackDropTarget={laneDrop(deck)}
           >
             {#each visibleDecks[deck] as clip (clip.id)}
               <ClipBlock {clip} height={CLIP_H} {laneAt} oncontext={clipMenu} />
@@ -564,6 +558,10 @@
     position: relative;
     flex: 0 0 auto;
     height: 100%;
+  }
+  .track:global([data-drop-over]) {
+    box-shadow: inset 0 0 0 2px var(--accent);
+    background: color-mix(in srgb, var(--accent) 10%, transparent);
   }
   .ruler {
     position: sticky;
