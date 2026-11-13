@@ -32,6 +32,12 @@ export type Pending = {
   from: Side;
 };
 
+/** Jobs that never change a library's music.db, so their end leaves the right pane alone. */
+const READ_ONLY_JOBS = new Set([
+  "device-verify", "device-space", "device-backup", "dupes-fingerprint", "mix-export", "cases-export",
+  "virtualdj-export", "stems-download", "grid-batch-analyse", "energy", "mix-loudness",
+]);
+
 export const paneOf = (v: LibraryView | PaneLibrary): PaneData => ({ root: v.root, kind: v.kind, tracks: v.tracks, mixes: v.mixes, cases: v.cases });
 
 class LibrariesStore {
@@ -68,6 +74,8 @@ class LibrariesStore {
   #gen = 0;
   /** The library the running job writes, so it is read again when it ends. */
   #target = "";
+  /** A read asked for while another was running. */
+  #again = "";
 
   get busy() {
     return this.planning || this.running || device.blocked;
@@ -96,6 +104,8 @@ class LibrariesStore {
     this.result = "";
     this.#gen++;
     this.planning = false;
+    // a library on this computer (or a folder opened by hand) is read again at once
+    this.invalidate();
   }
 
   // ---- the right pane -------------------------------------------------------------------------
@@ -112,10 +122,10 @@ class LibrariesStore {
 
   /** Forgets everything read for the right pane because it may be out of date. A library on this
    *  computer is read again at once; a Pacemaker only when the user presses its button. */
-  invalidate() {
+  invalidate(keepSelection = false) {
     this.loaded = new Map();
     this.readError = "";
-    this.selected = { ...this.selected, right: emptySelected() };
+    if (!keepSelection) this.selected = { ...this.selected, right: emptySelected() };
     if (this.rightRoot && readsAtOnce(this.rightRoot, session.volumes, this.folders.map((f) => f.value), false)) void this.read(this.rightRoot);
   }
 
@@ -127,7 +137,10 @@ class LibrariesStore {
 
   /** Lists the library at `root` for the right pane (the button "Read the Pacemaker (G:)"). */
   async read(root: string) {
-    if (this.reading) return;
+    if (this.reading) {
+      this.#again = root; // read once more when the running read ends, so a refresh is not lost
+      return;
+    }
     this.reading = root;
     this.readError = "";
     try {
@@ -139,6 +152,9 @@ class LibrariesStore {
       this.readError = String(e);
     } finally {
       this.reading = "";
+      const again = this.#again;
+      this.#again = "";
+      if (again && this.rightRoot && sameRoot(again, this.rightRoot)) void this.read(again);
     }
   }
 
@@ -240,7 +256,7 @@ class LibrariesStore {
   async onDone(ev: DoneEvent) {
     // any other job (a Sync-view run, an import) may have written the library the right pane shows
     if (ev.job !== JOB_SYNC || !this.running) {
-      this.invalidate();
+      if (!READ_ONLY_JOBS.has(ev.job)) this.invalidate(true);
       return;
     }
     this.running = false;

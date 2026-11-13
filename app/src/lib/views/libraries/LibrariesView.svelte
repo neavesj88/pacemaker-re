@@ -83,7 +83,8 @@
     margin: 0;
   }
   .strip {
-    height: 52px;
+    /* room for the progress card (bar, label, Cancel) */
+    height: 84px;
     flex: none;
     display: flex;
     align-items: center;
