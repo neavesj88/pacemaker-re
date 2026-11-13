@@ -104,7 +104,7 @@ class Cases {
       this.infos = infos;
       this.loaded = true;
       this.favourites = new Set(favs);
-      session.library.cases = infos.map((c) => ({ id: c.id, name: c.name, play_time_secs: c.play_time_secs, track_count: c.track_count }));
+      session.setCases(infos.map((c) => ({ id: c.id, name: c.name, play_time_secs: c.play_time_secs, track_count: c.track_count })));
       if (this.open) {
         const now = session.library.cases.find((c) => c.id === this.open!.id);
         if (now) this.open = now;

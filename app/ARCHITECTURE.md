@@ -58,7 +58,7 @@ files.
 | `lib/views/<area>/Overlays.svelte`, `init.ts` | Optional: always-mounted overlays / startup subscriptions of that area | that area |
 | `lib/player/Player.svelte` (+ optional `Overlays.svelte`, `init.ts`) | Bottom player bar and engine | playback |
 | `lib/ui/*` | Generic primitives: `Button`, `Modal`, `Table`, `CollectionTable`, `Stars`, `Waveform`, `ContextMenu`, `Toast`, `Placeholder`, `RMark` | integration |
-| `lib/state/session.svelte.ts` | Detected volumes, the open library, load / reload, error banner text, `onReset` hooks | integration |
+| `lib/state/session.svelte.ts` | Detected volumes, the open library, load / reload, error banner text, `onReset` hooks. The open library is one object per load whose `tracks`, `cases` and `mixes` are shallow (`$state.raw`) signals, typed read only: never write a field in place, use `session.patchTracks(ids, fields)` (new track objects, new array) or `session.setCases` / `session.setMixes` | integration |
 | `lib/state/nav.svelte.ts` | Current view and the one-shot deep-link param bag | integration |
 | `lib/state/filters.svelte.ts`, `selection.svelte.ts`, `toast.svelte.ts` | Header search / needs filter / sort; highlighted track ids; toasts | integration |
 | `lib/state/jobs.svelte.ts` | Generic job runner: `jobs.ask(request)`, progress, completion; add / re-analyse adapters | import |

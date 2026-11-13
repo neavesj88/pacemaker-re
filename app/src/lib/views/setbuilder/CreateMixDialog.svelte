@@ -86,7 +86,7 @@
       });
       try {
         await mixes.refreshList();
-        if (session.library) session.library.mixes = mixes.list.map((m) => ({ ...m }));
+        session.setMixes(mixes.list.map((m) => ({ ...m })));
       } catch {
         // the list refreshes next time the Mixes view opens
       }

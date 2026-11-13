@@ -35,8 +35,8 @@ export async function revealInExplorer(trackId: number) {
   }
 }
 
-/** Sets the star rating at once and puts the old one back if the device refuses it. `track` must
- *  be the object in `session.library.tracks` so every table showing it updates. */
+/** Sets the star rating at once (every table showing the track updates) and puts the old one back
+ *  if the device refuses it. */
 export async function rate(track: Track, stars: number) {
   const root = session.library?.root;
   if (!root || stars === track.rating) return;
@@ -45,11 +45,13 @@ export async function rate(track: Track, stars: number) {
     return;
   }
   const before = track.rating;
-  track.rating = stars;
+  const id = track.track_id;
+  session.patchTracks([id], { rating: stars });
   try {
     await setRating(root, track.track_id, stars);
   } catch (e) {
-    if (track.rating === stars) track.rating = before;
+    // only if nothing else changed the rating meanwhile
+    if (session.library?.tracks.find((t) => t.track_id === id)?.rating === stars) session.patchTracks([id], { rating: before });
     toast.show(`Could not save the rating: ${e}`, "bad");
   }
 }

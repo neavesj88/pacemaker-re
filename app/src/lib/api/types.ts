@@ -1,46 +1,49 @@
 // Shared wire types: the shapes the Rust commands return and the events they emit. Integration-
 // owned. An area that needs a type only it uses declares it in its own api/<area>.ts instead.
 
+// Track, Collection and LibraryView are read only on purpose: the open library is a set of shallow
+// signals (see session.svelte.ts), so a field written in place would never reach a screen. Change
+// a track through `session.patchTracks`, the case and mix lists through `setCases` / `setMixes`.
 export type Track = {
-  track_id: number;
-  title: string;
-  artist: string;
-  album: string;
-  genre: string;
-  bpm: number;
-  key: string;
-  play_time_secs: number;
-  rating: number;
-  location: string;
-  file_size: number;
-  format: string;
-  analysed: boolean;
-  times_played: number;
+  readonly track_id: number;
+  readonly title: string;
+  readonly artist: string;
+  readonly album: string;
+  readonly genre: string;
+  readonly bpm: number;
+  readonly key: string;
+  readonly play_time_secs: number;
+  readonly rating: number;
+  readonly location: string;
+  readonly file_size: number;
+  readonly format: string;
+  readonly analysed: boolean;
+  readonly times_played: number;
   /** Unix milliseconds of the last play; -1 = never. */
-  last_played: number;
+  readonly last_played: number;
   /** Release year; 0 = not set. */
-  year: number;
-  label: string;
-  remixer: string;
-  composer: string;
-  comments: string;
+  readonly year: number;
+  readonly label: string;
+  readonly remixer: string;
+  readonly composer: string;
+  readonly comments: string;
   /** Unix milliseconds the track was added; -1 = unknown. */
-  date_added: number;
+  readonly date_added: number;
   /** Kilobits per second; 0 = unknown. */
-  bit_rate: number;
+  readonly bit_rate: number;
 };
 
-export type Collection = { id: number; name: string; play_time_secs: number; track_count: number };
+export type Collection = { readonly id: number; readonly name: string; readonly play_time_secs: number; readonly track_count: number };
 
-export type NeedsAnalysis = { track_id: number; reason: string };
+export type NeedsAnalysis = { readonly track_id: number; readonly reason: string };
 
 export type LibraryView = {
-  root: string;
-  problems: string[];
-  tracks: Track[];
-  mixes: Collection[];
-  cases: Collection[];
-  needs_analysis: NeedsAnalysis[];
+  readonly root: string;
+  readonly problems: string[];
+  readonly tracks: Track[];
+  readonly mixes: Collection[];
+  readonly cases: Collection[];
+  readonly needs_analysis: NeedsAnalysis[];
 };
 
 /** What kind of job: "add", "reanalyse", or any string a new area picks. */

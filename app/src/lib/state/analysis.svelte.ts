@@ -129,8 +129,7 @@ class Analysis {
         lib.root,
         tracks.map((t) => ({ track_id: t.track_id, key: name })),
       );
-      // the objects in session.library.tracks are what every table shows
-      for (const t of tracks) t.key = name;
+      session.patchTracks(tracks.map((t) => t.track_id), { key: name });
       const n = tracks.length;
       toast.show(
         changed === 0

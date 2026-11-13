@@ -67,7 +67,7 @@ class Matcher {
   busy = $state(false);
   error = $state("");
   /** The library the rows were matched against; a different one means the rows are out of date. */
-  matchedFor = $state<LibraryView | null>(null);
+  matchedFor = $state.raw<LibraryView | null>(null);
 
   #index: Index | null = null;
   #indexFor: readonly Track[] | null = null;
