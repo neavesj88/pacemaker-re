@@ -9,7 +9,8 @@ import type { Track } from "$lib/api/types";
 import { filters } from "$lib/state/filters.svelte";
 import { suspects } from "$lib/state/gridSuspects.svelte";
 import { energy } from "$lib/state/energy.svelte";
-import { filterByLabels } from "$lib/state/labels";
+import { energySource } from "$lib/state/energySource.svelte";
+import { filterByLabels, NO_LABELS, type TrackLabels } from "$lib/state/labels";
 import { labels } from "$lib/state/labels.svelte";
 import { session } from "$lib/state/session.svelte";
 import { compileQuery, type QueryContext } from "./query";
@@ -20,6 +21,9 @@ import { tracksState } from "./tracksState.svelte";
 export function queryContext(): QueryContext {
   return {
     labelOf: (id) => labels.get(id),
+    energyOf: (id) => energySource.level(id),
+    myEnergyOf: (id) => energySource.mine(id),
+    autoEnergyOf: (id) => energySource.auto(id),
     needs: session.needs,
     isFavourite: (id) => tracksState.favourites.has(id),
     now: Date.now(),
@@ -51,7 +55,7 @@ export function visibleTracks(list: Track[]): Track[] {
  *  the sort (every key, in order). */
 export function tracksViewRows(all: Track[]): Track[] {
   const found = filterTracks(searchTracks(all), tracksState.filter, session.needs);
-  const labelled = filterByLabels(found, tracksState.labelFilter, (id) => labels.get(id));
+  const labelled = filterByLabels(found, tracksState.labelFilter, resolvedLabels);
   return sortTracksBy(
     tracksState.onlySuspect ? labelled.filter((t) => suspects.byId.has(t.track_id)) : labelled,
     tracksState.prefs.sort,
@@ -59,4 +63,12 @@ export function tracksViewRows(all: Track[]): Track[] {
     (id) => labels.get(id),
     (id) => energy.of(id),
   );
+}
+
+/** A track's labels with the energy replaced by the energy under the "Energy source" setting, so
+ *  the label filter's energy range asks the same question as `energy:` in the search box. */
+function resolvedLabels(id: number): TrackLabels {
+  const l = labels.get(id) ?? NO_LABELS;
+  const level = energySource.level(id);
+  return level === l.energy ? l : { ...l, energy: level };
 }

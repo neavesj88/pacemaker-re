@@ -41,9 +41,9 @@ pub struct Evaluation {
 }
 
 /// Evaluates every smart case in `list` against `lib` (one read of the library).
-pub fn evaluate_all(lib: &Library, list: &[SmartCase], now_ms: i64) -> Result<Evaluation, Error> {
+pub fn evaluate_all(lib: &Library, list: &[SmartCase], now_ms: i64, config: Option<&Path>) -> Result<Evaluation, Error> {
     let queries: Vec<&smart::Query> = list.iter().map(|s| &s.query).collect();
-    let data = if list.is_empty() { None } else { Some(Data::load(lib, &queries, now_ms)?) };
+    let data = if list.is_empty() { None } else { Some(Data::load(lib, &queries, now_ms, config)?) };
     let mut out = Evaluation { matched: Vec::new(), left_out: Vec::new() };
     for sc in list {
         let result = smart::validate(&sc.name, &sc.query).and_then(|()| smart::evaluate(&sc.query, data.as_ref().expect("list is not empty")).map(|e| e.ids));
@@ -89,7 +89,7 @@ pub fn library_xml(lib: &Library, config_dir: &Path, root: &str, now_ms: i64) ->
         match smart::load(config_dir, root) {
             Err(e) => notes.push(format!("Smart cases were left out of the file: {e}")),
             Ok(list) => {
-                let ev = evaluate_all(lib, &list, now_ms)?;
+                let ev = evaluate_all(lib, &list, now_ms, Some(config_dir))?;
                 notes.extend(ev.left_out);
                 let case_names: HashSet<String> = lib.cases()?.into_iter().map(|c| c.name.to_lowercase()).collect();
                 let mut copies = Vec::new();
@@ -130,7 +130,7 @@ pub fn export_one(root_str: &str, config_dir: &Path, id: u32, format: &str, dest
     check_dest(root, Path::new(dest), ext)?;
     let sc = smart::load(config_dir, root_str)?.into_iter().find(|s| s.id == id).ok_or_else(|| AppError::from(format!("no smart case {id}")))?;
     let lib = Library::open_read_only(root)?;
-    let ev = evaluate_all(&lib, std::slice::from_ref(&sc), now_ms)?;
+    let ev = evaluate_all(&lib, std::slice::from_ref(&sc), now_ms, Some(config_dir))?;
     let Some(m) = ev.matched.into_iter().next() else {
         return Err(ev.left_out.join(" ").into());
     };

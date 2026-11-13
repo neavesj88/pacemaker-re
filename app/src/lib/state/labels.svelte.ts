@@ -22,6 +22,9 @@ class Labels {
   /** Labels in the file that match no track on this card (removed or added again). */
   orphanLabels = $state.raw<TrackLabels[]>([]);
   orphans = $derived(this.orphanLabels.length);
+  /** Bumped on every change of any track label, so a view that depends on them without reading each
+   *  one (a smart case's matches) knows to look again. */
+  version = $state(0);
   /** Set when the labels file could not be read. */
   notice = $state("");
   #seq = 0;
@@ -61,6 +64,7 @@ class Labels {
     this.root = root;
     this.orphanLabels = v.orphan_labels.map((o) => toLabels({ track_id: 0, ...o }));
     this.notice = v.notice ?? "";
+    this.version++;
   }
 
   /** Reads the labels of `root`. A result that arrives after another library was opened is dropped. */
@@ -87,6 +91,7 @@ class Labels {
         if (labelsEmpty(l)) this.byTrack.delete(r.track_id);
         else this.byTrack.set(r.track_id, l);
       }
+      this.version++;
       return true;
     } catch (e) {
       toast.show(`Could not save the tags: ${e}`, "bad");

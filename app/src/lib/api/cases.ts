@@ -74,6 +74,9 @@ export type Mode = "all" | "any" | "none";
 export type TextField = "title" | "artist" | "album" | "genre" | "label" | "comments" | "remixer";
 export type TextOp = "contains" | "is" | "starts_with";
 
+/** How a tag rule treats its tags: the track has at least one ("any"), every one ("all"), or none of them. */
+export type TagMatch = "any" | "all" | "none";
+
 /** One condition, or a group of them (groups nest). The old `genre` rule is rewritten by the
  * backend into `text` on load, so it never arrives here. */
 export type Rule =
@@ -96,6 +99,12 @@ export type Rule =
   | { kind: "duration_range"; min_secs: number | null; max_secs: number | null }
   | { kind: "format"; value: string }
   | { kind: "in_case"; case_id: number; value: boolean; case_name?: string }
+  /** Tags (app-side labels, compared ignoring case): the track has any / all / none of `tags`. */
+  | { kind: "tags"; how: TagMatch; tags: string[] }
+  /** Colour label: is one of `colours` (`value` true) or none of them (false); "none" stands for no colour label. */
+  | { kind: "colour"; colours: string[]; value: boolean }
+  /** Energy 1 to 10 under the Energy source setting, between `min` and `max`; tracks with no energy never match. */
+  | { kind: "energy_range"; min: number | null; max: number | null }
   | { kind: "group"; mode: Mode; items: Rule[] };
 
 export type SortField =

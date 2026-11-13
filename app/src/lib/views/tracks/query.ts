@@ -10,6 +10,8 @@
 //   bpm>=128 plays>10      comparisons (>, >=, <, <=, =), also written bpm:>=128
 //   key:8A  key:~8A        the key / keys that mix with it (Camelot or musical name, key:Am)
 //   tag:peak  colour:red   app-side labels
+//   energy:7-9             energy under the "Energy source" setting (your rating, the audio estimate,
+//                          or yours else the estimate); myenergy: and autoenergy: ask for one source
 //   -term                  not
 //   a OR b                 either side; AND binds tighter, so  x y OR z  is  (x y) OR z
 //   is:fav                 flags
@@ -25,6 +27,12 @@ export type QueryLabels = { tags: readonly string[]; colour: string | null; ener
 /** What a query needs to know about a track beyond the track itself. */
 export type QueryContext = {
   labelOf: (id: number) => QueryLabels | undefined;
+  /** Whole-level energy (1 to 10) under the "Energy source" setting, or null (state/energyResolve.ts). */
+  energyOf: (id: number) => number | null;
+  /** Your own energy rating, or null. */
+  myEnergyOf: (id: number) => number | null;
+  /** The estimate from the audio (1.0 to 10.0, unrounded), or null. */
+  autoEnergyOf: (id: number) => number | null;
   /** Tracks that need analysis (their BPM is not shown, so it is not matched either). */
   needs: { has(id: number): boolean };
   isFavourite: (id: number) => boolean;
@@ -194,7 +202,9 @@ export const FIELDS: FieldDef[] = [
   { name: "year", aliases: [], kind: "number", num: (t) => (t.year > 0 ? t.year : null), help: "release year" },
   { name: "bpm", aliases: ["tempo"], kind: "number", tolerance: 0.5, num: (t, cx) => (t.bpm > 0 && !cx.needs.has(t.track_id) ? t.bpm : null), help: "tempo (bpm:128 means 127.5 to 128.5)" },
   { name: "rating", aliases: ["stars", "rate"], kind: "number", num: (t) => t.rating, help: "stars, 0 to 5" },
-  { name: "energy", aliases: [], kind: "number", num: (t, cx) => cx.labelOf(t.track_id)?.energy ?? null, help: "energy label, 1 to 10 (app-side)" },
+  { name: "energy", aliases: [], kind: "number", num: (t, cx) => cx.energyOf(t.track_id), help: "energy 1 to 10 under the Energy source setting (your rating, the audio estimate, or yours else the estimate)" },
+  { name: "myenergy", aliases: [], kind: "number", num: (t, cx) => cx.myEnergyOf(t.track_id), help: "your own energy rating, 1 to 10, whatever the setting" },
+  { name: "autoenergy", aliases: [], kind: "number", tolerance: 0.5, num: (t, cx) => cx.autoEnergyOf(t.track_id), help: "the energy estimated from the audio, 1 to 10 (autoenergy:7 means 6.5 to 7.5)" },
   { name: "plays", aliases: ["playcount", "count"], kind: "number", num: (t) => t.times_played, help: "times played" },
   { name: "bitrate", aliases: ["br"], kind: "number", num: (t) => (t.bit_rate > 0 ? t.bit_rate : null), help: "bit rate in kbps" },
   { name: "size", aliases: [], kind: "number", parse: parseSize, num: (t) => (t.file_size > 0 ? t.file_size : null), help: "file size; a bare number is MB, or 500k, 10m, 1g" },
@@ -450,6 +460,7 @@ export const QUERY_HELP: HelpRow[] = [
   { syntax: "key:8A", meaning: "Exactly that key; key:~8A also takes the keys that mix with it (one step round the wheel, relative major / minor). Musical names work: key:Am", example: "key:~8A" },
   { syntax: "tag:peak", meaning: "Has that tag (whole tag, any case; * is a wildcard). Quote tags with spaces", example: "tag:peak tag:\"warm up\" tag:sum*" },
   { syntax: "colour:red", meaning: "Colour label: red orange yellow green teal blue purple pink, or none", example: "colour:red" },
+  { syntax: "energy:7-9", meaning: "Energy 1 to 10 under the Energy source setting (your rating, the estimate from the audio, or yours else the estimate). myenergy: is only your rating; autoenergy: only the estimate (autoenergy:7 means 6.5 to 7.5)", example: "energy:7-9 myenergy>=8 autoenergy<4" },
   { syntax: "added:7d", meaning: "Date added / last played: within the last 7d, 2w, 3m, 1y (m = 30 days, y = 365 days); < is newer, > is older. Or a date: 2026, 2026-03, 2026-03-14, >=2026-01-01, 2026-01-01..2026-03-01. played:never", example: "added:30d played:never" },
   { syntax: "is:fav", meaning: "Flags: fav, needs (needs analysis), analysed, unrated, unplayed, untagged", example: "is:fav -is:unplayed" },
   { syntax: "-term", meaning: "Not. Works on words, phrases and every field", example: "-genre:techno -tag:skip" },

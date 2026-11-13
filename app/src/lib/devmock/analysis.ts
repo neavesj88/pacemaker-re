@@ -66,6 +66,11 @@ function mockEnergyState() {
   };
 }
 
+/** The mock library's Energy (auto) estimate of a track (1.0 to 10.0), or null: what the smart-case twin reads. */
+export function mockAutoEnergy(trackId: number): number | null {
+  return mockEnergyState().entries.find((e) => e.track_id === trackId)?.energy ?? null;
+}
+
 export const handlers: Handlers = {
   // like the real quick write: every entry is checked first, then all are written or none; a
   // Camelot code or free text is refused, flats are stored as the detector spells them (sharps)

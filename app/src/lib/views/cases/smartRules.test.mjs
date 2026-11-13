@@ -4,10 +4,11 @@
 // orders as the Rust tests in src-tauri/src/commands/cases/smart/rules_tests.rs.
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { resolveLevel } from "../../state/energyResolve.ts";
 import {
   MAX_DEPTH, MAX_LIMIT, MAX_NODES, MS_PER_DAY, KINDS, camelot, dateLabel, defaultRule, describeQuery, describeRule, directionLabels,
   evaluateQuery, formatDuration, kindId, newQuery, parseDuration, referencedCases, ruleMatches, validateQuery,
-  NO_CASE, caseNameDrift, defaultCaseId, stampCaseNames,
+  NO_CASE, caseNameDrift, defaultCaseId, stampCaseNames, NO_COLOUR,
 } from "../../state/smartRules.ts";
 
 const NOW = 1000 * MS_PER_DAY;
@@ -16,7 +17,7 @@ const row = (id, extra = {}) => ({
   file_size: 1000, format: "MP3", analysed: true, times_played: 0, last_played: -1, year: 2001, date_added: NOW - 10 * MS_PER_DAY,
   label: "Synthetic Label", comments: "synthetic comment", remixer: "Synthetic Remixer", ...extra,
 });
-const env = (extra = {}) => ({ favourites: new Set([1]), cases: new Map([[7, new Set([1])], [8, new Set()]]), now: NOW, ...extra });
+const env = (extra = {}) => ({ favourites: new Set([1]), labelOf: () => undefined, energyOf: () => null, cases: new Map([[7, new Set([1])], [8, new Set()]]), now: NOW, ...extra });
 const q = (rules, extra = {}) => ({ mode: "all", rules, sort: null, limit: null, ...extra });
 const text = (field, op, t) => ({ kind: "text", field, op, text: t });
 const grp = (mode, items) => ({ kind: "group", mode, items });
@@ -62,6 +63,7 @@ test("every kind in the menu makes a rule of that kind that validates", () => {
   for (const k of KINDS) {
     const r = defaultRule(k.id, 3);
     if (r.kind === "text") r.text = "x";
+    if (r.kind === "tags") r.tags = ["x"]; // a new tag rule waits for a tag (checked below)
     assert.equal(kindId(r), k.id);
     assert.equal(validateQuery(q([r])), "", k.id);
   }
@@ -253,4 +255,93 @@ test("a case rule with no cases to choose from starts on no case and is refused 
   assert.match(validateQuery(q([defaultRule("in_case", defaultCaseId([]))])), /needs a case/);
   assert.equal(validateQuery(q([defaultRule("in_case", defaultCaseId([{ id: 1, name: "Synthetic case" }]))])), "");
   assert.equal(defaultCaseId([{ id: 2, name: "★ Synthetic smart" }, { id: 5, name: "Synthetic case" }]), 5);
+});
+
+// ---- label rules: the same fixture and answers as `label_rules` in rules_tests.rs ----------------
+
+// 1: tags Peak + Warm up, red, my energy 4, estimate 8.2. 2: tag peak, nothing else, estimate 6.5.
+// 3: nothing at all. 4: only my energy 9.
+function labelLib(source) {
+  const labels = new Map([
+    [1, { tags: ["Peak", "Warm up"], colour: "red", energy: 4 }],
+    [2, { tags: ["peak"], colour: null, energy: null }],
+    [4, { tags: [], colour: null, energy: 9 }],
+  ]);
+  const auto = new Map([[1, 8.2], [2, 6.5]]);
+  const rows = [row(1), row(2), row(3), row(4)];
+  return { rows, env: env({ labelOf: (id) => labels.get(id), energyOf: (id) => resolveLevel(labels.get(id)?.energy ?? null, auto.get(id) ?? null, source) }) };
+}
+const found = (rule, source = "mine_else_auto") => {
+  const l = labelLib(source);
+  return evaluateQuery(q([rule]), l.rows, l.env).ids.sort((a, b) => a - b);
+};
+const tagsRule = (how, tags) => ({ kind: "tags", how, tags });
+const colourRule = (colours, value) => ({ kind: "colour", colours, value });
+const energyRule = (min, max) => ({ kind: "energy_range", min, max });
+
+test("tag rules ignore case and cover any, all and none", () => {
+  assert.deepEqual(found(tagsRule("any", ["PEAK"])), [1, 2]);
+  assert.deepEqual(found(tagsRule("any", ["peak", "warm  up"])), [1, 2], "whitespace is normalised like a typed tag");
+  assert.deepEqual(found(tagsRule("all", ["peak", "warm up"])), [1]);
+  assert.deepEqual(found(tagsRule("all", ["peak"])), [1, 2]);
+  assert.deepEqual(found(tagsRule("none", ["warm up"])), [2, 3, 4], "a track with no tags has none of them");
+  assert.deepEqual(found(tagsRule("none", ["peak", "warm up"])), [3, 4]);
+  assert.deepEqual(found(tagsRule("any", ["absent"])), []);
+});
+
+test("colour rules: is, is not, and none for no colour", () => {
+  assert.deepEqual(found(colourRule(["red"], true)), [1]);
+  assert.deepEqual(found(colourRule(["red"], false)), [2, 3, 4], "is not red includes uncoloured tracks");
+  assert.deepEqual(found(colourRule([NO_COLOUR], true)), [2, 3, 4]);
+  assert.deepEqual(found(colourRule(["red", NO_COLOUR], true)), [1, 2, 3, 4]);
+  assert.deepEqual(found(colourRule([NO_COLOUR], false)), [1]);
+  assert.deepEqual(found(colourRule(["blue"], true)), []);
+});
+
+test("energy rules follow the energy source", () => {
+  assert.deepEqual(found(energyRule(7, null)), [2, 4]);
+  assert.deepEqual(found(energyRule(null, 4)), [1]);
+  assert.deepEqual(found(energyRule(4, 7)), [1, 2]);
+  assert.deepEqual(found(energyRule(1, 10), "mine"), [1, 4]);
+  assert.deepEqual(found(energyRule(1, 10), "auto"), [1, 2]);
+  assert.deepEqual(found(energyRule(8, null), "auto"), [1]);
+  assert.deepEqual(found({ kind: "group", mode: "none", items: [tagsRule("any", ["peak"])] }), [3, 4]);
+});
+
+test("the label rules are validated like the Rust ones, listed in the menu and described in words", () => {
+  for (const ok of [tagsRule("any", ["x"]), colourRule(["red", NO_COLOUR], true), energyRule(1, 10), energyRule(null, 3)]) assert.equal(validateQuery(q([ok])), "", JSON.stringify(ok));
+  const refused = [
+    [tagsRule("any", []), /at least one tag/],
+    [tagsRule("all", ["a,b"]), /comma/],
+    [tagsRule("none", [" "]), /empty/],
+    [colourRule([], true), /at least one colour/],
+    [colourRule(["mauve"], false), /not one of the colour labels/],
+    [energyRule(null, null), /An energy rule needs a minimum/],
+    [energyRule(0, null), /Energy values must be 1 or more/],
+    [energyRule(7, 3), /minimum is above the maximum/],
+    [energyRule(null, 11), /10 or less/],
+    [energyRule(2.5, null), /whole numbers/],
+  ];
+  for (const [rule, why] of refused) assert.match(validateQuery(q([rule])), why, JSON.stringify(rule));
+
+  for (const id of ["tags", "colour", "energy_range"]) {
+    assert.ok(KINDS.some((k) => k.id === id && k.group === "Labels"), id);
+    const r = defaultRule(id);
+    assert.equal(kindId(r), id);
+  }
+  assert.equal(validateQuery(q([defaultRule("colour")])), "", "a new colour rule is ready to use");
+  assert.match(validateQuery(q([defaultRule("tags")])), /at least one tag/, "a new tag rule waits for a tag");
+  assert.equal(validateQuery(q([defaultRule("energy_range")])), "");
+  assert.equal(describeRule(tagsRule("all", ["Peak", "warm up"]), () => ""), "has all of the tags “Peak”, “warm up”");
+  assert.equal(describeRule(tagsRule("none", ["x"]), () => ""), "has none of the tags “x”");
+  assert.equal(describeRule(colourRule(["red", NO_COLOUR], false), () => ""), "colour label is not red or no colour");
+  assert.equal(describeRule(energyRule(7, null), () => ""), "energy at least 7");
+  assert.equal(describeRule(energyRule(3, 5), () => ""), "energy between 3 and 5");
+});
+
+test("a query round-trips through JSON in the shape the Rust rules read", () => {
+  const rules = [tagsRule("any", ["a"]), colourRule(["red"], true), energyRule(3, null)];
+  assert.deepEqual(JSON.parse(JSON.stringify(rules)), rules);
+  assert.deepEqual(Object.keys(rules[0]).sort(), ["how", "kind", "tags"]);
+  assert.deepEqual(Object.keys(rules[2]).sort(), ["kind", "max", "min"]);
 });

@@ -17,6 +17,8 @@ use serde::{Deserialize, Serialize};
 
 pub use rules::{Data, Eval, Query, evaluate, migrate, referenced_cases, validate_query};
 #[cfg(test)]
+pub use rules::TagMatch;
+#[cfg(test)]
 pub use rules::{Rule, Sort, SortField};
 
 /// Prefix of the device case a smart case is materialised as, so it is recognisable on the
@@ -384,7 +386,7 @@ mod tests {
 
         let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() as i64;
         let run = |lib: &Library, q: &Query| -> Result<Vec<i64>, String> {
-            let data = Data::load(lib, &[q], now).map_err(|e| e.to_string())?;
+            let data = Data::load(lib, &[q], now, None).map_err(|e| e.to_string())?;
             evaluate(q, &data).map(|e| e.ids)
         };
         let rules = |rules| Query { rules, ..Default::default() };

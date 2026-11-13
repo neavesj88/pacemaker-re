@@ -2,7 +2,10 @@
 // (state/labels.ts applyOps, tested against the Rust code with shared vectors) over an in-memory
 // map. Invented placeholder tags only; nothing is written anywhere.
 import { applyOps, labelsEmpty, normaliseTag, tagKey, type LabelOp, type TrackLabels } from "../state/labels";
-import { tracks } from "./db";
+import { DEFAULT_ENERGY_SOURCE, isEnergySource, resolveLevel, type EnergySource } from "../state/energyResolve";
+import { mockAutoEnergy } from "./analysis";
+import { cases, tracks } from "./db";
+import { mixes as mixFixture } from "./mixes";
 import type { Handlers } from "./types";
 
 const store = new Map<number, TrackLabels>();
@@ -88,3 +91,59 @@ export const handlers: Handlers = {
     return view();
   },
 };
+
+// ---- cases and mixes (tags and colour only), and the energy source ----
+
+
+type ThingStore = Map<number, TrackLabels>;
+const thingStores: Record<"case" | "mix", ThingStore> = { case: new Map(), mix: new Map() };
+thingStores.case.set(1, { tags: ["warm up", "friday"], colour: "teal", energy: null });
+thingStores.case.set(2, { tags: ["friday"], colour: "red", energy: null });
+thingStores.mix.set(1, { tags: ["radio"], colour: "purple", energy: null });
+
+const thingIds = (which: "case" | "mix") => new Set((which === "case" ? cases.map((c) => c.id) : mixFixture.map((m) => m.id)));
+const thingRow = (which: "case" | "mix", id: number) => {
+  const l = thingStores[which].get(id);
+  return { id, tags: l ? [...l.tags] : [], colour: l?.colour ?? null };
+};
+const thingsView = (which: "case" | "mix") => {
+  const live = thingIds(which);
+  const s = thingStores[which];
+  return { things: [...s.keys()].filter((id) => live.has(id)).sort((a, b) => a - b).map((id) => thingRow(which, id)), orphans: [...s.keys()].filter((id) => !live.has(id)).length, notice: null };
+};
+
+let energySource: EnergySource = DEFAULT_ENERGY_SOURCE;
+
+Object.assign(handlers, {
+  tags_things_load: (a) => thingsView(a.which),
+  tags_things_apply: (a) => {
+    const which = a.which as "case" | "mix";
+    const ids = a.ids as number[];
+    const ops = a.ops as LabelOp[];
+    if (ops.some((o) => o.op === "set_energy" && o.energy !== null)) throw "Energy is a rating of tracks; a case or mix has none.";
+    const live = thingIds(which);
+    for (const id of ids) if (!live.has(id)) throw `${which} ${id} does not exist.`;
+    const next = new Map<number, TrackLabels>();
+    for (const id of ids) {
+      const r = applyOps(thingStores[which].get(id) ?? { tags: [], colour: null, energy: null }, ops);
+      if (!r.ok) throw r.error;
+      next.set(id, r.labels);
+    }
+    for (const [id, l] of next) {
+      if (labelsEmpty(l)) thingStores[which].delete(id);
+      else thingStores[which].set(id, l);
+    }
+    return ids.map((id) => thingRow(which, id));
+  },
+  energy_source_get: () => ({ source: energySource, problem: null }),
+  energy_source_set: (a) => {
+    if (!isEnergySource(a.source)) throw "not an energy source";
+    energySource = a.source;
+    return { source: energySource, problem: null };
+  },
+} satisfies Handlers);
+
+/** The labels of a track in the mock store, and its energy under the mock Energy source setting:
+ *  what the mock smart-case evaluation (the browser twin of the Rust rules) reads. */
+export const mockLabelOf = (id: number): TrackLabels | undefined => store.get(id);
+export const mockEnergyLevel = (id: number): number | null => resolveLevel(store.get(id)?.energy ?? null, mockAutoEnergy(id), energySource);

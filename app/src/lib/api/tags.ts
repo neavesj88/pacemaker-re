@@ -2,6 +2,7 @@
 // are kept by the app (a JSON file per library in the app config dir), never written to the
 // device. Labels are keyed by the track's stable id on the backend; here everything is by track_id.
 import { invoke } from "@tauri-apps/api/core";
+import type { EnergySource } from "$lib/state/energyResolve";
 import type { LabelColour, LabelOp } from "$lib/state/labels";
 
 /** The labels of one track as the backend returns them. */
@@ -36,3 +37,32 @@ export const forgetUnattachedLabels = (root: string, expected: number) =>
   invoke<TagsView>("tags_forget_unattached", { root, expected });
 
 export const deleteTag = (root: string, tag: string) => invoke<TagsView>("tags_delete_tag", { root, tag });
+
+// ---- cases and mixes: tags and colour (energy is a track rating only) ----
+
+/** Which list the labels belong to. */
+export type ThingKind = "case" | "mix";
+
+/** The tags and colour of one case or mix. */
+export type ThingLabelsRow = { id: number; tags: string[]; colour: LabelColour | null };
+
+export type ThingsView = {
+  /** Only the cases (or mixes) that have any label. */
+  things: ThingLabelsRow[];
+  /** Labelled cases (or mixes) in the file that no longer exist. */
+  orphans: number;
+  notice: string | null;
+};
+
+export const loadThingLabels = (root: string, which: ThingKind) => invoke<ThingsView>("tags_things_load", { root, which });
+
+/** Applies tag and colour changes to every listed case (or mix), all or nothing. Not a device write. */
+export const applyThingLabels = (root: string, which: ThingKind, ids: number[], ops: LabelOp[]) =>
+  invoke<ThingLabelsRow[]>("tags_things_apply", { root, which, ids, ops });
+
+// ---- the "Energy source" setting ----
+
+export type EnergySourceView = { source: EnergySource; problem: string | null };
+
+export const energySourceGet = () => invoke<EnergySourceView>("energy_source_get");
+export const energySourceSet = (source: EnergySource) => invoke<EnergySourceView>("energy_source_set", { source });

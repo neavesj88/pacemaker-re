@@ -5,7 +5,10 @@
   // "Apply" opens the confirmation that names every change again.
   import type { CaseAction, CueAction, CueMode } from "$lib/api/import";
   import { jobs } from "$lib/state/jobs.svelte";
+  import { LABEL_COLOURS, colourName, isColour } from "$lib/state/labels";
   import Button from "$lib/ui/Button.svelte";
+  import ColourSwatch from "../tracks/ColourSwatch.svelte";
+  import { summary as colourSummary, usedIndexes } from "./colourImport";
   import { cueApplies, cueTime } from "./importLogic";
   import { interop } from "./interop.svelte";
 
@@ -122,6 +125,67 @@
             {/each}
           </ul>
         </details>
+      </div>
+    {/if}
+
+    {#if plan.colours.length}
+      {@const cp = interop.colourPlan}
+      <div class="colours">
+        <h4>Track colours ({plan.colours.length})</h4>
+        <label><input type="checkbox" bind:checked={interop.colourLabels} /> Also set colour labels from the colours {interop.label} gave these tracks</label>
+        <p class="muted hint">
+          Colour labels belong to this app (Tracks, Tags, colour, energy); the Pacemaker has no track colours, so nothing is
+          written to the device. The file stores a colour number, not a name, and what {interop.label} calls each number is not
+          verified here: the table below starts in palette order, so check it against the colours you see in {interop.label}.
+        </p>
+        {#if interop.colourLabels && cp}
+          <table class="map" aria-label="Colour numbers in the file and the label colour each becomes">
+            <thead><tr><th>Colour number in the file</th><th>Tracks</th><th>Becomes the label colour</th></tr></thead>
+            <tbody>
+              {#each usedIndexes(plan.colours) as i (i)}
+                {@const to = interop.colourMap[i] ?? null}
+                <tr>
+                  <td class="num">{i}</td>
+                  <td class="num">{plan.colours.filter((c) => c.index === i).length}</td>
+                  <td>
+                    <ColourSwatch colour={to} size={12} empty />
+                    <select value={to ?? ""} aria-label="Label colour for colour number {i}" onchange={(e) => interop.setColour(i, isColour(e.currentTarget.value) ? e.currentTarget.value : null)}>
+                      <option value="">No colour (leave these tracks alone)</option>
+                      {#each LABEL_COLOURS as c (c)}<option value={c}>{colourName(c)}</option>{/each}
+                    </select>
+                  </td>
+                </tr>
+              {/each}
+            </tbody>
+          </table>
+          <label class="repl"><input type="checkbox" bind:checked={interop.replaceColours} /> Replace a colour label a track already has</label>
+          <details open={cp.changes.length > 0 && cp.changes.length <= 10}>
+            <summary>{cp.changes.length} colour label{cp.changes.length === 1 ? "" : "s"} would be set</summary>
+            {#if cp.changes.length === 0}
+              <p class="muted">Nothing to set with this table.</p>
+            {:else}
+              <ul class="rows">
+                {#each cp.changes as c (c.track_id)}
+                  <li><span class="t">{who(c.title, c.artist)}</span><span class="num">{c.from ? colourName(c.from) : "no colour"} → <b>{colourName(c.to)}</b></span></li>
+                {/each}
+              </ul>
+            {/if}
+          </details>
+          <p class="muted hint">{colourSummary(cp)}</p>
+          {#if interop.askingColours}
+            <div class="ask" role="alertdialog" aria-label="Set colour labels">
+              <p>
+                Set the colour label of the {cp.changes.length} track{cp.changes.length === 1 ? "" : "s"} listed above?
+                {#if cp.replaced > 0}{cp.replaced} of them already {cp.replaced === 1 ? "has" : "have"} a colour that will be replaced (shown in the list).{/if}
+                You can change any label again in Tracks.
+              </p>
+              <Button data-autofocus onclick={() => (interop.askingColours = false)}>Cancel</Button>
+              <Button variant="primary" disabled={interop.applyingColours} onclick={() => interop.applyColours()}>{interop.applyingColours ? "Setting…" : `Set ${cp.changes.length} colour label${cp.changes.length === 1 ? "" : "s"}`}</Button>
+            </div>
+          {:else}
+            <Button disabled={cp.changes.length === 0 || interop.loading} onclick={() => (interop.askingColours = true)}>Set {cp.changes.length} colour label{cp.changes.length === 1 ? "" : "s"}…</Button>
+          {/if}
+        {/if}
       </div>
     {/if}
 
@@ -259,6 +323,7 @@
   .spacer {
     flex: 1;
   }
+  .colours select,
   .cues select {
     background: var(--panel);
     color: var(--text);
@@ -267,6 +332,39 @@
     padding: 5px 8px;
     font: inherit;
     max-width: 100%;
+  }
+  .map {
+    border-collapse: collapse;
+    margin: 6px 0;
+  }
+  .map th {
+    text-align: left;
+    font-weight: 600;
+    font-size: 12px;
+    color: var(--muted);
+    padding: 2px 14px 2px 0;
+  }
+  .map td {
+    padding: 2px 14px 2px 0;
+  }
+  .map td:last-child {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .repl {
+    display: block;
+    margin: 4px 0;
+  }
+  .ask {
+    margin-top: 8px;
+    padding: 8px 10px;
+    background: var(--row);
+    border: 1px solid var(--line-hi);
+    border-radius: 6px;
+  }
+  .ask p {
+    margin: 0 0 8px;
   }
   .notes {
     margin: 8px 0;

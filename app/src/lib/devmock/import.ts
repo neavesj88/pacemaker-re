@@ -72,6 +72,7 @@ function mockPlan(path: string, options: ImportOptions): ImportPlan {
           };
         })
       : [],
+    colours: source === "traktor" ? [1, 2, 3, 5, 8, 9].map((id, i) => ({ track_id: id, title: tracks[id - 1].title, artist: tracks[id - 1].artist, index: [2, 3, 3, 5, 9, 1][i] })) : [],
     notes: source === "serato" ? ["Skipped Broken.crate: this is not a Serato crate (it does not start with a vrsn record)", "Smart crates (rule-based) are not imported; only ordinary crates are."] : [],
     unmatched_total: unmatched.length,
     unmatched,

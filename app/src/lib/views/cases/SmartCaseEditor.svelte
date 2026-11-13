@@ -1,5 +1,8 @@
 <script lang="ts">
   import { evaluateRules, type Preview, type Query, type SmartCase, type SortField } from "$lib/api/cases";
+  import { energy } from "$lib/state/energy.svelte";
+  import { energySource } from "$lib/state/energySource.svelte";
+  import { labels } from "$lib/state/labels.svelte";
   import { caseExport } from "$lib/state/caseExport.svelte";
   import { cases } from "$lib/state/cases.svelte";
   import { jobs } from "$lib/state/jobs.svelte";
@@ -67,6 +70,10 @@
     const root = session.library?.root;
     // library tracks are read so a reload (a refresh after a write) re-runs the count
     void session.library?.tracks;
+    // tag, colour and energy rules read app-side labels and the Energy source setting
+    void labels.version;
+    void energySource.source;
+    void energy.state;
     if (!root) return;
     if (fieldError) {
       ticket++;

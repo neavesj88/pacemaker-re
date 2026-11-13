@@ -1,6 +1,7 @@
 <script lang="ts">
   import { recipePrefs } from "$lib/views/mixes/recipePrefs.svelte";
   import { transitionWords } from "./createMix";
+  import EnergySourceSelect from "../metadata/EnergySourceSelect.svelte";
   import { setPrefs } from "./prefs.svelte";
   import { setBuilder } from "./setbuilder.svelte";
   import { KEY_MOVES, type KeyMoveId, type NumberPref, type SetPrefs } from "./solver";
@@ -59,6 +60,7 @@
 
   <fieldset>
     <legend>Energy curve</legend>
+    <div class="row"><EnergySourceSelect compact /></div>
     <label class="row">
       <span>Shape</span>
       <select value={p.curve} onchange={(e) => patch({ curve: e.currentTarget.value as SetPrefs["curve"] })}>
@@ -77,7 +79,7 @@
       </label>
     {/if}
     {#if !hasEnergy}
-      <p class="note muted">None of these tracks has an energy value yet (1 to 10), so the curve has nothing to follow and changes nothing. Rate tracks (Tracks, Tags, colour, energy) or run Energy (auto) on them, then reload the set.</p>
+      <p class="note muted">None of these tracks has an energy under the Energy source setting (1 to 10), so the curve has nothing to follow and changes nothing. Rate tracks (Tracks, Tags, colour, energy), run Energy (auto) on them, or change the source above.</p>
     {/if}
   </fieldset>
 

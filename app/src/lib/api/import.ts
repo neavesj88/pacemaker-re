@@ -72,6 +72,8 @@ export type CueNote = {
   sample_rate: number;
   action: CueAction;
 };
+/** A matched track the other program gave a colour (its own index, not a name). Reported whatever the options; never written to the device. */
+export type ColourNote = { track_id: number; title: string; artist: string; index: number };
 export type UnmatchedTrack = {
   title: string;
   artist: string;
@@ -94,6 +96,8 @@ export type ImportPlan = {
   ratings_unchanged: number;
   cases: CasePlan[];
   cues: CueNote[];
+  /** The colour each matched track has in the other program (Traktor only today). */
+  colours: ColourNote[];
   /** What the reader skipped (damaged crates, smart crates...). */
   notes: string[];
   unmatched_total: number;

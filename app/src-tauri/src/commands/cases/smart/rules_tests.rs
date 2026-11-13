@@ -40,13 +40,13 @@ fn extra() -> TrackExtra {
 
 fn data(tracks: Vec<Track>, extras: Vec<TrackExtra>) -> Data {
     let extras = tracks.iter().map(|t| t.track_id).zip(extras).collect();
-    Data { tracks, extras, favourites: HashSet::new(), cases: HashMap::new(), now_ms: NOW }
+    Data { tracks, extras, favourites: HashSet::new(), cases: HashMap::new(), labels: Default::default(), now_ms: NOW }
 }
 
 fn one(rule: &Rule, t: &Track, x: &TrackExtra) -> bool {
     let favs = HashSet::from([1]);
     let cases = HashMap::from([(7, Some(HashSet::from([t.track_id]))), (8, Some(HashSet::new()))]);
-    rule_matches(rule, t, x, &Context { favourites: &favs, cases: &cases, now_ms: NOW })
+    rule_matches(rule, t, x, &Context { favourites: &favs, cases: &cases, labels: &Default::default(), now_ms: NOW })
 }
 
 fn q(rules: Vec<Rule>) -> Query {
@@ -567,4 +567,117 @@ fn case_rule_name_is_optional_advisory_and_round_trips() {
     let with = |id, value, name: &str| Rule::InCase { case_id: id, value, case_name: Some(name.into()) };
     assert!(one(&with(7, true, "Some other name"), &t, &x));
     assert!(!one(&with(8, true, "Synthetic case"), &t, &x));
+}
+
+// ---- label rules (tags, colour, energy) ----------------------------------------------------------
+
+mod label_rules {
+    use super::*;
+    use crate::commands::tags::{EnergySource, LabelSnapshot, Labels};
+
+    fn labels(tags: &[&str], colour: Option<&str>, energy: Option<u8>) -> Labels {
+        Labels { tags: tags.iter().map(|s| s.to_string()).collect(), colour: colour.map(str::to_string), energy }
+    }
+
+    /// Track 1: tags Peak + Warm up, red, my energy 4, auto 8.2. Track 2: tag peak (other case),
+    /// no colour, no energy, auto 6.5. Track 3: nothing at all. Track 4: only my energy 9.
+    fn snap(source: EnergySource) -> LabelSnapshot {
+        LabelSnapshot {
+            labels: HashMap::from([
+                (1, labels(&["Peak", "Warm up"], Some("red"), Some(4))),
+                (2, labels(&["peak"], None, None)),
+                (4, labels(&[], None, Some(9))),
+            ]),
+            auto_energy: HashMap::from([(1, 8.2), (2, 6.5)]),
+            source,
+        }
+    }
+
+    fn lib_data(source: EnergySource) -> Data {
+        let mut d = data(vec![track(1), track(2), track(3), track(4)], vec![extra(), extra(), extra(), extra()]);
+        d.labels = snap(source);
+        d
+    }
+
+    fn tags(how: TagMatch, list: &[&str]) -> Rule {
+        Rule::Tags { how, tags: list.iter().map(|s| s.to_string()).collect() }
+    }
+
+    fn colour(list: &[&str], value: bool) -> Rule {
+        Rule::Colour { colours: list.iter().map(|s| s.to_string()).collect(), value }
+    }
+
+    fn found(rule: Rule, source: EnergySource) -> Vec<i64> {
+        let mut v = ids(&q(vec![rule]), &lib_data(source));
+        v.sort_unstable();
+        v
+    }
+
+    #[test]
+    fn tag_rules_ignore_case_and_cover_any_all_none() {
+        let m = EnergySource::MineElseAuto;
+        assert_eq!(found(tags(TagMatch::Any, &["PEAK"]), m), [1, 2]);
+        assert_eq!(found(tags(TagMatch::Any, &["peak", "warm  up"]), m), [1, 2], "whitespace is normalised like a typed tag");
+        assert_eq!(found(tags(TagMatch::All, &["peak", "warm up"]), m), [1]);
+        assert_eq!(found(tags(TagMatch::All, &["peak"]), m), [1, 2]);
+        assert_eq!(found(tags(TagMatch::None, &["warm up"]), m), [2, 3, 4], "a track with no tags has none of them");
+        assert_eq!(found(tags(TagMatch::None, &["peak", "warm up"]), m), [3, 4]);
+        assert_eq!(found(tags(TagMatch::Any, &["absent"]), m), Vec::<i64>::new());
+    }
+
+    #[test]
+    fn colour_is_and_is_not_with_none_standing_for_no_colour() {
+        let m = EnergySource::MineElseAuto;
+        assert_eq!(found(colour(&["red"], true), m), [1]);
+        assert_eq!(found(colour(&["red"], false), m), [2, 3, 4], "is not red includes uncoloured tracks");
+        assert_eq!(found(colour(&["none"], true), m), [2, 3, 4]);
+        assert_eq!(found(colour(&["red", "none"], true), m), [1, 2, 3, 4]);
+        assert_eq!(found(colour(&["none"], false), m), [1]);
+        assert_eq!(found(colour(&["blue"], true), m), Vec::<i64>::new());
+    }
+
+    #[test]
+    fn energy_rules_follow_the_energy_source() {
+        let range = |min, max| Rule::EnergyRange { min, max };
+        // mine, else auto: 1 -> 4 (mine wins over 8.2), 2 -> 7 (6.5 rounds up), 3 -> none, 4 -> 9
+        assert_eq!(found(range(Some(7), None), EnergySource::MineElseAuto), [2, 4]);
+        assert_eq!(found(range(None, Some(4)), EnergySource::MineElseAuto), [1]);
+        assert_eq!(found(range(Some(4), Some(7)), EnergySource::MineElseAuto), [1, 2]);
+        // mine only: tracks 1 and 4 have a rating
+        assert_eq!(found(range(Some(1), Some(10)), EnergySource::Mine), [1, 4]);
+        // auto only: 1 -> 8, 2 -> 7; track 4 has no estimate
+        assert_eq!(found(range(Some(1), Some(10)), EnergySource::Auto), [1, 2]);
+        assert_eq!(found(range(Some(8), None), EnergySource::Auto), [1]);
+    }
+
+    #[test]
+    fn a_none_group_of_a_label_rule_is_the_opposite_with_no_surprises() {
+        let g = Rule::Group { mode: Mode::None, items: vec![tags(TagMatch::Any, &["peak"])] };
+        assert_eq!(found(g, EnergySource::MineElseAuto), [3, 4]);
+    }
+
+    #[test]
+    fn the_new_rules_are_validated_and_round_trip() {
+        let ok = [tags(TagMatch::Any, &["x"]), colour(&["red", "none"], true), Rule::EnergyRange { min: Some(1), max: Some(10) }, Rule::EnergyRange { min: None, max: Some(3) }];
+        for r in &ok {
+            assert!(validate_query(&q(vec![r.clone()])).is_ok(), "{r:?}");
+            assert_eq!(&serde_json::from_str::<Rule>(&serde_json::to_string(r).unwrap()).unwrap(), r);
+        }
+        for bad in [
+            tags(TagMatch::Any, &[]),
+            tags(TagMatch::All, &["a,b"]),
+            tags(TagMatch::None, &[" "]),
+            colour(&[], true),
+            colour(&["mauve"], false),
+            Rule::EnergyRange { min: None, max: None },
+            Rule::EnergyRange { min: Some(0), max: None },
+            Rule::EnergyRange { min: Some(7), max: Some(3) },
+            Rule::EnergyRange { min: None, max: Some(11) },
+        ] {
+            assert!(validate_query(&q(vec![bad.clone()])).is_err(), "{bad:?}");
+        }
+        let json = r#"{"kind":"tags","how":"all","tags":["a"]}"#;
+        assert_eq!(serde_json::from_str::<Rule>(json).unwrap(), tags(TagMatch::All, &["a"]));
+        assert_eq!(serde_json::from_str::<Rule>(r#"{"kind":"energy_range","min":3,"max":null}"#).unwrap(), Rule::EnergyRange { min: Some(3), max: None });
+    }
 }

@@ -20,7 +20,10 @@ import { baseName } from "$lib/format";
 import { jobs } from "$lib/state/jobs.svelte";
 import { session } from "$lib/state/session.svelte";
 import { toast } from "$lib/state/toast.svelte";
+import { labels } from "$lib/state/labels.svelte";
+import type { LabelColour } from "$lib/state/labels";
 import { cueApplies, cueSecs, cueTime } from "./importLogic";
+import { groupByColour, planColours, startingMap, usedIndexes, type ColourMap } from "./colourImport";
 
 const stars = (n: number) => (n > 0 ? `${n}★` : "unrated");
 const plural = (n: number, one: string, many = one + "s") => `${n} ${n === 1 ? one : many}`;
@@ -43,6 +46,15 @@ class Interop {
   playlists = $state(true);
   /** What an import may do with cue points; off unless the user picks otherwise. */
   cueMode = $state<CueMode>("off");
+  /** Also set colour labels from the other program's track colours (app-side labels, never the device). Off unless ticked. */
+  colourLabels = $state(false);
+  /** Which label colour each of the file's colour indexes becomes. */
+  colourMap = $state<ColourMap>({});
+  /** Replace a colour label a track already has (off: such tracks keep theirs). */
+  replaceColours = $state(false);
+  /** The inline "set these colour labels?" question is showing. */
+  askingColours = $state(false);
+  applyingColours = $state(false);
   /** Source-file indexes of the playlists the user left ticked. */
   chosen = $state<number[]>([]);
 
@@ -59,6 +71,8 @@ class Interop {
   /** Cue points the chosen mode would write. */
   cueSteps = $derived(this.plan ? this.plan.cues.filter((c) => cueApplies(this.cueMode, c.action)) : []);
   changes = $derived(this.ratingSteps.length + this.cueSteps.length + this.caseSteps.length);
+  /** What the colour option would do with the current table (the colours are not part of `changes`: they go to the label store, not the device). */
+  colourPlan = $derived(this.plan ? planColours(this.plan.colours ?? [], this.colourMap, (id) => labels.get(id)?.colour ?? null, this.replaceColours) : null);
 
   private options(): ImportOptions {
     return { ratings: this.ratings, playlists: this.playlists, playlist_indexes: [...this.chosen], cues: this.cueMode };
@@ -90,6 +104,9 @@ class Interop {
       // always ask for the full plan: ticking and unticking is done here, without a round trip
       const plan = await interopPreview(lib.root, this.path, { ratings: true, playlists: true, playlist_indexes: null, cues: "off" });
       this.plan = plan;
+      const wanted = usedIndexes(plan.colours ?? []);
+      this.colourMap = fresh ? startingMap(wanted) : { ...startingMap(wanted), ...this.colourMap };
+      if (fresh) this.askingColours = false;
       const doable = plan.cases.filter((c) => c.action === "create" || c.action === "extend").map((c) => c.index);
       this.chosen = fresh ? doable : this.chosen.filter((i) => doable.includes(i));
     } catch (e) {
@@ -110,6 +127,39 @@ class Interop {
     this.plan = null;
     this.error = "";
     this.chosen = [];
+    this.colourLabels = false;
+    this.colourMap = {};
+    this.replaceColours = false;
+    this.askingColours = false;
+  }
+
+  setColour(index: number, colour: LabelColour | null) {
+    this.colourMap = { ...this.colourMap, [index]: colour };
+    this.askingColours = false;
+  }
+
+  /** Writes the colour labels the preview lists, one all-or-nothing call per colour. This is the
+   *  app's own label store: no job, no device write. Returns after saying how it went. */
+  async applyColours() {
+    const plan = this.colourPlan;
+    if (!plan || plan.changes.length === 0 || this.applyingColours) return;
+    this.applyingColours = true;
+    let done = 0;
+    try {
+      for (const g of groupByColour(plan.changes)) {
+        const ok = await labels.apply(g.ids, [{ op: "set_colour", colour: g.colour }]);
+        if (!ok) {
+          // the label store already said why; the ones before this call were saved
+          toast.show(`Stopped after ${plural(done, "colour label")}; the rest were not set.`, "bad", 8000);
+          return;
+        }
+        done += g.ids.length;
+      }
+      toast.show(`Set ${plural(done, "colour label")} from ${this.label}.`, "ok");
+    } finally {
+      this.applyingColours = false;
+      this.askingColours = false;
+    }
   }
 
   toggleCase(index: number) {

@@ -3,6 +3,8 @@
   import { mmss } from "$lib/format";
   import { cases } from "$lib/state/cases.svelte";
   import { filters } from "$lib/state/filters.svelte";
+  import { freshLabelFilter, labelFilterActive, matchesLabels, describeLabelFilter } from "$lib/state/labels";
+  import { caseLabels, thingEditor } from "$lib/state/thingLabels.svelte";
   import { jobs } from "$lib/state/jobs.svelte";
   import { selection } from "$lib/state/selection.svelte";
   import { session } from "$lib/state/session.svelte";
@@ -19,6 +21,8 @@
   import { copyName, plural } from "./caseLogic";
   import ConfirmDialog from "./ConfirmDialog.svelte";
   import { exportMenuItems } from "./exportMenu";
+  import ThingChips from "../metadata/ThingChips.svelte";
+  import ThingFilterBar from "../metadata/ThingFilterBar.svelte";
   import MergeDialog from "./MergeDialog.svelte";
   import NameDialog from "./NameDialog.svelte";
   import SmartSettingsDialog from "./SmartSettingsDialog.svelte";
@@ -48,16 +52,21 @@
   let sortKey = $state<string>("name");
   let sortAsc = $state(true);
   let dropId = $state<number | null>(null);
+  // colour and tag conditions (app-side labels of cases); cases with no labels never match one
+  let labelFilter = $state(freshLabelFilter());
 
   const collator = new Intl.Collator(undefined, { sensitivity: "base", numeric: true });
   let rows = $derived.by(() => {
     const q = filters.query.trim().toLowerCase();
-    const list = q ? cases.infos.filter((c) => [c.name, c.genre].some((f) => f.toLowerCase().includes(q))) : cases.infos;
+    const named = q ? cases.infos.filter((c) => [c.name, c.genre].some((f) => f.toLowerCase().includes(q))) : cases.infos;
+    const list = labelFilterActive(labelFilter) ? named.filter((c) => matchesLabels(caseLabels.get(c.id), labelFilter)) : named;
     const dir = sortAsc ? 1 : -1;
     const k = sortKey as keyof CaseInfo;
     return [...list].sort((a, b) => (k === "name" ? collator.compare(a.name, b.name) : (a[k] as number) - (b[k] as number)) * dir || collator.compare(a.name, b.name) || a.id - b.id);
   });
   let pickedCases = $derived(cases.infos.filter((c) => picked.has(c.id)));
+  // labels go to the ticked cases that are on screen, so a search or filter never hides a case the edit touches
+  let pickedShown = $derived(rows.filter((c) => picked.has(c.id)));
   let selected = $derived(selection.trackIds.length);
   // the device copy of a smart case, so deleting it can say so
   const smartOf = (c: CaseInfo) => cases.smart.find((s) => s.device_case_id === c.id);
@@ -80,6 +89,11 @@
       sortKey = key;
       sortAsc = true;
     }
+  }
+
+  // a tag on a row narrows the list to it, as if it had been picked in the filter
+  function filterByTag(tag: string) {
+    labelFilter = { ...labelFilter, tags: [tag], tagMode: "any" };
   }
 
   function toggle(id: number) {
@@ -132,6 +146,7 @@
 
   const menuItems = (c: CaseInfo): MenuItem[] => [
     { label: "Open", onclick: () => open(c) },
+    { label: picked.has(c.id) && pickedShown.length > 1 ? `Tags and colour of ${pickedShown.length} ticked cases…` : "Tags and colour…", onclick: () => thingEditor.edit("case", picked.has(c.id) && pickedShown.length > 1 ? pickedShown.map((x) => x.id) : [c.id]) },
     { label: "Rename…", onclick: () => (naming = { kind: "rename", c }), disabled: !jobs.canWrite },
     { label: "Duplicate…", onclick: () => (naming = { kind: "duplicate", c }), disabled: !jobs.canWrite },
     { label: "Merge with other cases…", onclick: () => (merging = [...new Set([...picked, c.id])]), disabled: !jobs.canWrite || cases.infos.length < 2 },
@@ -191,6 +206,7 @@
     Merge{picked.size > 1 ? ` ${picked.size}` : ""}…
   </Button>
   <Button disabled={!jobs.canWrite || picked.size === 0} onclick={() => (deleting = pickedCases)}>Delete{picked.size > 0 ? ` ${picked.size}` : ""}…</Button>
+  <Button disabled={pickedShown.length === 0} onclick={() => thingEditor.edit("case", pickedShown.map((c) => c.id))} title="Tags and a colour label for the ticked cases. Kept by this app only; nothing is written to the device.">Tags and colour{pickedShown.length > 0 ? ` (${pickedShown.length})` : ""}…</Button>
   {#if cases.smart.some((s) => s.on_device)}
     <Button
       disabled={!jobs.canWrite || smartRefresh.checking || smartRefresh.applying}
@@ -206,6 +222,13 @@
   <Button onclick={() => (settingsOpen = true)} title="Whether the Pacemaker copies of smart cases refresh by themselves, and how smart cases are exported">Smart case settings…</Button>
   <span class="muted">Cases are the Pacemaker's own playlists; the order here is the order on the device.</span>
 </div>
+{#if cases.infos.length > 0}
+  <div class="pickbar filterbar">
+    <span class="muted">Filter by label</span>
+    <ThingFilterBar bind:filter={labelFilter} vocabulary={caseLabels.vocabulary} thing="case" />
+    {#if labelFilterActive(labelFilter)}<Button small variant="link" onclick={() => (labelFilter = freshLabelFilter())}>Clear</Button>{/if}
+  </div>
+{/if}
 {#if rows.length > 0}
   <div class="pickbar muted">
     {#if picked.size > 0}{plural(picked.size, "case")} ticked ·{/if}
@@ -230,6 +253,7 @@
           <Button variant="link" onclick={(e) => (e.stopPropagation(), open(c))}>{c.name}</Button>
           {#if isFav(c)}<span class="tag" title={FAV_NOTE}>hearts</span>{/if}
           {#if smartOf(c)}<span class="tag" title="Made by the smart case “{smartOf(c)?.name}”">smart</span>{/if}
+          <ThingChips labels={caseLabels.get(c.id)} ontag={filterByTag} />
         </span>
       {:else if col.key === "track_count"}
         {c.track_count}
@@ -252,7 +276,7 @@
 {#if !cases.loaded}
   <p class="empty">Loading cases…</p>
 {:else if rows.length === 0}
-  <p class="empty">{filters.query ? "No cases match the search." : "No cases on this device yet. Use New case, or the heart on a track for Favourites."}</p>
+  <p class="empty">{filters.query || labelFilterActive(labelFilter) ? `No cases match${filters.query ? " the search" : ""}${filters.query && labelFilterActive(labelFilter) ? " and" : ""}${labelFilterActive(labelFilter) ? ` the label filter (${describeLabelFilter(labelFilter)})` : ""}.` : "No cases on this device yet. Use New case, or the heart on a track for Favourites."}</p>
 {/if}
 
 {#if menu}
@@ -313,6 +337,9 @@
   }
   .bar :global(.btn) {
     white-space: nowrap;
+  }
+  .pickbar.filterbar {
+    gap: 10px;
   }
   .pickbar {
     display: flex;

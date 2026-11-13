@@ -172,13 +172,13 @@ fn skipped(sc: &SmartCase, error: String) -> Planned {
 
 /// For every smart case in `list` that has "Put on Pacemaker" on: what its device case should
 /// hold and how that differs from what it holds now. Reads only.
-pub fn plan(lib: &Library, list: &[SmartCase], now_ms: i64) -> Result<Vec<Planned>, Error> {
+pub fn plan(lib: &Library, list: &[SmartCase], now_ms: i64, config: Option<&Path>) -> Result<Vec<Planned>, Error> {
     let wanted: Vec<&SmartCase> = list.iter().filter(|s| s.on_device).collect();
     if wanted.is_empty() {
         return Ok(Vec::new());
     }
     let queries: Vec<&smart::Query> = wanted.iter().map(|s| &s.query).collect();
-    let data = Data::load(lib, &queries, now_ms)?;
+    let data = Data::load(lib, &queries, now_ms, config)?;
     let by_id: HashMap<i64, &Track> = data.tracks.iter().map(|t| (t.track_id, t)).collect();
     let cycles = cycle_notes(&wanted);
     let mut out = Vec::new();
@@ -244,15 +244,15 @@ pub fn plan(lib: &Library, list: &[SmartCase], now_ms: i64) -> Result<Vec<Planne
 }
 
 /// The plan as the report the UI shows, nothing written.
-pub fn preview(lib: &Library, list: &[SmartCase], now_ms: i64) -> Result<Report, Error> {
-    Ok(Report::new(plan(lib, list, now_ms)?.into_iter().map(|p| p.item).collect()))
+pub fn preview(lib: &Library, list: &[SmartCase], now_ms: i64, config: Option<&Path>) -> Result<Report, Error> {
+    Ok(Report::new(plan(lib, list, now_ms, config)?.into_iter().map(|p| p.item).collect()))
 }
 
 /// Writes every `Create` / `Update` of [`plan`] (nothing for `Unchanged` and `Skip`), records
 /// each device case id in the store, and returns what was done. A write that fails turns that
 /// one item into a `Skip` with the reason and the others still run.
 pub fn apply(lib: &mut Library, dir: &Path, root: &str, list: &[SmartCase], now_ms: i64) -> Result<Report, Error> {
-    let planned = plan(lib, list, now_ms)?;
+    let planned = plan(lib, list, now_ms, Some(dir))?;
     let mut items = Vec::new();
     for Planned { mut item, ids } in planned {
         if matches!(item.action, Action::Create | Action::Update) {
@@ -333,7 +333,7 @@ mod tests {
         let list = stored(&dir, vec![starred(0, "Top", 5), SmartCase { on_device: false, ..starred(0, "Off device", 5) }]);
 
         // never put on the device: created from the current matches; the one switched off is not in the plan
-        let pre = preview(&lib, &list, 0).unwrap();
+        let pre = preview(&lib, &list, 0, None).unwrap();
         assert_eq!((pre.items.len(), pre.changes), (1, 1));
         let it = &pre.items[0];
         assert_eq!((it.name.as_str(), it.device_name.as_str(), it.action, it.before, it.after), ("Top", "\u{2605} Top", Action::Create, 0, 2));
@@ -355,7 +355,7 @@ mod tests {
 
         // a rating changes: one track in, one out, both named
         lib.set_track_ratings(&[(ids[1], 2), (ids[3], 5)]).unwrap();
-        let pre = preview(&lib, &list, 0).unwrap();
+        let pre = preview(&lib, &list, 0, None).unwrap();
         let it = &pre.items[0];
         assert_eq!((it.action, it.before, it.after, it.recreated), (Action::Update, 2, 2, false));
         assert_eq!(it.added.iter().map(|t| t.title.as_str()).collect::<Vec<_>>(), ["Sync Title 3"]);
@@ -383,7 +383,7 @@ mod tests {
 
         // renamed on the device (still ours: the star prefix): renamed back
         lib.rename_case(case, "\u{2605} Other name").unwrap();
-        let it = &preview(&lib, &list, 0).unwrap().items[0];
+        let it = &preview(&lib, &list, 0, None).unwrap().items[0];
         assert_eq!((it.action, it.renamed_from.as_deref(), it.added.len(), it.removed.len()), (Action::Update, Some("\u{2605} Other name"), 0, 0));
         apply(&mut lib, &dir, "P:\\", &list, 0).unwrap();
         assert_eq!(lib.case_info(case).unwrap().unwrap().name, "\u{2605} Four");
@@ -392,14 +392,14 @@ mod tests {
         let mut shuffled = now.clone();
         shuffled.reverse();
         lib.set_case_tracks(case, &shuffled).unwrap();
-        let it = &preview(&lib, &list, 0).unwrap().items[0];
+        let it = &preview(&lib, &list, 0, None).unwrap().items[0];
         assert_eq!((it.action, it.reordered, it.added.len(), it.removed.len()), (Action::Update, true, 0, 0));
         apply(&mut lib, &dir, "P:\\", &list, 0).unwrap();
         assert_eq!(lib.case_track_ids(case).unwrap(), now);
 
         // deleted on the device: made again, and the summary says it was a re-creation
         lib.delete_case(case).unwrap();
-        let it = &preview(&lib, &list, 0).unwrap().items[0];
+        let it = &preview(&lib, &list, 0, None).unwrap().items[0];
         assert_eq!((it.action, it.recreated, it.before, it.after), (Action::Create, true, 0, 3));
         apply(&mut lib, &dir, "P:\\", &list, 0).unwrap();
         let fresh = smart::load(&dir, "P:\\").unwrap()[0].device_case_id.unwrap();
@@ -408,7 +408,7 @@ mod tests {
         // the remembered id now belongs to a plain case that is not ours: it is never touched
         let foreign = lib.create_case_with_tracks("Plain", &[ids[0]]).unwrap();
         let stale = SmartCase { device_case_id: Some(foreign), ..list[0].clone() };
-        let it = &preview(&lib, std::slice::from_ref(&stale), 0).unwrap().items[0];
+        let it = &preview(&lib, std::slice::from_ref(&stale), 0, None).unwrap().items[0];
         assert_eq!((it.action, it.recreated), (Action::Create, true));
         smart::update(&dir, "P:\\", &stale).unwrap();
         apply(&mut lib, &dir, "P:\\", &[stale], 0).unwrap();
@@ -435,7 +435,7 @@ mod tests {
         lib.delete_case(gone).unwrap();
         lib.set_track_ratings(&[(ids[1], 5)]).unwrap();
 
-        let rep = preview(&lib, &list, 0).unwrap();
+        let rep = preview(&lib, &list, 0, None).unwrap();
         assert_eq!(rep.changes, 1);
         assert_eq!((rep.items[1].name.as_str(), rep.items[1].action), ("Broken", Action::Skip));
         assert!(rep.items[1].error.as_ref().unwrap().contains("no longer exists"), "{:?}", rep.items[1].error);
@@ -446,7 +446,7 @@ mod tests {
 
         // a rule that reads its own copy is skipped with the explanation
         let own = SmartCase { id: 9, name: "Own".into(), query: Query { rules: vec![Rule::InCase { case_id: copy, value: false, case_name: None }], ..Default::default() }, on_device: true, device_case_id: Some(copy) };
-        let rep = preview(&lib, &[own], 0).unwrap();
+        let rep = preview(&lib, &[own], 0, None).unwrap();
         assert!(rep.items[0].error.as_ref().unwrap().contains("reads its own Pacemaker copy"));
 
         drop(lib);
@@ -468,7 +468,7 @@ mod tests {
         let c = mk(3, "C", reads(cb, true), None);
         let list = [a.clone(), b.clone(), c];
 
-        let rep = preview(&lib, &list, 0).unwrap();
+        let rep = preview(&lib, &list, 0, None).unwrap();
         let by = |n: &str| rep.items.iter().find(|i| i.name == n).unwrap();
         assert_eq!((by("A").action, by("B").action, by("C").action), (Action::Skip, Action::Skip, Action::Create));
         assert!(by("A").error.as_ref().unwrap().contains("This smart case and \u{201c}B\u{201d} have rules that read each other"), "{:?}", by("A").error);

@@ -1,14 +1,10 @@
-// Where the set builder reads a track's energy from: the energy you rated it (Tracks > Tags,
-// colour, energy), else the app's own estimate (Energy (auto)), else nothing. Whole levels 1 to 10,
-// or null when neither exists, in which case the energy curve in the settings has nothing to follow.
+// Where the set builder reads a track's energy from: the one resolver every energy reader shares
+// (state/energySource.svelte.ts), which applies the "Energy source" setting (your rating, the
+// Energy (auto) estimate, or yours else the estimate). Whole levels 1 to 10, or null when the
+// track has none, in which case the energy curve in the settings has nothing to follow.
 //
-// It is synchronous on purpose: the solver is pure and the list calls it for every row.
-import { energy } from "$lib/state/energy.svelte";
-import { labels } from "$lib/state/labels.svelte";
+// It is synchronous on purpose: the solver is pure and the list calls it for every row, and the
+// set's track table is derived from it, so a change of the setting re-evaluates the set.
+import { energySource } from "$lib/state/energySource.svelte";
 
-export function energyOf(trackId: number): number | null {
-  const e = labels.get(trackId)?.energy ?? energy.of(trackId);
-  if (typeof e !== "number" || !Number.isFinite(e)) return null;
-  const r = Math.round(e);
-  return r >= 1 ? Math.min(r, 10) : null;
-}
+export const energyOf = (trackId: number): number | null => energySource.level(trackId);

@@ -19,6 +19,8 @@
   // Read-only reuse of the Tracks view's pure sort / key logic and its small waveform, so a case
   // reads and sorts like the library.
   import MiniWave from "../tracks/MiniWave.svelte";
+  import ThingChips from "../metadata/ThingChips.svelte";
+  import { caseLabels, thingEditor } from "$lib/state/thingLabels.svelte";
   import { keyColour, parseKey, sortTracks } from "../tracks/trackLogic";
   import { setlist } from "../setlist/setlist.svelte";
   import { vdj } from "../vdj/vdj.svelte";
@@ -483,6 +485,10 @@
   <aside class="insp">
     <h3>{info?.name ?? open.name}</h3>
     <div class="muted">case · {all.length} track{all.length === 1 ? "" : "s"} · {mmss(totalSecs)}</div>
+    <div class="labelrow">
+      {#if caseLabels.get(open.id)}<ThingChips labels={caseLabels.get(open.id)} max={8} />{:else}<span class="muted">No tags or colour</span>{/if}
+      <Button small variant="link" onclick={() => thingEditor.edit("case", [open.id])} title="Tags and a colour label. Kept by this app only; nothing is written to the device.">Tags and colour…</Button>
+    </div>
     {#if info}
       <div class="field"><label for="c-name">Name</label><input id="c-name" bind:value={draft.name} maxlength="255" disabled={!jobs.canWrite} /></div>
       <div class="field"><label for="c-genre">Genre</label><input id="c-genre" bind:value={draft.genre} disabled={!jobs.canWrite} /></div>
@@ -795,6 +801,17 @@
     border-left: 1px solid var(--line);
     background: var(--panel);
     overflow: auto;
+  }
+  .labelrow {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin: 4px 0 6px;
+    font-size: 12px;
+  }
+  .labelrow :global(.things) {
+    margin-left: 0;
   }
   .insp h3 {
     margin: 0 0 2px;

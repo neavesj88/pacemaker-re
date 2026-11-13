@@ -13,7 +13,7 @@ mod dupes_settings;
 mod export;
 mod export_bulk;
 mod export_prefs;
-mod smart;
+pub(crate) mod smart;
 mod smart_export;
 mod smart_settings;
 mod smart_sync;
@@ -241,8 +241,8 @@ fn config_dir(app: &tauri::AppHandle) -> AppResult<PathBuf> {
 
 /// What the query matches right now in `lib`: the one evaluation behind the live preview, the
 /// sidebar counts and the device copy.
-fn matches_in(lib: &Library, q: &Query) -> AppResult<Eval> {
-    let data = Data::load(lib, &[q], now_ms())?;
+fn matches_in(lib: &Library, q: &Query, dir: &Path) -> AppResult<Eval> {
+    let data = Data::load(lib, &[q], now_ms(), Some(dir))?;
     Ok(smart::evaluate(q, &data)?)
 }
 
@@ -275,7 +275,7 @@ pub async fn smart_cases_counts(app: tauri::AppHandle, root: String) -> AppResul
         let list = smart::load(&dir, &root)?;
         let lib = Library::open_read_only(&PathBuf::from(&root))?;
         let queries: Vec<&Query> = list.iter().map(|s| &s.query).collect();
-        let data = Data::load(&lib, &queries, now_ms())?;
+        let data = Data::load(&lib, &queries, now_ms(), Some(&dir))?;
         Ok(list
             .iter()
             .map(|s| match smart::evaluate(&s.query, &data) {
@@ -291,11 +291,12 @@ pub async fn smart_cases_counts(app: tauri::AppHandle, root: String) -> AppResul
 /// before the limit: the rule builder's live count and the smart case's track list. Nothing is
 /// saved.
 #[tauri::command]
-pub async fn smart_cases_evaluate(root: String, query: Query) -> AppResult<Eval> {
+pub async fn smart_cases_evaluate(app: tauri::AppHandle, root: String, query: Query) -> AppResult<Eval> {
+    let dir = config_dir(&app)?;
     smart::validate_query(&query)?;
     tauri::async_runtime::spawn_blocking(move || -> AppResult<Eval> {
         let lib = Library::open_read_only(&PathBuf::from(root))?;
-        matches_in(&lib, &query)
+        matches_in(&lib, &query, &dir)
     })
     .await?
 }
@@ -357,7 +358,7 @@ pub async fn smart_cases_set_on_device(app: tauri::AppHandle, root: String, id: 
         let mut lib = Library::open(&PathBuf::from(&root))?;
         let count = if on {
             check_not_self_referencing(&sc)?;
-            let ids = matches_in(&lib, &sc.query)?.ids;
+            let ids = matches_in(&lib, &sc.query, &dir)?.ids;
             let (case_id, n) = smart::put_on_device(&mut lib, &sc, &ids)?;
             sc.on_device = true;
             sc.device_case_id = Some(case_id);
@@ -389,7 +390,7 @@ fn refresh_preview(dir: &Path, root: &str) -> AppResult<smart_sync::Report> {
         return Ok(smart_sync::Report { items: Vec::new(), changes: 0 });
     }
     let lib = Library::open_read_only(&PathBuf::from(root))?;
-    Ok(smart_sync::preview(&lib, &list, now_ms())?)
+    Ok(smart_sync::preview(&lib, &list, now_ms(), Some(dir))?)
 }
 
 /// Refreshes the Pacemaker copy of every smart case that has "Put on Pacemaker" on and no

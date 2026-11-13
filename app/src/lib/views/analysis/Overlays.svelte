@@ -16,6 +16,7 @@
   import KeyDetectDialog from "./KeyDetectDialog.svelte";
   import KeyPickerDialog from "./KeyPickerDialog.svelte";
   import SectionsPanel from "./SectionsPanel.svelte";
+  import EnergySourceSelect from "../metadata/EnergySourceSelect.svelte";
 
   // The library object changes on every open and every in-place reload (after a job, a BPM
   // edit), and a BPM edit changes the score, so the numbers are read again each time.
@@ -75,7 +76,7 @@
       <p class="muted small">
         A 1 to 10 estimate worked out from the audio: how loud the track is over time, how dense its attacks are, how much
         sits below 150 Hz, and its tempo (the BPM stored for the track, ignored for a track never analysed). It is kept by this app, per library, and does not appear on the device. It is
-        separate from any energy rating you set yourself.
+        separate from any energy rating you set yourself; the Energy source setting below says which of the two the search, filters, smart cases, gap map, set builder and setlist use.
       </p>
       <p class="muted small">{scaleText(s)}</p>
       {#if s.note}<p class="warn small" role="status">{s.note}</p>{/if}
@@ -110,6 +111,9 @@
         {/if}
       </div>
       {#if forgotten !== null}<p class="muted small" role="status">{forgotten} saved result{forgotten === 1 ? "" : "s"} forgotten.</p>{/if}
+
+      <h3>Which energy is used</h3>
+      <EnergySourceSelect />
 
       <h3>Settings</h3>
       <div class="settings">

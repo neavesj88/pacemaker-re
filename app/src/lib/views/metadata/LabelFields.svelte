@@ -16,19 +16,39 @@
     draftRemoveTag,
     parseTagInput,
     suggestTags,
+    thingsWord,
     tagKey,
     tagPresence,
     type LabelColour,
     type LabelDraft,
   } from "$lib/state/labels";
   import { labels } from "$lib/state/labels.svelte";
+  import type { TagCount, TrackLabels } from "$lib/state/labels";
   import ColourSwatch from "../tracks/ColourSwatch.svelte";
 
-  let { ids, draft = $bindable(), disabled = false }: { ids: number[]; draft: LabelDraft; disabled?: boolean } = $props();
+  // By default the fields edit tracks. A case or mix editor passes its own `get`, `vocabulary` and
+  // `thing` and hides the energy row (a case or mix has no energy).
+  let {
+    ids,
+    draft = $bindable(),
+    disabled = false,
+    get = (id: number) => labels.get(id),
+    vocabulary = labels.vocabulary,
+    thing = "track",
+    showEnergy = true,
+  }: {
+    ids: number[];
+    draft: LabelDraft;
+    disabled?: boolean;
+    get?: (id: number) => TrackLabels | undefined;
+    vocabulary?: TagCount[];
+    thing?: string;
+    showEnergy?: boolean;
+  } = $props();
 
-  const targets = $derived(ids.map((id) => labels.get(id) ?? NO_LABELS));
+  const targets = $derived(ids.map((id) => get(id) ?? NO_LABELS));
   const n = $derived(targets.length);
-  const lines = $derived(describeChanges(draft, targets));
+  const lines = $derived(describeChanges(draft, targets, thing));
   const presence = $derived(tagPresence(targets));
   const removing = $derived(new Set(draft.remove.map(tagKey)));
   const adding = $derived(new Set(draft.add.map(tagKey)));
@@ -57,7 +77,7 @@
   const lastPiece = $derived(typed.split(/[,;\n]/).at(-1) ?? "");
   const suggestions = $derived(
     focused && lastPiece.trim()
-      ? suggestTags(labels.vocabulary, lastPiece, new Set([...onAll, ...adding].filter((k) => !removing.has(k))), 6)
+      ? suggestTags(vocabulary, lastPiece, new Set([...onAll, ...adding].filter((k) => !removing.has(k))), 6)
       : [],
   );
 
@@ -65,7 +85,7 @@
     const { tags, errors } = parseTagInput(text);
     problem = errors[0] ?? "";
     for (const t of tags) {
-      const tag = canonicalTag(labels.vocabulary, t);
+      const tag = canonicalTag(vocabulary, t);
       const k = tagKey(tag);
       // already on every track and not queued for removal: nothing to add
       if (onAll.has(k) && !removing.has(k)) continue;
@@ -123,13 +143,14 @@
         </button>
       {/each}
       <button type="button" class="txt" class:on={colourShown.kind === "same" && colourShown.value === null} {disabled} aria-pressed={colourShown.kind === "same" && colourShown.value === null} onclick={() => pickColour(null)}>None</button>
-      {#if draft.colour === undefined && colourNow.kind === "mixed" && n > 1}<span class="note">tracks differ</span>{/if}
+      {#if draft.colour === undefined && colourNow.kind === "mixed" && n > 1}<span class="note">{thingsWord(thing)} differ</span>{/if}
       {#if draft.colour !== undefined}
         <button type="button" class="undo" onclick={() => (draft.colour = undefined)}>undo</button>
       {/if}
     </div>
   </div>
 
+  {#if showEnergy}
   <div class="row">
     <span class="lbl" id="lf-energy">Energy</span>
     <div class="en" role="group" aria-labelledby="lf-energy">
@@ -138,12 +159,13 @@
         <button type="button" class="num-btn" class:on {disabled} aria-pressed={on} title="Energy {e} of 10" onclick={() => pickEnergy(e)}>{e}</button>
       {/each}
       <button type="button" class="txt" class:on={energyShown.kind === "same" && energyShown.value === null} {disabled} aria-pressed={energyShown.kind === "same" && energyShown.value === null} onclick={() => pickEnergy(null)}>None</button>
-      {#if draft.energy === undefined && energyNow.kind === "mixed" && n > 1}<span class="note">tracks differ</span>{/if}
+      {#if draft.energy === undefined && energyNow.kind === "mixed" && n > 1}<span class="note">{thingsWord(thing)} differ</span>{/if}
       {#if draft.energy !== undefined}
         <button type="button" class="undo" onclick={() => (draft.energy = undefined)}>undo</button>
       {/if}
     </div>
   </div>
+  {/if}
 
   <div class="row tags">
     <span class="lbl" id="lf-tags">Tags</span>
@@ -153,12 +175,12 @@
           {@const gone = removing.has(tagKey(p.tag))}
           <li class="chip" class:gone class:part={p.have < n && !gone}>
             <span class="t">{p.tag}</span>
-            {#if n > 1}<span class="have" title="{p.have} of {n} tracks have this tag">{p.have}/{n}</span>{/if}
+            {#if n > 1}<span class="have" title="{p.have} of {n} {thingsWord(thing)} have this tag">{p.have}/{n}</span>{/if}
             {#if gone}
               <span class="mark">will be removed</span>
               <button type="button" class="x" {disabled} aria-label="Keep the tag {p.tag}" title="Keep this tag" onclick={() => draftForgetTag(draft, p.tag)}>↺</button>
             {:else}
-              <button type="button" class="x" {disabled} aria-label="Remove the tag {p.tag}" title={n > 1 ? "Remove this tag from every selected track" : "Remove this tag"} onclick={() => draftRemoveTag(draft, p.tag)}>×</button>
+              <button type="button" class="x" {disabled} aria-label="Remove the tag {p.tag}" title={n > 1 ? `Remove this tag from every selected ${thing}` : "Remove this tag"} onclick={() => draftRemoveTag(draft, p.tag)}>×</button>
             {/if}
           </li>
         {/each}

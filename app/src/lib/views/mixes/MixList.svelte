@@ -7,6 +7,7 @@
   import { session } from "$lib/state/session.svelte";
   import { toast } from "$lib/state/toast.svelte";
   import Button from "$lib/ui/Button.svelte";
+  import ContextMenu, { type MenuItem } from "$lib/ui/ContextMenu.svelte";
   import Stars from "$lib/ui/Stars.svelte";
   import Table from "$lib/ui/Table.svelte";
   import { errText } from "./actions";
@@ -17,11 +18,18 @@
   import { SORT_LABELS, clickRow, defaultAscending, filterMixes, prune, sortMixes, toggleRow, type SortKey } from "./mixlist";
   import { mv } from "./view.svelte";
   import { setlist } from "../setlist/setlist.svelte";
+  import { freshLabelFilter, labelFilterActive, matchesLabels, describeLabelFilter } from "$lib/state/labels";
+  import { mixLabels, thingEditor } from "$lib/state/thingLabels.svelte";
+  import ThingChips from "../metadata/ThingChips.svelte";
+  import ThingFilterBar from "../metadata/ThingFilterBar.svelte";
 
   let selected = $state.raw<ReadonlySet<number>>(new Set());
   let anchor = $state<number | null>(null);
   let query = $state("");
   let loading = $state(true);
+  // colour and tag conditions (app-side labels of mixes); mixes with no labels never match one
+  let labelFilter = $state(freshLabelFilter());
+  let menu = $state<{ x: number; y: number; m: MixSummary } | null>(null);
 
   // refresh when the library changes (an in-place reload keeps the view)
   $effect(() => {
@@ -37,7 +45,8 @@
   const dateOf = (id: number) => metaOf(id)?.dateModified ?? 0;
   const ratingOf = (id: number) => metaOf(id)?.rating ?? 0;
 
-  const rows = $derived(sortMixes(filterMixes(mixes.list, metaOf, query, prefs.deepSearch), prefs.sortKey, prefs.asc, metaOf));
+  const labelled = $derived(labelFilterActive(labelFilter) ? mixes.list.filter((m) => matchesLabels(mixLabels.get(m.id), labelFilter)) : mixes.list);
+  const rows = $derived(sortMixes(filterMixes(labelled, metaOf, query, prefs.deepSearch), prefs.sortKey, prefs.asc, metaOf));
   const shownIds = $derived(rows.map((m) => m.id));
 
   // a search (or a deleted mix) that takes a ticked row off the screen un-ticks it, so a bulk
@@ -110,6 +119,30 @@
     else void exportMixes(chosen);
   }
 
+  // Right-click: a row outside the selection becomes the selection, as in a file manager.
+  function rowMenu(e: MouseEvent) {
+    const tr = (e.target as HTMLElement).closest("tbody tr") as HTMLTableRowElement | null;
+    const m = tr ? rows[tr.sectionRowIndex] : undefined;
+    if (!m) return;
+    e.preventDefault();
+    if (!selected.has(m.id)) {
+      selected = new Set([m.id]);
+      anchor = m.id;
+    }
+    menu = { x: e.clientX, y: e.clientY, m };
+  }
+
+  const menuItems = (m: MixSummary): MenuItem[] => {
+    const ids = chosen.some((c) => c.id === m.id) ? chosen.map((c) => c.id) : [m.id];
+    return [
+      { label: "Open", onclick: () => openMix(m.id) },
+      { label: ids.length > 1 ? `Tags and colour of ${ids.length} mixes…` : "Tags and colour…", onclick: () => thingEditor.edit("mix", ids) },
+    ];
+  };
+
+  // a tag on a row narrows the list to it, as if it had been picked in the filter
+  const filterByTag = (tag: string) => (labelFilter = { ...labelFilter, tags: [tag], tagMode: "any" });
+
   function onkey(e: KeyboardEvent) {
     if (mixes.doc || document.querySelector('[role="dialog"]')) return;
     const el = e.target as HTMLElement | null;
@@ -145,6 +178,9 @@
     <Button disabled={chosen.length === 0} onclick={exportChosen} title="Write the saved mixes as .pmk files">
       {chosen.length > 1 ? `Export ${chosen.length}…` : "Export .pmk…"}
     </Button>
+    <Button disabled={chosen.length === 0} onclick={() => thingEditor.edit("mix", chosen.map((m) => m.id))} title="Tags and a colour label for the picked mixes. Kept by this app only; nothing is written to the device.">
+      Tags and colour…
+    </Button>
     <Button disabled={chosen.length === 0} onclick={() => deleteMixes(chosen)}>
       <span class:bad={chosen.length > 0}>{chosen.length > 1 ? `Delete ${chosen.length}…` : "Delete…"}</span>
     </Button>
@@ -172,6 +208,9 @@
     <Button small onclick={() => listPrefs.set({ asc: !prefs.asc })} title={prefs.asc ? "Ascending: click for descending" : "Descending: click for ascending"} aria-label="Sort direction">
       {prefs.asc ? "▲" : "▼"}
     </Button>
+    <span class="sep"></span>
+    <ThingFilterBar bind:filter={labelFilter} vocabulary={mixLabels.vocabulary} thing="mix" />
+    {#if labelFilterActive(labelFilter)}<Button small variant="link" onclick={() => (labelFilter = freshLabelFilter())}>Clear label filter</Button>{/if}
     <span class="sep"></span>
     <label class="check"><input type="checkbox" checked={allShown} disabled={rows.length === 0} onchange={toggleAll} /> Select all shown</label>
     {#if chosen.length > 0}
@@ -208,7 +247,7 @@
   {/if}
 
   <!-- svelte-ignore a11y_no_static_element_interactions -->
-  <div class="body" onclickcapture={noteMods}>
+  <div class="body" onclickcapture={noteMods} oncontextmenu={rowMenu}>
     {#if rows.length > 0}
       <Table
         {columns}
@@ -225,6 +264,7 @@
             <input type="checkbox" checked={selected.has(m.id)} aria-label="Select “{m.name}”" onclick={(e) => (e.stopPropagation(), tick(m))} />
           {:else if col.key === "name"}
             <Button variant="link" onclick={(e) => (e.stopPropagation(), openMix(m.id))}>{m.name}</Button>
+            <ThingChips labels={mixLabels.get(m.id)} ontag={filterByTag} />
           {:else if col.key === "genre"}
             {metaOf(m.id)?.genre || "–"}
           {:else if col.key === "play_time_secs"}
@@ -243,8 +283,9 @@
       </Table>
     {:else if mixes.list.length > 0}
       <div class="empty">
-        <p>No mix matches “{query}”.</p>
-        <Button onclick={() => (query = "")}>Clear the search</Button>
+        <p>No mix matches{query.trim() ? ` “${query}”` : ""}{labelFilterActive(labelFilter) ? ` the label filter (${describeLabelFilter(labelFilter)})` : ""}.</p>
+        {#if query.trim()}<Button onclick={() => (query = "")}>Clear the search</Button>{/if}
+        {#if labelFilterActive(labelFilter)}<Button onclick={() => (labelFilter = freshLabelFilter())}>Clear the label filter</Button>{/if}
       </div>
     {:else if !loading}
       <div class="empty">
@@ -255,6 +296,10 @@
     {/if}
   </div>
 </div>
+
+{#if menu}
+  <ContextMenu x={menu.x} y={menu.y} items={menuItems(menu.m)} onclose={() => (menu = null)} />
+{/if}
 
 <style>
   .list {

@@ -348,6 +348,10 @@ pub struct ForeignTrack {
     pub duration_secs: Option<f64>,
     /// The first memory cue (rekordbox), in seconds.
     pub cue_secs: Option<f64>,
+    /// The colour the other program gave the track, as its own index (Traktor `INFO COLOR`);
+    /// `None` when it has none or the source has no track colours. What the index means is the
+    /// importer's mapping to colour labels, not something this reader decides.
+    pub colour: Option<u32>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -450,6 +454,7 @@ pub fn parse_rekordbox(text: &str) -> Result<ForeignLibrary, Error> {
                 size: num(t.attr("Size")),
                 duration_secs: num::<f64>(t.attr("TotalTime")).filter(|d| *d > 0.0),
                 cue_secs: cue,
+                colour: None,
                 path,
             };
             let idx = tracks.len();
@@ -864,6 +869,18 @@ pub struct CueNote {
     pub action: CueAction,
 }
 
+/// A matched track the other program gave a colour. Colour labels are not stored on the device,
+/// so the plan only reports them (the UI turns the index into a label colour and writes the
+/// app-side label store when the user asks).
+#[derive(Debug, Clone, Serialize)]
+pub struct ColourNote {
+    pub track_id: i64,
+    pub title: String,
+    pub artist: String,
+    /// The other program's own colour index.
+    pub index: u32,
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct UnmatchedTrack {
     pub title: String,
@@ -893,6 +910,9 @@ pub struct ImportPlan {
     /// The first cue found for each matched track and what writing it would do; which of them are
     /// written is the [`CueMode`] option.
     pub cues: Vec<CueNote>,
+    /// The colour each matched track has in the other program (Traktor only today), whatever
+    /// the options: they are never written to the device.
+    pub colours: Vec<ColourNote>,
     /// What the reader skipped (damaged crates, smart crates...).
     pub notes: Vec<String>,
     pub unmatched_total: usize,
@@ -986,6 +1006,8 @@ pub fn plan_import(lib: &Library, foreign: &ForeignLibrary, opts: &ImportOptions
     let mut ratings = Vec::new();
     let mut unchanged = 0;
     let mut cues = Vec::new();
+    let mut colours = Vec::new();
+    let mut seen_colour: HashSet<i64> = HashSet::new();
     let mut seen_rating: HashSet<i64> = HashSet::new();
     let mut seen_cue: HashSet<i64> = HashSet::new();
     let mut cues_past_end = 0usize;
@@ -1004,6 +1026,11 @@ pub fn plan_import(lib: &Library, foreign: &ForeignLibrary, opts: &ImportOptions
                 } else {
                     ratings.push(RatingChange { track_id: id, title: t.title.clone(), artist: t.artist.clone(), from: t.rating, to: stars });
                 }
+            }
+        }
+        if let Some(index) = f.colour {
+            if seen_colour.insert(id) {
+                colours.push(ColourNote { track_id: id, title: t.title.clone(), artist: t.artist.clone(), index });
             }
         }
         if let Some(c) = f.cue_secs.filter(|c| c.is_finite() && *c >= 0.0 && *c < 1e6) {
@@ -1139,6 +1166,7 @@ pub fn plan_import(lib: &Library, foreign: &ForeignLibrary, opts: &ImportOptions
         ratings_unchanged: unchanged,
         cases,
         cues,
+        colours,
         notes,
         unmatched_total,
         unmatched,
@@ -2405,6 +2433,22 @@ mod tests {
         clean(lib, dirs);
     }
 
+
+    #[test]
+    fn traktor_colours_are_reported_for_matched_tracks_and_never_written() {
+        let (lib, dirs, _) = library("nml-col", 2);
+        let text = NML.replace(r#"<INFO RANKING="204""#, r#"<INFO COLOR="3" RANKING="204""#);
+        let f = parse_library(&text).unwrap();
+        let t = lib.tracks().unwrap();
+        let id0 = t.iter().find(|x| x.title == "Synth Title 0").unwrap().track_id;
+        let plan = plan_import(&lib, &f, &ImportOptions { ratings: false, playlists: false, cues: CueMode::Off, playlist_indexes: None }).unwrap();
+        assert_eq!(plan.colours.len(), 1, "only the entry with a colour");
+        let c = &plan.colours[0];
+        assert_eq!((c.track_id, c.index, c.title.as_str()), (id0, 3, "Synth Title 0"));
+        // reported whatever the options say: the plan never carries them into a device write
+        assert!(plan_import(&lib, &parse_library(NML).unwrap(), &ImportOptions::default()).unwrap().colours.is_empty());
+        clean(lib, dirs);
+    }
     #[test]
     fn cues_beyond_the_track_end_are_left_out_and_noted() {
         let (lib, dirs, _) = library("nml-end", 2);

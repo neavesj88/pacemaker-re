@@ -2,7 +2,10 @@
   import type { Rule } from "$lib/api/cases";
   import { cases } from "$lib/state/cases.svelte";
   import { session } from "$lib/state/session.svelte";
-  import { KINDS, NO_CASE, TEXT_OPS, caseNameDrift, defaultCaseId, defaultRule, formatDuration, kindId, parseDuration, stampCaseNames } from "$lib/state/smartRules";
+  import { ENERGY_LEVELS, LABEL_COLOURS, colourName, parseTagInput } from "$lib/state/labels";
+  import { labels } from "$lib/state/labels.svelte";
+  import { KINDS, NO_CASE, NO_COLOUR, TAG_MATCHES, TEXT_OPS, caseNameDrift, defaultCaseId, defaultRule, formatDuration, kindId, parseDuration, stampCaseNames } from "$lib/state/smartRules";
+  import ColourSwatch from "../tracks/ColourSwatch.svelte";
   import Button from "$lib/ui/Button.svelte";
 
   // One rule (anything but a group) of a smart case: the type menu and that type's inputs.
@@ -42,9 +45,23 @@
     rule.min_secs = parseDuration(minText);
     rule.max_secs = parseDuration(maxText);
   });
+  // Tags are typed as text ("peak, warm up"); the rule gets the tags that parse.
+  let tagText = $state(rule.kind === "tags" ? rule.tags.join(", ") : "");
+  let tagProblem = $state("");
+  $effect(() => {
+    if (rule.kind !== "tags") return;
+    const { tags, errors } = parseTagInput(tagText);
+    rule.tags = tags;
+    tagProblem = errors[0] ?? "";
+  });
+  function toggleColour(c: string) {
+    if (rule.kind !== "colour") return;
+    rule.colours = rule.colours.includes(c) ? rule.colours.filter((x) => x !== c) : [...rule.colours, c];
+  }
   function retype(id: string) {
     rule = defaultRule(id, firstCase());
     stampCaseNames([rule], cases.infos);
+    tagText = "";
     if (rule.kind === "duration_range") {
       minText = formatDuration(rule.min_secs);
       maxText = formatDuration(rule.max_secs);
@@ -128,6 +145,37 @@
         <Button small variant="ghost" onclick={acceptName}>Keep “{drift.now}”</Button>
       </span>
     {/if}
+  {:else if rule.kind === "tags"}
+    <select bind:value={rule.how} aria-label="Any, all or none of the tags">
+      {#each TAG_MATCHES as m (m.how)}<option value={m.how}>{m.label}</option>{/each}
+    </select>
+    <input class="wide" list={`${uid}-tags`} bind:value={tagText} placeholder="tags, separated by commas" aria-label="Tags" />
+    <datalist id={`${uid}-tags`}>{#each labels.vocabulary as v (v.tag)}<option value={v.tag}></option>{/each}</datalist>
+    {#if tagProblem}<span class="warn" role="status">{tagProblem}</span>{/if}
+  {:else if rule.kind === "colour"}
+    <select bind:value={rule.value} aria-label="Is or is not">
+      <option value={true}>is</option>
+      <option value={false}>is not</option>
+    </select>
+    <span class="sws" role="group" aria-label="Colours">
+      {#each LABEL_COLOURS as c (c)}
+        {@const on = rule.colours.includes(c)}
+        <button type="button" class="sw" class:on aria-pressed={on} aria-label={colourName(c)} title={colourName(c)} onclick={() => toggleColour(c)}><ColourSwatch colour={c} size={14} /></button>
+      {/each}
+      <button type="button" class="nocol" class:on={rule.colours.includes(NO_COLOUR)} aria-pressed={rule.colours.includes(NO_COLOUR)} onclick={() => toggleColour(NO_COLOUR)}>No colour</button>
+    </span>
+    <span class="muted">(any of the ones lit)</span>
+  {:else if rule.kind === "energy_range"}
+    <select value={rule.min === null ? "" : String(rule.min)} aria-label="Lowest energy" onchange={(e) => (rule.kind === "energy_range" && (rule.min = e.currentTarget.value === "" ? null : Number(e.currentTarget.value)))}>
+      <option value="">any</option>
+      {#each ENERGY_LEVELS as n (n)}<option value={String(n)}>{n}</option>{/each}
+    </select>
+    <span class="muted">to</span>
+    <select value={rule.max === null ? "" : String(rule.max)} aria-label="Highest energy" onchange={(e) => (rule.kind === "energy_range" && (rule.max = e.currentTarget.value === "" ? null : Number(e.currentTarget.value)))}>
+      <option value="">any</option>
+      {#each ENERGY_LEVELS as n (n)}<option value={String(n)}>{n}</option>{/each}
+    </select>
+    <span class="muted">under the Energy source setting; tracks with no energy never match</span>
   {:else if rule.kind === "analysed"}
     <select bind:value={rule.value} aria-label="Analysed">
       <option value={true}>have been analysed</option>
@@ -159,6 +207,33 @@
   }
   .warn {
     color: var(--bad-text);
+  }
+  .sws {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+  }
+  .sw,
+  .nocol {
+    background: var(--deep);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 2px;
+    color: var(--text);
+    font: inherit;
+    cursor: pointer;
+  }
+  .nocol {
+    padding: 2px 8px;
+    font-size: 12px;
+  }
+  .sw {
+    display: inline-flex;
+  }
+  .sw.on,
+  .nocol.on {
+    border-color: var(--accent);
+    background: var(--accent-soft);
   }
   .check {
     display: inline-flex;

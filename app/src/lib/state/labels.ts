@@ -322,11 +322,14 @@ export function commonValue<T>(values: readonly T[]): { kind: "same"; value: T }
   return values.every((v) => v === values[0]) ? { kind: "same", value: values[0] } : { kind: "mixed" };
 }
 
-const noun = (n: number) => `${n} track${n === 1 ? "" : "s"}`;
+/** "mixes", "cases", "tracks": the plural of the kind of thing that carries labels. */
+export const thingsWord = (thing: string): string => (thing.endsWith("x") ? `${thing}es` : `${thing}s`);
+
+const count = (n: number, thing: string) => `${n} ${n === 1 ? thing : thingsWord(thing)}`;
 
 /** The draft in words, one line per change, with exact counts for these targets. Counts come
  *  from `applyOps`, the same rules the backend runs. */
-export function describeChanges(d: LabelDraft, targets: readonly TrackLabels[]): string[] {
+export function describeChanges(d: LabelDraft, targets: readonly TrackLabels[], thing = "track"): string[] {
   const n = targets.length;
   const changes = (op: LabelOp) => targets.filter((l) => {
     const r = applyOps(l, [op]);
@@ -335,19 +338,19 @@ export function describeChanges(d: LabelDraft, targets: readonly TrackLabels[]):
   const lines: string[] = [];
   for (const t of d.remove) {
     const c = changes({ op: "remove_tags", tags: [t] });
-    lines.push(c === 0 ? `Remove tag “${t}”: none of the ${noun(n)} has it` : `Remove tag “${t}” from ${c} of ${noun(n)}`);
+    lines.push(c === 0 ? `Remove tag “${t}”: none of the ${count(n, thing)} has it` : `Remove tag “${t}” from ${c} of ${count(n, thing)}`);
   }
   for (const t of d.add) {
     const c = changes({ op: "add_tags", tags: [t] });
-    lines.push(c === 0 ? `Add tag “${t}”: ${n === 1 ? "the track has" : `all ${n} tracks have`} it already` : `Add tag “${t}” to ${c} of ${noun(n)}`);
+    lines.push(c === 0 ? `Add tag “${t}”: ${n === 1 ? `the ${thing} has` : `all ${n} ${thingsWord(thing)} have`} it already` : `Add tag “${t}” to ${c} of ${count(n, thing)}`);
   }
   if (d.colour !== undefined) {
     const c = changes({ op: "set_colour", colour: d.colour });
-    lines.push(d.colour === null ? `Clear the colour on ${c} of ${noun(n)}` : `Set colour ${colourName(d.colour)} on ${c} of ${noun(n)}`);
+    lines.push(d.colour === null ? `Clear the colour on ${c} of ${count(n, thing)}` : `Set colour ${colourName(d.colour)} on ${c} of ${count(n, thing)}`);
   }
   if (d.energy !== undefined) {
     const c = changes({ op: "set_energy", energy: d.energy });
-    lines.push(d.energy === null ? `Clear the energy on ${c} of ${noun(n)}` : `Set energy ${d.energy} on ${c} of ${noun(n)}`);
+    lines.push(d.energy === null ? `Clear the energy on ${c} of ${count(n, thing)}` : `Set energy ${d.energy} on ${c} of ${count(n, thing)}`);
   }
   return lines;
 }

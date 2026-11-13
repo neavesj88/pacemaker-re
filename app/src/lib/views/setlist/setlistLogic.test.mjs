@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   COLUMNS, DEFAULT_OPTIONS, EMPTY_SHEET, buildDocument, cleanOptions, entryOf, esc, fileNameFor, fmtBpm, fmtClock, fmtElapsed, fmtKey,
-  parseClock, rowsFromCase, rowsFromMix, visibleColumns, withEntry,
+  parseClock, rowsFromCase, rowsFromMix, shownEnergy, visibleColumns, withEntry,
 } from "./setlistLogic.ts";
 
 const O = DEFAULT_OPTIONS;
@@ -240,4 +240,29 @@ test("the saved version only adds the screen-only hint", () => {
   const saved = buildDocument(input({ screenHint: true }));
   assert.ok(saved.includes('class="hint"'));
   assert.equal(saved.replace(/<p class="hint">.*?<\/p>/, ""), preview);
+});
+
+test("energy column: the library's energy fills it, what is typed for this setlist wins, a gap has none", () => {
+  const level = (id) => ({ 1: 4, 2: null, 3: 9 })[id] ?? null;
+  const built = rowsFromCase([1, 2, 3, 99], lib, new Set(), level);
+  assert.deepEqual(built.rows.map((r) => r.energy), [4, null, 9, null], "a track not in the library has none");
+  const mix = rowsFromMix({ clips: [clip("a", 1, 0, 60), clip("g", -1, 60, 120), clip("c", 3, 120, 180)] }, lib, false, new Set(), level);
+  assert.deepEqual(mix.rows.map((r) => r.energy), [4, null, 9]);
+  assert.deepEqual(rowsFromCase([1], lib).rows.map((r) => r.energy), [null], "no resolver, no energy");
+
+  const base = { name: "Warm-up", kind: "case", rows: built.rows, totalSec: built.totalSec, options: O, parseKey, screenHint: false };
+  // nothing typed: the column appears because the library has energies, and shows them
+  assert.equal(visibleColumns({ ...base, sheet: EMPTY_SHEET }).includes("energy"), true);
+  const plain = buildDocument({ ...base, sheet: EMPTY_SHEET });
+  assert.match(plain, /<td class="c-energy nowrap">4<\/td>/);
+  assert.match(plain, /<td class="c-energy nowrap">9<\/td>/);
+  // typed for this setlist: wins over the library
+  const typed = withEntry(EMPTY_SHEET, 1, { energy: 7 });
+  assert.equal(shownEnergy(built.rows[0], entryOf(typed, 1)), 7);
+  assert.equal(shownEnergy(built.rows[0], entryOf(EMPTY_SHEET, 1)), 4);
+  assert.equal(shownEnergy(built.rows[1], entryOf(EMPTY_SHEET, 2)), 0);
+  assert.match(buildDocument({ ...base, sheet: typed }), /<td class="c-energy nowrap">7<\/td>/);
+  // no energies anywhere: the column is left out (hide-empty is on by default)
+  const none = rowsFromCase([2], lib, new Set(), level);
+  assert.equal(visibleColumns({ ...base, rows: none.rows, sheet: EMPTY_SHEET }).includes("energy"), false);
 });

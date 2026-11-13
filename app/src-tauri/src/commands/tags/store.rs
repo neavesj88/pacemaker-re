@@ -3,7 +3,7 @@
 //!
 //! One JSON file per library volume in the app config dir, written atomically (temp, fsync,
 //! rename). The store is generic over the kind of thing labelled (`track`, `case`, `mix`) and a
-//! stable string key per thing; only tracks have a resolver today (see `tags.rs`).
+//! stable string key per thing (see `tags.rs` for the keys of tracks, cases and mixes).
 //!
 //! Everything in this file is pure (no Tauri, no music.db) so it is unit tested directly. The TS
 //! mirror of [`apply_ops`] lives in `app/src/lib/state/labels.ts`; both are tested against the
@@ -34,11 +34,8 @@ pub const MAX_TAGS: usize = 32;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Kind {
     Track,
-    // Cases and mixes reuse the store later (their UI is not built yet); the file format already
-    // has room for them, so adding one is a resolver in tags.rs, not a format change.
-    #[allow(dead_code)]
+    // Cases and mixes: keyed by `<id>:<date_created>` (see the note in tags.rs).
     Case,
-    #[allow(dead_code)]
     Mix,
 }
 

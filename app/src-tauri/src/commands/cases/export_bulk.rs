@@ -391,7 +391,7 @@ fn sources(lib: &Library, config_dir: &Path, root_str: &str, req: &Request, now_
                 None => notes.push(format!("Smart case {id} no longer exists, so it was left out.")),
             }
         }
-        let ev = evaluate_all(lib, &chosen, now_ms)?;
+        let ev = evaluate_all(lib, &chosen, now_ms, Some(config_dir))?;
         notes.extend(ev.left_out);
         smart_matched = ev.matched;
     }

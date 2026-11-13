@@ -4,11 +4,12 @@
   import type { EnergyEntry } from "$lib/api/analysis";
   import { cellTitle, energyLabel, meterPercent } from "./energyLogic";
 
-  let { entry }: { entry: EnergyEntry | null } = $props();
+  // `dim`: the "Energy source" setting does not use this estimate for the track (shown, not counted)
+  let { entry, dim = false }: { entry: EnergyEntry | null; dim?: boolean } = $props();
 </script>
 
 {#if entry}
-  <span class="energy" title={cellTitle(entry)}>
+  <span class="energy" class:dim title={cellTitle(entry) + (dim ? " Not used: the Energy source setting does not count the estimate." : "")}>
     <span class="bar" aria-hidden="true"><i style:width="{meterPercent(entry.energy)}%"></i></span>
     <span class="n">{energyLabel(entry.energy)}</span>
   </span>
@@ -21,6 +22,9 @@
     gap: 6px;
     width: 100%;
     min-width: 0;
+  }
+  .dim {
+    opacity: 0.45;
   }
   .bar {
     flex: 1;

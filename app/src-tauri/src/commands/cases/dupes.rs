@@ -752,7 +752,7 @@ fn holding_in(root: &str, dir: &Path, track_ids: &[i64], now: i64) -> AppResult<
         Vec::new()
     } else {
         let queries: Vec<&super::smart::Query> = smart_list.iter().map(|s| &s.query).collect();
-        let data = super::smart::Data::load(&lib, &queries, now)?;
+        let data = super::smart::Data::load(&lib, &queries, now, Some(dir))?;
         smart_list.iter().enumerate().filter_map(|(i, s)| super::smart::evaluate(&s.query, &data).ok().map(|e| (i, e.ids.into_iter().collect()))).collect()
     };
     Ok(holds

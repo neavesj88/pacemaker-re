@@ -19,7 +19,10 @@
 //!   which is why it is not used as a byte size for matching. Newer files may put the drive
 //!   letter inside `DIR` and leave `VOLUME` empty (forum reports); both spellings are handled.
 //!
-//! Colours (`INFO COLOR`) are not read: this version has no app-side store for them.
+//! Colours: `INFO COLOR` is read as a bare index (a positive whole number; absent, 0 or junk is "no
+//! colour"). What each index is called in Traktor is UNVERIFIED (no sample file or NI document at
+//! hand), so this reader does not name colours; the importer maps indexes to colour labels with a
+//! table the user can change.
 
 use std::collections::HashMap;
 
@@ -138,6 +141,7 @@ pub fn parse(text: &str) -> Result<ForeignLibrary, Error> {
                 size: None,
                 duration_secs: duration,
                 cue_secs: cue,
+                colour: num::<u32>(info.and_then(|i| i.attr("COLOR"))).filter(|c| *c > 0),
             };
             if !file.is_empty() {
                 // playlists key a track by the raw concatenation, not by the decoded path
@@ -198,6 +202,7 @@ mod tests {
         assert_eq!(t.cue_secs, Some(12.25), "the earliest type-0 cue, in seconds; grid markers are not cues");
         assert_eq!(f.tracks[1].path, "C:/Elsewhere/x & y.mp3", "drive letter inside DIR");
         assert_eq!(f.tracks[1].stars, None);
+        assert_eq!((t.colour, f.tracks[1].colour, f.tracks[2].colour), (Some(2), None, None), "COLOR is read as an index; none where absent");
         assert_eq!(f.tracks[2].path, "", "no LOCATION");
         assert_eq!(f.tracks[3].stars, Some(5));
         assert_eq!(f.playlists.len(), 2, "internal and smart lists are not playlists");
@@ -214,6 +219,10 @@ mod tests {
         // nonsense numbers and an empty entry do not break the entry
         let f = parse(r#"<NML><COLLECTION><ENTRY><INFO RANKING="x" PLAYTIME="-5"/><TEMPO BPM="NaN"/><CUE_V2 TYPE="0" START="inf"/></ENTRY></COLLECTION></NML>"#).unwrap();
         assert_eq!((f.tracks[0].stars, f.tracks[0].duration_secs, f.tracks[0].bpm, f.tracks[0].cue_secs), (None, None, None, None));
+        for junk in ["x", "-1", "0", "2.5", "", "99999999999"] {
+            let f = parse(&format!(r#"<NML><COLLECTION><ENTRY><INFO COLOR="{junk}"/></ENTRY></COLLECTION></NML>"#)).unwrap();
+            assert_eq!(f.tracks[0].colour, None, "{junk:?}");
+        }
         // deeply nested folders hit the depth guard, not the stack
         let deep = format!("<NML>{}{}</NML>", "<NODE>".repeat(5000), "</NODE>".repeat(5000));
         assert!(parse(&deep).is_err());

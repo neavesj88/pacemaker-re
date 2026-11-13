@@ -111,7 +111,7 @@
 {/each}
 
 <span class="grp energy">
-  <label class="muted" for="en-min" title="Tracks with no energy rating never match an energy range">Energy</label>
+  <label class="muted" for="en-min" title="Energy under the Energy source setting (your rating, the audio estimate, or yours else the estimate). Tracks with no energy never match an energy range.">Energy</label>
   <select id="en-min" aria-label="Lowest energy" value={f.energyMin === null ? "" : String(f.energyMin)} onchange={(e) => setMin(e.currentTarget.value)}>
     <option value="">any</option>
     {#each ENERGY_LEVELS as n (n)}<option value={String(n)}>{n}</option>{/each}

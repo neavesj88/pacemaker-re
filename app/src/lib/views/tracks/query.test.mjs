@@ -2,6 +2,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { compileQuery, dateSpan, parseDuration, parseSize, QUERY_HELP, tokenize } from "./query.ts";
+import { resolveLevel } from "../../state/energyResolve.ts";
 
 const DAY = 86_400_000;
 const NOW = new Date(2026, 5, 15, 12, 0, 0).getTime(); // 15 June 2026, local noon
@@ -14,7 +15,11 @@ const T = (id, over = {}) => ({
 });
 
 const noLabels = () => undefined;
-const cx = (over = {}) => ({ labelOf: noLabels, needs: new Set(), isFavourite: () => false, now: NOW, ...over });
+// energy is read through the resolver; by default a track's energy is the energy label of `labelOf`
+const cx = (over = {}) => {
+  const labelOf = over.labelOf ?? noLabels;
+  return { labelOf, energyOf: (id) => labelOf(id)?.energy ?? null, myEnergyOf: (id) => labelOf(id)?.energy ?? null, autoEnergyOf: () => null, needs: new Set(), isFavourite: () => false, now: NOW, ...over };
+};
 const run = (query, list, context = cx()) => {
   const q = compileQuery(query);
   return list.filter((t) => q.test(t, context)).map((t) => t.track_id);
@@ -296,4 +301,37 @@ test("a long query over many tracks is quick", () => {
   const n = list.filter((t) => q.test(t, cx())).length;
   assert.ok(n > 0);
   assert.ok(performance.now() - t0 < 1500, `took ${performance.now() - t0} ms`);
+});
+
+test("energy: reads the resolver; myenergy: and autoenergy: ask for one source", () => {
+  const mine = { 1: 4, 2: null, 3: 9, 4: null };
+  const auto = { 1: 8.2, 2: 6.5, 3: null, 4: null };
+  const list = [T(1), T(2), T(3), T(4)];
+  const contextFor = (source) =>
+    cx({
+      energyOf: (id) => resolveLevel(mine[id], auto[id], source),
+      myEnergyOf: (id) => mine[id],
+      autoEnergyOf: (id) => auto[id],
+    });
+  const both = contextFor("mine_else_auto");
+  assert.deepEqual(run("energy>=7", list, both), [2, 3], "1 is rated 4 by you (the estimate is ignored), 2 has only the estimate 6.5 = 7");
+  assert.deepEqual(run("energy:4", list, both), [1]);
+  assert.deepEqual(run("energy:7-9", list, both), [2, 3]);
+  assert.deepEqual(run("-energy:1-10", list, both), [4], "no energy at all");
+  assert.deepEqual(run("energy>=7", list, contextFor("mine")), [3]);
+  assert.deepEqual(run("energy>=7", list, contextFor("auto")), [1, 2]);
+
+  assert.deepEqual(run("myenergy>=4", list, both), [1, 3], "your rating whatever the setting");
+  assert.deepEqual(run("myenergy:4", list, both), [1]);
+  assert.deepEqual(run("myenergy<=3", list, both), []);
+  assert.deepEqual(run("autoenergy:8", list, both), [1], "a bare number is within half a level");
+  assert.deepEqual(run("autoenergy:6.5", list, both), [2]);
+  assert.deepEqual(run("autoenergy>=6.5", list, both), [1, 2]);
+  assert.deepEqual(run("autoenergy:6-7", list, both), [2]);
+  assert.deepEqual(run("autoenergy<7", list, both), [2]);
+  assert.deepEqual(run("-autoenergy>0", list, both), [3, 4], "no estimate");
+  assert.deepEqual(compileQuery("myenergy:x").diagnostics.map((d) => d.term), ["myenergy:x"]);
+  assert.deepEqual(compileQuery("autoenergy:x").diagnostics.map((d) => d.term), ["autoenergy:x"]);
+  // the same word in the search box and in the label filter means one thing
+  assert.deepEqual(run("energy:5", list, contextFor("auto")), [], "6.5 and 8.2 are 7 and 8");
 });

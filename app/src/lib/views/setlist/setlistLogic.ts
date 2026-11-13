@@ -143,6 +143,10 @@ export type SetRow = {
   /** 0 = unknown / not analysed. */
   bpm: number;
   key: string;
+  /** Energy 1 to 10 of the track in the library under the "Energy source" setting (your rating, the
+   *  audio estimate, or yours else the estimate); null when it has none. An energy typed for this
+   *  setlist in the sheet comes first (see `shownEnergy`). */
+  energy: number | null;
 };
 
 /** Rows plus the things to tell the user about them. */
@@ -150,12 +154,20 @@ export type Built = { rows: SetRow[]; totalSec: number; notes: string[] };
 
 type TrackLike = Pick<Track, "title" | "artist" | "bpm" | "key" | "play_time_secs">;
 
+/** The library energy of a track (see `SetRow.energy`). */
+export type EnergyOf = (trackId: number) => number | null;
+
+/** The energy printed for a row: the one typed for this setlist, else the one from the library, else 0 (none). */
+export function shownEnergy(row: Pick<SetRow, "energy">, entry: Pick<SheetEntry, "energy">): number {
+  return entry.energy > 0 ? entry.energy : (row.energy ?? 0);
+}
+
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
 /** The rows of a case, in case order. A track listed twice in the case is listed once (the case
  * view does the same). Start times are the running total of the track lengths. `noBpm` holds ids
  * whose tempo is not trusted (needs analysis): they print without one, as in the case view. */
-export function rowsFromCase(ids: readonly number[], byId: ReadonlyMap<number, TrackLike>, noBpm: ReadonlySet<number> = new Set()): Built {
+export function rowsFromCase(ids: readonly number[], byId: ReadonlyMap<number, TrackLike>, noBpm: ReadonlySet<number> = new Set(), energyOf: EnergyOf = () => null): Built {
   const rows: SetRow[] = [];
   let at = 0;
   let missing = 0;
@@ -173,6 +185,7 @@ export function rowsFromCase(ids: readonly number[], byId: ReadonlyMap<number, T
       title: t?.title ?? "",
       bpm: t && !noBpm.has(id) ? t.bpm : 0,
       key: t?.key ?? "",
+      energy: t ? energyOf(id) : null,
     });
     at += len;
   }
@@ -184,7 +197,7 @@ export function rowsFromCase(ids: readonly number[], byId: ReadonlyMap<number, T
  * twice. Start times are mix time from the first audible frame (where an exported mix starts),
  * and length is how long the clip is audible, so overlapping clips overlap here too. Muted
  * clips are left out unless `includeMuted`. */
-export function rowsFromMix(doc: MixDoc, byId: ReadonlyMap<number, TrackLike>, includeMuted: boolean, noBpm: ReadonlySet<number> = new Set()): Built {
+export function rowsFromMix(doc: MixDoc, byId: ReadonlyMap<number, TrackLike>, includeMuted: boolean, noBpm: ReadonlySet<number> = new Set(), energyOf: EnergyOf = () => null): Built {
   const indexed = doc.clips.map((clip, i) => ({ clip, i }));
   const kept = indexed.filter(({ clip }) => includeMuted || !clip.clipBypassed);
   const leftOut = indexed.length - kept.length;
@@ -209,6 +222,7 @@ export function rowsFromMix(doc: MixDoc, byId: ReadonlyMap<number, TrackLike>, i
       title: info?.title ?? lib?.title ?? "",
       bpm: noBpm.has(clip.trackId) ? 0 : bpm,
       key: info?.key ?? lib?.key ?? "",
+      energy: gone ? null : energyOf(clip.trackId),
     };
   });
   const notes: string[] = [];
@@ -300,7 +314,7 @@ export function visibleColumns(input: Pick<PageInput, "rows" | "sheet" | "option
     title: true,
     bpm: rows.some((r) => fmtBpm(r.bpm) !== ""),
     key: rows.some((r) => r.key.trim() !== ""),
-    energy: rows.some((r) => entryOf(sheet, r.trackId).energy > 0),
+    energy: rows.some((r) => shownEnergy(r, entryOf(sheet, r.trackId)) > 0),
     note: rows.some((r) => entryOf(sheet, r.trackId).note.trim() !== ""),
   };
   return COLUMNS.map((c) => c.id).filter((id) => id === "title" || (options.columns[id] && (!options.hideEmpty || has[id])));
@@ -389,7 +403,7 @@ export function buildDocument(input: PageInput): string {
           case "key":
             return esc(fmtKey(r.key, options.keyNotation, input.parseKey));
           case "energy":
-            return e.energy > 0 ? String(e.energy) : "";
+            return shownEnergy(r, e) > 0 ? String(shownEnergy(r, e)) : "";
           case "note":
             return esc(e.note);
         }

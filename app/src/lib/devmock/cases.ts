@@ -5,6 +5,7 @@ import { planMerge, planTransfer } from "../state/casePlan";
 import { evaluateQuery, referencedCases, validateQuery, type RuleRow } from "../state/smartRules";
 import { cases, tracks } from "./db";
 import { recordMockUndo } from "./device-trust";
+import { mockEnergyLevel, mockLabelOf } from "./tags";
 import type { Handlers } from "./types";
 
 type MockCase = (typeof cases)[number];
@@ -130,7 +131,7 @@ function matches(q: Query) {
     const c = cases.find((x) => x.id === id);
     caseSets.set(id, c ? new Set(c.ids) : null);
   }
-  return evaluateQuery(q, ruleRows(), { favourites: new Set(favouriteCase()?.ids ?? []), cases: caseSets, now: Date.now() });
+  return evaluateQuery(q, ruleRows(), { favourites: new Set(favouriteCase()?.ids ?? []), labelOf: mockLabelOf, energyOf: mockEnergyLevel, cases: caseSets, now: Date.now() });
 }
 
 const queryOf = (sc: Query): Query => ({ mode: sc.mode, rules: structuredClone(sc.rules), sort: sc.sort ? { ...sc.sort } : null, limit: sc.limit });

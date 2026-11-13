@@ -4,6 +4,7 @@
   import { caseTracks } from "$lib/api/cases";
   import { type MixDoc, mixOpen } from "$lib/api/mixes";
   import { cases } from "$lib/state/cases.svelte";
+  import { energySource } from "$lib/state/energySource.svelte";
   import { mixes } from "$lib/state/mixes.svelte";
   import { session } from "$lib/state/session.svelte";
   import { toast } from "$lib/state/toast.svelte";
@@ -49,10 +50,13 @@
   const byId = $derived(new Map((session.library?.tracks ?? []).map((t) => [t.track_id, t])));
   const noBpm = $derived(new Set(session.needs.keys()));
   const opts = $derived(setlist.options);
+  // the energy of each track in the library, under the Energy source setting; what you type below
+  // is for this setlist only and wins over it
+  const libraryEnergy = (id: number) => energySource.level(id);
 
   const built: Built = $derived.by(() => {
-    if (kind === "mix") return mixDoc ? rowsFromMix(mixDoc, byId, opts.includeMuted, noBpm) : { rows: [], totalSec: 0, notes: [] };
-    return rowsFromCase(caseIds, byId, noBpm);
+    if (kind === "mix") return mixDoc ? rowsFromMix(mixDoc, byId, opts.includeMuted, noBpm, libraryEnergy) : { rows: [], totalSec: 0, notes: [] };
+    return rowsFromCase(caseIds, byId, noBpm, libraryEnergy);
   });
 
   const parse: KeyParser = (k) => {
@@ -293,7 +297,7 @@
           <section>
             <h3>Notes and energy</h3>
             <p class="muted small">
-              Energy is your own 1 to {MAX_ENERGY} rating. The Pacemaker has no energy field, so it exists only here and on the page.
+              The energy column shows the track's energy from the library ({energySource.source === "mine" ? "your rating" : energySource.source === "auto" ? "the estimate from the audio" : "your rating, else the estimate from the audio"}; see the Energy source setting) unless you pick a 1 to {MAX_ENERGY} value here, which is for this setlist only. The Pacemaker has no energy field.
               {#if repeats > 0}A track used more than once shares one note and rating.{/if}
             </p>
             {#if built.rows.length === 0}
@@ -310,7 +314,7 @@
                       value={entryOf(sheet, r.trackId).energy}
                       onchange={(e) => (sheet = withEntry(sheet, r.trackId, { energy: Number(e.currentTarget.value) }))}
                     >
-                      <option value={0}>–</option>
+                      <option value={0}>{r.energy !== null ? `${r.energy} (library)` : "–"}</option>
                       {#each Array.from({ length: MAX_ENERGY }, (_, k) => k + 1) as n (n)}<option value={n}>{n}</option>{/each}
                     </select>
                     <input

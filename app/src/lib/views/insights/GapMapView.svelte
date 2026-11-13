@@ -3,6 +3,8 @@
   // tracks carry it) energy, with the thin spots called out. Everything is computed here, from
   // the tracks already loaded; nothing is read from or written to the device.
   import { energy } from "$lib/state/energy.svelte";
+  import { energySource } from "$lib/state/energySource.svelte";
+  import EnergySourceSelect from "../metadata/EnergySourceSelect.svelte";
   import { filters } from "$lib/state/filters.svelte";
   import { nav } from "$lib/state/nav.svelte";
   import { session } from "$lib/state/session.svelte";
@@ -20,9 +22,10 @@
   const keyCode: KeyCode = (k) => parseKey(k)?.code ?? null;
 
   const library = $derived(session.library);
-  // `energy` is not on the Track wire type: it comes from the auto energy estimate (app-side, see
-  // state/energy.svelte.ts), so a track is placed on the energy axis only once it has been analysed
-  const tracks = $derived((library?.tracks ?? []).map((t): GapTrack => ({ ...t, energy: energy.of(t.track_id) })));
+  // `energy` is not on the Track wire type: it is the energy under the "Energy source" setting
+  // (your rating, the audio estimate, or yours else the estimate; state/energySource.svelte.ts), so a
+  // track is placed on the energy axis only once it has one
+  const tracks = $derived((library?.tracks ?? []).map((t): GapTrack => ({ ...t, energy: energySource.level(t.track_id) })));
   const hasEnergy = $derived(anyEnergy(tracks));
   const tabs = $derived(MATRIX_IDS.filter((id) => id !== "key-energy" || hasEnergy));
   const active = $derived(tabs.includes(gap.matrix) ? gap.matrix : tabs[0]);
@@ -143,10 +146,11 @@
     {/each}
     {#if !hasEnergy}
       <span class="hint muted">
-        Key × Energy appears once tracks have an energy estimate.
+        Key × Energy appears once tracks have an energy rating or an estimate.
         <button type="button" class="linkish" onclick={() => energy.openPanel()}>Analyse energy…</button>
       </span>
     {/if}
+    <span class="esrc"><EnergySourceSelect compact /></span>
   </div>
 
   <div class="body" id="gap-panel" role="tabpanel" aria-labelledby="gap-tab-{active}">
@@ -162,7 +166,7 @@
       </div>
       {#if matrix.total === 0}
         <p class="empty">
-          {#if active === "key-energy"}No track has both a key and an energy rating yet.
+          {#if active === "key-energy"}No track has both a key and an energy (a rating or an estimate, under the Energy source setting) yet.
           {:else}No track has a BPM, {active === "bpm-key" ? "a key" : "a genre"} and a BPM inside {gap.settings.bpmMin}–{gap.settings.bpmMax}. Tracks that still need analysis have no BPM here.
           {/if}
         </p>
@@ -258,6 +262,9 @@
   .tabs button.on {
     color: var(--text);
     border-bottom-color: var(--accent);
+  }
+  .esrc {
+    margin-left: auto;
   }
   .hint {
     margin-left: 12px;

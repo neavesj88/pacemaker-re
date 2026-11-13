@@ -7,13 +7,22 @@
 //    The real app never calls it: the preview, the counts and the device copy all run the Rust
 //    code. views/cases/smartRules.test.mjs pins this twin to the numbers the Rust tests use.
 // No store or component imports (types only) so it runs under plain node.
-import type { Mode, Query, Rule, Sort, SortField, TextField, TextOp } from "../api/cases";
+import type { Mode, Query, Rule, Sort, SortField, TagMatch, TextField, TextOp } from "../api/cases";
+import { LABEL_COLOURS, MAX_ENERGY, MIN_ENERGY, colourName, normaliseTag, tagKey, type TrackLabels } from "./labels.ts";
 
 export const MS_PER_DAY = 86_400_000;
 /** Same limits as the backend. */
 export const MAX_DEPTH = 8;
 export const MAX_NODES = 200;
 export const MAX_LIMIT = 100_000;
+/** The `colours` entry of a colour rule that stands for "no colour label". */
+export const NO_COLOUR = "none";
+
+export const TAG_MATCHES: { how: TagMatch; label: string; words: string }[] = [
+  { how: "any", label: "has any of", words: "has any of the tags" },
+  { how: "all", label: "has all of", words: "has all of the tags" },
+  { how: "none", label: "has none of", words: "has none of the tags" },
+];
 
 // ---- menu of kinds ------------------------------------------------------------------------
 
@@ -61,6 +70,9 @@ export const KINDS: KindEntry[] = [
   { id: "favourite", label: "Favourites", group: "Library" },
   { id: "in_case", label: "Case membership", group: "Library" },
   { id: "analysed", label: "Analysed", group: "Library" },
+  { id: "tags", label: "Tags", group: "Labels" },
+  { id: "colour", label: "Colour label", group: "Labels" },
+  { id: "energy_range", label: "Energy between", group: "Labels" },
 ];
 
 export const kindId = (r: Rule): string => (r.kind === "text" ? `text:${r.field}` : r.kind === "group" ? "group" : r.kind);
@@ -85,6 +97,9 @@ export function defaultRule(id: string, firstCaseId = NO_CASE): Rule {
     case "duration_range": return { kind: "duration_range", min_secs: 180, max_secs: 420 };
     case "format": return { kind: "format", value: "MP3" };
     case "in_case": return { kind: "in_case", case_id: firstCaseId, value: true };
+    case "tags": return { kind: "tags", how: "any", tags: [] };
+    case "colour": return { kind: "colour", colours: ["red"], value: true };
+    case "energy_range": return { kind: "energy_range", min: 7, max: null };
     case "group": return newGroup(defaultRule("plays_zero"));
     default: return { kind: "plays_zero" };
   }
@@ -212,7 +227,7 @@ const fieldName = (f: TextField) => f;
 
 function checkRange(label: string, min: number | null, max: number | null, lowest: number): string {
   if (Number.isNaN(min) || Number.isNaN(max)) return `The ${label} must be a number.`;
-  if (min == null && max == null) return `A ${label} rule needs a minimum, a maximum or both.`;
+  if (min == null && max == null) return `${label.startsWith("e") ? "An" : "A"} ${label} rule needs a minimum, a maximum or both.`;
   if ((min != null && min < lowest) || (max != null && max < lowest)) return `${label[0].toUpperCase()}${label.slice(1)} values must be ${lowest} or more.`;
   if (min != null && max != null && min > max) return `The ${label} minimum is above the maximum.`;
   return "";
@@ -245,6 +260,25 @@ function validateRule(r: Rule, depth: number, count: { n: number }): string {
       return Number.isNaN(r.min_secs) || Number.isNaN(r.max_secs) ? "Lengths look like 3:30 (or a number of seconds)." : checkRange("duration", r.min_secs, r.max_secs, 0);
     case "format": return r.value.trim() ? "" : "A format rule needs a format such as MP3.";
     case "in_case": return Number.isInteger(r.case_id) && r.case_id >= 0 ? "" : "A case rule needs a case.";
+    case "tags": {
+      if (r.tags.length === 0) return "A tag rule needs at least one tag.";
+      for (const t of r.tags) {
+        const n = normaliseTag(t);
+        if (!n.ok) return n.error;
+      }
+      return "";
+    }
+    case "colour": {
+      if (r.colours.length === 0) return "A colour rule needs at least one colour.";
+      const bad = r.colours.find((c) => c !== NO_COLOUR && !(LABEL_COLOURS as readonly string[]).includes(c));
+      return bad === undefined ? "" : `"${bad}" is not one of the colour labels.`;
+    }
+    case "energy_range": {
+      if (!(r.min == null || isInt(r.min)) || !(r.max == null || isInt(r.max))) return "Energy values must be whole numbers.";
+      const e = checkRange("energy", r.min, r.max, MIN_ENERGY);
+      if (e) return e;
+      return (r.min != null && r.min > MAX_ENERGY) || (r.max != null && r.max > MAX_ENERGY) ? `Energy values must be ${MAX_ENERGY} or less.` : "";
+    }
     case "group":
       if (r.items.length === 0) return "A group needs at least one rule.";
       return validateItems(r.items, depth + 1, count);
@@ -275,6 +309,7 @@ const range = (min: number | null, max: number | null, unit = "", fmt: (n: numbe
   min != null && max != null ? `between ${fmt(min)} and ${fmt(max)}${unit}` : min != null ? `at least ${fmt(min)}${unit}` : max != null ? `at most ${fmt(max!)}${unit}` : "any";
 
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+const COLOUR_WORD: Record<string, true> = Object.fromEntries(LABEL_COLOURS.map((c) => [c, true]));
 
 /** One rule in words. `caseName` turns a case id into its name (or says it is missing). */
 export function describeRule(r: Rule, caseName: (id: number) => string): string {
@@ -297,6 +332,9 @@ export function describeRule(r: Rule, caseName: (id: number) => string): string 
     case "duration_range": return `length ${range(r.min_secs, r.max_secs, "", formatDuration)}`;
     case "format": return `format is ${r.value.trim()}`;
     case "in_case": return `${r.value ? "in" : "not in"} case “${caseName(r.case_id)}”`;
+    case "tags": return `${TAG_MATCHES.find((m) => m.how === r.how)!.words} ${r.tags.map((t) => `“${t}”`).join(", ")}`;
+    case "colour": return `colour label ${r.value ? "is" : "is not"} ${r.colours.map((c) => (c === NO_COLOUR ? "no colour" : c in COLOUR_WORD ? colourName(c as (typeof LABEL_COLOURS)[number]).toLowerCase() : c)).join(" or ")}`;
+    case "energy_range": return `energy ${range(r.min, r.max)}`;
     case "group": return `${MODES.find((m) => m.mode === r.mode)!.words} (${r.items.map((i) => describeRule(i, caseName)).join("; ")})`;
   }
 }
@@ -347,6 +385,10 @@ export type RuleRow = {
 
 export type EvalEnv = {
   favourites: Set<number>;
+  /** Tags and colour of a track (app-side labels); undefined = none. */
+  labelOf: (id: number) => Pick<TrackLabels, "tags" | "colour"> | undefined;
+  /** Whole-level energy under the Energy source setting (state/energyResolve.ts), or null. */
+  energyOf: (id: number) => number | null;
   /** Members of each case a rule names; null for a case that does not exist. */
   cases: Map<number, Set<number> | null>;
   now: number;
@@ -383,6 +425,16 @@ export function ruleMatches(r: Rule, t: RuleRow, env: EvalEnv): boolean {
     case "duration_range": return t.play_time_secs > 0 && inRange(t.play_time_secs, r.min_secs, r.max_secs);
     case "format": return t.format.trim().toLowerCase() === r.value.trim().toLowerCase();
     case "in_case": return (env.cases.get(r.case_id)?.has(t.track_id) ?? false) === r.value;
+    case "tags": {
+      const have = new Set((env.labelOf(t.track_id)?.tags ?? []).map(tagKey));
+      const want = r.tags.map((g) => { const n = normaliseTag(g); return tagKey(n.ok ? n.tag : g); });
+      return r.how === "any" ? want.some((g) => have.has(g)) : r.how === "all" ? want.every((g) => have.has(g)) : !want.some((g) => have.has(g));
+    }
+    case "colour": return r.colours.includes(env.labelOf(t.track_id)?.colour ?? NO_COLOUR) === r.value;
+    case "energy_range": {
+      const e = env.energyOf(t.track_id);
+      return e !== null && inRange(e, r.min, r.max);
+    }
     case "group": return groupMatches(r.mode, r.items, t, env);
   }
 }

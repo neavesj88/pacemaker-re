@@ -204,3 +204,22 @@ test("describeOrphan names a removed track by its labels", () => {
   assert.equal(L.describeOrphan(lab([], "pink", null)), "Pink");
   assert.equal(L.describeOrphan(none), "no labels");
 });
+
+test("describeChanges names the kind of thing: tracks by default, cases and mixes when asked", () => {
+  const targets = [lab(["peak"], "red"), lab([], null), lab(["peak"], null)];
+  const d = { add: ["closer"], remove: ["peak"], colour: null, energy: undefined };
+  assert.deepEqual(L.describeChanges(d, targets), [
+    "Remove tag “peak” from 2 of 3 tracks",
+    "Add tag “closer” to 3 of 3 tracks",
+    "Clear the colour on 1 of 3 tracks",
+  ]);
+  assert.deepEqual(L.describeChanges({ add: ["peak"], remove: [], colour: "teal", energy: undefined }, [lab(["peak"], "teal")], "case"), [
+    "Add tag “peak”: the case has it already",
+    "Set colour Teal on 0 of 1 case",
+  ]);
+  assert.deepEqual(L.describeChanges({ add: ["x"], remove: [], colour: undefined, energy: undefined }, [lab(["x"]), lab(["X"])], "mix"), ["Add tag “x”: all 2 mixes have it already"]);
+  assert.deepEqual(L.describeChanges({ add: [], remove: ["x"], colour: undefined, energy: undefined }, [lab([]), lab([])], "mix"), ["Remove tag “x”: none of the 2 mixes has it"]);
+  assert.equal(L.thingsWord("track"), "tracks");
+  assert.equal(L.thingsWord("case"), "cases");
+  assert.equal(L.thingsWord("mix"), "mixes");
+});

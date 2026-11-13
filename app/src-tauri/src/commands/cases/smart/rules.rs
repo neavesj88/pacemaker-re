@@ -4,9 +4,12 @@
 //! device copy all run exactly this code.
 
 use std::collections::{HashMap, HashSet};
+use std::path::Path;
 
 use pm_formats::library::{Error, Library, MAX_RATING, Track, TrackExtra};
 use serde::{Deserialize, Serialize};
+
+use crate::commands::tags::{self, LabelSnapshot};
 
 pub const MS_PER_DAY: i64 = 86_400_000;
 
@@ -53,6 +56,21 @@ pub enum TextOp {
 fn yes() -> bool {
     true
 }
+
+/// How a tag rule treats its tags.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TagMatch {
+    /// The track has at least one of the tags.
+    Any,
+    /// The track has every one of the tags.
+    All,
+    /// The track has none of the tags (a track with no tags at all matches).
+    None,
+}
+
+/// The `colours` entry that stands for "no colour label".
+pub const NO_COLOUR: &str = "none";
 
 /// One condition, or a group of them. A track matches a rule when the rule holds for it.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -108,6 +126,15 @@ pub enum Rule {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         case_name: Option<String>,
     },
+    /// Tags (app-side labels, compared ignoring case): has any / all / none of `tags`.
+    Tags { how: TagMatch, tags: Vec<String> },
+    /// Colour label (app-side): is one of `colours` (`value` true) or is none of them (false).
+    /// The entry "none" stands for a track with no colour label.
+    Colour { colours: Vec<String>, value: bool },
+    /// Energy as a whole level 1 to 10 under the "Energy source" setting (your rating, the
+    /// estimate from the audio, or your rating else the estimate), between `min` and `max`,
+    /// either optional. Tracks with no energy never match.
+    EnergyRange { min: Option<i64>, max: Option<i64> },
     /// Its items combined by `mode`. A group needs at least one item.
     Group { mode: Mode, items: Vec<Rule> },
 }
@@ -286,7 +313,8 @@ fn validate_items(items: &[Rule], depth: usize, nodes: &mut usize) -> Result<(),
 
 fn check_range(label: &str, min: Option<i64>, max: Option<i64>, lowest: i64) -> Result<(), String> {
     if min.is_none() && max.is_none() {
-        return Err(format!("A {label} rule needs a minimum, a maximum or both."));
+        let a = if label.starts_with('e') { "An" } else { "A" };
+        return Err(format!("{a} {label} rule needs a minimum, a maximum or both."));
     }
     if min.is_some_and(|v| v < lowest) || max.is_some_and(|v| v < lowest) {
         return Err(format!("{label} values must be {lowest} or more."));
@@ -328,6 +356,31 @@ fn validate_rule(r: &Rule, depth: usize, nodes: &mut usize) -> Result<(), String
         Rule::DurationRange { min_secs, max_secs } => check_range("duration", *min_secs, *max_secs, 0),
         Rule::Format { value } if value.trim().is_empty() => Err("A format rule needs a format such as MP3.".into()),
         Rule::InCase { case_id, .. } if *case_id < 0 => Err("A case rule needs a case.".into()),
+        Rule::Tags { tags: list, .. } => {
+            if list.is_empty() {
+                return Err("A tag rule needs at least one tag.".into());
+            }
+            for t in list {
+                tags::normalise_tag(t)?;
+            }
+            Ok(())
+        }
+        Rule::Colour { colours, .. } => {
+            if colours.is_empty() {
+                return Err("A colour rule needs at least one colour.".into());
+            }
+            match colours.iter().find(|c| c.as_str() != NO_COLOUR && !tags::COLOURS.contains(&c.as_str())) {
+                Some(c) => Err(format!("\"{c}\" is not one of the colour labels.")),
+                None => Ok(()),
+            }
+        }
+        Rule::EnergyRange { min, max } => {
+            check_range("energy", *min, *max, 1)?;
+            if min.is_some_and(|v| v > i64::from(tags::MAX_ENERGY)) || max.is_some_and(|v| v > i64::from(tags::MAX_ENERGY)) {
+                return Err(format!("Energy values must be {} or less.", tags::MAX_ENERGY));
+            }
+            Ok(())
+        }
         Rule::Group { items, .. } => {
             if items.is_empty() {
                 return Err("A group needs at least one rule.".into());
@@ -372,12 +425,26 @@ pub struct Data {
     pub favourites: HashSet<i64>,
     /// Members of every case a query refers to; `None` for a case that does not exist.
     pub cases: HashMap<i64, Option<HashSet<i64>>>,
+    /// Labels, auto energy and the energy choice; empty unless a rule reads them (see `load`).
+    pub labels: LabelSnapshot,
     pub now_ms: i64,
 }
 
+/// Does any rule (groups included) read the app-side labels?
+fn uses_labels(rules: &[Rule]) -> bool {
+    rules.iter().any(|r| match r {
+        Rule::Tags { .. } | Rule::Colour { .. } | Rule::EnergyRange { .. } => true,
+        Rule::Group { items, .. } => uses_labels(items),
+        _ => false,
+    })
+}
+
 impl Data {
-    /// Reads the library and the membership of every case any of `queries` mentions.
-    pub fn load(lib: &Library, queries: &[&Query], now_ms: i64) -> Result<Data, Error> {
+    /// Reads the library and the membership of every case any of `queries` mentions. When a rule
+    /// reads labels, they are read too from the app config dir `config` (the labels file, the
+    /// energy estimates and the energy choice); `None` (tests) means no labels exist. Every caller
+    /// that has a config dir must pass it: without it a "tag none of" rule would match everything.
+    pub fn load(lib: &Library, queries: &[&Query], now_ms: i64, config: Option<&Path>) -> Result<Data, Error> {
         let mut wanted = HashSet::new();
         for q in queries {
             referenced_cases(&q.rules, &mut wanted);
@@ -390,11 +457,16 @@ impl Data {
             };
             cases.insert(id, members);
         }
+        let labels = match config {
+            Some(dir) if queries.iter().any(|q| uses_labels(&q.rules)) => tags::snapshot(dir, lib).map_err(Error::Invalid)?,
+            _ => LabelSnapshot::default(),
+        };
         Ok(Data {
             tracks: lib.tracks()?,
             extras: lib.track_extras()?,
             favourites: lib.favourite_track_ids()?.into_iter().collect(),
             cases,
+            labels,
             now_ms,
         })
     }
@@ -404,6 +476,7 @@ impl Data {
 pub struct Context<'a> {
     pub favourites: &'a HashSet<i64>,
     pub cases: &'a HashMap<i64, Option<HashSet<i64>>>,
+    pub labels: &'a LabelSnapshot,
     pub now_ms: i64,
 }
 
@@ -465,6 +538,20 @@ pub fn rule_matches(rule: &Rule, t: &Track, x: &TrackExtra, cx: &Context) -> boo
             let inside = cx.cases.get(case_id).and_then(|m| m.as_ref()).is_some_and(|m| m.contains(&t.track_id));
             inside == *value
         }
+        Rule::Tags { how, tags: wanted } => {
+            let have: HashSet<String> = cx.labels.labels.get(&t.track_id).map(|l| l.tags.iter().map(|g| tags::tag_key(g)).collect()).unwrap_or_default();
+            let wanted: Vec<String> = wanted.iter().map(|g| tags::tag_key(&tags::normalise_tag(g).unwrap_or_else(|_| g.clone()))).collect();
+            match how {
+                TagMatch::Any => wanted.iter().any(|g| have.contains(g)),
+                TagMatch::All => wanted.iter().all(|g| have.contains(g)),
+                TagMatch::None => !wanted.iter().any(|g| have.contains(g)),
+            }
+        }
+        Rule::Colour { colours, value } => {
+            let mine = cx.labels.labels.get(&t.track_id).and_then(|l| l.colour.as_deref()).unwrap_or(NO_COLOUR);
+            colours.iter().any(|c| c == mine) == *value
+        }
+        Rule::EnergyRange { min, max } => cx.labels.energy_level(t.track_id).is_some_and(|e| in_range(i64::from(e), *min, *max)),
         Rule::Group { mode, items } => group_matches(*mode, items, t, x, cx),
     }
 }
@@ -571,7 +658,7 @@ pub fn evaluate(q: &Query, d: &Data) -> Result<Eval, String> {
         missing.sort_unstable();
         return Err(format!("A rule refers to a case that no longer exists (case {}). Pick another case.", missing[0]));
     }
-    let cx = Context { favourites: &d.favourites, cases: &d.cases, now_ms: d.now_ms };
+    let cx = Context { favourites: &d.favourites, cases: &d.cases, labels: &d.labels, now_ms: d.now_ms };
     let no_extra = TrackExtra::default();
     let mut hits: Vec<(&Track, &TrackExtra)> = d
         .tracks

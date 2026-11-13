@@ -26,6 +26,7 @@
   import { addToCase } from "./addToCase.svelte";
   import { analysis } from "$lib/state/analysis.svelte";
   import { energy } from "$lib/state/energy.svelte";
+  import { energySource } from "$lib/state/energySource.svelte";
   import { sections } from "$lib/state/sections.svelte";
   import EnergyCell from "../analysis/EnergyCell.svelte";
   import { addToMix, buildSet, editGrid, editMetadata, playTrack, rate, revealInExplorer } from "./trackActions";
@@ -429,7 +430,7 @@
             {:else if c.key === "colour"}
               <ColourSwatch colour={lab?.colour ?? null} size={14} />
             {:else if c.key === "energy"}
-              <EnergyBar energy={lab?.energy ?? null} />
+              <EnergyBar energy={lab?.energy ?? null} dim={lab?.energy != null && energySource.used(t.track_id) !== "mine"} />
             {:else if c.key === "tags"}
               {#if lab?.tags.length}
                 <span class="tags" title={lab.tags.join(", ")}>{#each lab.tags as tag (tag)}<span class="tag">{tag}</span>{/each}</span>
@@ -476,7 +477,7 @@
                 <span class="key" style:color={keyColour(k)} style:background="color-mix(in srgb, {keyColour(k)} 14%, transparent)" title={t.key}>{k.code}</span>
               {/if}
             {:else if c.key === "autoenergy"}
-              <EnergyCell entry={energy.entry(t.track_id)} />
+              <EnergyCell entry={energy.entry(t.track_id)} dim={energy.entry(t.track_id) !== null && energySource.used(t.track_id) !== "auto"} />
             {:else if c.key === "rating"}
               <span class="rate" role="presentation" onclick={stop} ondblclick={stop}>
                 <Stars rating={t.rating} onchange={(n) => rate(t, n)} />

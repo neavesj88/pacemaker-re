@@ -334,7 +334,7 @@ export function buildKeyEnergy(tracks: readonly GapTrack[], keyCode: KeyCode): M
       colsOrdered: true,
       considered: tracks.length,
       skipped: [
-        { reason: "no energy estimate", count: noEnergy },
+        { reason: "no energy", count: noEnergy },
         { reason: "no key", count: noKey },
       ],
     },
