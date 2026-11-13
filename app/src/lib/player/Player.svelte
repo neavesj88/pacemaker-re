@@ -252,7 +252,7 @@
     grid-template-columns: minmax(calc(160px * var(--ps)), calc(260px * var(--ps))) 1fr auto;
     gap: calc(12px * var(--ps));
     align-items: center;
-    padding: 6px 14px;
+    padding: calc(6px * var(--ps)) 14px 6px;
     background: var(--deep);
     border-top: 1px solid var(--line);
     font-size: calc(12px * var(--ps));
@@ -260,8 +260,8 @@
   .grip {
     position: absolute;
     inset: 0 0 auto 0;
-    /* stays inside the 1px border + 6px padding, so it never covers the waveform or the text */
-    height: 6px;
+    /* grows with --ps and stays inside the 1px border + top padding (also 6px * --ps), so it never covers the waveform or the text */
+    height: calc(6px * var(--ps));
     z-index: 2;
     display: flex;
     align-items: center;
@@ -271,10 +271,10 @@
     user-select: none;
   }
   .grip-line {
-    width: 44px;
-    height: 3px;
-    border-radius: 2px;
-    background: var(--line-hi);
+    width: calc(44px * var(--ps));
+    height: calc(3px * var(--ps));
+    border-radius: calc(2px * var(--ps));
+    background: var(--muted);
     transition: background 0.12s;
   }
   .grip:hover .grip-line,
