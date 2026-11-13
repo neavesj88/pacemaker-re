@@ -1220,15 +1220,31 @@ pub async fn metadata_cleanup_apply(
     accepted: Vec<Accepted>,
 ) -> AppResult<ApplyResult> {
     let settings = settings.sanitised();
+    let handle = app.clone();
     crate::state::quick_write(app, root.clone(), move || -> AppResult<ApplyResult> {
         let mut lib = Library::open(Path::new(&root))?;
-        Ok(apply_in(&mut lib, &settings, &accepted)?)
+        // recorded for undo like every other tag edit (device area: commands/device/undo.rs)
+        Ok(apply_with(&mut lib, &settings, &accepted, |lib, list| {
+            let ids: Vec<i64> = list.iter().map(|(id, _)| *id).collect();
+            crate::commands::device::undo::tracked_edit(&handle, &root, lib, &ids, |l| l.edit_tracks(list))
+        })?)
     })
     .await
 }
 
 /// The library side of [`metadata_cleanup_apply`]: verify, then one transaction.
+#[cfg(test)]
 fn apply_in(lib: &mut Library, settings: &CleanupSettings, accepted: &[Accepted]) -> Result<ApplyResult, pm_formats::library::Error> {
+    apply_with(lib, settings, accepted, |lib, list| lib.edit_tracks(list))
+}
+
+/// [`apply_in`] with the write step supplied, so the command can run it through the undo history.
+fn apply_with(
+    lib: &mut Library,
+    settings: &CleanupSettings,
+    accepted: &[Accepted],
+    write: impl FnOnce(&mut Library, &[(i64, TrackEdit)]) -> Result<usize, pm_formats::library::Error>,
+) -> Result<ApplyResult, pm_formats::library::Error> {
     let mut ids: Vec<i64> = accepted.iter().map(|a| a.track_id).collect();
     ids.sort_unstable();
     ids.dedup();
@@ -1239,7 +1255,7 @@ fn apply_in(lib: &mut Library, settings: &CleanupSettings, accepted: &[Accepted]
         set_field(edits.entry(*id).or_default(), field, new.clone());
     }
     let list: Vec<(i64, TrackEdit)> = edits.into_iter().collect();
-    let tracks = if list.is_empty() { 0 } else { lib.edit_tracks(&list)? };
+    let tracks = if list.is_empty() { 0 } else { write(lib, &list)? };
     Ok(ApplyResult { tracks, fields: v.ok.len(), stale: v.stale, rejected: v.rejected })
 }
 

@@ -4,6 +4,7 @@ import type { CaseInfo, CaseMeta, Query, RefreshItem, RefreshReport, SmartCase, 
 import { planMerge, planTransfer } from "../state/casePlan";
 import { evaluateQuery, referencedCases, validateQuery, type RuleRow } from "../state/smartRules";
 import { cases, tracks } from "./db";
+import { recordMockUndo } from "./device-trust";
 import type { Handlers } from "./types";
 
 type MockCase = (typeof cases)[number];
@@ -272,6 +273,13 @@ export const handlers: Handlers = {
     const now = !c.ids.includes(a.trackId);
     c.ids = now ? [...c.ids, a.trackId] : c.ids.filter((id) => id !== a.trackId);
     refresh(c);
+    // the device area's undo history (devmock/device-trust.ts) is fed by every edit
+    const t = tracks.find((x) => x.track_id === a.trackId);
+    const who = t ? `${t.artist} - ${t.title}` : `track ${a.trackId}`;
+    const show = (b: boolean) => (b ? "in Favourites" : "not in Favourites");
+    recordMockUndo("favourite", now ? `Added ${who} to Favourites` : `Removed ${who} from Favourites`,
+      [{ track_id: a.trackId, label: who, what: "Favourites", current: show(now), becomes: show(!now), skip: null }],
+      () => { c.ids = now ? c.ids.filter((id) => id !== a.trackId) : [...c.ids, a.trackId]; refresh(c); });
     return now;
   },
   cases_favourite_ids: () => [...(favouriteCase()?.ids ?? [])],

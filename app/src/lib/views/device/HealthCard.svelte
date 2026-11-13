@@ -7,6 +7,9 @@
   import Card from "./Card.svelte";
   import { device } from "./device.svelte";
   import { bytes, plural } from "./format";
+  import JobProgress from "./JobProgress.svelte";
+  import { relink } from "./relink.svelte";
+  import { JOB_RELINK } from "$lib/api/device";
 
   let h = $derived(device.health);
   let needs = $derived(session.needs.size);
@@ -66,7 +69,11 @@
             Every track has its audio file.
           {/if}
         </div>
-        {#if h.missing_audio.length}<Button small onclick={showMissing}>Show tracks</Button>{/if}
+        {#if h.missing_audio.length}
+          <Button small onclick={showMissing}>Show tracks</Button>
+          <Button small disabled={device.blocked} onclick={() => relink.open()}>Find files…</Button>
+          <Button small disabled={device.blocked} onclick={() => (device.fixOpen = true)}>Fix…</Button>
+        {/if}
       </li>
 
       <li class={needs ? "bad" : "ok"}>
@@ -78,7 +85,10 @@
             Every track has a beat grid.
           {/if}
         </div>
-        {#if needs}<Button small onclick={() => jobs.askReanalyse()}>Analyse…</Button>{/if}
+        {#if needs}
+          <Button small onclick={() => jobs.askReanalyse()}>Analyse…</Button>
+          <Button small disabled={device.blocked} onclick={() => (device.fixOpen = true)}>Fix…</Button>
+        {/if}
       </li>
 
       <li class={!h.unreferenced_checked ? "warn" : h.unreferenced.length ? "bad" : "ok"}>
@@ -99,6 +109,8 @@
       </li>
     </ul>
     {#each h.warnings as w (w)}<p class="note">{w}</p>{/each}
+    <JobProgress kind={JOB_RELINK} />
+    {#if device.results[JOB_RELINK]}<p class="note result">{device.results[JOB_RELINK]}</p>{/if}
   {/if}
 </Card>
 

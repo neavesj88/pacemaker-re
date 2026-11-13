@@ -35,7 +35,7 @@ impl std::fmt::Display for Error {
 
 impl std::error::Error for Error {}
 
-fn fill_meta(rev: &MetadataRevision, m: &mut pm_formats::library::TrackMeta) {
+pub(crate) fn fill_meta(rev: &MetadataRevision, m: &mut pm_formats::library::TrackMeta) {
     for t in &rev.media.tags {
         let set = |field: &mut String, v: &str| {
             if field.is_empty() {

@@ -140,3 +140,7 @@ export async function pickBackupFolder(): Promise<string | null> {
   const d = await open({ directory: true, title: "Choose where to save the backup (not on the Pacemaker)" });
   return typeof d === "string" ? d : null;
 }
+export * from "./device-trust";
+export * from "./device-space";
+export * from "./device-relink";
+export * from "./device-preset";

@@ -16,6 +16,7 @@ pub mod onset;
 pub mod onsets;
 pub mod peaks;
 pub mod sections;
+pub mod probe;
 pub mod tempo;
 
 use std::path::Path;

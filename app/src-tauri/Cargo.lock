@@ -2483,6 +2483,7 @@ dependencies = [
  "md5",
  "rusqlite",
  "serde",
+ "serde_json",
  "uuid",
 ]
 

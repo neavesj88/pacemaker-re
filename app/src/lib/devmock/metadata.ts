@@ -1,6 +1,7 @@
 // Mock of src-tauri/src/commands/metadata.rs. Add one entry per command, keyed by command name;
 // this file is picked up automatically by devmock/index.ts. Placeholder data only.
 import { tracks } from "./db";
+import { recordMockUndo } from "./device-trust";
 import type { Handlers } from "./types";
 
 const MAX_TEXT = 255;
@@ -56,7 +57,16 @@ export const handlers: Handlers = {
   metadata_set_rating: (a) => {
     const t = find(a.trackId);
     if (a.stars < 0 || a.stars > 5) throw `invalid: rating ${a.stars} is above 5`;
+    const was = t.rating;
     t.rating = a.stars;
+    // the device area's undo history (devmock/device-trust.ts) is fed by every edit
+    if (was !== a.stars) {
+      const stars = (n: number) => (n === 0 ? "unrated" : `${n} star${n === 1 ? "" : "s"}`);
+      const who = `${t.artist} - ${t.title}`;
+      recordMockUndo("rating", `Rated ${who} ${stars(a.stars)} (was ${stars(was)})`,
+        [{ track_id: t.track_id, label: who, what: "Rating", current: stars(a.stars), becomes: stars(was), skip: null }],
+        () => { t.rating = was; });
+    }
   },
   metadata_track_details: (a) => (a.trackIds as number[]).map((id) => detail(find(id))),
   metadata_save: (a) => {
@@ -77,15 +87,28 @@ export const handlers: Handlers = {
       }
     }
     let changed = 0;
+    const undone: { row: Row; key: string; value: string | number }[] = [];
+    const lines: Parameters<typeof recordMockUndo>[2] = [];
     for (const e of edits) {
       const t = find(e.track_id);
       let any = false;
       for (const k of [...TEXT, ...NUMS, "rating"]) {
         if (e[k] === undefined || get(t, k) === e[k]) continue;
+        const was = get(t, k);
+        undone.push({ row: t, key: k, value: was });
+        lines.push({ track_id: t.track_id, label: `${t.artist} - ${t.title}`, what: k[0].toUpperCase() + k.slice(1).replace(/_/g, " "), current: String(e[k]), becomes: String(was), skip: null });
         set(t, k, e[k]);
         any = true;
       }
       if (any) changed++;
+    }
+    // the device area's undo history (devmock/device-trust.ts) is fed by every edit
+    if (changed > 0) {
+      const names = [...new Set(lines.map((l) => l.what.toLowerCase()))].join(", ");
+      const only = lines.length === 1 ? lines[0] : null;
+      recordMockUndo(lines.every((l) => l.what === "Rating") ? "rating" : "metadata",
+        changed === 1 ? `Edited ${only?.label ?? `${edits.length} track`}: ${names}` : `Edited ${changed} tracks: ${names}`,
+        lines, () => { for (const u of undone.reverse()) set(u.row, u.key, u.value); });
     }
     return changed;
   },

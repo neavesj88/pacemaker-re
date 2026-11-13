@@ -1,6 +1,7 @@
 // Mock of src-tauri/src/commands/device.rs. Invented data only; the "drive" holds 24 demo tracks.
 // The long operations (firmware copy, backup, clean-up) emit the same job events as the backend.
 import { emit } from "@tauri-apps/api/event";
+import { missingAudioRows } from "./device-trust";
 import type { Handlers } from "./types";
 
 const MB = 1024 * 1024;
@@ -75,6 +76,9 @@ let settings: S[] = [
   float(300, "Lineout volume (mix)", 1.3456, 2.284794807434082),
 ];
 
+/** The mock card's settings, shared with devmock/device-preset.ts (presets read and write them). */
+export const mockSettings = () => settings;
+
 // Switches keyed on the drive's name, like "broken" below: open a folder whose path contains
 // "nosettings" (no settings.dat yet), "nofree" (free space unreadable) or "pending" (a firmware file
 // already waits, so an install is refused) to see those states.
@@ -89,13 +93,15 @@ const vocalState = (a: Record<string, unknown>) => {
   return { mode: vocalMode, kill_switch, firmware_too_old, effective: kill_switch || firmware_too_old ? "off" : vocalMode };
 };
 
+let verifyReport: unknown = null;
 let running: { job: string; timers: ReturnType<typeof setTimeout>[]; what: string } | null = null;
 
 /** One job-progress event per step on a timer, then job-done, like jobs.rs. */
-function runSteps(job: string, labels: string[], status: string, summary: string, after?: () => void, detail?: (i: number, n: number) => string) {
+export function runSteps(job: string, labels: string[], status: string, summary: string, after?: () => void, detail?: (i: number, n: number) => string) {
   const timers: ReturnType<typeof setTimeout>[] = [];
   const what = job === "device-backup" ? "the backup was stopped and the partial copy was removed"
     : job === "device-firmware" ? "the firmware copy was stopped and nothing was installed"
+    : job === "device-verify" ? "the check was stopped, so it is not a result"
     : "";
   running = { job, timers, what };
   labels.forEach((label, i) =>
@@ -134,7 +140,7 @@ export const handlers: Handlers = {
     }
     return {
       compatibility_problems: [],
-      missing_audio: [{ track_id: 7, location: "/pmdb_tracks/7/6/demo6.mp3" }],
+      missing_audio: missingAudioRows(),
       unreferenced_checked: true,
       unreferenced,
       unreferenced_bytes: unreferenced.reduce((n, f) => n + f.size, 0),
@@ -202,6 +208,32 @@ export const handlers: Handlers = {
 
   device_eject: () => true,
 
+  // backup verification: a folder with "damaged" in its name has one changed and one missing file
+  device_verify_backup: (a) => {
+    const folder = String(a.folder);
+    const damaged = folder.toLowerCase().includes("damaged");
+    const files = [
+      [".Pacemaker/music.db", 1_843_200], [".Pacemaker/settings.dat", 4_096], [".Pacemaker/system.xml", 1_200],
+      [".Pacemaker/Music/0/1/demo1.str", 2_104], [".Pacemaker/Music/2/3/demo2.str", 2_231],
+    ] as [string, number][];
+    const rows = files.map(([path, size], i) => {
+      if (damaged && i === 1) return { path, status: "differs", size, detail: "the file's checksum is not the one recorded: it changed or was damaged after the backup" };
+      if (damaged && i === 4) return { path, status: "missing", size: null, detail: "listed in the manifest but not in the folder" };
+      return { path, status: "ok", size, detail: null };
+    });
+    const ok = rows.filter((r) => r.status === "ok").length;
+    verifyReport = {
+      folder, listed: rows.length, checked: rows.length, ok, files: rows,
+      extra: damaged ? ["notes.txt"] : [], bytes: files.reduce((n, [, s]) => n + s, 0), cancelled: false,
+    };
+    const bad = rows.length - ok;
+    runSteps("device-verify", files.map(([p]) => p), "checking",
+      bad === 0
+        ? `All ${rows.length} files in ${folder} match their checksums (1.8 MB read).`
+        : `${bad} of ${rows.length} files in ${folder} do not match the manifest; see the list.`);
+  },
+  device_verify_report: () => verifyReport,
+
   // the automatic music.db snapshots (folder in the app data dir, never on the device)
   device_snapshots: () => ({
     folder: "C:\\Users\\demo\\AppData\\Local\\pacemaker-revival\\snapshots\\E",
@@ -221,6 +253,8 @@ export const handlers: Handlers = {
     r.timers.forEach(clearTimeout);
     if (r.job === "device-cleanup") {
       emit("job-done", { job: r.job, ok: 0, failed: 0, summary: "Deleted 0 files, stopped early at your request; the rest were not touched", error: null });
+    } else if (r.job === "device-space") {
+      emit("job-done", { job: r.job, ok: 0, failed: 0, summary: "Stopped at your request; nothing was removed", error: null });
     } else {
       emit("job-done", { job: r.job, ok: 0, failed: 0, summary: "", error: `invalid: Cancelled: ${r.what}` });
     }

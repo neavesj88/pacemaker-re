@@ -23,11 +23,11 @@ fn invalid<T>(msg: impl Into<String>) -> Result<T, Error> {
 /// Start of the message of an operation stopped by the user (the UI shows it without "Failed").
 pub const CANCELLED: &str = "Cancelled";
 
-fn pacemaker_dir(root: &Path) -> PathBuf {
+pub(crate) fn pacemaker_dir(root: &Path) -> PathBuf {
     root.join(".Pacemaker")
 }
 
-fn music_dir(root: &Path) -> PathBuf {
+pub(crate) fn music_dir(root: &Path) -> PathBuf {
     root.join(naming::MUSIC_DIR)
 }
 
@@ -182,7 +182,7 @@ pub struct Storage {
     pub other_bytes: u64,
 }
 
-fn walk(dir: &Path, out: &mut Vec<(PathBuf, u64)>) -> std::io::Result<()> {
+pub(crate) fn walk(dir: &Path, out: &mut Vec<(PathBuf, u64)>) -> std::io::Result<()> {
     let rd = match fs::read_dir(dir) {
         Ok(r) => r,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
@@ -205,7 +205,7 @@ fn is_str(p: &Path) -> bool {
 }
 
 /// Path relative to `base`, '/'-separated.
-fn rel_string(base: &Path, p: &Path) -> String {
+pub(crate) fn rel_string(base: &Path, p: &Path) -> String {
     p.strip_prefix(base)
         .unwrap_or(p)
         .components()
@@ -513,7 +513,7 @@ pub fn install_pfw(
 // ---------------------------------------------------------------------------------------------
 // Library health and the unreferenced-file scan
 
-const AUDIO_EXTS: [&str; 11] = ["mp3", "flac", "wav", "m4a", "aac", "ogg", "opus", "aif", "aiff", "wma", "mp4"];
+pub(crate) const AUDIO_EXTS: [&str; 11] = ["mp3", "flac", "wav", "m4a", "aac", "ogg", "opus", "aif", "aiff", "wma", "mp4"];
 
 /// A file under `.Pacemaker/Music` that no track row refers to.
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -715,7 +715,7 @@ pub fn utc_stamp(unix_secs: u64) -> String {
 }
 
 /// Copies `src` to `dst` hashing the bytes read, then reads `dst` back and checks the hash.
-fn copy_hashed(src: &Path, dst: &Path) -> Result<(String, u64), Error> {
+pub(crate) fn copy_hashed(src: &Path, dst: &Path) -> Result<(String, u64), Error> {
     if let Some(parent) = dst.parent() {
         fs::create_dir_all(parent)?;
     }
@@ -741,7 +741,7 @@ fn copy_hashed(src: &Path, dst: &Path) -> Result<(String, u64), Error> {
     Ok((sum, n_total))
 }
 
-fn inside(parent: &Path, child: &Path) -> bool {
+pub(crate) fn inside(parent: &Path, child: &Path) -> bool {
     match (fs::canonicalize(parent), fs::canonicalize(child)) {
         (Ok(p), Ok(c)) => c.starts_with(p),
         _ => false,
@@ -816,28 +816,166 @@ pub fn backup_snapshot(
     })
 }
 
-/// Checks a backup folder against its manifest. Returns the problems found (empty = intact).
-pub fn verify_manifest(folder: &Path) -> Result<Vec<String>, Error> {
-    let text = fs::read_to_string(folder.join(MANIFEST_NAME))?;
-    let mut problems = Vec::new();
-    for line in text.lines().filter(|l| !l.trim().is_empty()) {
-        let Some((sum, rel)) = line.split_once("  ") else {
-            problems.push(format!("unreadable manifest line: {line}"));
+/// Result of checking one manifest line against the file in the backup folder.
+#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum CheckStatus {
+    /// The file is there and its SHA-256 matches the manifest.
+    Ok,
+    /// The file is there but its bytes are not the ones the backup recorded.
+    Differs,
+    /// The manifest lists it, the folder does not have it.
+    Missing,
+    /// The file exists but could not be read (permissions, a failing disk).
+    Unreadable,
+    /// The manifest names a path that would leave the backup folder; it was not opened.
+    Unsafe,
+    /// A manifest line that is not `<64 hex digits>  <path>`.
+    BadLine,
+}
+
+/// One row of a backup verification.
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct FileCheck {
+    /// The path as the manifest wrote it ('/'-separated, relative to the backup folder).
+    pub path: String,
+    pub status: CheckStatus,
+    /// The size on disk, when the file was found.
+    pub size: Option<u64>,
+    /// Why, in words, for every status but `Ok`.
+    pub detail: Option<String>,
+}
+
+/// What [`verify_manifest_detailed`] found in a backup folder.
+#[derive(Debug, Clone, Serialize, Default)]
+pub struct VerifyReport {
+    pub folder: String,
+    /// Lines the manifest has (blank lines excluded).
+    pub listed: usize,
+    /// How many of them were checked before the end or a cancel.
+    pub checked: usize,
+    pub ok: usize,
+    /// Every row that is not `Ok`, plus all `Ok` rows: the full list, in manifest order.
+    pub files: Vec<FileCheck>,
+    /// Files in the folder that the manifest does not list (not an error: a note).
+    pub extra: Vec<String>,
+    /// Bytes read while hashing.
+    pub bytes: u64,
+    pub cancelled: bool,
+}
+
+impl VerifyReport {
+    /// Rows that are not `Ok`.
+    pub fn problems(&self) -> usize {
+        self.files.iter().filter(|f| f.status != CheckStatus::Ok).count()
+    }
+}
+
+/// A manifest path that stays inside the backup folder: plain names only. Colons and
+/// backslashes are refused on every platform (`C:/x` or `..\x` would leave the folder on
+/// Windows), as are empty, `.` and `..` components.
+fn manifest_path_is_plain(rel: &str) -> bool {
+    !rel.is_empty() && !rel.contains([':', '\\', '\0']) && rel.split('/').all(|c| !c.is_empty() && c != "." && c != "..")
+}
+
+fn is_sha256_hex(s: &str) -> bool {
+    s.len() == 64 && s.bytes().all(|b| b.is_ascii_hexdigit())
+}
+
+/// Checks a backup folder against its manifest, file by file: re-hashes each listed file and
+/// reports it as ok, changed, missing, unreadable, unsafe or malformed. Also lists files in the
+/// folder the manifest does not mention. Reads only. `progress(done, total, path)` is called
+/// before each file; `cancel()` is polled before each file and stops the check early (the
+/// report says so and holds what was checked until then).
+pub fn verify_manifest_detailed(
+    folder: &Path,
+    progress: &mut dyn FnMut(usize, usize, &str),
+    cancel: &dyn Fn() -> bool,
+) -> Result<VerifyReport, Error> {
+    let text = fs::read_to_string(folder.join(MANIFEST_NAME))
+        .map_err(|e| Error::Invalid(format!("{} has no readable {MANIFEST_NAME} ({e}): it is not a backup folder", folder.display())))?;
+    let lines: Vec<&str> = text.lines().filter(|l| !l.trim().is_empty()).collect();
+    let mut rep = VerifyReport { folder: folder.display().to_string(), listed: lines.len(), ..VerifyReport::default() };
+    let mut listed_paths: HashSet<String> = HashSet::new();
+    for (i, line) in lines.iter().enumerate() {
+        if cancel() {
+            rep.cancelled = true;
+            break;
+        }
+        let parsed = line.split_once("  ").filter(|(sum, _)| is_sha256_hex(sum));
+        let Some((sum, rel)) = parsed else {
+            rep.files.push(FileCheck {
+                path: (*line).to_string(),
+                status: CheckStatus::BadLine,
+                size: None,
+                detail: Some("not a line of the form <checksum>  <path>".into()),
+            });
+            rep.checked += 1;
             continue;
         };
-        if rel.split('/').any(|c| c == ".." || c.is_empty()) {
-            problems.push(format!("unsafe path in manifest: {rel}"));
+        progress(i, lines.len(), rel);
+        listed_paths.insert(rel.to_lowercase());
+        rep.checked += 1;
+        if !manifest_path_is_plain(rel) {
+            rep.files.push(FileCheck {
+                path: rel.to_string(),
+                status: CheckStatus::Unsafe,
+                size: None,
+                detail: Some("the manifest names a path outside the backup folder; it was not opened".into()),
+            });
             continue;
         }
         let mut p = folder.to_path_buf();
         p.extend(rel.split('/'));
-        match sha256_file(&p) {
-            Ok(got) if got == sum => {}
-            Ok(_) => problems.push(format!("{rel}: checksum differs")),
-            Err(_) => problems.push(format!("{rel}: missing")),
-        }
+        let size = fs::metadata(&p).ok().filter(|m| m.is_file()).map(|m| m.len());
+        let (status, detail) = match sha256_file(&p) {
+            Ok(got) if got.eq_ignore_ascii_case(sum) => {
+                rep.ok += 1;
+                rep.bytes += size.unwrap_or(0);
+                (CheckStatus::Ok, None)
+            }
+            Ok(_) => {
+                rep.bytes += size.unwrap_or(0);
+                (CheckStatus::Differs, Some("the file's checksum is not the one recorded: it changed or was damaged after the backup".to_string()))
+            }
+            Err(Error::Io(e)) if e.kind() == std::io::ErrorKind::NotFound => {
+                (CheckStatus::Missing, Some("listed in the manifest but not in the folder".to_string()))
+            }
+            Err(e) => (CheckStatus::Unreadable, Some(format!("could not be read: {e}"))),
+        };
+        rep.files.push(FileCheck { path: rel.to_string(), status, size, detail });
     }
-    Ok(problems)
+    progress(rep.checked, lines.len(), "");
+    if !rep.cancelled {
+        let mut all = Vec::new();
+        walk(folder, &mut all)?;
+        for (p, _) in all {
+            let rel = rel_string(folder, &p);
+            if rel != MANIFEST_NAME && !listed_paths.contains(&rel.to_lowercase()) {
+                rep.extra.push(rel);
+            }
+        }
+        rep.extra.sort();
+    }
+    Ok(rep)
+}
+
+/// Checks a backup folder against its manifest. Returns the problems found (empty = intact).
+pub fn verify_manifest(folder: &Path) -> Result<Vec<String>, Error> {
+    let rep = verify_manifest_detailed(folder, &mut |_, _, _| {}, &|| false)?;
+    Ok(rep
+        .files
+        .iter()
+        .filter(|f| f.status != CheckStatus::Ok)
+        .map(|f| match f.status {
+            CheckStatus::BadLine => format!("unreadable manifest line: {}", f.path),
+            CheckStatus::Unsafe => format!("unsafe path in manifest: {}", f.path),
+            CheckStatus::Differs => format!("{}: checksum differs", f.path),
+            CheckStatus::Missing => format!("{}: missing", f.path),
+            CheckStatus::Unreadable => format!("{}: unreadable", f.path),
+            CheckStatus::Ok => unreachable!(),
+        })
+        .collect())
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -864,7 +1002,7 @@ fn is_snapshot_dir(name: &str) -> bool {
 
 /// Sort key of a snapshot folder name: the UTC stamp, then the same-second counter (`-2`, `-3`,
 /// ... `-10`; none = 1). Compared as a number, so `-10` is newer than `-2`.
-fn snapshot_order(name: &str) -> (String, u64) {
+pub(crate) fn snapshot_order(name: &str) -> (String, u64) {
     let rest = name.strip_prefix(SNAPSHOT_PREFIX).unwrap_or(name);
     match rest.split_once('-') {
         Some((stamp, n)) => (stamp.to_string(), n.parse().unwrap_or(1)),
@@ -903,6 +1041,13 @@ pub fn list_snapshots(dest_dir: &Path) -> Vec<SnapshotEntry> {
 /// so a folder with the final name is always whole. Reads the device only. Call it before the
 /// first write to a library and do not write if it fails.
 pub fn snapshot_library(root: &Path, dest_dir: &Path, keep: usize) -> Result<SnapshotEntry, Error> {
+    snapshot_library_protecting(root, dest_dir, keep, &[])
+}
+
+/// [`snapshot_library`] whose retention never removes the snapshots named in `protect` (a
+/// restore reads from one of them while it makes the safety copy of what it is about to
+/// replace, and the newest-`keep` rule must not delete its source from under it).
+pub fn snapshot_library_protecting(root: &Path, dest_dir: &Path, keep: usize, protect: &[&str]) -> Result<SnapshotEntry, Error> {
     let pm = pacemaker_dir(root);
     if !pm.join("music.db").is_file() {
         return Err(Error::NotALibrary(root.to_path_buf()));
@@ -945,7 +1090,9 @@ pub fn snapshot_library(root: &Path, dest_dir: &Path, keep: usize) -> Result<Sna
     // retention: oldest first out, never the one just made; stale half-built folders go too
     let all = list_snapshots(dest_dir);
     for old in all.iter().skip(keep.max(1)) {
-        let _ = fs::remove_dir_all(&old.folder);
+        if !protect.contains(&old.name.as_str()) {
+            let _ = fs::remove_dir_all(&old.folder);
+        }
     }
     for e in fs::read_dir(dest_dir).into_iter().flatten().flatten() {
         let n = e.file_name().to_string_lossy().into_owned();
@@ -1845,6 +1992,68 @@ mod tests {
         assert!(verify_manifest(Path::new(&r2.folder)).unwrap().is_empty());
         // the device is untouched
         assert!(tracks[0].1.is_file());
+    }
+
+    #[test]
+    fn verify_reports_every_file_with_its_own_result() {
+        let (root, _tracks) = device_volume();
+        fs::write(root.join(".Pacemaker/settings.dat"), "settings").unwrap();
+        fs::write(root.join(".Pacemaker/system.xml"), SYSTEM_XML).unwrap();
+        let dest = scratch("verify");
+        let r = backup_snapshot(&root, &dest, false, &mut |_, _, _| {}, &|| false).unwrap();
+        let folder = PathBuf::from(&r.folder);
+
+        // an intact backup: one `Ok` row per manifest line, nothing extra, progress per file
+        let mut ticks = Vec::new();
+        let rep = verify_manifest_detailed(&folder, &mut |d, t, p| ticks.push((d, t, p.to_string())), &|| false).unwrap();
+        assert_eq!((rep.listed, rep.checked, rep.ok), (r.files, r.files, r.files));
+        assert_eq!(rep.problems(), 0);
+        assert!(rep.files.iter().all(|f| f.status == CheckStatus::Ok && f.size.is_some() && f.detail.is_none()));
+        assert!(rep.extra.is_empty() && !rep.cancelled);
+        assert!(rep.bytes > 0);
+        assert_eq!(ticks.last().unwrap().0, r.files, "the closing tick reports all done");
+
+        // damage it in every way a manifest can be wrong
+        fs::write(folder.join(".Pacemaker/settings.dat"), "tampered").unwrap();
+        fs::remove_file(folder.join(".Pacemaker/system.xml")).unwrap();
+        fs::write(folder.join("notes.txt"), "not in the manifest").unwrap();
+        let sum = "0".repeat(64);
+        let mut manifest = fs::read_to_string(folder.join(MANIFEST_NAME)).unwrap();
+        for bad in ["not a manifest line", &format!("{sum}  ../outside.txt"), &format!("{sum}  C:/Windows/win.ini"), &format!("{sum}  a\\b.txt")] {
+            manifest.push_str(bad);
+            manifest.push('\n');
+        }
+        fs::write(folder.join(MANIFEST_NAME), manifest).unwrap();
+        let rep = verify_manifest_detailed(&folder, &mut |_, _, _| {}, &|| false).unwrap();
+        let status = |p: &str| rep.files.iter().find(|f| f.path == p).unwrap_or_else(|| panic!("no row for {p}")).status;
+        assert_eq!(status(".Pacemaker/settings.dat"), CheckStatus::Differs);
+        assert_eq!(status(".Pacemaker/system.xml"), CheckStatus::Missing);
+        assert_eq!(status("not a manifest line"), CheckStatus::BadLine);
+        assert_eq!(status("../outside.txt"), CheckStatus::Unsafe);
+        assert_eq!(status("C:/Windows/win.ini"), CheckStatus::Unsafe);
+        assert_eq!(status("a\\b.txt"), CheckStatus::Unsafe);
+        assert_eq!(rep.problems(), 6);
+        assert_eq!(rep.ok, r.files - 2);
+        assert_eq!(rep.extra, ["notes.txt"]);
+        // the summary form keeps its old wording
+        let problems = verify_manifest(&folder).unwrap();
+        assert!(problems.contains(&".Pacemaker/settings.dat: checksum differs".to_string()), "{problems:?}");
+        assert!(problems.contains(&".Pacemaker/system.xml: missing".to_string()), "{problems:?}");
+
+        // a cancel stops after the files already checked and says so
+        let polls = std::cell::Cell::new(0);
+        let rep = verify_manifest_detailed(&folder, &mut |_, _, _| {}, &|| {
+            polls.set(polls.get() + 1);
+            polls.get() > 2
+        })
+        .unwrap();
+        assert!(rep.cancelled);
+        assert_eq!(rep.checked, 2);
+        assert!(rep.extra.is_empty(), "no extra-file scan after a cancel");
+
+        // not a backup folder at all
+        let e = verify_manifest_detailed(&dest, &mut |_, _, _| {}, &|| false).unwrap_err().to_string();
+        assert!(e.contains("not a backup folder"), "{e}");
     }
 
     #[test]

@@ -10,4 +10,6 @@ flate2 = { version = "1.1.10", default-features = false, features = ["zlib"] }
 md5 = "0.8.1"
 rusqlite = { version = "0.40.2", features = ["bundled"] }
 serde = { version = "1.0.229", features = ["derive"] }
+# settings presets (ops_preset) are JSON files; the same version the app already uses
+serde_json = { version = "1.0.154", features = ["float_roundtrip"] }
 uuid = { version = "1.28.0", features = ["v4"] }
