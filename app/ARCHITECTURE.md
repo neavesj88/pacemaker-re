@@ -6,8 +6,8 @@ document is the contract. A file is **owned** by one area (only that area edits 
 
 Areas, each with its own folder / files in every layer: `tracks`, `mixes`, `cases`, `history`,
 `grid`, `device`, `import`, `playback`, and the feature-only areas `metadata` (tag and rating
-editor), `analysis` (key detection and other analysis jobs) and `export` (playlists and library
-listings out). `library` is the session plumbing (`commands/library.rs`, `api/library.ts`,
+editor), `analysis` (key detection and other analysis jobs), `export` (playlists and library
+listings out) and `stems` (vocal / instrumental separation into a PC folder). `library` is the session plumbing (`commands/library.rs`, `api/library.ts`,
 `devmock/library.ts`, the `LibraryView` payload) and belongs to **integration**: it is not a
 feature area. "Integration" means the single step that merges feature work and may touch shared
 files.
@@ -34,6 +34,7 @@ files.
 | `lib/views/duplicates/` (`DuplicatesView`, `DupGroupCard`, `MergeDialog`, `DupSettingsDialog`, pure `lib/state/dupeLogic.ts`) | Duplicate finder (matching tags, size + length, or sound fingerprint) with a merge that keeps one track and moves cases, tags and stats across. Backend: `commands/cases/dupes*.rs`, `crates/pm-formats/src/library/dupes.rs`, `crates/pm-analysis/src/fingerprint.rs`; wrappers `lib/api/duplicates.ts` | cases |
 | `commands/cases/` (`smart/rules.rs`, `smart_sync.rs`, `smart_export.rs`, `smart_settings.rs`, `export_bulk.rs`, `export_prefs.rs`, `dupes*.rs`) | Smart-case rule engine and store, device copy refresh, case / smart-case export (also the rekordbox library XML with smart cases, called from `import.rs`), duplicate finder. Bulk case operations are in `crates/pm-formats/src/library/case_bulk.rs`; `library/track_extra.rs` holds the read-only extra track columns the smart rules use | cases |
 | `lib/views/setbuilder/` (`SetBuilderView`, `SetSettings`, `CreateMixDialog`, `SaveCaseDialog`, `solver.ts`, `buildMix.ts`, `createMix.ts`, `energy.ts`: your energy rating, else the Energy (auto) estimate) | Set builder: orders a case or the selected tracks into a set (Camelot moves, tempo limits, optional energy curve, target length), saves it as a new case or lays it out as a new mix with the existing beat-match + auto-transition code. Pure solver and mix layout (`solver.ts`, `buildMix.ts`) are tested by `solver.test.mjs`, run from `npm run test:mixedit`. Opened with `nav.go("setbuilder", { "setbuilder.caseId": id })` or `{ "setbuilder.trackIds": [...] }`. No backend commands of its own: it uses the `cases` and `mixes` commands | setbuilder |
+| `lib/views/stems/` (`StemsView`, `SetupCard`, `MakeCard`, `SettingsCard`, `PlanModal`, `LicenceModal`, `ResultCard`, `logic.ts`, `init.ts`) | Stems view: vocal and instrumental files for chosen tracks into a folder on this computer; model download behind a licence notice. Store `lib/state/stems.svelte.ts` (`stems`); `lib/api/stems.ts`; `lib/devmock/stems.ts`; tests `logic.test.mjs` (in `npm test`). Engine: `crates/pm-stems` (provider trait, STFT, overlap-add, HTDemucs via ONNX Runtime, file writers) | stems |
 | `lib/views/history/`, `grid/`, `device/` | History, beat grid editor, device views (placeholders) | that area |
 | `lib/views/insights/` (`GapMapView`, `Heatmap`, `CellPanel`, `ThinSummary`, `gapLogic.ts`, `gapState.svelte.ts`) | Library gap map (sidebar "Gap map"): BPM band x key, BPM band x genre, key x energy (tab shown only when tracks carry `energy`). Pure binning / thin-area maths in `gapLogic.ts`, tested by `gapLogic.test.mjs` (in `npm test`). Frontend only: reads `session.library`, writes nothing; a cell opens the Tracks filters via `tracksState` | insights |
 | `lib/views/analysis/` (`EnergyCell`, `SectionBand`, `SectionList`, `SectionsPanel`, `Overlays.svelte`, pure `energyLogic.ts`, `sectionLogic.ts`), `lib/state/energy.svelte.ts`, `sections.svelte.ts` | App-side audio analyses, nothing written to the device: "Energy (auto)" 1-10 estimate (own Tracks column `autoenergy`, sort field `auto_energy`; separate from the user-set energy label in `labels.ts`) and section detection (intro / build / drop / breakdown / outro markers on waveforms, grid overview and a section list). Both run as confirmed jobs. Backend: `commands/analysis/energy.rs`, `sections.rs`, `crates/pm-analysis/src/energy.rs`, `sections.rs`; wrappers `lib/api/analysis.ts`; notes `notes/section-detection.md`. `Overlays.svelte` also mounts the key-tool dialogs | analysis |
@@ -72,6 +73,8 @@ files.
 | `jobs.rs` | Generic `spawn_job`, `Progress`, `JobOutcome`, `JobDone` | integration |
 | `events.rs` | Shared event names (jobs) and `emit` | integration |
 | `error.rs` | `AppError` (serialises to a string), `AppResult`, `.app()` | integration |
+
+`commands/stems.rs` plus `commands/stems/{manifest,download,settings,plan,run}.rs` are the `stems` area: consented downloads of the model and engine into the app data folder, settings and consent records in the app config folder, a plan that the run recomputes with the same function, and a job that writes only into a folder on this computer (the card is reached through the ordinary add-tracks step, which asks first).
 
 Crates in `crates/` are not part of the app layout; the app only calls them.
 
