@@ -96,7 +96,33 @@
   {#if lp.parent}<div class="muted small">This loop continues the previous loop of the clip.</div>{/if}
 {/if}
 
-{#if tool}
+{#if tool && type === "Trans"}
+  {@const eff = tool.effects[0]}
+  <h4>Trans</h4>
+  <div class="field">
+    <label for="pp-trans-bpm">Gate tempo</label>
+    <span class="inline">
+      <input
+        id="pp-trans-bpm"
+        type="number"
+        min="0"
+        max="300"
+        step="0.01"
+        value={eff && eff.class === "trans" ? eff.startBpm : 0}
+        onchange={(e) => {
+          const v = e.currentTarget.valueAsNumber;
+          const bpm = Number.isFinite(v) ? Math.min(300, Math.max(0, v)) : 0;
+          patch("Trans tempo", (q) => ({ ...q, effects: (q as ToolDoc).effects.map((x, i) => (i === 0 && x.class === "trans" ? { ...x, startBpm: bpm } : x)) }) as ToolDoc);
+        }}
+      />
+      <span class="muted">BPM</span>
+    </span>
+  </div>
+  <p class="note">Chops the clip on and off in eighth notes from the start of this block, at the tempo above (0 follows the clip's tempo). It has no curves.</p>
+  <div class="warn">The file layout of a Trans tool has not been checked on a real Pacemaker or in the Tonium Editor (no mix with one has been seen). The preview and the audio export play it; if the device does not like it, delete the block and save again.</div>
+{/if}
+
+{#if tool && params.length > 0}
   <h4>Parameters</h4>
   <div class="curves" bind:clientWidth={boxW}>
     {#each params as prm (prm.key)}

@@ -29,8 +29,8 @@
     <p class="msg">{r.message}</p>
     {#if r.items?.length}
       <ul class="items">
-        {#each r.items.slice(0, 40) as it, i (i)}<li>{it}</li>{/each}
-        {#if r.items.length > 40}<li class="muted">and {r.items.length - 40} more</li>{/if}
+        <!-- every item is listed (the list scrolls): a destructive action must name all it touches -->
+        {#each r.items as it, i (i)}<li>{it}</li>{/each}
       </ul>
     {/if}
     {#snippet actions()}
@@ -49,12 +49,9 @@
   .items {
     margin: 0;
     padding-left: 18px;
-    max-height: 220px;
+    max-height: 320px;
     overflow: auto;
     font-size: 13px;
-  }
-  .muted {
-    color: var(--muted);
   }
   .bad {
     color: var(--bad);

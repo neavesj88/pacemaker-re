@@ -5,7 +5,8 @@
 // two decks, tools, a loop chain, two transitions) plus whatever the UI creates; mix_open returns
 // copies, mix_save stores them, so the editor can be exercised end to end in a browser. The
 // beat-match and auto-transition mocks use the same pure functions as the editor.
-import type { BeatGrid, BeatmatchSuggestion, Clip, MixDoc, MixMeta, TrackInfo, TransitionSuggestion } from "$lib/api/mixes";
+import type { BeatGrid, BeatmatchSuggestion, Clip, ExportPlanItem, MixDoc, MixMeta, NamedMix, OnExisting, TrackInfo, TransitionSuggestion } from "$lib/api/mixes";
+import { copyName } from "$lib/views/mixes/mixlist";
 import * as E from "$lib/state/mixedit";
 import { needs, tracks } from "./db";
 import type { Handlers } from "./types";
@@ -211,17 +212,27 @@ function mockBeatmatch(doc: MixDoc, clipId: string): BeatmatchSuggestion {
   };
 }
 
-function mockTransition(doc: MixDoc, fromId: string, toId: string): TransitionSuggestion {
+/** Same rule as `pick_length` in commands/mixes/timing.rs. */
+function pickLength(avail: number, beat: number, requested: number): number {
+  const bar = beat * 4;
+  const beats = Math.max(1, Math.round(requested * 4));
+  if (beats * beat <= avail + 1) return beats * beat;
+  const n = [64, 32, 16, 8, 4, 2, 1].find((x) => x <= requested && x * bar <= avail + 1);
+  return n !== undefined ? n * bar : Math.max(1, Math.floor(avail / beat)) * beat;
+}
+
+function mockTransition(doc: MixDoc, fromId: string, toId: string, requested: number | null): TransitionSuggestion {
   const a = E.clipOf(doc, fromId);
   const b = E.clipOf(doc, toId);
   if (!a || !b || a.id === b.id) throw "a transition needs two different clips";
   const bpm = E.effectiveBpm(b, b.trimStart);
   const bar = ((60 / bpm) * 4) * SR;
   const t0 = E.clipBeats(b).find((t) => t >= b.visibleStart - 1) ?? b.visibleStart;
-  const avail = a.visibleEnd - t0;
+  const avail = Math.min(a.visibleEnd, b.visibleEnd) - t0;
   if (avail < bar / 8) throw "the clips do not overlap (move the later clip earlier)";
-  const bars = [16, 8, 4, 2, 1].find((n) => n * bar <= avail + 1) ?? 1;
-  const length = Math.min(bars * bar, avail);
+  const want = requested ?? 16;
+  if (!(want >= 0.25 && want <= 128)) throw `a transition length of ${want} bars is not usable (a beat to 128 bars)`;
+  const length = pickLength(avail, bar / 4, want);
   const t = E.newTransition(a.id, b.id, t0, length);
   const mk = (clip: Clip, after: boolean) => {
     const tool = E.newTool("EQ", t0 - clip.start, length);
@@ -233,7 +244,48 @@ function mockTransition(doc: MixDoc, fromId: string, toId: string): TransitionSu
     tool.params["EQ-Lo"] = lo;
     return { clipId: clip.id, tool, conflicts: [] as string[] };
   };
-  return { transition: t, tools: [mk(a, true), mk(b, false)], bars: length / bar, notes: ["Browser preview"] };
+  return { transition: t, tools: length >= bar ? [mk(a, true), mk(b, false)] : [], bars: length / bar, beat: bar / 4, barsAvailable: avail / bar, notes: ["Browser preview"] };
+}
+
+// ---- library hygiene (mock of commands/mixes/hygiene.rs) -------------------------------------
+
+/** File names (lower case) the mock "export folder" holds, so a second export shows numbering. */
+const exported = new Set<string>(["warm-up.pmk"]);
+
+const mockStem = (name: string) => {
+  const s = name.replace(/[<>:"/\|?*\u0000-\u001f]/g, "_").trim().replace(/[. ]+$/, "").slice(0, 120);
+  return /^(con|prn|aux|nul|com\d|lpt\d)(\.|$)/i.test(s) ? `_${s}` : s || "mix";
+};
+
+function mockPlan(items: NamedMix[], onExisting: OnExisting): ExportPlanItem[] {
+  const used = new Set<string>();
+  const out: ExportPlanItem[] = [];
+  for (const m of items) {
+    const stem = mockStem(m.name);
+    let file = `${stem}.pmk`;
+    let action: ExportPlanItem["action"] = "write";
+    const clash = used.has(file.toLowerCase());
+    if (!clash && exported.has(file.toLowerCase()) && onExisting === "replace") action = "replace";
+    else if (!clash && exported.has(file.toLowerCase()) && onExisting === "skip") action = "skip";
+    else if (clash || exported.has(file.toLowerCase())) {
+      for (let n = 2; ; n++) {
+        file = `${stem} (${n}).pmk`;
+        if (!used.has(file.toLowerCase()) && !exported.has(file.toLowerCase())) break;
+      }
+    }
+    used.add(file.toLowerCase());
+    out.push({ id: m.id, name: m.name, fileName: file, action });
+  }
+  return out;
+}
+
+function makeCopy(src: MixDoc, name: string, meta: MixMeta | null): MixDoc {
+  if (mixes.some((m) => m.name === name)) throw `a mix called "${name}" already exists`;
+  if (!name.trim()) throw "mix name is empty";
+  const d = E.refresh({ ...copy(src), id: nextId++, name, meta: meta ? { ...meta, timesPlayed: 0, lastPlayed: 0, dateModified: Date.now() } : null });
+  docs.set(d.id, d);
+  sync(d);
+  return d;
 }
 
 export const handlers: Handlers = {
@@ -292,6 +344,50 @@ export const handlers: Handlers = {
     d.meta = { ...(d.meta ?? emptyMeta()), genre: m.genre, year: m.year, rating: m.rating, producer: m.producer, remixer: m.remixer, comments: m.comments };
     return null;
   },
+  mix_list_meta: () => [...docs.values()].map((d) => ({ id: d.id, meta: copy(d.meta ?? emptyMeta()) })),
+  mix_duplicate: (a) => {
+    const src = docs.get(a.id);
+    if (!src) throw `there is no mix ${a.id}`;
+    const name = a.name ? String(a.name).trim() : copyName(mixes.map((m) => m.name), src.name);
+    const d = makeCopy(src, name, src.meta);
+    return { id: d.id, name: d.name };
+  },
+  mix_save_as: (a) => {
+    const doc = a.doc as MixDoc;
+    const name = String(a.name ?? "").trim();
+    const p = problems(doc);
+    if (p.length) throw `The mix cannot be saved: ${p.join("; ")}`;
+    const d = makeCopy(doc, name, docs.get(doc.id)?.meta ?? doc.meta);
+    return { id: d.id, name: d.name, playTimeSecs: Math.floor(d.length / SR), trackCount: d.clips.length, dateModified: Date.now() };
+  },
+  mix_delete_many: (a) => {
+    const deleted: NamedMix[] = [];
+    const failed: { id: number; name: string; error: string }[] = [];
+    for (const it of a.items as NamedMix[]) {
+      const d = docs.get(it.id);
+      if (!d) failed.push({ ...it, error: "the mix is no longer in the library" });
+      else if (d.name !== it.name) failed.push({ ...it, error: `kept: it is now called "${d.name}", not the name you confirmed` });
+      else {
+        docs.delete(it.id);
+        mixes.splice(mixes.findIndex((m) => m.id === it.id), 1);
+        deleted.push(it);
+      }
+    }
+    return { deleted, failed };
+  },
+  mix_export_plan: (a) => mockPlan(a.items as NamedMix[], a.onExisting as OnExisting),
+  mix_export_many: (a) => {
+    const written: { id: number; name: string; path: string }[] = [];
+    const skipped: NamedMix[] = [];
+    for (const it of a.plan as ExportPlanItem[]) {
+      if (it.action === "skip") skipped.push({ id: it.id, name: it.name });
+      else {
+        exported.add(it.fileName.toLowerCase());
+        written.push({ id: it.id, name: it.name, path: `${a.dir}\\${it.fileName}` });
+      }
+    }
+    return { written, skipped, failed: [] };
+  },
   mix_import_pmk: () => {
     throw "Importing a .pmk needs the desktop app (browser preview)";
   },
@@ -299,5 +395,5 @@ export const handlers: Handlers = {
   mix_track_info: (a) => (a.trackIds as number[]).map(trackInfo),
   mix_make_clip: (a) => makeClip(a.trackId, a.tempoBpm ?? null),
   mix_beatmatch: (a) => mockBeatmatch(a.doc as MixDoc, a.clipId),
-  mix_auto_transition: (a) => mockTransition(a.doc as MixDoc, a.fromClipId, a.toClipId),
+  mix_auto_transition: (a) => mockTransition(a.doc as MixDoc, a.fromClipId, a.toClipId, a.bars ?? null),
 };

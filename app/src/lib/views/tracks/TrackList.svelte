@@ -28,7 +28,7 @@
   import { energy } from "$lib/state/energy.svelte";
   import { sections } from "$lib/state/sections.svelte";
   import EnergyCell from "../analysis/EnergyCell.svelte";
-  import { addToMix, editGrid, editMetadata, playTrack, rate, revealInExplorer } from "./trackActions";
+  import { addToMix, buildSet, editGrid, editMetadata, playTrack, rate, revealInExplorer } from "./trackActions";
   import { formatDate, formatSize, keyColour, parseKey } from "./trackLogic";
   import { tracksState } from "./tracksState.svelte";
 
@@ -303,6 +303,7 @@
       { label: one ? "Add to mix" : `Add ${n} tracks to mix`, onclick: () => addToMix(ids) },
       { label: one ? "Add to case…" : `Add ${n} tracks to case…`, onclick: () => addToCase.ask(ids) },
       { label: "Which cases hold this track…", onclick: () => holders.show(ids[0]), disabled: !one },
+      { label: one ? "Build a set…" : `Build a set from ${n} tracks…`, onclick: () => buildSet(ids), disabled: one },
       {
         label: allFav ? (one ? "Remove from favourites" : `Remove ${n} from favourites`) : one ? "Favourite" : `Favourite ${n} tracks`,
         onclick: () => tracksState.setFavourite(ids, !allFav),

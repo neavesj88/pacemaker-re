@@ -1,14 +1,12 @@
-// Date and rating of each mix for the library list. `mix_list` returns only name, length and
-// track count, so the library row (MixMeta) is read per mix with `mix_open`, one at a time in the
-// background, and cached here. A request to widen `mix_list` is in the hand-off note; this cache
-// then becomes unnecessary.
-import { mixOpen, mixSetMeta, type MixMeta } from "$lib/api/mixes";
+// Library-row facts (date, rating, genre, ...) of each mix for the library list, its sort and its
+// search. `mix_list` returns only name, length and track count; `mix_list_meta` returns the rows
+// of every mix in one query, and they are cached here. The open editor and the rating stars
+// write through `update`, which keeps the cache current.
+import { mixListMeta, mixOpen, mixSetMeta, type MixMeta } from "$lib/api/mixes";
 import { session } from "$lib/state/session.svelte";
 
 class ListMeta {
   byId = $state.raw<Map<number, MixMeta>>(new Map());
-  #loading = false;
-  #queue: number[] = [];
 
   /** Stores a row the editor already has (after opening, saving or rating a mix). */
   set(id: number, meta: MixMeta | null) {
@@ -24,27 +22,27 @@ class ListMeta {
     this.byId = m;
   }
 
-  /** Reads the rows that are missing, one at a time. A call made while another runs replaces
-   * the waiting list, so only the mixes currently listed are read. */
-  async fill(ids: number[]) {
-    this.#queue = ids.filter((id) => !this.byId.has(id));
-    if (this.#loading) return;
-    this.#loading = true;
-    try {
-      while (this.#queue.length > 0) {
-        const root = session.library?.root;
-        const id = this.#queue.shift()!;
-        if (!root || this.byId.has(id)) continue;
-        try {
-          const doc = await mixOpen(root, id);
-          if (session.library?.root === root) this.set(id, doc.meta);
-        } catch {
-          // an unreadable mix shows dashes in the list; opening it reports why
-        }
+  /** Reads the rows of every mix again (one query) and replaces the cache. Runs after any write
+   * that is in flight, so a rating being saved is never overwritten by an older read. */
+  refresh(): Promise<void> {
+    const run = async () => {
+      const root = session.library?.root;
+      if (!root) return;
+      try {
+        const rows = await mixListMeta(root);
+        if (session.library?.root === root) this.byId = new Map(rows.map((r) => [r.id, r.meta]));
+      } catch {
+        // the list shows dashes for the missing facts; opening a mix reports why
       }
-    } finally {
-      this.#loading = false;
-    }
+    };
+    const p = this.#chain.then(run, run);
+    this.#chain = p.catch(() => undefined);
+    return p;
+  }
+
+  /** Reads the rows if any of `ids` is not cached yet. */
+  async fill(ids: number[]) {
+    if (ids.some((id) => !this.byId.has(id))) await this.refresh();
   }
 
   /** Takes the date and play time a save stamped on the open mix; the rest of the cached row
@@ -82,7 +80,6 @@ class ListMeta {
   }
 
   clear() {
-    this.#queue = [];
     this.byId = new Map();
   }
 }

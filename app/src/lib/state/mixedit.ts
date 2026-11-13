@@ -23,6 +23,7 @@ import type {
   TransitionSuggestion,
 } from "../api/mixes";
 import type { VocalMode } from "../api/device";
+import type { Kit } from "./transitionRecipes";
 
 /** Engine sample rate (same as SAMPLE_RATE in api/mixes.ts; duplicated so this file imports no value). */
 export const SR = 44100;
@@ -387,14 +388,16 @@ export function deleteClips(doc: MixDoc, ids: string[]): MixDoc {
 // Processes (tools, loops, ignore, reverse): clip-local ranges
 // ---------------------------------------------------------------------------------------------
 
-/** A flat tool of a catalogue type (`TOOL_TYPES`) over clip-local `[start, start + length)`. */
-export function newTool(type: string, start: number, length: number, id: string = newId()): ToolDoc {
-  const t = TOOL_TYPES.find((x) => x.name === type);
+/** A flat tool of a catalogue type (`TOOL_TYPES`, or Trans) over clip-local `[start, start + length)`.
+ * `startBpm` is only used by Trans: the tempo its gate follows (the clip's tempo where the tool
+ * starts); 0 leaves it to the player to use the clip's tempo. */
+export function newTool(type: string, start: number, length: number, id: string = newId(), startBpm = 0): ToolDoc {
+  const t = [...TOOL_TYPES, TRANS_TYPE].find((x) => x.name === type);
   if (!t) throw new Error(`unknown tool type ${type}`);
   const last = Math.max(1, Math.round(length) - 1);
   const params: Record<string, EnvNode[]> = {};
   for (const p of t.params) params[p.key] = [{ pos: 0, value: p.flat }, { pos: last, value: p.flat }];
-  const cls = EFFECT_CLASS[type];
+  const cls = type === "Trans" ? { class: "trans", startBpm: Math.max(0, Math.round(startBpm * 100) / 100), active: true } : EFFECT_CLASS[type];
   return {
     kind: "tool",
     id,
@@ -702,6 +705,9 @@ export function applyTransition(doc: MixDoc, s: TransitionSuggestion, replaceCon
   return d;
 }
 
+/** What `buildRecipe` (state/transitionRecipes.ts) needs from this file. */
+export const recipeKit: Kit = { newTool, conflicts: toolConflicts };
+
 // ---------------------------------------------------------------------------------------------
 // Clipboard
 // ---------------------------------------------------------------------------------------------
@@ -780,7 +786,8 @@ const prm = (name: string, key: string, label: string, min: number, max: number,
   flat,
 });
 
-/** Tools the editor can create (Trans and Delay are readable but have no sample, so not offered).
+/** Tools the editor can create always (Delay has no sample and is not offered; Trans is `TRANS_TYPE`,
+ * offered by choice; Volume is deliberately never offered, see `TRANS_TYPE`).
  * `flat` is the neutral value a new tool starts at. Ranges are those of the Editor's demo mix; the
  * EQ semantics (Hi / Mid 0 = flat, Lo 0 = flat, -100 = kill) are a hypothesis from them. The
  * parameter keys are exactly the ones `pm_formats::mix::Effect::automation_keys` lists. */
@@ -809,6 +816,28 @@ export const TOOL_TYPES: ToolType[] = [
     params: [prm("EQ", "Hi", "High", 0, 4, "", 0), prm("EQ", "Lo", "Low", -100, 0, "", 0), prm("EQ", "Mid", "Mid", 0, 4, "", 0)],
   },
 ];
+
+/** The Trans tool (a tempo-synced gate: the audio chops on and off in eighth notes). The Editor's
+ * tool menu has it, and the model, the file reader / writer and the audio engine all handle it, but
+ * NO document with a Trans tool has ever been seen (notes/mix-format.md section 0 and 8): its class
+ * version and tracking are assumed, and it is written with NO automation envelope because the
+ * Editor's key names for it are unknown (the engine reads an optional `Trans-Wet/Dry` and plays at
+ * full strength without it). So it is offered only while the "Trans tool" setting is on (default
+ * on), the panel says it is unchecked on hardware, and `params` is empty.
+ *
+ * Volume is the opposite case and is NOT offered: the Editor has no Volume tool (its tool menu is
+ * X-FADE, EQ, Colour FX, Beat FX, Loop, Reverse, Ignore), the per-track volume is the clip's gain
+ * envelope (`Volume-Volume` of the track's volume shell, which the gain lane already edits and
+ * which is the verified form), and a `VolumeAudioProcess` as an item of the tool lane appears in no
+ * known document. A mix that already contains one still opens, plays and saves unchanged. */
+export const TRANS_TYPE: ToolType = { name: "Trans", label: "Trans", group: "fx", params: [] };
+
+/** The tools the add menu offers: the catalogue (as the card presents it), plus Trans when `trans`
+ * is true. Looking up an existing tool by name uses `toolTypesFor(vocal)`, which is never wrong for
+ * Trans (it has no parameters to look up). */
+export function addableToolTypes(vocal: VocalMode, trans: boolean): ToolType[] {
+  return [...toolTypesFor(vocal), ...(trans ? [TRANS_TYPE] : [])];
+}
 
 /** The catalogue as the card presents it. On a Pacemaker set up for the Vocal filter (Revival
  * firmware 180096073, `revival-vocal` on the card) the Wah tool is a vocal filter: it is called

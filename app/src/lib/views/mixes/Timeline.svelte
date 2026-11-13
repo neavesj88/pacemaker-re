@@ -12,6 +12,7 @@
   import { addProcessAt, addTracks, autoTransition, beatmatch, clipTitle, duplicateSelection, neighbours, pasteAtPlayhead } from "./actions";
   import ClipBlock from "./ClipBlock.svelte";
   import EnvelopeSvg from "./EnvelopeSvg.svelte";
+  import { toolPrefs } from "./listPrefs.svelte";
   import { HEADER_W, PPS_MAX, PPS_MIN, SR, clamp, envToKey, keyToEnv, packRows, rulerTicks, mmss } from "./layout";
   import { preview } from "./preview.svelte";
   import ToolBlock from "./ToolBlock.svelte";
@@ -210,7 +211,7 @@
   function fxMenu(deck: number, at: number): MenuItem[] {
     const add = (type: string, label: string): MenuItem => ({ label, onclick: () => addProcessAt(type, deck, at) });
     return [
-      ...E.toolTypesFor(vocal.mode).map((t) => add(t.name, t.label)),
+      ...E.addableToolTypes(vocal.mode, toolPrefs.showTrans).map((t) => add(t.name, t.label)),
       add("loop", "Loop"),
       add("reverse", "Reverse"),
       add("ignore", "Ignore"),
@@ -372,7 +373,7 @@
                   title="Add a crossfade over the overlap of “{clipTitle(g.from)}” and “{clipTitle(g.to)}”"
                   onclick={() => mixes.addTransition(g.from.id, g.to.id, g.start, g.end - g.start)}>+ X-fade</button
                 >
-                <button title="Crossfade with a bass swap, as suggested from the beat grids" onclick={() => void autoTransition(g.from.id, g.to.id)}>Auto</button>
+                <button title="Build a transition here with the recipe and length set in the Auto transition settings (select a crossfade or a clip to change them)" onclick={() => void autoTransition(g.from.id, g.to.id)}>Auto</button>
               </div>
             {/if}
           {/each}
