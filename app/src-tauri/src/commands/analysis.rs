@@ -1,11 +1,15 @@
-//! Analysis: waveform peaks (`analysis_peaks`) and key detection (`analysis_detect_keys`, a
-//! background job of kind "keys").
+//! Analysis: waveform peaks (`analysis_peaks`), key detection (`analysis_detect_keys`, a
+//! background job of kind "keys"), energy analysis (`energy.rs`, kind "energy", app-side cache)
+//! and section detection (`sections.rs`, kind "sections", app-side cache).
 //!
 //! Peaks are computed once per track from a full decode at a fixed fine resolution, cached in
 //! the app cache dir (see `pm_analysis::peaks`) and resampled to the width asked for. Computing
 //! runs on blocking threads, at most [`MAX_DECODES`] at a time and never twice for the same
 //! track at once, so a table asking for fifty waveforms neither stalls the UI nor decodes a file
 //! fifty times.
+
+pub mod energy;
+pub mod sections;
 
 use std::collections::HashMap;
 use std::path::{Component, Path, PathBuf};
@@ -322,6 +326,18 @@ macro_rules! analysis_commands {
                 $crate::commands::analysis::analysis_peaks,
                 $crate::commands::analysis::analysis_detect_keys,
                 $crate::commands::analysis::analysis_set_keys,
+                $crate::commands::analysis::energy::analysis_energy_state,
+                $crate::commands::analysis::energy::analysis_energy_settings,
+                $crate::commands::analysis::energy::analysis_energy_save_settings,
+                $crate::commands::analysis::energy::analysis_energy_plan,
+                $crate::commands::analysis::energy::analysis_energy_analyse,
+                $crate::commands::analysis::energy::analysis_energy_clear,
+                $crate::commands::analysis::sections::analysis_sections_state,
+                $crate::commands::analysis::sections::analysis_sections_settings,
+                $crate::commands::analysis::sections::analysis_sections_save_settings,
+                $crate::commands::analysis::sections::analysis_sections_plan,
+                $crate::commands::analysis::sections::analysis_sections_analyse,
+                $crate::commands::analysis::sections::analysis_sections_clear,
             ];
             $($rest),*
         }

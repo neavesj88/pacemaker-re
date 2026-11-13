@@ -32,6 +32,13 @@
   --label-purple: #a98aff;
   --label-pink: #ff7ac0;
   --accent-ramp: linear-gradient(90deg, #c800ff, #ff00c8);
+  /* section markers on waveforms (analysis: intro, build, drop, breakdown, outro) */
+  --sec-intro: #3d9bff;
+  --sec-build: #ffc02e;
+  --sec-drop: #ff4d6d;
+  --sec-breakdown: #2fd6c4;
+  --sec-outro: #8a7dff;
+  --sec-section: #7d8f82;
   --ok: #00ff46;
   --bad: #ff3b6b;
   --bad-bg: #2a0716;

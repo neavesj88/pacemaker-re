@@ -120,7 +120,7 @@ export function uniqueGenres(list: Track[]): string[] {
 // ---- sorting ------------------------------------------------------------------------------
 
 export type SortField =
-  | "fav" | "title" | "artist" | "album" | "genre" | "bpm" | "key" | "rating" | "times_played" | "play_time_secs" | "colour" | "energy" | "tags"
+  | "fav" | "title" | "artist" | "album" | "genre" | "bpm" | "key" | "rating" | "times_played" | "play_time_secs" | "colour" | "energy" | "auto_energy" | "tags"
   | "year" | "label" | "remixer" | "composer" | "comments" | "date_added" | "last_played" | "format" | "bit_rate" | "file_size";
 
 /** One key of a sort: the column and its direction. */
@@ -148,14 +148,16 @@ const MISSING_LAST_NUMBER: Partial<Record<SortField, (t: Track) => number | null
 /** Sorted copy of `rows` by the keys in order (the first is the primary key). Ties fall back to
  *  title then id so the order is stable. The colour, energy and tags columns sort by the
  *  app-side labels (`labelOf`); tracks without that label come last whichever way the column
- *  sorts. An empty `keys` sorts by title. */
+ *  sorts. The auto energy column sorts by the estimate from the audio (`autoEnergyOf`, null when
+ *  a track has none), blanks last in either direction. An empty `keys` sorts by title. */
 export function sortTracksBy(
   rows: Track[],
   keys: readonly SortSpec[],
   isFavourite: (id: number) => boolean,
   labelOf: (id: number) => TrackLabels | undefined = () => undefined,
+  autoEnergyOf: (id: number) => number | null = () => null,
 ): Track[] {
-  const comparators = keys.map((k) => comparatorFor(k, rows, isFavourite, labelOf));
+  const comparators = keys.map((k) => comparatorFor(k, rows, isFavourite, labelOf, autoEnergyOf));
   return [...rows].sort((a, b) => {
     for (const c of comparators) {
       const r = c(a, b);
@@ -171,6 +173,7 @@ function comparatorFor(
   rows: Track[],
   isFavourite: (id: number) => boolean,
   labelOf: (id: number) => TrackLabels | undefined,
+  autoEnergyOf: (id: number) => number | null,
 ): (a: Track, b: Track) => number {
   const { field } = spec;
   const dir = spec.asc ? 1 : -1;
@@ -184,6 +187,7 @@ function comparatorFor(
   switch (field) {
     case "colour": return withMissing((t) => labelOf(t.track_id)?.colour ?? null, (x, y) => colourRank(x) - colourRank(y));
     case "energy": return withMissing((t) => labelOf(t.track_id)?.energy ?? null, (x, y) => x - y);
+    case "auto_energy": return withMissing((t) => autoEnergyOf(t.track_id), (x, y) => x - y);
     case "tags": return withMissing((t) => { const l = labelOf(t.track_id)?.tags; return l && l.length > 0 ? l.join(", ") : null; }, (x, y) => collator.compare(x, y));
     case "fav": return (a, b) => (Number(isFavourite(a.track_id)) - Number(isFavourite(b.track_id))) * dir;
     case "key": {
@@ -222,8 +226,9 @@ export function sortTracks(
   asc: boolean,
   isFavourite: (id: number) => boolean,
   labelOf: (id: number) => TrackLabels | undefined = () => undefined,
+  autoEnergyOf: (id: number) => number | null = () => null,
 ): Track[] {
-  return sortTracksBy(rows, [{ field, asc }], isFavourite, labelOf);
+  return sortTracksBy(rows, [{ field, asc }], isFavourite, labelOf, autoEnergyOf);
 }
 
 /** The sort after a click on a column header. A plain click makes the column the only key (or, if

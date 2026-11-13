@@ -8,6 +8,7 @@
 import type { Track } from "$lib/api/types";
 import { filters } from "$lib/state/filters.svelte";
 import { suspects } from "$lib/state/gridSuspects.svelte";
+import { energy } from "$lib/state/energy.svelte";
 import { filterByLabels } from "$lib/state/labels";
 import { labels } from "$lib/state/labels.svelte";
 import { session } from "$lib/state/session.svelte";
@@ -56,5 +57,6 @@ export function tracksViewRows(all: Track[]): Track[] {
     tracksState.prefs.sort,
     (id) => tracksState.favourites.has(id),
     (id) => labels.get(id),
+    (id) => energy.of(id),
   );
 }

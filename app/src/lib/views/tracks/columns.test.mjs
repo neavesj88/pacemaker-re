@@ -126,3 +126,12 @@ test("prefs survive a JSON round trip unchanged", () => {
   p.rememberView = false;
   assert.deepEqual(mergePrefs(JSON.parse(JSON.stringify(p))), p);
 });
+
+test("the energy label and the auto energy estimate are two columns with two sort fields", () => {
+  const label = COLUMNS.find((c) => c.key === "energy");
+  const auto = COLUMNS.find((c) => c.key === "autoenergy");
+  assert.ok(label && auto);
+  assert.equal(label.sort, "energy");
+  assert.equal(auto.sort, "auto_energy");
+  assert.deepEqual(cleanSort([{ field: "auto_energy", asc: false }, { field: "energy", asc: true }]), [{ field: "auto_energy", asc: false }, { field: "energy", asc: true }]);
+});

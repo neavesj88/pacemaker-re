@@ -14,6 +14,58 @@ function seeded(text: string) {
 
 const KEYS = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
 
+// ---- energy (auto) ----
+// An in-memory stand-in for the app-side cache: location -> {size, score or skip}. Two thirds of
+// the fixture tracks start analysed, so the table shows both numbers and blanks. The mock keeps
+// the real command's rules (missing/changed only unless recompute, short tracks without a number,
+// a fit needing 20 tracks) but not its maths: a score is a seeded value.
+type MockEnergy = { size: number; duration: number; score: number | null; skip: string | null };
+const FIXED = { lo: 0.18, hi: 0.78 };
+const energyCache = new Map<string, MockEnergy>();
+let energySettings = { scale: "fit", fit_low_pct: 5, fit_high_pct: 95, min_secs: 20, threads: 2 };
+for (const t of tracks) {
+  if (t.track_id % 3 === 0) continue;
+  energyCache.set(t.location, { size: t.file_size, duration: t.play_time_secs, score: 0.2 + 0.6 * seeded(`e${t.location}`)(), skip: null });
+}
+
+const mockStatus = (t: (typeof tracks)[number]) => {
+  const e = energyCache.get(t.location);
+  if (!e) return "none";
+  if (e.size !== t.file_size) return "stale";
+  if (e.score === null) return "skipped";
+  return e.duration < energySettings.min_secs ? "skipped" : "ready";
+};
+
+function mockEnergyTargets(ids: number[] | null, recompute: boolean) {
+  return tracks.filter((t) => (!ids || ids.includes(t.track_id)) && (recompute || ["none", "stale"].includes(mockStatus(t))));
+}
+
+function mockEnergyState() {
+  const scored = tracks.filter((t) => mockStatus(t) === "ready").map((t) => ({ t, score: energyCache.get(t.location)!.score! }));
+  let anchors = FIXED;
+  let used = "fixed";
+  let note: string | null = null;
+  if (energySettings.scale === "fit") {
+    const s = scored.map((x) => x.score).sort((a, b) => a - b);
+    const at = (p: number) => s[Math.round((p / 100) * (s.length - 1))];
+    if (s.length >= 20 && at(energySettings.fit_high_pct) - at(energySettings.fit_low_pct) >= 0.08) {
+      anchors = { lo: at(energySettings.fit_low_pct), hi: at(energySettings.fit_high_pct) };
+      used = "fit";
+    } else {
+      note = "The fixed scale is in use: fitting to the library needs at least 20 analysed tracks with a real spread between them.";
+    }
+  }
+  const entries = scored.map(({ t, score }) => {
+    const energy = Math.round((1 + 9 * Math.min(1, Math.max(0, (score - anchors.lo) / (anchors.hi - anchors.lo)))) * 10) / 10;
+    return { track_id: t.track_id, energy, level: Math.min(10, Math.max(1, Math.round(energy))), score: Math.round(score * 1000) / 1000 };
+  });
+  const count = (k: string) => tracks.filter((t) => mockStatus(t) === k).length;
+  return {
+    entries, total: tracks.length, ready: entries.length, skipped: count("skipped"), stale: count("stale"), none: count("none"),
+    scale_used: used, anchor_lo: anchors.lo, anchor_hi: anchors.hi, note, settings: { ...energySettings }, problem: null,
+  };
+}
+
 export const handlers: Handlers = {
   // like the real quick write: every entry is checked first, then all are written or none; a
   // Camelot code or free text is refused, flats are stored as the detector spells them (sharps)
@@ -35,6 +87,68 @@ export const handlers: Handlers = {
       }
     }
     return changed;
+  },
+  analysis_energy_state: () => mockEnergyState(),
+  analysis_energy_settings: () => ({ ...energySettings }),
+  analysis_energy_save_settings: (a) => {
+    const s = a.settings;
+    const inRange = (v: number, lo: number, hi: number) => Number.isFinite(v) && v >= lo && v <= hi;
+    if (!["fit", "fixed"].includes(s.scale)) throw "Unknown scale.";
+    if (!inRange(s.fit_low_pct, 0, 40)) throw "The low percentile must be between 0 and 40.";
+    if (!inRange(s.fit_high_pct, 60, 100)) throw "The high percentile must be between 60 and 100.";
+    if (!inRange(s.min_secs, 5, 600)) throw "The shortest track must be between 5 and 600 seconds.";
+    if (!inRange(s.threads, 1, 8)) throw "Tracks analysed at once must be between 1 and 8.";
+    energySettings = { ...s };
+    return { ...energySettings };
+  },
+  analysis_energy_plan: (a) => mockEnergyTargets((a.trackIds as number[] | null) ?? null, !!a.recompute).map((t) => t.track_id),
+  analysis_energy_clear: () => {
+    if (jobLock.running) throw "A job is still running.";
+    const n = energyCache.size;
+    energyCache.clear();
+    return n;
+  },
+  // like the real job: reads only, one progress event each, every 7th target is too short and
+  // the 9th fails, so the skipped and failed states show up
+  analysis_energy_analyse: (a) => {
+    if (jobLock.running) throw "Another job is still running.";
+    const ids = (a.trackIds as number[] | null) ?? null;
+    if (ids && ids.length === 0) throw "No tracks to analyse.";
+    const targets = mockEnergyTargets(ids, !!a.recompute);
+    if (targets.length === 0) throw "Nothing to analyse: those tracks were already analysed. Choose Analyse again to measure them anew.";
+    jobLock.running = true;
+    let ok = 0;
+    let failed = 0;
+    let skipped = 0;
+    targets.forEach((t, i) =>
+      setTimeout(async () => {
+        let status = "analysed";
+        let detail: string | null = null;
+        let error: string | null = null;
+        if (i % 9 === 8) {
+          status = "failed";
+          error = "could not decode the file";
+          failed++;
+        } else if (i % 7 === 6) {
+          status = "skipped";
+          detail = "too short for an energy estimate";
+          energyCache.set(t.location, { size: t.file_size, duration: 3, score: null, skip: detail });
+          skipped++;
+        } else {
+          const score = 0.2 + 0.6 * seeded(`e${t.location}`)();
+          energyCache.set(t.location, { size: t.file_size, duration: t.play_time_secs, score, skip: null });
+          detail = `energy about ${(1 + 9 * Math.min(1, Math.max(0, (score - FIXED.lo) / (FIXED.hi - FIXED.lo)))).toFixed(1)}`;
+          ok++;
+        }
+        await emit("job-progress", { job: "energy", label: `${t.artist} - ${t.title}`, done: i + 1, total: targets.length, status, bpm: null, detail, error });
+        if (i === targets.length - 1) {
+          jobLock.running = false;
+          const parts = [ok ? `${ok} analysed` : "", skipped ? `${skipped} with no estimate (too short or silent)` : "", failed ? `${failed} failed` : ""].filter(Boolean);
+          await emit("job-done", { job: "energy", ok: ok + skipped, failed, summary: parts.join(", ") || "nothing to do", error: null });
+        }
+      }, 350 * (i + 1)),
+    );
+    return null;
   },
 
   // synthetic but stable per track: a kick-heavy body with quieter intro and outro

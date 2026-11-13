@@ -25,6 +25,9 @@
   import MiniWave from "./MiniWave.svelte";
   import { addToCase } from "./addToCase.svelte";
   import { analysis } from "$lib/state/analysis.svelte";
+  import { energy } from "$lib/state/energy.svelte";
+  import { sections } from "$lib/state/sections.svelte";
+  import EnergyCell from "../analysis/EnergyCell.svelte";
   import { addToMix, editGrid, editMetadata, playTrack, rate, revealInExplorer } from "./trackActions";
   import { formatDate, formatSize, keyColour, parseKey } from "./trackLogic";
   import { tracksState } from "./tracksState.svelte";
@@ -282,7 +285,7 @@
       anchorId = t.track_id;
       select([t.track_id], t.track_id);
     }
-    menu = { x: Math.max(0, Math.min(e.clientX, innerWidth - 230)), y: Math.max(0, Math.min(e.clientY, innerHeight - 490)), ids: [...selection.trackIds] };
+    menu = { x: Math.max(0, Math.min(e.clientX, innerWidth - 230)), y: Math.max(0, Math.min(e.clientY, innerHeight - 550)), ids: [...selection.trackIds] };
   }
 
   const menuItems = $derived.by(() => {
@@ -291,6 +294,8 @@
     const one = ids.length === 1;
     const n = ids.length;
     const allFav = ids.every((id) => tracksState.favourites.has(id));
+    const again = ids.every((id) => energy.of(id) !== null);
+    const sectionsAgain = ids.every((id) => sections.of(id) !== null);
     return [
       { label: "Play", onclick: () => playTrack(ids[0]) },
       { label: one ? "Edit metadata…" : `Edit metadata of ${n} tracks…`, onclick: () => editMetadata(ids) },
@@ -310,6 +315,17 @@
       { label: one ? "BPM: double…" : `BPM: double ${n} tracks…`, onclick: () => tempo.askDouble(ids) },
       { label: one ? "Re-analyse beat grid…" : `Re-analyse ${n} tracks…`, onclick: () => jobs.askReanalyse(ids) },
       { label: one ? "Beat grid tools (preview)…" : `Beat grid tools for ${n} tracks (preview)…`, onclick: () => gridBatch.open(ids) },
+      // app-side analyses (nothing is written to the device); tracks that all have a result can only mean "measure again"
+      {
+        label: `Energy (auto): analyse${again ? " again" : ""}${one ? "" : ` ${n} tracks`}…`,
+        onclick: () => energy.askAnalyse(ids, again),
+        disabled: !jobs.canWrite,
+      },
+      {
+        label: `Sections: detect${sectionsAgain ? " again" : ""}${one ? "" : ` for ${n} tracks`}…`,
+        onclick: () => sections.askAnalyse(ids, sectionsAgain),
+        disabled: !jobs.canWrite,
+      },
       { label: "Edit grid", onclick: () => editGrid(ids[0]), disabled: !one },
       { label: "Show in Explorer", onclick: () => revealInExplorer(ids[0]), disabled: !one },
     ];
@@ -448,7 +464,7 @@
             {:else if c.key === "size"}
               {formatSize(t.file_size)}
             {:else if c.key === "wave"}
-              {#if t.location}<MiniWave {root} location={t.location} />{/if}
+              {#if t.location}<MiniWave {root} location={t.location} trackId={t.track_id} />{/if}
             {:else if c.key === "bpm"}
               {@const sus = suspects.byId.get(t.track_id)}
               {#if sus && !need}<span class="suspect" title={`Suspect grid: ${suspectKinds(sus)}\n${sus.reasons.join("\n")}`} aria-label="Suspect grid">⚑</span>{/if}
@@ -458,6 +474,8 @@
               {#if k}
                 <span class="key" style:color={keyColour(k)} style:background="color-mix(in srgb, {keyColour(k)} 14%, transparent)" title={t.key}>{k.code}</span>
               {/if}
+            {:else if c.key === "autoenergy"}
+              <EnergyCell entry={energy.entry(t.track_id)} />
             {:else if c.key === "rating"}
               <span class="rate" role="presentation" onclick={stop} ondblclick={stop}>
                 <Stars rating={t.rating} onchange={(n) => rate(t, n)} />
