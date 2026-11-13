@@ -102,6 +102,7 @@ export function runSteps(job: string, labels: string[], status: string, summary:
   const what = job === "device-backup" ? "the backup was stopped and the partial copy was removed"
     : job === "device-firmware" ? "the firmware copy was stopped and nothing was installed"
     : job === "device-verify" ? "the check was stopped, so it is not a result"
+    : job === "device-sync" ? "the sync was stopped; what was already copied stays and the rest was not touched"
     : "";
   running = { job, timers, what };
   labels.forEach((label, i) =>

@@ -26,6 +26,7 @@ pub mod ops_preset;
 pub mod ops_relink;
 pub mod ops_restore;
 pub mod ops_space;
+pub mod ops_sync;
 pub mod ops_undo;
 pub mod pfw;
 pub mod strfile;

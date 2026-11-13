@@ -53,10 +53,12 @@ usage:
   pm export-playlists <volume> [--out <file>]
   pm tags <volume> --config-dir <dir> [--tag <name>] [--tracks] [--strict]
   pm duplicates <volume> [--config-dir <dir>] [--by tags|size] [--strict]
-JSON on stdout for health, backup, verify, export-playlists, tags and duplicates; errors on stderr.
+  pm sync --from <library> --to <library> [--plan-only] [--config-dir <dir>] [--exclude <key>]... [--json]
+JSON on stdout for health, backup, verify, export-playlists, tags, duplicates and sync; errors on stderr.
 --config-dir is the app's config folder (the one holding labels-*.json and duplicate-settings.json).
 exit: 0 ok, 1 error, 2 usage, 3 a check found problems (health --strict, backup --verify, verify,
-      tags --strict when the label file cannot be used, duplicates --strict when copies are found)";
+      tags --strict when the label file cannot be used, duplicates --strict when copies are found,
+      sync when an item failed)";
 
 /// Arguments split into positional words, switches and `--name value` options. Anything starting
 /// with `--` that the command does not list is a usage error, so a typo never runs silently.
@@ -423,6 +425,64 @@ pub fn duplicates(args: &[String]) -> Res<Done> {
     Ok(if found && p.has("--strict") { Done::Problems } else { Done::Clean })
 }
 
+// ---- sync -----------------------------------------------------------------------------------
+
+/// `pm sync --from <library> --to <library>`: the plan, and unless `--plan-only` the run, of the
+/// same engine the app's sync uses (`pm_formats::ops_sync`). It WRITES the target (the other
+/// commands here only read); it takes no snapshot of the target's music.db (the app does), and
+/// does not move the app's tags and labels. `--config-dir` reads the app's `sync.json` for the
+/// choices (defaults without it). `--exclude <key>` leaves an item out, as unticking it does.
+/// `--json` is accepted for symmetry: the output is always JSON. Exit 3 when an item failed.
+pub fn sync(args: &[String]) -> Res<Done> {
+    use pm_formats::ops_sync::{self, SyncSettings};
+    let mut excluded: Vec<String> = Vec::new();
+    let mut rest: Vec<String> = Vec::new();
+    let mut it = args.iter();
+    while let Some(a) = it.next() {
+        if a == "--exclude" {
+            excluded.push(it.next().ok_or_else(|| Usage("--exclude needs a value".into()))?.clone());
+        } else {
+            rest.push(a.clone());
+        }
+    }
+    let q = parse(&rest, &["--plan-only", "--json"], &["--from", "--to", "--config-dir"])?;
+    if !q.positional.is_empty() {
+        return Err(Usage("expected pm sync --from <library> --to <library>".into()).into());
+    }
+    let from = q.values.get("--from").ok_or_else(|| Usage("--from <library> is required".into()))?;
+    let to = q.values.get("--to").ok_or_else(|| Usage("--to <library> is required".into()))?;
+    let (mut settings, mut warning) = (SyncSettings::default(), None);
+    if let Some(dir) = q.values.get("--config-dir") {
+        let file = Path::new(dir).join("sync.json");
+        match std::fs::read_to_string(&file) {
+            Ok(text) => match serde_json::from_str::<SyncSettings>(&text) {
+                Ok(s) => settings = s,
+                Err(e) => warning = Some(format!("{} could not be read ({e}); the defaults are in use", file.display())),
+            },
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => warning = Some(format!("{}: {e}; the defaults are in use", file.display())),
+        }
+    }
+    let label = if from_is_device(from) { "Pacemaker" } else { "computer" };
+    let source = Library::open_read_only(Path::new(from))?;
+    let mut target_lib = if q.has("--plan-only") { Library::open_read_only(Path::new(to))? } else { Library::open(Path::new(to))? };
+    let plan = ops_sync::plan(&source, &target_lib, &settings, label)?;
+    let report = if q.has("--plan-only") { None } else { Some(ops_sync::apply(&source, &mut target_lib, &plan, &excluded, &mut |_| {}, &|| false)?) };
+    let failed = report.as_ref().is_some_and(|r| r.failed > 0);
+    print_json(&json!({
+        "from": from, "to": to, "plan_only": report.is_none(), "settings_warning": warning,
+        "plan": plan, "report": report,
+    }))?;
+    Ok(if failed { Done::Problems } else { Done::Clean })
+}
+
+/// Whether a library path is a volume root the way `find_volumes` lists them (a drive root on
+/// Windows, a mount point elsewhere); only used to word copies made by "keep both".
+fn from_is_device(path: &str) -> bool {
+    let p = Path::new(path);
+    pm_formats::library::find_volumes().iter().any(|v| v == p)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -777,5 +837,32 @@ mod tests {
             let e = f(&args).unwrap_err();
             assert!(e.downcast_ref::<Usage>().is_some(), "{args:?}: {e}");
         }
+    }
+
+    #[test]
+    fn sync_plans_and_then_applies_between_two_libraries() {
+        let (from, _) = volume("sync-from", 3);
+        let to = scratch("sync-to");
+        Library::create(&to).unwrap();
+        let (f, t) = (from.to_string_lossy().to_string(), to.to_string_lossy().to_string());
+        let a = |s: &[&str]| s.iter().map(|x| x.to_string()).collect::<Vec<_>>();
+        // plan only: the target is untouched
+        assert_eq!(sync(&a(&["--from", &f, "--to", &t, "--plan-only", "--json"])).unwrap(), Done::Clean);
+        assert!(Library::open_read_only(&to).unwrap().tracks().unwrap().is_empty());
+        // the run copies the three tracks and the case; the empty mix has nothing to need and copies too
+        assert_eq!(sync(&a(&["--from", &f, "--to", &t])).unwrap(), Done::Clean);
+        let lib = Library::open_read_only(&to).unwrap();
+        assert_eq!(lib.tracks().unwrap().len(), 3);
+        assert_eq!((lib.cases().unwrap().len(), lib.mixes().unwrap().len()), (1, 1));
+        // a second run has nothing to do
+        assert_eq!(sync(&a(&["--from", &f, "--to", &t])).unwrap(), Done::Clean);
+        assert_eq!(Library::open_read_only(&to).unwrap().tracks().unwrap().len(), 3);
+        // usage errors
+        for bad in [a(&["--from", &f]), a(&["--to", &t]), a(&["--from", &f, "--to", &t, "extra"]), a(&["--from", &f, "--to", &t, "--bogus"]), a(&["--from", &f, "--to", &t, "--exclude"])] {
+            let e = sync(&bad).unwrap_err();
+            assert!(e.downcast_ref::<Usage>().is_some(), "{bad:?}: {e}");
+        }
+        let _ = std::fs::remove_dir_all(from);
+        let _ = std::fs::remove_dir_all(to);
     }
 }

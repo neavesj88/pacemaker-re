@@ -9,6 +9,7 @@
 //!   pm export-playlists <volume>   JSON: every case and mix with its tracks (--out <file>)
 //!   pm tags <volume>               JSON: the app's tags, colour labels, energy (--config-dir <dir>)
 //!   pm duplicates <volume>         JSON: copies by tags / size and length (--config-dir <dir>)
+//!   pm sync --from A --to B        JSON: plan, and unless --plan-only the run, of the app's library sync (writes B)
 //!
 //! `<volume>` is the volume root (the folder that contains `.Pacemaker`).
 
@@ -41,6 +42,7 @@ fn main() -> ExitCode {
         Some("export-playlists") => json_cmds::export_playlists(&args[1..]),
         Some("tags") => json_cmds::tags(&args[1..]),
         Some("duplicates") => json_cmds::duplicates(&args[1..]),
+        Some("sync") => json_cmds::sync(&args[1..]),
         _ => {
             eprintln!("{}", json_cmds::USAGE);
             return ExitCode::from(2);

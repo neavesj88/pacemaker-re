@@ -4,11 +4,13 @@
 //! background job (`device-firmware`, `device-backup`, `device-cleanup`) so it shows progress and
 //! cannot overlap another write job. `space` is the free-space planner (archive and remove);
 //! `relink` finds the audio of tracks whose file is missing and relinks or copies it back;
+//! `sync` merges one library into another (this computer and the Pacemaker, either way);
 //! `preset` saves, previews and applies named settings.dat presets.
 
 pub mod preset;
 pub mod relink;
 pub mod space;
+pub mod sync;
 pub mod trust;
 pub mod undo;
 
@@ -365,6 +367,10 @@ macro_rules! device_commands {
                 $crate::commands::device::relink::device_relink_scan_cancel,
                 $crate::commands::device::relink::device_relink_inspect,
                 $crate::commands::device::relink::device_relink_run,
+                $crate::commands::device::sync::sync_settings_get,
+                $crate::commands::device::sync::sync_settings_set,
+                $crate::commands::device::sync::sync_plan,
+                $crate::commands::device::sync::sync_apply,
                 $crate::commands::device::undo::device_undo_list,
                 $crate::commands::device::undo::device_undo_preview,
                 $crate::commands::device::undo::device_undo_apply,
