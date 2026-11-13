@@ -427,3 +427,11 @@ image keeps it byte-identical on purpose (see row 8 for why a patched copy would
 carries a brick risk with no rollback). Doing it needs three things together: a `bootloaderver` bump in the trailer and the
 two 12838 constants in RedBoot, the 8-byte patch (`Revival`), and a hardware recovery path for mtd0 (programmer, JTAG or
 serial boot, none verified on this board). It needs the owner's explicit yes as its own opt-in image.
+
+### Module author tags: in place (13 Nov 2026)
+
+The build now uses `patch-modinfo.py`'s default author `Revival project`, which fits inside the existing `.modinfo`
+of both evrout.ko and pmic_input.ko after re-packing. The files keep their size and section table (test
+`test_default_author_fits_in_place`), so the moved-section layout that was never loaded on a device is no longer
+shipped. The move path stays in the script for longer names. pfw sha256 after this change:
+`495bc0fa16e81800a9a7f9ace60fcb89868d37c2cf0a758d8a1ff12569ce625a`.

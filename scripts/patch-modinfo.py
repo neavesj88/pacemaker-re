@@ -15,13 +15,13 @@ in the section, st_size = length + 1). The loader never uses them (.modinfo has 
 simplify_symbols only adds sh_addr), but they would be stale debug symbols, so their st_value and st_size are
 rewritten to the new entry positions as well; those are the only other bytes that change.
 
-  patch-modinfo.py IN.ko OUT.ko [AUTHOR]        default AUTHOR: Revival contributors
+  patch-modinfo.py IN.ko OUT.ko [AUTHOR]        default AUTHOR: Revival project (in place in both modules)
 """
 import os
 import struct
 import sys
 
-AUTHOR = b"Revival contributors"
+AUTHOR = b"Revival project"  # fits in place in both modules (no section move), see the docstring
 OLD_AUTHORS = (b"Tonium AB.", b"Tonium AB")
 
 

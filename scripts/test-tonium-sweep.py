@@ -180,10 +180,23 @@ class Modinfo(unittest.TestCase):
     def mod(self, name):
         return rd(os.path.join(RT, MODULES[name]))
 
-    def test_both_modules_grow_and_read_back(self):
+    def test_default_author_fits_in_place(self):
+        # the build uses the default: same file size, .modinfo stays where it was, no section moved
         for name in MODULES:
             d = self.mod(name)
             out = pmi.patch(d)
+            self.assertEqual(modinfo_like_kernel(out, b"author"), b"Revival project")
+            self.assertEqual(len(out), len(d))
+            self.assertEqual(pmi.sections(out)[0], pmi.sections(d)[0])
+            self.assertNotIn(b"tonium", out.lower())
+            for tag in (b"vermagic", b"depends", b"license", b"description", b"alias"):
+                self.assertEqual(modinfo_like_kernel(out, tag), modinfo_like_kernel(d, tag), tag)
+
+    def test_both_modules_grow_and_read_back(self):
+        # a longer author still works by moving the section (not used by the build)
+        for name in MODULES:
+            d = self.mod(name)
+            out = pmi.patch(d, b"Revival contributors")
             self.assertEqual(modinfo_like_kernel(d, b"author")[:6], b"Tonium")
             self.assertEqual(modinfo_like_kernel(out, b"author"), b"Revival contributors")
             for tag in (b"vermagic", b"depends", b"license", b"description"):
