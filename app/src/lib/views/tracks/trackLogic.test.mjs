@@ -1,8 +1,9 @@
 // Run: node --experimental-strip-types --test src/lib/views/tracks/trackLogic.test.mjs
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { LABEL_COLOURS } from "../../state/labels.ts";
 import {
-  filterTracks, keyName, keysCompatible, matchingTracks, NO_FILTER, parseBpm, parseKey, sortTracks, uniqueGenres,
+  COLOUR_SORT_ORDER, filterTracks, formatDate, formatSize, keyName, keysCompatible, matchingTracks, NO_FILTER, parseBpm, parseKey, sortClick, sortTracks, sortTracksBy, uniqueGenres,
 } from "./trackLogic.ts";
 
 const code = (k) => parseKey(k)?.code ?? null;
@@ -44,7 +45,8 @@ test("compatibility: same, one step round the wheel (wrapping), relative; nothin
 
 const T = (id, over = {}) => ({
   track_id: id, title: `T${id}`, artist: "", album: "", genre: "House", bpm: 128, key: "Am", play_time_secs: 200,
-  rating: 0, location: "", file_size: 0, format: "MP3", analysed: true, times_played: 0, ...over,
+  rating: 0, location: "", file_size: 0, format: "MP3", analysed: true, times_played: 0, last_played: -1,
+  year: 0, label: "", remixer: "", composer: "", comments: "", date_added: -1, bit_rate: 0, ...over,
 });
 
 test("filters: genre, bpm range, key, analysed", () => {
@@ -85,6 +87,17 @@ test("sorting: text, numbers, Camelot order, favourites, stable ties, direction"
   assert.equal(list[0].track_id, 1, "input is not mutated");
 });
 
+test("sorting by auto energy: numbers in either direction, tracks without one always last", () => {
+  const list = [T(1, { title: "b" }), T(2, { title: "a" }), T(3, { title: "c" }), T(4, { title: "d" }), T(5, { title: "e" })];
+  const energy = new Map([[1, 7.4], [2, 3.0], [4, 7.4]]);
+  const of = (id) => energy.get(id) ?? null;
+  const ids = (asc) => sortTracks(list, "auto_energy", asc, () => false, undefined, of).map((t) => t.track_id);
+  assert.deepEqual(ids(true), [2, 1, 4, 3, 5], "ties by title, then the unanalysed by title");
+  assert.deepEqual(ids(false), [1, 4, 2, 3, 5], "descending keeps the blanks at the end");
+  assert.deepEqual(sortTracks(list, "auto_energy", true, () => false).map((t) => t.track_id), [2, 1, 3, 4, 5], "with no energy at all it is a title sort");
+  assert.equal(list[0].track_id, 1, "input is not mutated");
+});
+
 test("matching tracks: compatible key and bpm within 4 percent, nearest bpm first, excludes itself", () => {
   const focus = T(1, { bpm: 128, key: "Am" });
   const list = [
@@ -99,4 +112,97 @@ test("matching tracks: compatible key and bpm within 4 percent, nearest bpm firs
 
 test("unique genres are sorted and non-empty", () => {
   assert.deepEqual(uniqueGenres([T(1, { genre: "Techno" }), T(2, { genre: "" }), T(3), T(4, { genre: "house" })]), ["House", "house", "Techno"]);
+});
+
+test("sorting by the app-side labels: colour palette order, energy, tags; unlabelled tracks last either way", () => {
+  const list = [T(1), T(2), T(3), T(4), T(5)];
+  const labels = {
+    1: { tags: ["b"], colour: "blue", energy: 5 },
+    2: { tags: [], colour: "red", energy: 9 },
+    3: { tags: ["A", "z"], colour: "pink", energy: null },
+    4: { tags: ["a"], colour: null, energy: 1 },
+  };
+  const ids = (f, asc = true) => sortTracks(list, f, asc, () => false, (id) => labels[id]).map((t) => t.track_id);
+  assert.deepEqual(ids("colour"), [2, 1, 3, 4, 5]);
+  assert.deepEqual(ids("colour", false), [3, 1, 2, 4, 5]);
+  assert.deepEqual(ids("energy"), [4, 1, 2, 3, 5]);
+  assert.deepEqual(ids("energy", false), [2, 1, 4, 3, 5]);
+  assert.deepEqual(ids("tags"), [4, 3, 1, 2, 5]);
+  assert.deepEqual(ids("tags", false), [1, 3, 4, 2, 5]);
+  // without a label source every track is unlabelled and the order falls back to title
+  assert.deepEqual(sortTracks(list, "energy", false, () => false).map((t) => t.track_id), [1, 2, 3, 4, 5]);
+});
+
+test("the colour sort order is the label palette", () => {
+  assert.deepEqual([...COLOUR_SORT_ORDER], [...LABEL_COLOURS]);
+});
+
+test("multi-key sort: later keys break ties, each key has its own direction, the title is the last resort", () => {
+  const list = [
+    T(1, { title: "d", genre: "House", bpm: 128 }), T(2, { title: "c", genre: "Techno", bpm: 128 }),
+    T(3, { title: "b", genre: "House", bpm: 124 }), T(4, { title: "a", genre: "House", bpm: 128 }),
+  ];
+  const ids = (keys) => sortTracksBy(list, keys, () => false).map((t) => t.track_id);
+  assert.deepEqual(ids([{ field: "genre", asc: true }, { field: "bpm", asc: false }]), [4, 1, 3, 2]);
+  assert.deepEqual(ids([{ field: "genre", asc: true }, { field: "bpm", asc: true }]), [3, 4, 1, 2]);
+  assert.deepEqual(ids([{ field: "genre", asc: false }, { field: "bpm", asc: true }]), [2, 3, 4, 1]);
+  assert.deepEqual(ids([{ field: "bpm", asc: true }]), [3, 4, 2, 1], "ties fall to the title, whichever way the key runs");
+  assert.deepEqual(ids([{ field: "bpm", asc: false }]), [4, 2, 1, 3]);
+  assert.deepEqual(ids([]), [4, 3, 2, 1], "no keys: by title");
+  assert.deepEqual(sortTracksBy(list, [{ field: "genre", asc: true }, { field: "bpm", asc: false }], () => false).map((t) => t.track_id), sortTracksBy(list, [{ field: "genre", asc: true }, { field: "bpm", asc: false }], () => false).map((t) => t.track_id), "stable");
+});
+
+test("columns with nothing in them sort last in both directions (year, date added, last played, bit rate, label, remixer, composer, comments, format)", () => {
+  const list = [
+    T(1, { year: 2012, date_added: 3000, last_played: 5000, bit_rate: 320, label: "B", remixer: "r2", composer: "c2", comments: "z", format: "WAV" }),
+    T(2, { format: "" }),
+    T(3, { year: 1999, date_added: 1000, last_played: 2000, bit_rate: 128, label: "a", remixer: "r1", composer: "c1", comments: "y", format: "MP3" }),
+    T(4, { label: "  ", format: " " }),
+  ];
+  for (const field of ["year", "date_added", "last_played", "bit_rate", "label", "remixer", "composer", "comments", "format"]) {
+    const asc = sortTracks(list, field, true, () => false).map((t) => t.track_id);
+    const desc = sortTracks(list, field, false, () => false).map((t) => t.track_id);
+    assert.deepEqual(asc, [3, 1, 2, 4], field + " ascending");
+    assert.deepEqual(desc, [1, 3, 2, 4], field + " descending");
+  }
+});
+
+test("file size and the existing number columns sort numerically", () => {
+  const list = [T(1, { file_size: 900 }), T(2, { file_size: 10_000 }), T(3, { file_size: 50 })];
+  assert.deepEqual(sortTracks(list, "file_size", true, () => false).map((t) => t.track_id), [3, 1, 2]);
+  assert.deepEqual(sortTracks(list, "file_size", false, () => false).map((t) => t.track_id), [2, 1, 3]);
+});
+
+test("header clicks: click = the only key (or reverse the primary and keep the others); shift-click adds, reverses, removes", () => {
+  const A = (field) => ({ field, asc: true });
+  const D = (field) => ({ field, asc: false });
+  // plain click
+  assert.deepEqual(sortClick([A("artist")], "title", false), [A("title")]);
+  assert.deepEqual(sortClick([A("artist"), A("bpm")], "title", false), [A("title")], "another column replaces the whole sort");
+  assert.deepEqual(sortClick([A("artist")], "artist", false), [D("artist")]);
+  assert.deepEqual(sortClick([D("artist")], "artist", false), [A("artist")]);
+  assert.deepEqual(sortClick([A("artist"), D("bpm")], "artist", false), [D("artist"), D("bpm")], "reversing the primary keeps the secondary keys");
+  assert.deepEqual(sortClick([A("artist"), D("bpm")], "bpm", false), [A("bpm")], "a secondary key clicked plainly becomes the only key");
+  // shift-click
+  assert.deepEqual(sortClick([A("artist")], "bpm", true), [A("artist"), A("bpm")]);
+  assert.deepEqual(sortClick([A("artist"), A("bpm")], "bpm", true), [A("artist"), D("bpm")]);
+  assert.deepEqual(sortClick([A("artist"), D("bpm")], "bpm", true), [A("artist")], "the third shift-click removes it");
+  assert.deepEqual(sortClick([A("artist"), D("bpm")], "artist", true), [D("artist"), D("bpm")]);
+  assert.deepEqual(sortClick([D("artist"), D("bpm")], "artist", true), [D("bpm")], "removing the primary promotes the next key");
+  assert.deepEqual(sortClick([D("artist")], "artist", true), [A("artist")], "a lone key is reversed, never removed");
+  const before = [A("artist")];
+  sortClick(before, "bpm", true);
+  assert.deepEqual(before, [A("artist")], "the input is not changed");
+});
+
+test("cell text for dates and sizes", () => {
+  assert.equal(formatDate(new Date(2026, 2, 4, 23, 59).getTime()), "2026-03-04");
+  assert.equal(formatDate(-1), "");
+  assert.equal(formatDate(0), "");
+  assert.equal(formatSize(0), "");
+  assert.equal(formatSize(512), "512 B");
+  assert.equal(formatSize(1536), "1.5 KB");
+  assert.equal(formatSize(8 * 1024 * 1024 + 400_000), "8.4 MB");
+  assert.equal(formatSize(150 * 1024 * 1024), "150 MB");
+  assert.equal(formatSize(3 * 1024 ** 3), "3.0 GB");
 });

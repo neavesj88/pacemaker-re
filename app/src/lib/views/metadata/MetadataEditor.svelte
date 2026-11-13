@@ -9,8 +9,11 @@
   import { nav } from "$lib/state/nav.svelte";
   import { toast } from "$lib/state/toast.svelte";
   import { metadataEditor } from "$lib/state/metadata.svelte";
+  import { NO_LABELS, draftChangesAnything, draftOps, emptyDraft, type LabelDraft } from "$lib/state/labels";
+  import { labels } from "$lib/state/labels.svelte";
   import Button from "$lib/ui/Button.svelte";
   import Stars from "$lib/ui/Stars.svelte";
+  import LabelFields from "./LabelFields.svelte";
   import {
     FIELD_LABELS,
     commonDraft,
@@ -42,6 +45,12 @@
   let multiDraft = $state<Draft | null>(null);
   let mixed = $state<Record<string, boolean>>({});
   let touched = $state<Record<string, boolean>>({});
+
+  // tags, colour and energy are app-side labels: one draft per track being edited (single mode)
+  // or one for all of them (multi mode, key 0). They are saved after the device write succeeds.
+  let labelDrafts = $state<Record<number, LabelDraft>>({ [multi ? 0 : startIds[0]]: emptyDraft() });
+  const labelKey = $derived(multi ? 0 : current);
+  const labelIds = $derived(multi ? startIds : [current]);
 
   let loading = $state(true);
   let busy = $state(false);
@@ -98,6 +107,7 @@
       }
     }
     error = "";
+    labelDrafts[next] ??= emptyDraft();
     current = next;
   }
 
@@ -137,21 +147,33 @@
     });
   });
 
-  const editedTitles = $derived(edits.map((e) => details[e.track_id]?.title || `Track ${e.track_id}`));
+  // label changes that would alter something (a draft that repeats what the tracks have is not a change)
+  const labelJobs = $derived(
+    Object.entries(labelDrafts)
+      .map(([k, d]) => ({ ids: multi ? startIds : [Number(k)], ops: draftOps(d), d }))
+      .filter((j) => j.ops.length > 0 && draftChangesAnything(j.d, j.ids.map((id) => labels.get(id) ?? NO_LABELS))),
+  );
+  const changeCount = $derived(edits.length + labelJobs.length);
+
+  // every track with an unsaved change of either kind
+  const editedIds = $derived([...new Set([...edits.map((e) => e.track_id), ...labelJobs.flatMap((j) => j.ids)])]);
+  const editedTitles = $derived(
+    editedIds.map((id) => details[id]?.title || session.library?.tracks.find((t) => t.track_id === id)?.title || `Track ${id}`),
+  );
 
   // Cancel, Esc and the scrim never throw edits away silently
   function requestClose() {
     if (busy) return;
-    if (edits.length > 0) confirmDiscard = true;
+    if (changeCount > 0) confirmDiscard = true;
     else metadataEditor.close();
   }
 
-  const canSave = $derived(!loading && !busy && problems.length === 0 && edits.length > 0);
+  const canSave = $derived(!loading && !busy && problems.length === 0 && changeCount > 0);
 
   async function save(then?: () => void) {
     if (busy || loading) return;
     if (problems.length) return;
-    if (edits.length === 0) {
+    if (changeCount === 0) {
       metadataEditor.close();
       then?.();
       return;
@@ -159,9 +181,25 @@
     busy = true;
     error = "";
     try {
-      const n = await saveMetadata(root, edits);
-      await session.load(root, true);
-      toast.show(n === 1 ? "Saved 1 track" : `Saved ${n} tracks`, "ok");
+      // the device first; the labels are app-side and only written once that has worked
+      let n = 0;
+      if (edits.length > 0) {
+        n = await saveMetadata(root, edits);
+        await session.load(root, true);
+      }
+      for (const j of labelJobs) {
+        if (!(await labels.apply(j.ids, j.ops))) {
+          error = edits.length > 0 ? "The track information was saved, but the tags, colour or energy could not be saved." : "The tags, colour or energy could not be saved.";
+          return;
+        }
+      }
+      const parts: string[] = [];
+      if (edits.length > 0) parts.push(n === 1 ? "Saved 1 track" : `Saved ${n} tracks`);
+      if (labelJobs.length > 0) {
+        const m = new Set(labelJobs.flatMap((j) => j.ids)).size;
+        parts.push(`labels updated on ${m} track${m === 1 ? "" : "s"}`);
+      }
+      toast.show(parts.join("; "), "ok");
       metadataEditor.close();
       then?.();
     } catch (e) {
@@ -169,6 +207,13 @@
     } finally {
       busy = false;
     }
+  }
+
+  // hands these tracks to the Tidy metadata page (its recipes work on many tracks at once)
+  function tidy() {
+    const ids = [...startIds];
+    metadataEditor.close();
+    nav.go("metatidy", { "metatidy.ids": ids });
   }
 
   function openGrid() {
@@ -209,6 +254,7 @@
       requestClose();
     } else if (e.key === "Enter" && !e.isComposing) {
       if (t && (t.tagName === "BUTTON" || t.tagName === "A")) return; // Enter activates the focused button
+      if (t?.closest("[data-own-enter]")) return; // the tag box uses Enter to add a tag
       e.preventDefault();
       void save();
     }
@@ -225,7 +271,7 @@
   onmousedown={(e) => (downOnScrim = e.target === e.currentTarget)}
   onclick={(e) => {
     // a drag that began inside the dialog (text selection) must not close it; with edits pending the scrim does nothing
-    if (downOnScrim && e.target === e.currentTarget && edits.length === 0 && !busy) metadataEditor.close();
+    if (downOnScrim && e.target === e.currentTarget && changeCount === 0 && !busy) metadataEditor.close();
     downOnScrim = false;
   }}
 >
@@ -299,6 +345,11 @@
           </span>
         {/if}
       </div>
+
+      <div class="labels">
+        <div class="lh">Tags, colour and energy <span class="muted">kept by this app, not shown on the Pacemaker</span></div>
+        <LabelFields ids={labelIds} bind:draft={labelDrafts[labelKey]} disabled={busy} />
+      </div>
     {/if}
 
     {#if problems.length}
@@ -309,7 +360,7 @@
     {#if confirmDiscard}
       <div class="err" role="alertdialog" aria-label="Discard changes">
         <p class="dq">
-          Discard unsaved changes to {edits.length === 1 ? "1 track" : `${edits.length} tracks`}?
+          Discard unsaved changes to {editedIds.length === 1 ? "1 track" : `${editedIds.length} tracks`}?
           {editedTitles.slice(0, 8).join("; ")}{editedTitles.length > 8 ? `; and ${editedTitles.length - 8} more` : ""}
         </p>
         <Button onclick={() => (confirmDiscard = false)}>Keep editing</Button>
@@ -322,10 +373,11 @@
         <Button onclick={() => step(-1)} disabled={busy || loading || position <= 0}>Previous</Button>
         <Button onclick={() => step(1)} disabled={busy || loading || position < 0 || position >= order.length - 1}>Next</Button>
       {/if}
+      <Button onclick={tidy} disabled={busy || loading || edits.length > 0} title={edits.length > 0 ? "Save or cancel your edits first" : "Open these tracks in Tidy metadata"}>Clean up…</Button>
       <span class="spacer"></span>
       <Button onclick={requestClose} disabled={busy}>Cancel</Button>
       <Button variant="primary" onclick={() => save()} disabled={!canSave}>
-        {busy ? "Saving…" : edits.length > 1 && !multi ? `Save ${edits.length} tracks` : "Save"}
+        {busy ? "Saving…" : editedIds.length > 1 && !multi ? `Save ${editedIds.length} tracks` : "Save"}
       </Button>
     </div>
   </div>
@@ -339,7 +391,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    background: rgba(0, 0, 0, 0.6);
+    background: var(--scrim);
   }
   .dialog {
     width: 640px;
@@ -411,6 +463,19 @@
     align-items: center;
     gap: 10px;
     margin-top: 14px;
+  }
+  .labels {
+    margin-top: 16px;
+    padding-top: 10px;
+    border-top: 1px solid var(--line);
+  }
+  .lh {
+    font-weight: 600;
+  }
+  .lh .muted {
+    margin-left: 8px;
+    font-weight: 400;
+    font-size: 12px;
   }
   .ro {
     display: inline-flex;

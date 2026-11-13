@@ -143,7 +143,10 @@ const TOOL_COLOURS: Record<string, string> = {
 export const toolColour = (name: string) => TOOL_COLOURS[name] ?? "var(--l2a)";
 
 export const TOOL_LABELS: Record<string, string> = { FILTER: "Filter", loop: "Loop", ignore: "Ignore", reverse: "Reverse" };
-export const toolLabel = (name: string) => TOOL_LABELS[name] ?? name;
+/** Name of a tool or region. `vocal` is the card's Vocal filter mode (state/vocal.svelte.ts): when it is on, the
+ * Wah tool is called "Vocal" (see `toolTypesFor` in state/mixedit.ts). */
+export const toolLabel = (name: string, vocal: "off" | "vocal" | "inverted" = "off") =>
+  name === "Wah" && vocal !== "off" ? "Vocal" : (TOOL_LABELS[name] ?? name);
 
 // ---------------------------------------------------------------------------------------------
 // Crossfade curve presets

@@ -8,3 +8,4 @@ target/
 **/.claude/settings.local.json
 # agent worktrees created by Claude Code workflow runs
 .claude/worktrees/
+target-agent*/

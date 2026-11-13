@@ -11,8 +11,13 @@
   import { editor, tempoMap } from "./editor.svelte";
   import { fmtTime, lowerBound } from "./gridMath";
   import { Metronome } from "./metronome";
+  import SectionList from "../analysis/SectionList.svelte";
   import Overview from "./Overview.svelte";
+  import TempoPanel from "./TempoPanel.svelte";
+  import TempoStrip from "./TempoStrip.svelte";
   import WaveCanvas from "./WaveCanvas.svelte";
+  import { vtempo } from "./vtempo.svelte";
+  import { dragLimits, sectionLines } from "./vtempoLogic";
 
   // ---- which track ----
   const tracks = $derived(session.library?.tracks ?? []);
@@ -104,7 +109,11 @@
       }
       raf = requestAnimationFrame(loop);
     };
-    loop();
+    // The first frame runs here, inside the effect. It writes `head` and reads it back (and
+    // `viewStart`, `follow`, `viewSpan`), so tracked it made the effect depend on what it writes
+    // and Svelte stopped it with effect_update_depth_exceeded as soon as the track played. Later
+    // frames run from requestAnimationFrame, outside any effect.
+    untrack(loop);
     return () => cancelAnimationFrame(raf);
   });
 
@@ -135,6 +144,44 @@
   $effect(() => {
     metro.latencyMs = latency;
   });
+
+  // ---- variable tempo: sections and drift follow the working grid ----
+  // (declared in this order: a new track is forgotten before its sections are asked for)
+  let toolsFor: number | null = null;
+  $effect(() => {
+    const id = editor.trackId;
+    untrack(() => {
+      if (id === toolsFor) return;
+      toolsFor = id;
+      vtempo.forget();
+      if (id !== null && vtempo.settings.auto_check) void vtempo.checkAudio();
+    });
+  });
+  $effect(() => {
+    void editor.doc;
+    void editor.splits;
+    void vtempo.settings.section_tolerance_pct;
+    void vtempo.settings.section_min_beats;
+    untrack(() => void vtempo.refreshSections());
+  });
+  $effect(() => {
+    void editor.doc;
+    void vtempo.onsets;
+    void vtempo.driftOptions;
+    untrack(() => void vtempo.refreshDrift());
+  });
+
+  const beatFrames = $derived((editor.doc?.beats ?? []).map((b) => b.pos));
+  const limitsFor = (i: number): [number, number] | null => {
+    const [lo, hi] = dragLimits(beatFrames, i, editor.sampleRate, editor.loaded?.total_frames || null);
+    return lo <= hi ? [lo / editor.sampleRate, hi / editor.sampleRate] : null;
+  };
+  const stripSections = $derived(
+    vtempo.sections.map((s) => ({ start: s.start_frame / editor.sampleRate, end: s.end_frame / editor.sampleRate, bpm: s.bpm, forced: s.forced })),
+  );
+  const stripSpans = $derived(
+    (vtempo.currentDrift?.spans ?? []).map((s) => ({ start: s.start_frame / editor.sampleRate, end: s.end_frame / editor.sampleRate })),
+  );
 
   $effect(() => {
     if (!click || !loadedHere || !playback.playing) return;
@@ -192,6 +239,10 @@
     } else if (mod && e.key.toLowerCase() === "y") {
       e.preventDefault();
       editor.redo();
+    } else if (!mod && !e.altKey && e.key.toLowerCase() === "t" && editor.trackId !== null) {
+      // tap tempo from the keyboard; the tempo tools show the result
+      if (!e.repeat) vtempo.tap();
+      e.preventDefault();
     } else if (e.key === " " && editor.trackId !== null) {
       // also when a toolbar button has focus: keydown is consumed here and keyup is cancelled
       // below, so the focused button does not fire a second time
@@ -217,6 +268,8 @@
     mixesOk = false;
     usedByMixes = [];
     const lib = session.library;
+    // the confirmation lists the tempo sections: make sure they describe the grid being saved
+    await vtempo.refreshSections();
     if (editor.gridDirty && lib && editor.loaded) {
       try {
         usedByMixes = await gridMixesUsing(lib.root, editor.loaded.track_id);
@@ -282,6 +335,13 @@
           <Button small disabled={!canEdit} onclick={() => editor.shiftBeats(-1)} title="Move the beat lines one beat earlier">◀ beat</Button>
           <Button small disabled={!canEdit} onclick={() => editor.shiftBeats(1)} title="Move the beat lines one beat later">beat ▶</Button>
           <Button small disabled={!canEdit} onclick={() => editor.setDownbeatAt(head)} title="Make the beat nearest the playhead a bar line">Set downbeat</Button>
+          <Button
+            small
+            active={vtempo.editBeats}
+            disabled={!editor.doc}
+            onclick={() => (vtempo.editBeats = !vtempo.editBeats)}
+            title="Grab single beat lines on the waveform and drag them (Alt: with every later beat). Tempo tools are below the waveform."
+          >Drag beats</Button>
         </div>
         <div class="grp" role="group" aria-label="Tempo">
           <Button small disabled={!canEdit} onclick={() => editor.halve()} title="Keep every second beat">½ BPM</Button>
@@ -347,8 +407,32 @@
         onseek={seek}
         onuser={() => (follow = false)}
         status={editor.peaksLoading ? "Loading waveform…" : ""}
+        editable={vtempo.editBeats && canEdit}
+        bind:selected={vtempo.selected}
+        {limitsFor}
+        onbeatmove={(i, secs, following) => vtempo.moveBeat(i, editor.frames(secs), following)}
+        offsets={vtempo.currentDrift?.offsets_ms ?? null}
+        biasMs={vtempo.currentDrift?.bias_ms ?? 0}
+        thresholdMs={vtempo.settings.drift_threshold_ms}
+        grabPx={vtempo.settings.grab_px}
+      />
+      <TempoStrip
+        {beatSecs}
+        sections={stripSections}
+        offsets={vtempo.currentDrift?.offsets_ms ?? null}
+        biasMs={vtempo.currentDrift?.bias_ms ?? 0}
+        thresholdMs={vtempo.settings.drift_threshold_ms}
+        spans={stripSpans}
+        duration={editor.duration}
+        playhead={head}
+        {viewStart}
+        {pxPerSec}
+        {width}
+        checking={vtempo.onsetsLoading}
+        onseek={seek}
       />
       <Overview
+        trackId={editor.trackId}
         peaks={editor.peaks}
         {beatSecs}
         firstDownbeat={fd}
@@ -362,6 +446,15 @@
           wave?.centre(s);
         }}
       />
+      <SectionList
+        trackId={editor.trackId}
+        onseek={(s) => {
+          follow = false;
+          wave?.centre(s);
+        }}
+      />
+
+      {#if editor.doc}<TempoPanel {head} onseek={seek} />{/if}
 
       <div class="cols">
         <div class="card">
@@ -409,6 +502,12 @@
         <li>
           Replaces the beat grid of <strong>{label(editor.loaded)}</strong> ({strPath}): {editor.doc.beats.length} beats at
           {editor.bpm.toFixed(2)} BPM, first beat {signed(editor.offsetMs)} ms from the saved one.
+          {#if vtempo.sections.length > 1}
+            The tempo changes along the track, and the file stores a position for every beat, so it is saved as it is:
+            <ul class="sections">
+              {#each sectionLines(vtempo.sections, editor.sampleRate) as line (line)}<li>{line}</li>{/each}
+            </ul>
+          {/if}
         </li>
       {/if}
       {#if editor.cueDirty}
@@ -601,5 +700,13 @@
   }
   .what li {
     margin: 6px 0;
+  }
+  .sections {
+    max-height: 160px;
+    overflow: auto;
+    margin: 6px 0 0;
+    padding-left: 18px;
+    font-size: 12px;
+    color: var(--muted);
   }
 </style>

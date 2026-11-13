@@ -7,11 +7,16 @@
 pub mod align;
 pub mod beats;
 pub mod decode;
+pub mod fingerprint;
+pub mod energy;
 pub mod grid;
 pub mod ingest;
 pub mod key;
 pub mod onset;
+pub mod onsets;
 pub mod peaks;
+pub mod sections;
+pub mod probe;
 pub mod tempo;
 
 use std::path::Path;

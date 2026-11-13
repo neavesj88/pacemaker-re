@@ -14,6 +14,7 @@
 use pm_formats::mix::{Effect, EffectKind, Tool};
 
 use crate::env::Env;
+use crate::vocal::VocalFx;
 use crate::RATE;
 
 const SR: f64 = RATE as f64;
@@ -30,8 +31,23 @@ pub trait Fx: Send {
     }
 }
 
+/// What the `Wah` tool (`EffectKind::Peq`) is rendered as. The Pacemaker's own Wah is replaced by
+/// a vocal filter on a device with Revival firmware and the vocal flag set on its card; a render
+/// has to use the mode of the library it is for, so a preview and an export of the same mix
+/// sound like that device. The default, [`PeqMode::Wah`], is the band-pass stand-in.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
+pub enum PeqMode {
+    /// Stock Wah (a band-pass sweep).
+    #[default]
+    Wah,
+    /// Vocal filter: positive = keep the vocals (centre band), negative = cut them.
+    Vocal,
+    /// Vocal filter with the two directions swapped (the flag file starts with `i`).
+    VocalInverted,
+}
+
 /// Builds the effect for one entry of a tool; `None` for a bypassed or unknown one.
-pub fn build(effect: &Effect, tool: &Tool, start_bpm_fallback: f64) -> Option<Box<dyn Fx>> {
+pub fn build(effect: &Effect, tool: &Tool, start_bpm_fallback: f64, peq: PeqMode) -> Option<Box<dyn Fx>> {
     if effect.bypassed {
         return None;
     }
@@ -54,7 +70,11 @@ pub fn build(effect: &Effect, tool: &Tool, start_bpm_fallback: f64) -> Option<Bo
             }
         }
         EffectKind::Eq => Box::new(Eq::new(key("Lo"), key("Mid"), key("Hi"))),
-        EffectKind::Peq => Box::new(Wah::new(key("CutOff"))),
+        EffectKind::Peq => match peq {
+            PeqMode::Wah => Box::new(Wah::new(key("CutOff"))),
+            PeqMode::Vocal => Box::new(VocalFx::new(key("CutOff"), false)),
+            PeqMode::VocalInverted => Box::new(VocalFx::new(key("CutOff"), true)),
+        },
         EffectKind::Volume => Box::new(VolumeFx::new(key("Volume"))),
         EffectKind::Trans { start_bpm, .. } => Box::new(Trans::new(key("Wet/Dry"), f64::from(*start_bpm), start_bpm_fallback)),
     })

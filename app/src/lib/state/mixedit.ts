@@ -22,6 +22,9 @@ import type {
   TransitionDoc,
   TransitionSuggestion,
 } from "../api/mixes";
+import type { SectionKind, SectionOut } from "../api/analysis";
+import type { VocalMode } from "../api/device";
+import type { Kit } from "./transitionRecipes";
 
 /** Engine sample rate (same as SAMPLE_RATE in api/mixes.ts; duplicated so this file imports no value). */
 export const SR = 44100;
@@ -31,7 +34,10 @@ export const PHRASE_BARS = 8;
 /** Shortest audible clip or process an edit may leave, in samples (0.05 s). */
 export const MIN_LENGTH = 2205;
 
-export type SnapMode = "off" | "beat" | "bar" | "phrase";
+/** "section": snap to the boundaries of detected sections (intro / build / drop / ...) where a
+ * clip has them, and to its phrase lines where it has none, so tracks without sections snap as in
+ * "phrase". */
+export type SnapMode = "off" | "beat" | "bar" | "phrase" | "section";
 
 const secOf = (samples: number) => samples / SR;
 
@@ -233,7 +239,65 @@ export function clipBeatPoints(c: Clip): BeatPoint[] {
 export const clipBeats = (c: Clip): number[] => clipBeatPoints(c).map((b) => b.time);
 
 const rank: Record<BeatKind, number> = { beat: 0, bar: 1, phrase: 2 };
-const wanted: Record<Exclude<SnapMode, "off">, number> = { beat: 0, bar: 1, phrase: 2 };
+const wanted: Record<Exclude<SnapMode, "off">, number> = { beat: 0, bar: 1, phrase: 2, section: 2 };
+
+// ---- sections (app-side phrase detection, see state/sections.svelte.ts) -------------------------
+
+/** A track's sections by track id, or null when it has none. The store passes `sections.of`; this
+ * file takes it as a function so it stays free of stores. */
+export type SectionsLookup = (trackId: number) => readonly SectionOut[] | null;
+
+/** A boundary between two sections of a clip, placed on the timeline. */
+export type SectionPoint = {
+  /** Timeline samples. */
+  time: number;
+  before: SectionKind;
+  after: SectionKind;
+  /** How strong the boundary is, 0 to 1. */
+  confidence: number;
+};
+
+/** The boundaries of a clip's sections on the timeline (the start of every section but the
+ * first), ascending. Section times are seconds in the beat grid's time base, i.e. source samples
+ * at `SR`, so the clip's tempo curve carries them to the timeline exactly as it does its beats.
+ * All of them are returned, including those outside the audible range. */
+export function clipSectionPoints(c: Clip, sections: readonly SectionOut[] | null | undefined): SectionPoint[] {
+  if (!sections || sections.length < 2) return [];
+  const tm = new TempoMap(c.tempo);
+  const out: SectionPoint[] = [];
+  for (let i = 1; i < sections.length; i++) {
+    const s = sections[i];
+    if (!Number.isFinite(s.start_secs)) continue;
+    out.push({ time: c.start + tm.localAt(s.start_secs * SR), before: sections[i - 1].kind, after: s.kind, confidence: s.start_confidence });
+  }
+  return out.sort((a, b) => a.time - b.time);
+}
+
+/** One section of a clip in clip-local samples (before the clip's `start` is added). */
+export type SectionSpan = { from: number; to: number; kind: SectionKind; confidence: number };
+
+/** The sections of a clip as clip-local sample ranges, for drawing on its waveform. */
+export function clipSectionSpans(c: Clip, sections: readonly SectionOut[] | null | undefined): SectionSpan[] {
+  if (!sections || sections.length === 0) return [];
+  const tm = new TempoMap(c.tempo);
+  return sections
+    .filter((s) => Number.isFinite(s.start_secs) && Number.isFinite(s.end_secs) && s.end_secs > s.start_secs)
+    .map((s) => ({ from: tm.localAt(s.start_secs * SR), to: tm.localAt(s.end_secs * SR), kind: s.kind, confidence: s.confidence }));
+}
+
+/** The points of a clip that a mode snaps to, on the timeline and inside its audible range: beats
+ * of the mode's class or higher, or, in "section" mode, its section boundaries (its phrase lines
+ * where it has no sections). */
+function snapPointsOf(c: Clip, mode: Exclude<SnapMode, "off">, sections?: SectionsLookup): number[] {
+  if (mode === "section") {
+    const pts = clipSectionPoints(c, sections?.(c.trackId));
+    if (pts.length > 0) return pts.map((p) => p.time).filter((t) => t >= c.visibleStart - 1 && t <= c.visibleEnd + 1);
+  }
+  const min = wanted[mode];
+  return clipBeatPoints(c)
+    .filter((b) => rank[b.kind] >= min && b.time >= c.visibleStart - 1 && b.time <= c.visibleEnd + 1)
+    .map((b) => b.time);
+}
 
 /** Evenly spaced lines of the reference tempo from timeline 0 (beat / bar / phrase), for the
  * ruler and as snap targets where no clip has a grid. */
@@ -252,19 +316,19 @@ export type SnapOptions = {
   threshold: number;
   /** Clip ids that are being dragged and must not be snap targets. */
   exclude?: string[];
+  /** Where to find a track's sections; used by the "section" mode only. */
+  sections?: SectionsLookup;
 };
 
-/** Sorted snap targets: the audible beats of the other clips at or above the mode's class, or
- * the reference tempo's grid when no other clip has one. */
-export function snapTargets(doc: MixDoc, mode: SnapMode, exclude: string[] = [], range: [number, number] | null = null): number[] {
+/** Sorted snap targets: the audible beats of the other clips at or above the mode's class (their
+ * section boundaries in "section" mode), or the reference tempo's grid when no other clip has
+ * one. */
+export function snapTargets(doc: MixDoc, mode: SnapMode, exclude: string[] = [], range: [number, number] | null = null, sections?: SectionsLookup): number[] {
   if (mode === "off") return [];
-  const min = wanted[mode];
   const out: number[] = [];
   for (const c of doc.clips) {
     if (exclude.includes(c.id)) continue;
-    for (const b of clipBeatPoints(c)) {
-      if (rank[b.kind] >= min && b.time >= c.visibleStart - 1 && b.time <= c.visibleEnd + 1) out.push(b.time);
-    }
+    out.push(...snapPointsOf(c, mode, sections));
   }
   if (out.length === 0 && doc.tempoBpm) {
     const [from, to] = range ?? [0, Math.max(doc.length, 60 * SR)];
@@ -301,13 +365,11 @@ export function snapClipStart(doc: MixDoc, clipId: string, newStart: number, opt
   const c = clipOf(doc, clipId);
   if (!c || opts.mode === "off") return newStart;
   const exclude = [clipId, ...(opts.exclude ?? [])];
-  const targets = snapTargets(doc, opts.mode, exclude, [newStart, newStart + c.length]);
+  const targets = snapTargets(doc, opts.mode, exclude, [newStart, newStart + c.length], opts.sections);
   if (targets.length === 0) return newStart;
-  const min = wanted[opts.mode];
-  // the dragged clip's own points, relative to its start: audible beats and the audible start
-  const own = clipBeatPoints(c)
-    .filter((b) => rank[b.kind] >= min && b.time >= c.visibleStart - 1 && b.time <= c.visibleEnd + 1)
-    .map((b) => b.time - c.start);
+  // the dragged clip's own points, relative to its start: audible beats (section boundaries in
+  // "section" mode) and the audible start
+  const own = snapPointsOf(c, opts.mode, opts.sections).map((t) => t - c.start);
   own.push(c.trimStart);
   let best = Infinity;
   for (const rel of own) {
@@ -356,7 +418,7 @@ export function freeChannel(doc: MixDoc, from: number, to: number, exclude: stri
 export function resizeClip(doc: MixDoc, id: string, edge: "left" | "right", pos: number, opts?: SnapOptions): MixDoc {
   const c = clipOf(doc, id);
   if (!c) return doc;
-  const targets = opts && opts.mode !== "off" ? snapTargets(doc, opts.mode, [id, ...(opts.exclude ?? [])], [pos - SR, pos + SR]) : [];
+  const targets = opts && opts.mode !== "off" ? snapTargets(doc, opts.mode, [id, ...(opts.exclude ?? [])], [pos - SR, pos + SR], opts.sections) : [];
   const p = opts ? snap(pos, targets, opts.threshold) : pos;
   if (edge === "left") {
     const v = Math.min(Math.max(p, c.start), c.visibleEnd - MIN_LENGTH);
@@ -386,14 +448,16 @@ export function deleteClips(doc: MixDoc, ids: string[]): MixDoc {
 // Processes (tools, loops, ignore, reverse): clip-local ranges
 // ---------------------------------------------------------------------------------------------
 
-/** A flat tool of a catalogue type (`TOOL_TYPES`) over clip-local `[start, start + length)`. */
-export function newTool(type: string, start: number, length: number, id: string = newId()): ToolDoc {
-  const t = TOOL_TYPES.find((x) => x.name === type);
+/** A flat tool of a catalogue type (`TOOL_TYPES`, or Trans) over clip-local `[start, start + length)`.
+ * `startBpm` is only used by Trans: the tempo its gate follows (the clip's tempo where the tool
+ * starts); 0 leaves it to the player to use the clip's tempo. */
+export function newTool(type: string, start: number, length: number, id: string = newId(), startBpm = 0): ToolDoc {
+  const t = [...TOOL_TYPES, TRANS_TYPE].find((x) => x.name === type);
   if (!t) throw new Error(`unknown tool type ${type}`);
   const last = Math.max(1, Math.round(length) - 1);
   const params: Record<string, EnvNode[]> = {};
   for (const p of t.params) params[p.key] = [{ pos: 0, value: p.flat }, { pos: last, value: p.flat }];
-  const cls = EFFECT_CLASS[type];
+  const cls = type === "Trans" ? { class: "trans", startBpm: Math.max(0, Math.round(startBpm * 100) / 100), active: true } : EFFECT_CLASS[type];
   return {
     kind: "tool",
     id,
@@ -454,7 +518,7 @@ export function moveProcess(doc: MixDoc, clipId: string, id: string, newStart: n
   if (!c || !p) return doc;
   let s = newStart;
   if (opts && opts.mode !== "off") {
-    const targets = snapTargets(doc, opts.mode, opts.exclude ?? [], [c.start + s - SR, c.start + s + SR]);
+    const targets = snapTargets(doc, opts.mode, opts.exclude ?? [], [c.start + s - SR, c.start + s + SR], opts.sections);
     // snap the start, or the end if that is nearer
     const a = snap(c.start + s, targets, opts.threshold) - c.start;
     const b = snap(c.start + s + p.length, targets, opts.threshold) - c.start - p.length;
@@ -471,7 +535,7 @@ export function resizeProcess(doc: MixDoc, clipId: string, id: string, edge: "le
   if (!c || !p) return doc;
   let q = pos;
   if (opts && opts.mode !== "off") {
-    q = snap(c.start + pos, snapTargets(doc, opts.mode, opts.exclude ?? [], [c.start + pos - SR, c.start + pos + SR]), opts.threshold) - c.start;
+    q = snap(c.start + pos, snapTargets(doc, opts.mode, opts.exclude ?? [], [c.start + pos - SR, c.start + pos + SR], opts.sections), opts.threshold) - c.start;
   }
   const end = p.start + p.length;
   const [start, stop] =
@@ -627,7 +691,7 @@ export function setCurve(doc: MixDoc, id: string, curve: CurveNode[]): MixDoc {
 /** Moves / resizes a transition on the timeline, snapped when asked. */
 export function moveTransition(doc: MixDoc, id: string, start: number, length: number | null, opts?: SnapOptions): MixDoc {
   return updateTransition(doc, id, (t) => {
-    const targets = opts && opts.mode !== "off" ? snapTargets(doc, opts.mode, [], [start - SR, start + SR]) : [];
+    const targets = opts && opts.mode !== "off" ? snapTargets(doc, opts.mode, [], [start - SR, start + SR], opts.sections) : [];
     const s = Math.max(0, opts ? snap(start, targets, opts.threshold) : start);
     return { ...t, start: s, length: Math.max(MIN_LENGTH, length ?? t.length) };
   });
@@ -700,6 +764,9 @@ export function applyTransition(doc: MixDoc, s: TransitionSuggestion, replaceCon
   }
   return d;
 }
+
+/** What `buildRecipe` (state/transitionRecipes.ts) needs from this file. */
+export const recipeKit: Kit = { newTool, conflicts: toolConflicts };
 
 // ---------------------------------------------------------------------------------------------
 // Clipboard
@@ -779,7 +846,8 @@ const prm = (name: string, key: string, label: string, min: number, max: number,
   flat,
 });
 
-/** Tools the editor can create (Trans and Delay are readable but have no sample, so not offered).
+/** Tools the editor can create always (Delay has no sample and is not offered; Trans is `TRANS_TYPE`,
+ * offered by choice; Volume is deliberately never offered, see `TRANS_TYPE`).
  * `flat` is the neutral value a new tool starts at. Ranges are those of the Editor's demo mix; the
  * EQ semantics (Hi / Mid 0 = flat, Lo 0 = flat, -100 = kill) are a hypothesis from them. The
  * parameter keys are exactly the ones `pm_formats::mix::Effect::automation_keys` lists. */
@@ -808,6 +876,39 @@ export const TOOL_TYPES: ToolType[] = [
     params: [prm("EQ", "Hi", "High", 0, 4, "", 0), prm("EQ", "Lo", "Low", -100, 0, "", 0), prm("EQ", "Mid", "Mid", 0, 4, "", 0)],
   },
 ];
+
+/** The Trans tool (a tempo-synced gate: the audio chops on and off in eighth notes). The Editor's
+ * tool menu has it, and the model, the file reader / writer and the audio engine all handle it, but
+ * NO document with a Trans tool has ever been seen (notes/mix-format.md section 0 and 8): its class
+ * version and tracking are assumed, and it is written with NO automation envelope because the
+ * Editor's key names for it are unknown (the engine reads an optional `Trans-Wet/Dry` and plays at
+ * full strength without it). So it is offered only while the "Trans tool" setting is on (default
+ * on), the panel says it is unchecked on hardware, and `params` is empty.
+ *
+ * Volume is the opposite case and is NOT offered: the Editor has no Volume tool (its tool menu is
+ * X-FADE, EQ, Colour FX, Beat FX, Loop, Reverse, Ignore), the per-track volume is the clip's gain
+ * envelope (`Volume-Volume` of the track's volume shell, which the gain lane already edits and
+ * which is the verified form), and a `VolumeAudioProcess` as an item of the tool lane appears in no
+ * known document. A mix that already contains one still opens, plays and saves unchanged. */
+export const TRANS_TYPE: ToolType = { name: "Trans", label: "Trans", group: "fx", params: [] };
+
+/** The tools the add menu offers: the catalogue (as the card presents it), plus Trans when `trans`
+ * is true. Looking up an existing tool by name uses `toolTypesFor(vocal)`, which is never wrong for
+ * Trans (it has no parameters to look up). */
+export function addableToolTypes(vocal: VocalMode, trans: boolean): ToolType[] {
+  return [...toolTypesFor(vocal), ...(trans ? [TRANS_TYPE] : [])];
+}
+
+/** The catalogue as the card presents it. On a Pacemaker set up for the Vocal filter (Revival
+ * firmware 180096073, `revival-vocal` on the card) the Wah tool is a vocal filter: it is called
+ * "Vocal" and its one parameter says which way cuts. The effect name and the parameter key stay
+ * `Wah` / `Wah-CutOff`, so documents and the device are unaffected. With the filter off (or the
+ * kill switch on) this is `TOOL_TYPES` itself. Mirrors `toolLabel` in views/mixes/layout.ts. */
+export function toolTypesFor(vocal: VocalMode): ToolType[] {
+  if (vocal === "off") return TOOL_TYPES;
+  const label = vocal === "vocal" ? "Vocals: cut (-) / keep (+)" : "Vocals: keep (-) / cut (+)";
+  return TOOL_TYPES.map((t) => (t.name === "Wah" ? { ...t, label: "Vocal", params: t.params.map((p) => ({ ...p, label })) } : t));
+}
 
 /** Effect class (the tagged members of an `EffectDoc`) the Editor writes for each tool type. */
 const EFFECT_CLASS: Record<string, Record<string, unknown>> = {

@@ -8,17 +8,33 @@ import {
   pickLibraryFile,
   pickSavePath,
   type ExportFormat,
+  type CueMode,
+  type CueNote,
   type ExportScope,
   type ImportOptions,
   type ImportPlan,
+  type InteropSource,
+  type PickKind,
 } from "$lib/api/import";
 import { baseName } from "$lib/format";
 import { jobs } from "$lib/state/jobs.svelte";
 import { session } from "$lib/state/session.svelte";
 import { toast } from "$lib/state/toast.svelte";
+import { labels } from "$lib/state/labels.svelte";
+import type { LabelColour } from "$lib/state/labels";
+import { cueApplies, cueSecs, cueTime } from "./importLogic";
+import { groupByColour, planColours, startingMap, suggestedMap, usedIndexes, type ColourMap } from "./colourImport";
 
 const stars = (n: number) => (n > 0 ? `${n}★` : "unrated");
 const plural = (n: number, one: string, many = one + "s") => `${n} ${n === 1 ? one : many}`;
+
+const SOURCE_LABEL: Record<InteropSource, string> = {
+  rekordbox: "rekordbox",
+  itunes: "iTunes / Music",
+  traktor: "Traktor",
+  serato: "Serato",
+  m3u: "M3U playlist",
+};
 
 class Interop {
   path = $state("");
@@ -28,11 +44,22 @@ class Interop {
   error = $state("");
   ratings = $state(true);
   playlists = $state(true);
+  /** What an import may do with cue points; off unless the user picks otherwise. */
+  cueMode = $state<CueMode>("off");
+  /** Also set colour labels from the other program's track colours (app-side labels, never the device). Off unless ticked. */
+  colourLabels = $state(false);
+  /** Which label colour each of the file's colour indexes becomes. */
+  colourMap = $state<ColourMap>({});
+  /** Replace a colour label a track already has (off: such tracks keep theirs). */
+  replaceColours = $state(false);
+  /** The inline "set these colour labels?" question is showing. */
+  askingColours = $state(false);
+  applyingColours = $state(false);
   /** Source-file indexes of the playlists the user left ticked. */
   chosen = $state<number[]>([]);
 
   fileName = $derived(baseName(this.path));
-  label = $derived(this.plan?.source === "itunes" ? "iTunes / Music" : "rekordbox");
+  label = $derived(this.plan ? SOURCE_LABEL[this.plan.source] : "");
 
   /** Cases that would be created or extended with the current ticks. */
   caseSteps = $derived(
@@ -41,18 +68,22 @@ class Interop {
       : [],
   );
   ratingSteps = $derived(this.ratings && this.plan ? this.plan.ratings : []);
-  changes = $derived(this.ratingSteps.length + this.caseSteps.length);
+  /** Cue points the chosen mode would write. */
+  cueSteps = $derived(this.plan ? this.plan.cues.filter((c) => cueApplies(this.cueMode, c.action)) : []);
+  changes = $derived(this.ratingSteps.length + this.cueSteps.length + this.caseSteps.length);
+  /** What the colour option would do with the current table (the colours are not part of `changes`: they go to the label store, not the device). */
+  colourPlan = $derived(this.plan ? planColours(this.plan.colours ?? [], this.colourMap, (id) => labels.get(id)?.colour ?? null, this.replaceColours) : null);
 
   private options(): ImportOptions {
-    return { ratings: this.ratings, playlists: this.playlists, playlist_indexes: [...this.chosen] };
+    return { ratings: this.ratings, playlists: this.playlists, playlist_indexes: [...this.chosen], cues: this.cueMode };
   }
 
   /** Pick a library file and preview it. */
-  async pick(title: string) {
+  async pick(kind: PickKind) {
     this.error = "";
     let path: string | null;
     try {
-      path = await pickLibraryFile(title);
+      path = await pickLibraryFile(kind);
     } catch (e) {
       this.error = String(e);
       return;
@@ -71,8 +102,11 @@ class Interop {
     this.error = "";
     try {
       // always ask for the full plan: ticking and unticking is done here, without a round trip
-      const plan = await interopPreview(lib.root, this.path, { ratings: true, playlists: true, playlist_indexes: null });
+      const plan = await interopPreview(lib.root, this.path, { ratings: true, playlists: true, playlist_indexes: null, cues: "off" });
       this.plan = plan;
+      const wanted = usedIndexes(plan.colours ?? []);
+      this.colourMap = fresh ? startingMap(wanted) : { ...startingMap(wanted), ...this.colourMap };
+      if (fresh) this.askingColours = false;
       const doable = plan.cases.filter((c) => c.action === "create" || c.action === "extend").map((c) => c.index);
       this.chosen = fresh ? doable : this.chosen.filter((i) => doable.includes(i));
     } catch (e) {
@@ -93,6 +127,47 @@ class Interop {
     this.plan = null;
     this.error = "";
     this.chosen = [];
+    this.colourLabels = false;
+    this.colourMap = {};
+    this.replaceColours = false;
+    this.askingColours = false;
+  }
+
+  /** Fills the table with the palette-order guess (unverified); the user checks it before setting anything. */
+  useSuggestedColours() {
+    const plan = this.plan;
+    if (!plan) return;
+    this.colourMap = { ...this.colourMap, ...suggestedMap(usedIndexes(plan.colours ?? [])) };
+    this.askingColours = false;
+  }
+
+  setColour(index: number, colour: LabelColour | null) {
+    this.colourMap = { ...this.colourMap, [index]: colour };
+    this.askingColours = false;
+  }
+
+  /** Writes the colour labels the preview lists, one all-or-nothing call per colour. This is the
+   *  app's own label store: no job, no device write. Returns after saying how it went. */
+  async applyColours() {
+    const plan = this.colourPlan;
+    if (!plan || plan.changes.length === 0 || this.applyingColours) return;
+    this.applyingColours = true;
+    let done = 0;
+    try {
+      for (const g of groupByColour(plan.changes)) {
+        const ok = await labels.apply(g.ids, [{ op: "set_colour", colour: g.colour }]);
+        if (!ok) {
+          // the label store already said why; the ones before this call were saved
+          toast.show(`Stopped after ${plural(done, "colour label")}; the rest were not set.`, "bad", 8000);
+          return;
+        }
+        done += g.ids.length;
+      }
+      toast.show(`Set ${plural(done, "colour label")} from ${this.label}.`, "ok");
+    } finally {
+      this.applyingColours = false;
+      this.askingColours = false;
+    }
   }
 
   toggleCase(index: number) {
@@ -108,6 +183,11 @@ class Interop {
     for (const r of this.ratingSteps) {
       names.push(`Rating of ${r.title || "(untitled)"}${r.artist ? " by " + r.artist : ""}: ${stars(r.from)} to ${stars(r.to)}`);
     }
+    for (const c of this.cueSteps) {
+      const to = cueTime(c.cue_secs);
+      const from = c.existing_frames === null ? "none" : cueTime(cueSecs(c, c.existing_frames));
+      names.push(`Cue point of ${c.title || "(untitled)"}${c.artist ? " by " + c.artist : ""}: ${from} to ${to}`);
+    }
     for (const c of this.caseSteps) {
       names.push(
         c.action === "create"
@@ -115,7 +195,7 @@ class Interop {
           : `Add ${plural(c.tracks.length, "track")} to the existing case "${c.name}"`,
       );
     }
-    const steps = (this.ratingSteps.length ? 1 : 0) + this.caseSteps.length;
+    const steps = (this.ratingSteps.length ? 1 : 0) + (this.cueSteps.length ? 1 : 0) + this.caseSteps.length;
     const path = this.path;
     const options = this.options();
     jobs.ask({
@@ -125,7 +205,7 @@ class Interop {
       names,
       title: `Import from ${this.label} into ${lib.root} ?`,
       description:
-        "Exactly the changes listed here are written: ratings in one step, then each case. Tracks are only ever added to an existing case, never removed, and no audio files are touched.",
+        "Exactly the changes listed here are written: ratings in one step, cue points in one step, then each case. Tracks are only ever added to an existing case, never removed, and no audio files are touched.",
       confirmLabel: `Apply ${plural(this.changes, "change")}`,
       runningLabel: "Importing",
       doneLabel: "Import finished",
@@ -146,7 +226,9 @@ class Interop {
       const dest = await pickSavePath(`${safe}.${ext}`, label, ext);
       if (!dest) return;
       const r = await interopExport(lib.root, format, where, dest);
-      toast.show(`Saved ${plural(r.tracks, "track")} to ${baseName(r.path)}`, "ok");
+      // notes name the smart cases written or left out; longer than a plain "Saved", so it stays up longer
+      const notes = r.notes ?? [];
+      toast.show([`Saved ${plural(r.tracks, "track")} to ${baseName(r.path)}.`, ...notes].join(" "), "ok", notes.length ? 12000 : 4000);
     } catch (e) {
       this.error = String(e);
     } finally {

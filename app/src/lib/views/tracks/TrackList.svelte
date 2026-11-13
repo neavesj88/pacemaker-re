@@ -1,21 +1,36 @@
 <script lang="ts">
   // The Tracks view's table: virtualised (only the rows on screen exist, so 5000+ tracks scroll
-  // smoothly), sortable, resizable columns, multi-select with mouse and keyboard, context menu.
+  // smoothly), sortable (click = main key, shift-click adds keys), resizable and re-orderable
+  // columns, multi-select with mouse and keyboard, context menu.
   // `rows` must already be filtered and sorted (TracksView does that).
   import { onMount, tick } from "svelte";
   import type { Track } from "$lib/api/types";
   import { mmss } from "$lib/format";
+  import { labelEditor, labels } from "$lib/state/labels.svelte";
   import { playback } from "$lib/state/playback.svelte";
   import { selection } from "$lib/state/selection.svelte";
   import { session } from "$lib/state/session.svelte";
+  import { armTrackDrag } from "$lib/state/trackDrag.svelte";
+  import { holders } from "$lib/state/holders.svelte";
+  import { suspectKinds } from "$lib/state/batchLogic";
+  import { gridBatch } from "$lib/state/gridBatch.svelte";
+  import { suspects } from "$lib/state/gridSuspects.svelte";
+  import { jobs } from "$lib/state/jobs.svelte";
+  import { tempo } from "$lib/state/tempo.svelte";
   import ContextMenu from "$lib/ui/ContextMenu.svelte";
   import Stars from "$lib/ui/Stars.svelte";
-  import type { ColDef } from "./columns";
+  import type { ColDef, ColKey } from "./columns";
+  import ColourSwatch from "./ColourSwatch.svelte";
+  import EnergyBar from "./EnergyBar.svelte";
   import MiniWave from "./MiniWave.svelte";
   import { addToCase } from "./addToCase.svelte";
   import { analysis } from "$lib/state/analysis.svelte";
-  import { addToMix, editGrid, editMetadata, playTrack, rate, revealInExplorer } from "./trackActions";
-  import { keyColour, parseKey } from "./trackLogic";
+  import { energy } from "$lib/state/energy.svelte";
+  import { energySource } from "$lib/state/energySource.svelte";
+  import { sections } from "$lib/state/sections.svelte";
+  import EnergyCell from "../analysis/EnergyCell.svelte";
+  import { addToMix, buildSet, editGrid, editMetadata, playTrack, rate, revealInExplorer } from "./trackActions";
+  import { formatDate, formatSize, keyColour, parseKey } from "./trackLogic";
   import { tracksState } from "./tracksState.svelte";
 
   let { rows, root }: { rows: Track[]; root: string } = $props();
@@ -74,13 +89,15 @@
     }
   }
 
-  /** Select just this track and bring it into view; false when the filters hide it. */
-  export function reveal(id: number): boolean {
+  /** Select just this track and bring it into view (in the middle of the table when `center`);
+   *  false when the filters hide it. */
+  export function reveal(id: number, center = false): boolean {
     const i = indexOfId(id);
     if (i < 0) return false;
     anchorId = id;
     select([id], id);
-    scrollToIndex(i);
+    if (center && scroller) scroller.scrollTop = Math.max(0, i * ROW - (bodyH - ROW) / 2);
+    else scrollToIndex(i);
     return true;
   }
 
@@ -159,6 +176,84 @@
     if (i >= 0) scrollToIndex(i);
   });
 
+  // ---- sort and column order (header clicks, drag, keyboard) ----------------------------
+
+  const sortKeys = $derived(tracksState.prefs.sort);
+
+  let headEl = $state<HTMLDivElement | null>(null);
+  /** A header being dragged to a new place: the column, where it would land and the x of the marker. */
+  let drag = $state<{ key: ColKey; before: ColKey | null; x: number } | null>(null);
+  let suppressClick = false;
+
+  function headerClick(e: MouseEvent, c: ColDef) {
+    if (suppressClick || !c.sort) return;
+    tracksState.sortBy(c.sort, e.shiftKey);
+  }
+
+  /** Where a column dropped at `clientX` would go: before the first other column whose middle is
+   *  right of the pointer (never before the heart), else at the end. */
+  function dropTarget(clientX: number, key: ColKey): { before: ColKey | null; x: number } {
+    const cells = [...(headEl?.querySelectorAll<HTMLElement>(".hcell") ?? [])].filter((el) => el.dataset.col !== key && el.dataset.col !== "fav");
+    const left = headEl?.getBoundingClientRect().left ?? 0;
+    for (const el of cells) {
+      const r = el.getBoundingClientRect();
+      if (clientX < r.left + r.width / 2) return { before: el.dataset.col as ColKey, x: r.left - left };
+    }
+    const last = cells.at(-1);
+    return { before: null, x: last ? last.getBoundingClientRect().right - left : 0 };
+  }
+
+  function startHeaderDrag(e: PointerEvent, c: ColDef) {
+    if (e.button !== 0 || c.key === "fav" || (e.target instanceof Element && e.target.closest(".grip"))) return;
+    const el = e.currentTarget as HTMLElement;
+    const x0 = e.clientX;
+    let active = false;
+    // captured from the start so a fast flick across other headers still reaches this handler
+    try {
+      el.setPointerCapture(e.pointerId);
+    } catch {
+      // the pointer is already gone; a plain click still sorts
+    }
+    const move = (m: PointerEvent) => {
+      if (!active && Math.abs(m.clientX - x0) < 6) return; // a click, not a drag
+      active = true;
+      drag = { key: c.key, ...dropTarget(m.clientX, c.key) };
+    };
+    const finish = (commit: boolean) => {
+      el.removeEventListener("pointermove", move);
+      el.removeEventListener("pointerup", up);
+      el.removeEventListener("pointercancel", cancel);
+      const d = drag;
+      drag = null;
+      if (!active) return;
+      suppressClick = true; // the click that follows the drop must not sort
+      setTimeout(() => (suppressClick = false), 0);
+      if (commit && d) tracksState.moveColumn(d.key, d.before);
+    };
+    const up = () => finish(true);
+    const cancel = () => finish(false);
+    el.addEventListener("pointermove", move);
+    el.addEventListener("pointerup", up);
+    el.addEventListener("pointercancel", cancel);
+  }
+
+  async function headerKey(e: KeyboardEvent, c: ColDef) {
+    if (e.altKey && (e.key === "ArrowLeft" || e.key === "ArrowRight")) {
+      e.preventDefault();
+      e.stopPropagation();
+      if (tracksState.stepColumn(c.key, e.key === "ArrowLeft" ? -1 : 1)) {
+        await tick(); // moving the element in the page drops its focus
+        headEl?.querySelector<HTMLElement>(`[data-col="${c.key}"]`)?.focus();
+      }
+      return;
+    }
+    if (e.key !== "Enter" && e.key !== " ") return;
+    e.stopPropagation();
+    if (!c.sort) return;
+    e.preventDefault();
+    tracksState.sortBy(c.sort, e.shiftKey);
+  }
+
   // ---- column resize --------------------------------------------------------------------
 
   function startResize(e: PointerEvent, c: ColDef) {
@@ -191,7 +286,7 @@
       anchorId = t.track_id;
       select([t.track_id], t.track_id);
     }
-    menu = { x: Math.max(0, Math.min(e.clientX, innerWidth - 230)), y: Math.max(0, Math.min(e.clientY, innerHeight - 250)), ids: [...selection.trackIds] };
+    menu = { x: Math.max(0, Math.min(e.clientX, innerWidth - 230)), y: Math.max(0, Math.min(e.clientY, innerHeight - 550)), ids: [...selection.trackIds] };
   }
 
   const menuItems = $derived.by(() => {
@@ -200,22 +295,57 @@
     const one = ids.length === 1;
     const n = ids.length;
     const allFav = ids.every((id) => tracksState.favourites.has(id));
+    const again = ids.every((id) => energy.of(id) !== null);
+    const sectionsAgain = ids.every((id) => sections.of(id) !== null);
     return [
       { label: "Play", onclick: () => playTrack(ids[0]) },
       { label: one ? "Edit metadata…" : `Edit metadata of ${n} tracks…`, onclick: () => editMetadata(ids) },
+      { label: one ? "Tags, colour, energy…" : `Tags, colour, energy of ${n} tracks…`, onclick: () => labelEditor.edit(ids) },
       { label: one ? "Add to mix" : `Add ${n} tracks to mix`, onclick: () => addToMix(ids) },
       { label: one ? "Add to case…" : `Add ${n} tracks to case…`, onclick: () => addToCase.ask(ids) },
+      { label: "Which cases hold this track…", onclick: () => holders.show(ids[0]), disabled: !one },
+      { label: one ? "Build a set…" : `Build a set from ${n} tracks…`, onclick: () => buildSet(ids), disabled: one },
       {
         label: allFav ? (one ? "Remove from favourites" : `Remove ${n} from favourites`) : one ? "Favourite" : `Favourite ${n} tracks`,
         onclick: () => tracksState.setFavourite(ids, !allFav),
       },
-      { label: one ? "Detect key" : `Detect keys of ${n} tracks`, onclick: () => analysis.askDetectKeys(ids), disabled: !ids.some((id) => analysis.keyless.some((t) => t.track_id === id)) },
+      // key and tempo tools: each opens its own dialog or confirmation naming every track it touches
+      { label: one ? "Key: detect…" : `Key: detect for ${n} tracks…`, onclick: () => analysis.askDetectKeys(ids) },
+      { label: one ? "Key: set…" : `Key: set for ${n} tracks…`, onclick: () => analysis.askSetKey(ids) },
+      { label: "BPM: set…", onclick: () => tempo.askSet(ids[0]), disabled: !one },
+      { label: one ? "BPM: halve…" : `BPM: halve ${n} tracks…`, onclick: () => tempo.askHalve(ids) },
+      { label: one ? "BPM: double…" : `BPM: double ${n} tracks…`, onclick: () => tempo.askDouble(ids) },
+      { label: one ? "Re-analyse beat grid…" : `Re-analyse ${n} tracks…`, onclick: () => jobs.askReanalyse(ids) },
+      { label: one ? "Beat grid tools (preview)…" : `Beat grid tools for ${n} tracks (preview)…`, onclick: () => gridBatch.open(ids) },
+      // app-side analyses (nothing is written to the device); tracks that all have a result can only mean "measure again"
+      {
+        label: `Energy (auto): analyse${again ? " again" : ""}${one ? "" : ` ${n} tracks`}…`,
+        onclick: () => energy.askAnalyse(ids, again),
+        disabled: !jobs.canWrite,
+      },
+      {
+        label: `Sections: detect${sectionsAgain ? " again" : ""}${one ? "" : ` for ${n} tracks`}…`,
+        onclick: () => sections.askAnalyse(ids, sectionsAgain),
+        disabled: !jobs.canWrite,
+      },
       { label: "Edit grid", onclick: () => editGrid(ids[0]), disabled: !one },
       { label: "Show in Explorer", onclick: () => revealInExplorer(ids[0]), disabled: !one },
     ];
   });
 
   const stop = (e: Event) => e.stopPropagation();
+
+  // Dragging rows carries the selected tracks (or just this one) so a case can take them: the
+  // drop strip in the sidebar (cases area) lists the cases while a drag is running. Read when the
+  // drag starts (pointer events, see state/trackDrag.svelte.ts).
+  function dragRows(t: Track) {
+    if (!selSet.has(t.track_id)) {
+      anchorId = t.track_id;
+      select([t.track_id], t.track_id);
+      return { ids: [t.track_id] };
+    }
+    return { ids: [...selection.trackIds] };
+  }
 </script>
 
 <!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
@@ -231,30 +361,33 @@
   onscroll={(e) => (scrollTop = e.currentTarget.scrollTop)}
   onkeydown={onKey}
 >
-  <div class="head" role="row" style:grid-template-columns={template} style:min-width="{totalW}px" style:height="{HEAD}px">
+  <div class="head" role="row" bind:this={headEl} style:grid-template-columns={template} style:min-width="{totalW}px" style:height="{HEAD}px">
     {#each cols as c (c.key)}
+      {@const rank = c.sort ? sortKeys.findIndex((k) => k.field === c.sort) : -1}
       <div
         class="hcell"
         class:num={c.num}
         class:sortable={!!c.sort}
+        class:dragging={drag?.key === c.key}
+        data-col={c.key}
         role="columnheader"
         tabindex={c.sort ? 0 : -1}
-        aria-sort={c.sort && c.sort === tracksState.prefs.sortKey ? (tracksState.prefs.sortAsc ? "ascending" : "descending") : "none"}
-        onclick={() => c.sort && tracksState.sortBy(c.sort)}
-        onkeydown={(e) => {
-          if (e.key !== "Enter" && e.key !== " ") return;
-          e.stopPropagation();
-          if (!c.sort) return;
-          e.preventDefault();
-          tracksState.sortBy(c.sort);
-        }}
+        aria-sort={rank === 0 ? (sortKeys[0].asc ? "ascending" : "descending") : "none"}
+        title={c.sort ? "Click to sort, shift-click to add a second sort key, drag to move, Alt+Left / Right to move with the keyboard" : "Drag to move"}
+        onpointerdown={(e) => startHeaderDrag(e, c)}
+        onclick={(e) => headerClick(e, c)}
+        onkeydown={(e) => headerKey(e, c)}
       >
-        {#if c.key === "fav"}<span class="heart-h" title="Favourites">♥</span>{:else}{c.label}{/if}
-        {#if c.sort && c.sort === tracksState.prefs.sortKey}<span class="arrow">{tracksState.prefs.sortAsc ? "▲" : "▼"}</span>{/if}
+        {#if c.key === "fav"}<span class="heart-h" title="Favourites">♥</span>{:else}<span class="lbl">{c.label}</span>{/if}
+        {#if rank >= 0}
+          <span class="arrow">{sortKeys[rank].asc ? "▲" : "▼"}</span>
+          {#if sortKeys.length > 1}<span class="ord" title="Sort key {rank + 1} of {sortKeys.length}">{rank + 1}</span>{/if}
+        {/if}
         <!-- svelte-ignore a11y_click_events_have_key_events -->
         <span class="grip" role="presentation" onpointerdown={(e) => startResize(e, c)} onclick={stop} title="Drag to resize"></span>
       </div>
     {/each}
+    {#if drag}<span class="drop" style:left="{drag.x}px" aria-hidden="true"></span>{/if}
   </div>
 
   <div class="body" style:height="{rows.length * ROW}px" style:min-width="{totalW}px">
@@ -262,6 +395,7 @@
       {@const i = start + k}
       {@const need = session.needs.has(t.track_id)}
       {@const fav = tracksState.favourites.has(t.track_id)}
+      {@const lab = labels.get(t.track_id)}
       {@const selected = selSet.has(t.track_id)}
       <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
       <div
@@ -280,6 +414,7 @@
         onclick={(e) => clickRow(e, t, i)}
         ondblclick={() => playTrack(t.track_id)}
         oncontextmenu={(e) => openMenu(e, t)}
+        onpointerdown={(e) => armTrackDrag(e, "tracks", () => dragRows(t))}
       >
         {#each cols as c (c.key)}
           <div class="cell" class:num={c.num} role="gridcell">
@@ -292,6 +427,14 @@
                 onclick={(e) => (stop(e), tracksState.setFavourite([t.track_id], !fav))}
                 ondblclick={stop}
               >♥</button>
+            {:else if c.key === "colour"}
+              <ColourSwatch colour={lab?.colour ?? null} size={14} />
+            {:else if c.key === "energy"}
+              <EnergyBar energy={lab?.energy ?? null} dim={lab?.energy != null && energySource.used(t.track_id) !== "mine"} />
+            {:else if c.key === "tags"}
+              {#if lab?.tags.length}
+                <span class="tags" title={lab.tags.join(", ")}>{#each lab.tags as tag (tag)}<span class="tag">{tag}</span>{/each}</span>
+              {/if}
             {:else if c.key === "title"}
               {#if playback.trackId === t.track_id}<span class="now" title="Loaded in the player">▶</span>{/if}
               <span class="text">{t.title}</span>
@@ -302,15 +445,39 @@
               <span class="text">{t.album}</span>
             {:else if c.key === "genre"}
               <span class="text">{t.genre}</span>
+            {:else if c.key === "year"}
+              {t.year > 0 ? t.year : ""}
+            {:else if c.key === "label"}
+              <span class="text">{t.label}</span>
+            {:else if c.key === "remixer"}
+              <span class="text">{t.remixer}</span>
+            {:else if c.key === "composer"}
+              <span class="text">{t.composer}</span>
+            {:else if c.key === "comments"}
+              <span class="text" title={t.comments}>{t.comments}</span>
+            {:else if c.key === "added"}
+              {formatDate(t.date_added)}
+            {:else if c.key === "lastplayed"}
+              {formatDate(t.last_played)}
+            {:else if c.key === "format"}
+              {t.format}
+            {:else if c.key === "bitrate"}
+              {t.bit_rate > 0 ? `${t.bit_rate} kbps` : ""}
+            {:else if c.key === "size"}
+              {formatSize(t.file_size)}
             {:else if c.key === "wave"}
-              {#if t.location}<MiniWave {root} location={t.location} />{/if}
+              {#if t.location}<MiniWave {root} location={t.location} trackId={t.track_id} />{/if}
             {:else if c.key === "bpm"}
+              {@const sus = suspects.byId.get(t.track_id)}
+              {#if sus && !need}<span class="suspect" title={`Suspect grid: ${suspectKinds(sus)}\n${sus.reasons.join("\n")}`} aria-label="Suspect grid">⚑</span>{/if}
               {t.bpm && !need ? t.bpm.toFixed(2) : "–"}
             {:else if c.key === "key"}
               {@const k = parseKey(t.key)}
               {#if k}
                 <span class="key" style:color={keyColour(k)} style:background="color-mix(in srgb, {keyColour(k)} 14%, transparent)" title={t.key}>{k.code}</span>
               {/if}
+            {:else if c.key === "autoenergy"}
+              <EnergyCell entry={energy.entry(t.track_id)} dim={energy.entry(t.track_id) !== null && energySource.used(t.track_id) !== "auto"} />
             {:else if c.key === "rating"}
               <span class="rate" role="presentation" onclick={stop} ondblclick={stop}>
                 <Stars rating={t.rating} onchange={(n) => rate(t, n)} />
@@ -373,9 +540,42 @@
   .hcell.num {
     justify-content: flex-end;
   }
+  /* a narrow column gives up the end of its name, never the sort marks */
+  .lbl {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
   .arrow {
+    flex: none;
     font-size: 9px;
     color: var(--accent);
+  }
+  /* the position of this column in a multi-key sort */
+  .ord {
+    flex: none;
+    min-width: 13px;
+    padding: 0 3px;
+    border-radius: 7px;
+    background: var(--accent-soft);
+    color: var(--accent);
+    font-size: 10px;
+    line-height: 13px;
+    text-align: center;
+  }
+  .hcell.dragging {
+    opacity: 0.45;
+  }
+  /* where the dragged column would land */
+  .drop {
+    position: absolute;
+    top: 3px;
+    bottom: 3px;
+    width: 2px;
+    margin-left: -1px;
+    background: var(--accent);
+    pointer-events: none;
+    z-index: 3;
   }
   .heart-h {
     color: var(--muted);
@@ -450,6 +650,11 @@
     background: var(--accent-soft);
     color: var(--accent);
   }
+  .suspect {
+    margin-right: 4px;
+    color: var(--accent);
+    cursor: help;
+  }
   .heart {
     width: 100%;
     background: none;
@@ -473,5 +678,19 @@
   }
   .rate {
     display: inline-flex;
+  }
+  .tags {
+    display: flex;
+    gap: 4px;
+    min-width: 0;
+    overflow: hidden;
+  }
+  .tag {
+    flex: none;
+    padding: 0 6px;
+    border-radius: 8px;
+    font-size: 11px;
+    background: var(--hover);
+    color: var(--text);
   }
 </style>

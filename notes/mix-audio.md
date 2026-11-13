@@ -19,7 +19,7 @@ file -> decode (stereo, 44.1 kHz)
      -> clip gain envelope (dB)
      -> audible window [LOffset, Length - ROffset] with 32-sample edges
      -> crossfader gain from the transitions
-     -> sum of all clips -> look-ahead limiter -> WAV (16-bit) | Ogg Vorbis
+     -> sum of all clips -> look-ahead limiter -> WAV (16-bit) | Ogg Vorbis | FLAC | MP3
 ```
 
 The timeline is processed in blocks of 4096 frames. A clip is decoded when its first block is
@@ -146,8 +146,29 @@ are replaced by zero before the limiter. The output is therefore never above 0.9
 - **Ogg Vorbis** (what the original Editor exports): `vorbis_rs` 0.5.6 (BSD-3, GPL-compatible),
   which builds the vendored aoTuV/Lancer libvorbis and libogg C sources with the `cc` crate: **no
   system libraries**, it compiled on Windows/MSVC next to the bundled SQLite. Quality VBR 0.6
-  (about 160 kbit/s for music), fixed stream serial (so the same mix gives the same file),
-  `TITLE` = mix name, `ENCODER` = Pacemaker Revival. FLAC is not offered.
+  by default (about 160 kbit/s for music; the export dialog sets it from -0.1 to 1.0), fixed stream serial (so the same mix gives the same file),
+  `TITLE` = mix name, `ENCODER` = Pacemaker Revival when no tags are given.
+- **FLAC** (16 or 24 bit, three effort levels): `flac-codec` 1.3.3 (MIT/Apache-2.0, pure Rust). 16-bit uses
+  the same TPDF dither as the WAV; 24-bit is rounded. Streaming writer: STREAMINFO (length, MD5) is
+  rewritten at the end, so a 3-hour mix never sits in memory. The audio is identical at every
+  effort level (tested); only the size changes.
+- **MP3** (CBR 96-320 kbit/s or VBR V0-V9): `mp3lame-encoder` 0.3.0 (wrapper LGPL-3.0) which builds the
+  vendored LAME 4.0 (LGPL) C sources with the `cc` crate: no system libraries, builds on Windows/MSVC.
+  Joint stereo and algorithm quality 2 by default; the dialog can switch to plain stereo and set the
+  algorithm quality 0-9 (speed against quality, the bitrate stays). LAME's Xing/Info frame (length and encoder delay, so players
+  seek and play gaplessly) is reserved at the start of the stream and filled in once the stream is
+  complete; the ID3v2 tag in front of it is written by this crate, not by LAME. The engine's limiter
+  ceiling is -0.2 dBFS, but MP3 coding can overshoot it by a little: a decoder may clip those peaks.
+- **Tags** (`pm-mixer/src/tags.rs`, all hand-written byte building, tested without an encoder):
+  MP3 ID3v2.3 (`TIT2 TPE1 TALB TYER COMM TSSE`, `APIC` front cover, `CTOC` + `CHAP` chapters), FLAC
+  Vorbis comment + `PICTURE` block, Ogg Vorbis comment header + `METADATA_BLOCK_PICTURE`, WAV
+  `LIST`/`INFO` text + `cue ` / `LIST adtl` chapter marks (no cover: a WAV cannot hold one). FLAC and
+  Ogg chapters are `CHAPTERnnn=hh:mm:ss.mmm` / `CHAPTERnnnNAME` comments, a convention rather than a
+  standard (ffmpeg reads them; plain players ignore them). The chapters are the entries of the same
+  track list the dialog and the CUE sheet use (`tracklist::build_in`), so the three agree; each runs
+  to the start of the next, the last to the end of the audio. Checked with ffprobe: it lists the
+  tags, the cover and every chapter of the MP3, FLAC, Ogg and WAV test files, and decodes the FLAC
+  and MP3. The cover is a JPEG or PNG file up to 8 MB, checked before the export starts.
 - Previews are 16-bit WAV in the temp dir (`pacemaker-revival-preview/mix-preview-0..3.wav`,
   rotating so the file the player is streaming is never overwritten).
 - Exports start at the **first audible frame** (leading silence is cut); previews keep timeline
@@ -176,7 +197,9 @@ pitch kept by the stretcher and moved by vinyl mode; key shifts; crossfade energ
 NaN with three loud clips; bit-identical repeat renders; preview window equals the full render;
 EQ/FILTER response; every tool kind renders and changes only its own range; reverb and echo tails
 decay; crush levels; reverse, ignore and loop edits; gain envelope in dB; WAV and Ogg round trip
-(decoded again and measured); cancellation leaves no file; missing file is a warning. Unit tests:
+(decoded again and measured); (`tests/formats.rs`) FLAC lossless at 16/24 bit with a correct STREAMINFO,
+MP3 CBR/VBR bitrate, patched Info frame and ID3 tag, tags/chapters/cover in every format, WAV header
+sizes with appended chunks, cancel leaves no file and keeps an existing one; cancellation leaves no file; missing file is a warning. Unit tests:
 limiter, envelopes, sinc interpolation and resampling, EQ gain law. App side
 (`export/render.rs`): library lookup against a temp volume, preview and Ogg export end to end,
 destination checks, removed-track warning, preview file rotation.
@@ -202,3 +225,48 @@ destination checks, removed-track warning, preview file rotation.
 - The export destination must end in the format's extension; progress total is the audible span (first audible frame to last clip end) and a final done == total event is sent.
 - Preview WAVs live in `pacemaker-revival-preview-<pid>` under the temp folder; folders untouched for 24 h are removed on the first preview of a run.
 - Not done: cancelling an export (needs a cancel flag in the shared job layer; the engine already stops when the progress callback returns false) and a Preview/Export UI in the mix editor (integration work).
+
+## 12. Loudness and partial export
+
+Code: `crates/pm-mixer/src/loudness.rs` (the meter), `engine.rs` (`Options::{clip_gain_db, master_gain_db,
+edge_fade_frames, measure}`, `Rendered::loudness`, `measure_clips`); app side `commands/export/loudness.rs`
+(policy and the analysis), `export/range.rs` (which part of the mix).
+
+**Meter.** ITU-R BS.1770-4 / EBU R128: K-weighting (shelf + RLB high-pass biquads, derived from the standard's
+analogue parameters by the bilinear transform; a test checks that at 48 kHz they give the published
+coefficients), 400 ms blocks every 100 ms, both channels weight 1, `-0.691 + 10 log10(z)`, absolute gate
+-70 LUFS and relative gate -10 LU. True peak: 4x oversampling with an own 16-taps-per-phase windowed-sinc
+(Blackman-Harris) interpolator, **not** the 12-tap filter printed in BS.1770 Annex 2 (not reproduced from
+memory); it reads a fs/4 sine within 0.1 dB, and a 4x-oversampled peak can still miss the true one by up to
+about 0.3 dB. Tested on 1 kHz sines at -23 / -20 / -40 / 0 dBFS (read within 0.05 LU), one silent channel,
+the two gates, silence, signals under 400 ms, block-size independence, K-weighting shape.
+
+**Where gains go.** `clip gain -> crossfader -> sum -> master gain -> edge fades -> limiter`. The master gain
+is before the limiter, so the limiter stays the safety net (ceiling 0.98). A render with `measure` reports
+the loudness and peaks of the limiter input (`pre_limiter`) and of the output.
+
+**Finding the gains.** `export_loudness_analyse` (and the first half of an export with loudness settings on):
+(1) with per-clip levelling, each clip heard in the range is rendered alone by the same `ClipStream` the mix
+uses (tools and its own volume envelope count, crossfades do not) and measured over its whole audible part;
+its gain is `reference - loudness`, limited to +-`clipMaxDb` (reference: the median of those clips, or a fixed
+LUFS value). (2) the mix is rendered once with the clip gains and no master gain and measured before the
+limiter over the exported range; master gain = `target - measured`, limited to `maxBoostDb` / `maxCutDb` and,
+if asked, to the true-peak ceiling. The export then renders with those gains and measures its own output.
+If the gain pushes peaks into the limiter the file lands below the target; the report says
+`limiterWillAct` beforehand and the export's own measurement afterwards (it never claims the target was met).
+Loudness is measured on the PCM before Ogg encoding or 16-bit quantisation. Raising the gain further until
+the limited output reaches the target (a loudness maximiser) is not done.
+
+**Preview equals action.** `export_render_preview(.., gains, edgeFadeMs)` applies the analysis' gains with the
+same engine options, so a preview of a range at the analysed level is sample-identical to the same range
+exported with the same settings (a test checks it). The editor uses the gains only while the analysis is
+current (same mix audio, range and settings), otherwise it says "not at export level".
+
+**Partial export.** `RangeSpec`: whole, a time range (timeline seconds), or from clip A to clip B (either
+order; the end is the last clip's end, or just before the next clip enters). `range::resolve` is the one
+function the export, the analysis, the preview and the dialog's summary call. Frame 0 of a partial file is the
+start of the range; a CUE sheet of a partial export counts from there (`tracklist::render_all_in`). A cut that
+falls inside audio gets a short fade (`edgeFadeMs`, default 20 ms, 0 = hard cut). **Not carried over:** effect
+state from before the range: a reverb or echo still ringing from a tool that ended before it, or a tool that
+is already running at the start, begins cold (loops and reversed regions that began earlier are found, as for
+previews).

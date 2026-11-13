@@ -1,0 +1,17 @@
+[
+  { "name": "mine only, source mine", "mine": 6, "auto": null, "source": "mine", "level": 6 },
+  { "name": "auto only, source mine gives nothing", "mine": null, "auto": 7.2, "source": "mine", "level": null },
+  { "name": "both, source mine keeps mine", "mine": 3, "auto": 8.0, "source": "mine", "level": 3 },
+  { "name": "auto only, source auto rounds", "mine": null, "auto": 7.4, "source": "auto", "level": 7 },
+  { "name": "half rounds up", "mine": null, "auto": 7.5, "source": "auto", "level": 8 },
+  { "name": "mine only, source auto gives nothing", "mine": 9, "auto": null, "source": "auto", "level": null },
+  { "name": "both, source auto ignores mine", "mine": 2, "auto": 8.6, "source": "auto", "level": 9 },
+  { "name": "mine else auto prefers mine", "mine": 4, "auto": 9.0, "source": "mine_else_auto", "level": 4 },
+  { "name": "mine else auto falls back to auto", "mine": null, "auto": 5.6, "source": "mine_else_auto", "level": 6 },
+  { "name": "mine else auto with nothing", "mine": null, "auto": null, "source": "mine_else_auto", "level": null },
+  { "name": "an estimate below 0.5 is no energy", "mine": null, "auto": 0.4, "source": "auto", "level": null },
+  { "name": "an unusable estimate does not hide the fallback of nothing", "mine": null, "auto": 0.2, "source": "mine_else_auto", "level": null },
+  { "name": "0.5 is level 1", "mine": null, "auto": 0.5, "source": "auto", "level": 1 },
+  { "name": "estimate above 10 is capped", "mine": null, "auto": 10.4, "source": "mine_else_auto", "level": 10 },
+  { "name": "mine wins even when the estimate is unusable", "mine": 1, "auto": 0.1, "source": "mine_else_auto", "level": 1 }
+]

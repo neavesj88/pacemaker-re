@@ -213,7 +213,39 @@ pub struct TransitionSuggestion {
     pub tools: Vec<ToolSuggestion>,
     /// Length of the overlap in bars (4 beats) at the incoming clip's tempo.
     pub bars: f64,
+    /// Samples in one beat of the incoming clip at the transition start (the unit the recipes
+    /// in `state/transitionRecipes.ts` snap their envelope nodes to).
+    pub beat: f64,
+    /// How many bars both clips are audible together from the transition start (what the
+    /// length could be at most), for the length choice in the UI.
+    pub bars_available: f64,
     pub notes: Vec<String>,
+}
+
+/// Longest first: the lengths an automatic transition shrinks through when the requested one
+/// does not fit.
+const BAR_LADDER: [f64; 7] = [64.0, 32.0, 16.0, 8.0, 4.0, 2.0, 1.0];
+/// The length asked for when none is given (the original behaviour).
+const DEFAULT_BARS: f64 = 16.0;
+/// Longest transition that may be asked for, in bars.
+const MAX_BARS: f64 = 128.0;
+
+/// The transition length for `avail` samples of shared audio: the requested number of bars
+/// (rounded to whole beats) when it fits, else the largest ladder step not above it that does,
+/// else whole beats. Returns `(length in samples, bars)`.
+fn pick_length(avail: f64, beat: f64, requested: f64) -> (f64, f64) {
+    let bar = beat * BEATS_PER_BAR as f64;
+    let beats = (requested * BEATS_PER_BAR as f64).round().max(1.0);
+    if beats * beat <= avail + 1.0 {
+        return (beats * beat, beats / BEATS_PER_BAR as f64);
+    }
+    match BAR_LADDER.into_iter().find(|n| *n <= requested && n * bar <= avail + 1.0) {
+        Some(n) => (n * bar, n),
+        None => {
+            let b = (avail / beat).floor().max(1.0);
+            (b * beat, b / BEATS_PER_BAR as f64)
+        }
+    }
 }
 
 /// An EQ tool over timeline `[t0, t0 + len)` of `clip`, with Lo held flat then killed (or the
@@ -263,10 +295,15 @@ fn dedupe(v: Vec<(u32, f32)>) -> Vec<(u32, f32)> {
 }
 
 /// Suggests the transition between `from` and `to`: the overlap starts at the incoming clip's
-/// beat nearest its cue and lasts 16 bars (or the largest of 8, 4, 2, 1 bars, else a number of
-/// beats, that the outgoing clip's remaining audio allows), a linear crossfade, and a bass swap
-/// with EQ tools on both clips.
-pub fn auto_transition(doc: &MixDoc, from_id: &str, to_id: &str) -> Result<TransitionSuggestion, String> {
+/// beat nearest its cue and lasts `bars` bars (default 16; rounded to whole beats; the largest
+/// of 64, 32, ... 1 bars below it, else a number of beats, when the audio both clips share does
+/// not allow it), a linear crossfade, and a bass swap with EQ tools on both clips. The other
+/// recipes (state/transitionRecipes.ts) reshape the crossfade and tools on this geometry.
+pub fn auto_transition(doc: &MixDoc, from_id: &str, to_id: &str, bars: Option<f64>) -> Result<TransitionSuggestion, String> {
+    let requested = bars.unwrap_or(DEFAULT_BARS);
+    if !requested.is_finite() || requested < 1.0 / BEATS_PER_BAR as f64 || requested > MAX_BARS {
+        return Err(format!("a transition length of {requested} bars is not usable (a beat to {MAX_BARS} bars)"));
+    }
     let a = doc.clip(from_id).ok_or_else(|| format!("no clip {from_id}"))?;
     let b = doc.clip(to_id).ok_or_else(|| format!("no clip {to_id}"))?;
     if a.id == b.id {
@@ -289,7 +326,9 @@ pub fn auto_transition(doc: &MixDoc, from_id: &str, to_id: &str) -> Result<Trans
             b.visible_start
         }
     };
-    let avail = a.visible_end - t0;
+    // both clips have to be audible for the whole overlap: the outgoing one up to its end, the
+    // incoming one from the transition start on
+    let avail = a.visible_end.min(b.visible_end) - t0;
     if avail < beat * 0.5 {
         return Err(format!(
             "the clips do not overlap: the outgoing clip ends {:.1} s before the incoming one starts (move the later clip earlier)",
@@ -297,15 +336,11 @@ pub fn auto_transition(doc: &MixDoc, from_id: &str, to_id: &str) -> Result<Trans
         ));
     }
     let bars_avail = avail / bar;
-    let (len, bars) = match [16.0, 8.0, 4.0, 2.0, 1.0].into_iter().find(|n| n * bar <= avail + 1.0) {
-        Some(n) => (n * bar, n),
-        None => {
-            let beats = (avail / beat).floor().max(1.0);
-            notes.push(format!("only {beats} beat(s) of overlap are available; no bass swap"));
-            (beats * beat, beats / BEATS_PER_BAR as f64)
-        }
-    };
-    if bars < 16.0 {
+    let (len, bars) = pick_length(avail, beat, requested);
+    if bars < 1.0 {
+        notes.push(format!("{} beat(s) is under a bar: no bass swap tools", (len / beat).round()));
+    }
+    if bars < requested {
         notes.push(format!("{bars_avail:.1} bars overlap: using {bars}"));
     }
     if (a.effective_bpm(t0 - a.span.start) - bpm).abs() > 0.1 {
@@ -349,7 +384,7 @@ pub fn auto_transition(doc: &MixDoc, from_id: &str, to_id: &str) -> Result<Trans
             tools.push(ToolSuggestion { clip_id: clip.id.clone(), tool: ProcessDoc::Tool(tool), conflicts });
         }
     }
-    Ok(TransitionSuggestion { transition, tools, bars, notes })
+    Ok(TransitionSuggestion { transition, tools, bars, beat, bars_available: bars_avail, notes })
 }
 
 #[cfg(test)]
@@ -498,7 +533,7 @@ mod tests {
         let mut b = clip("b", 8_000_000.0, 20_000_000.0, 0.0, 128.0, 1.0, grid(128.0, 3000, 800, Some(0)));
         b.channel = 1;
         let d = doc_of(vec![a, b], Some(128.0));
-        let s = auto_transition(&d, "a", "b").unwrap();
+        let s = auto_transition(&d, "a", "b", None).unwrap();
         let bar = 4.0 * 60.0 / 128.0 * 44100.0;
         assert_eq!(s.bars, 16.0);
         assert!((s.transition.span.length - 16.0 * bar).abs() < 1e-6);
@@ -535,12 +570,69 @@ mod tests {
         let bar = 4.0 * 60.0 / 128.0 * 44100.0;
         let b = clip("b", 8_000_000.0 - 3.3 * bar, 8_000_000.0, 0.0, 128.0, 1.0, grid(128.0, 0, 800, Some(0)));
         let d = doc_of(vec![a.clone(), b], Some(128.0));
-        let s = auto_transition(&d, "a", "b").unwrap();
+        let s = auto_transition(&d, "a", "b", None).unwrap();
         assert_eq!(s.bars, 2.0);
         // no overlap at all
         let far = clip("c", 9_000_000.0, 1_000_000.0, 0.0, 128.0, 1.0, grid(128.0, 0, 100, None));
         let d = doc_of(vec![a, far], None);
-        assert!(auto_transition(&d, "a", "c").unwrap_err().contains("do not overlap"));
-        assert!(auto_transition(&d, "a", "a").is_err());
+        assert!(auto_transition(&d, "a", "c", None).unwrap_err().contains("do not overlap"));
+        assert!(auto_transition(&d, "a", "a", None).is_err());
+    }
+
+    #[test]
+    fn auto_transition_honours_the_requested_length() {
+        let a = clip("a", 0.0, 40_000_000.0, 0.0, 128.0, 1.0, grid(128.0, 0, 1600, Some(0)));
+        let mut b = clip("b", 8_000_000.0, 40_000_000.0, 0.0, 128.0, 1.0, grid(128.0, 3000, 1600, Some(0)));
+        b.channel = 1;
+        let d = doc_of(vec![a, b], Some(128.0));
+        let beat = 60.0 / 128.0 * 44100.0;
+        // lengths the old ladder never offered: 32 bars, 4 bars, and a fraction of a bar
+        for want in [32.0, 4.0, 1.0, 0.5, 0.25] {
+            let s = auto_transition(&d, "a", "b", Some(want)).unwrap();
+            assert_eq!(s.bars, want);
+            assert!((s.transition.span.length - want * 4.0 * beat).abs() < 1e-6, "{want} bars");
+            assert!((s.beat - beat).abs() < 1e-9);
+            assert!(s.bars_available > 32.0);
+        }
+        // under a bar: no bass swap tools and a note saying so
+        let s = auto_transition(&d, "a", "b", Some(0.25)).unwrap();
+        assert!(s.tools.is_empty());
+        assert!(s.notes.iter().any(|n| n.contains("under a bar")));
+        // None is the old default
+        assert_eq!(auto_transition(&d, "a", "b", None).unwrap().bars, 16.0);
+        // not usable
+        for bad in [0.0, -1.0, 0.1, 200.0, f64::NAN, f64::INFINITY] {
+            assert!(auto_transition(&d, "a", "b", Some(bad)).is_err(), "{bad}");
+        }
+    }
+
+    #[test]
+    fn auto_transition_shrinks_a_long_request_and_says_so() {
+        let a = clip("a", 0.0, 8_000_000.0, 0.0, 128.0, 1.0, grid(128.0, 0, 800, Some(0)));
+        let bar = 4.0 * 60.0 / 128.0 * 44100.0;
+        let b = clip("b", 8_000_000.0 - 11.3 * bar, 8_000_000.0, 0.0, 128.0, 1.0, grid(128.0, 0, 800, Some(0)));
+        let d = doc_of(vec![a, b], Some(128.0));
+        // 11 bars shared: 32 bars shrinks to 8, 4 bars still fits
+        let s = auto_transition(&d, "a", "b", Some(32.0)).unwrap();
+        assert_eq!(s.bars, 8.0);
+        assert!(s.bars_available > 10.0 && s.bars_available < 12.0);
+        assert!(s.notes.iter().any(|n| n.contains("using 8")));
+        assert_eq!(auto_transition(&d, "a", "b", Some(4.0)).unwrap().bars, 4.0);
+        // a length that is not on the ladder is kept when it fits
+        assert_eq!(auto_transition(&d, "a", "b", Some(6.0)).unwrap().bars, 6.0);
+    }
+
+    #[test]
+    fn auto_transition_never_outlasts_the_incoming_clip() {
+        // b has only ~5 bars of audio left after its first beat although a keeps playing
+        let bar = 4.0 * 60.0 / 128.0 * 44100.0;
+        let a = clip("a", 0.0, 40_000_000.0, 0.0, 128.0, 1.0, grid(128.0, 0, 1600, Some(0)));
+        let mut b = clip("b", 8_000_000.0, 5.2 * bar, 0.0, 128.0, 1.0, grid(128.0, 3000, 1600, Some(0)));
+        b.channel = 1;
+        let d = doc_of(vec![a, b], Some(128.0));
+        let s = auto_transition(&d, "a", "b", Some(16.0)).unwrap();
+        assert_eq!(s.bars, 4.0);
+        let b_end = d.clip("b").unwrap().visible_end;
+        assert!(s.transition.span.start + s.transition.span.length <= b_end + 1.0);
     }
 }

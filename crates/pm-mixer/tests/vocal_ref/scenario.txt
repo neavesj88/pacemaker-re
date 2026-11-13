@@ -1,0 +1,39 @@
+# Scenario of the C-versus-Rust equivalence test of the Vocal filter (read by vocal_ref.c and by tests/vocal_equiv.rs).
+# 'pass <invert>' starts a pass from rest (invert = 1 when the flag file starts with 'i').
+# Other lines: <Wah value> <frames> <block size> <input gain> <silent input 0|1> <garbage samples 0|1>
+# The value is held for the segment and sent once per block, like the device does per audio block.
+pass 0
+0       640  32  1.0 0 0   # dead zone: idle bypass
+0.99    320  32  1.0 0 0   # just below the engage edge
+1.0     640  32  1.0 0 0   # engage edge
+0.6     640  32  1.0 0 0   # held by the hysteresis
+0.5     320  32  1.0 0 0   # release edge, still held
+0.49    640  32  1.0 0 0   # released: fades out
+0       1200 32  1.0 0 0   # idle again
+100     2000 129 1.0 0 0   # full focus, blocks across the 128-frame sub-block size
+100     600  64  1.8 0 0   # hot input: the soft knee
+50      800  1   1.0 0 0   # one frame per call
+-100    1500 32  1.0 0 1   # full cut with garbage samples in the input
+-1.0    400  32  1.0 0 0   # tiny cut, just engaged
+-100     160  32  1.0 0 0   # sweep
+-80     160  32  1.0 0 0   # sweep
+-60     160  32  1.0 0 0   # sweep
+-40     160  32  1.0 0 0   # sweep
+-20     160  32  1.0 0 0   # sweep
+0     160  32  1.0 0 0   # sweep
+20     160  32  1.0 0 0   # sweep
+40     160  32  1.0 0 0   # sweep
+60     160  32  1.0 0 0   # sweep
+80     160  32  1.0 0 0   # sweep
+100     160  32  1.0 0 0   # sweep
+nan     320  32  1.0 0 0   # NaN value counts as 0
+250     320  32  1.0 0 0   # out of range counts as 0
+80      300  300 1.0 0 0   # one long block
+100     1500 64  1.0 1 0   # silent input while engaged: the tail
+0       1500 32  1.0 0 0   # back to bypass
+pass 1
+100     640  32  1.0 0 0   # inverted: +100 cuts
+-100    640  32  1.0 0 0   # inverted: -100 keeps the centre
+0.7     320  32  1.0 0 0
+30      640  32  1.0 0 0
+0       1000 32  1.0 0 0

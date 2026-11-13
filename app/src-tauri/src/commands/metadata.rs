@@ -4,9 +4,17 @@
 
 use std::path::PathBuf;
 
+/// Clean-up recipes (pure engine, saved settings, preview / apply commands).
+pub mod cleanup;
+/// Optional write-back of tags into the audio files themselves.
+pub mod tagwrite;
+/// Fingerprint of a file's audio payload (proves a tag rewrite left the audio alone).
+pub mod audiohash;
+
 use pm_formats::library::Library;
 use pm_formats::ops_metadata::{TrackDetail, TrackEdit};
 
+use crate::commands::device::undo;
 use crate::error::AppResult;
 
 pub fn setup(_app: &mut tauri::App) {}
@@ -23,9 +31,11 @@ pub struct TrackEditEntry {
 /// Sets a track's star rating (0 = unrated to 5).
 #[tauri::command]
 pub async fn metadata_set_rating(app: tauri::AppHandle, root: String, track_id: i64, stars: u8) -> AppResult<()> {
+    let handle = app.clone();
     crate::state::quick_write(app, root.clone(), move || -> AppResult<()> {
-        let mut lib = Library::open(&PathBuf::from(root))?;
-        lib.set_track_rating(track_id, stars)?;
+        let mut lib = Library::open(&PathBuf::from(&root))?;
+        // recorded for undo (device area: commands/device/undo.rs)
+        undo::tracked_edit(&handle, &root, &mut lib, &[track_id], |l| l.set_track_rating(track_id, stars))?;
         Ok(())
     })
     .await
@@ -44,10 +54,13 @@ pub async fn metadata_track_details(root: String, track_ids: Vec<i64>) -> AppRes
 /// Saves the edits in one transaction; returns how many tracks actually changed.
 #[tauri::command]
 pub async fn metadata_save(app: tauri::AppHandle, root: String, edits: Vec<TrackEditEntry>) -> AppResult<usize> {
+    let handle = app.clone();
     crate::state::quick_write(app, root.clone(), move || -> AppResult<usize> {
-        let mut lib = Library::open(&PathBuf::from(root))?;
+        let mut lib = Library::open(&PathBuf::from(&root))?;
         let edits: Vec<(i64, TrackEdit)> = edits.into_iter().map(|e| (e.track_id, e.edit)).collect();
-        Ok(lib.edit_tracks(&edits)?)
+        let ids: Vec<i64> = edits.iter().map(|(id, _)| *id).collect();
+        // recorded for undo (device area: commands/device/undo.rs)
+        Ok(undo::tracked_edit(&handle, &root, &mut lib, &ids, |l| l.edit_tracks(&edits))?)
     })
     .await
 }
@@ -62,6 +75,14 @@ macro_rules! metadata_commands {
                 $crate::commands::metadata::metadata_set_rating,
                 $crate::commands::metadata::metadata_track_details,
                 $crate::commands::metadata::metadata_save,
+                $crate::commands::metadata::cleanup::metadata_cleanup_settings,
+                $crate::commands::metadata::cleanup::metadata_cleanup_defaults,
+                $crate::commands::metadata::cleanup::metadata_cleanup_save_settings,
+                $crate::commands::metadata::cleanup::metadata_cleanup_preview,
+                $crate::commands::metadata::cleanup::metadata_cleanup_apply,
+                $crate::commands::metadata::tagwrite::metadata_tags_plan,
+                $crate::commands::metadata::tagwrite::metadata_tags_formats,
+                $crate::commands::metadata::tagwrite::metadata_tags_write,
             ];
             $($rest),*
         }

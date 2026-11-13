@@ -3,6 +3,12 @@
 //!   pm volumes                     list mounted volumes holding a Pacemaker library
 //!   pm ls <volume>                 list tracks, mixes and cases; check device compatibility
 //!   pm add <volume> <audio>...     analyse and add tracks (creates the library if missing)
+//!   pm health <volume>             JSON: library health, firmware, storage (--strict: exit 3 on problems)
+//!   pm backup <volume> <folder>    JSON: back the library up into a new folder (--audio, --verify)
+//!   pm verify <backup-folder>      JSON: check a backup against its manifest (exit 3 on problems)
+//!   pm export-playlists <volume>   JSON: every case and mix with its tracks (--out <file>)
+//!   pm tags <volume>               JSON: the app's tags, colour labels, energy (--config-dir <dir>)
+//!   pm duplicates <volume>         JSON: copies by tags / size and length (--config-dir <dir>)
 //!
 //! `<volume>` is the volume root (the folder that contains `.Pacemaker`).
 
@@ -10,6 +16,9 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use pm_formats::library::{find_volumes, Library};
+
+mod json_cmds;
+use json_cmds::Done;
 
 fn main() -> ExitCode {
     // A closed stdout (e.g. `pm ls | head`) should end quietly, not panic in println!.
@@ -22,17 +31,28 @@ fn main() -> ExitCode {
         default_hook(info);
     }));
     let args: Vec<String> = std::env::args().skip(1).collect();
-    let result = match args.first().map(String::as_str) {
-        Some("volumes") => volumes(),
-        Some("ls") if args.len() == 2 => ls(Path::new(&args[1])),
-        Some("add") if args.len() >= 3 => add(Path::new(&args[1]), &args[2..]),
+    let result: json_cmds::Res<Done> = match args.first().map(String::as_str) {
+        Some("volumes") => volumes().map(|()| Done::Clean),
+        Some("ls") if args.len() == 2 => ls(Path::new(&args[1])).map(|()| Done::Clean),
+        Some("add") if args.len() >= 3 => add(Path::new(&args[1]), &args[2..]).map(|()| Done::Clean),
+        Some("health") => json_cmds::health(&args[1..]),
+        Some("backup") => json_cmds::backup(&args[1..]),
+        Some("verify") => json_cmds::verify(&args[1..]),
+        Some("export-playlists") => json_cmds::export_playlists(&args[1..]),
+        Some("tags") => json_cmds::tags(&args[1..]),
+        Some("duplicates") => json_cmds::duplicates(&args[1..]),
         _ => {
-            eprintln!("usage: pm volumes | pm ls <volume> | pm add <volume> <audio>...");
+            eprintln!("{}", json_cmds::USAGE);
             return ExitCode::from(2);
         }
     };
     match result {
-        Ok(()) => ExitCode::SUCCESS,
+        Ok(Done::Clean) => ExitCode::SUCCESS,
+        Ok(Done::Problems) => ExitCode::from(3),
+        Err(e) if e.downcast_ref::<json_cmds::Usage>().is_some() => {
+            eprintln!("error: {e}\n{}", json_cmds::USAGE);
+            ExitCode::from(2)
+        }
         Err(e) => {
             eprintln!("error: {e}");
             ExitCode::FAILURE

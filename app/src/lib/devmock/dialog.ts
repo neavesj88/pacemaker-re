@@ -5,6 +5,8 @@ import type { Handlers } from "./types";
 export const handlers: Handlers = {
   "plugin:dialog|open": (a) => {
     const o = a.options ?? {};
+    // an image pick (the export dialog's cover) returns an invented picture
+    if ((o.filters ?? []).some((f: { extensions?: string[] }) => f.extensions?.includes("png"))) return "C:\\Pictures\\cover art.png";
     if (o.multiple) return ["C:\\Music\\New Artist - New Tune.mp3", "C:\\Music\\Another - Skip Me.flac", "C:\\Music\\bad file.wav"];
     return "P:\\";
   },

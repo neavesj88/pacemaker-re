@@ -4,10 +4,20 @@
   import type { Peak } from "$lib/api/analysis";
   import type { Track } from "$lib/api/types";
   import { mmss } from "$lib/format";
+  import { labelEditor, labels } from "$lib/state/labels.svelte";
+  import { suspectKinds } from "$lib/state/batchLogic";
+  import { analysis } from "$lib/state/analysis.svelte";
+  import { gridBatch } from "$lib/state/gridBatch.svelte";
+  import { suspects } from "$lib/state/gridSuspects.svelte";
+  import { jobs } from "$lib/state/jobs.svelte";
   import { playback } from "$lib/state/playback.svelte";
   import { session } from "$lib/state/session.svelte";
+  import { tempo } from "$lib/state/tempo.svelte";
   import Button from "$lib/ui/Button.svelte";
   import Stars from "$lib/ui/Stars.svelte";
+  import ColourSwatch from "./ColourSwatch.svelte";
+  import EnergyBar from "./EnergyBar.svelte";
+  import CaseChips from "../cases/CaseChips.svelte";
   import { cachedPeaks, requestPeaks } from "./peakCache";
   import { addToCase } from "./addToCase.svelte";
   import { addToMix, editGrid, editMetadata, playTrack, rate, revealInExplorer } from "./trackActions";
@@ -28,6 +38,9 @@
     /** Select a track from the matching list. */
     onpick: (id: number) => void;
   } = $props();
+
+  /** Why the grid area's rules flag this track, when they do. */
+  const suspect = $derived(track ? suspects.byId.get(track.track_id) : undefined);
 
   const OVERVIEW_COLUMNS = 400;
   const MATCH_LIMIT = 8;
@@ -60,6 +73,7 @@
   const matches = $derived(track && !needs && session.library ? matchingTracks(track, session.library.tracks, 4, session.needs) : []);
   const loaded = $derived(!!track && playback.trackId === track.track_id && playback.duration > 0);
   const many = $derived(selectedIds.length > 1);
+  const lab = $derived(track ? labels.get(track.track_id) : undefined);
   const fav = $derived(!!track && tracksState.favourites.has(track.track_id));
   const allFav = $derived(selectedIds.length > 0 && selectedIds.every((id) => tracksState.favourites.has(id)));
 
@@ -91,8 +105,27 @@
       <span>
         {track.bpm && !needs ? track.bpm.toFixed(2) : "–"}
         {#if needs}<span class="chip warn" title={needs}>needs analysis</span>{:else if track.analysed}<span class="chip ok">grid checked</span>{/if}
+        <Button
+          variant="ghost"
+          small
+          disabled={many || !!needs}
+          onclick={() => tempo.askSet(track.track_id)}
+          title={needs ? "Re-analyse this track first: it has no readable beat grid" : many ? "Select one track to type its BPM" : "Type the BPM; the beat grid is rewritten with it"}
+        >Edit</Button>
       </span>
     </div>
+    {#if suspect}
+      <div class="field">
+        <span class="label">Grid</span>
+        <span>
+          <span class="chip warn" title={suspect.reasons.join("\n")}>suspect</span>
+          {suspectKinds(suspect)}
+          <Button variant="ghost" small onclick={() => gridBatch.open([suspect.track_id], suspect.fix ? "suggested" : "reanalyse")} title={suspect.reasons.join("; ")}>
+            {suspect.fix ? "Preview fix…" : "Preview re-analysis…"}
+          </Button>
+        </span>
+      </div>
+    {/if}
     <div class="field">
       <span class="label">Key</span>
       <span>
@@ -103,11 +136,24 @@
         {:else}
           <span class="muted">unknown</span>
         {/if}
+        <Button variant="ghost" small onclick={() => analysis.askSetKey(selectedIds)} title="Set the key by hand{many ? ` of all ${selectedIds.length} selected tracks` : ''}">Edit</Button>
       </span>
     </div>
     <div class="field">
       <span class="label">Rating</span>
       <Stars rating={track.rating} onchange={(n) => rate(track, n)} />
+    </div>
+    <div class="field">
+      <span class="label" title="Kept by this app, not on the Pacemaker">Labels</span>
+      <span class="labs">
+        {#if lab}
+          <ColourSwatch colour={lab.colour} size={14} />
+          <EnergyBar energy={lab.energy} />
+          {#each lab.tags as tag (tag)}<span class="chip tagc">{tag}</span>{/each}
+        {:else}
+          <span class="muted">none</span>
+        {/if}
+      </span>
     </div>
     <div class="field">
       <span class="label">Played</span>
@@ -116,10 +162,12 @@
     <div class="field"><span class="label">Genre</span><span>{track.genre || "–"}</span></div>
     <div class="field"><span class="label">Length</span><span>{mmss(track.play_time_secs)}</span></div>
     <div class="field"><span class="label">File</span><span>{[track.format, track.file_size ? megabytes(track.file_size) : ""].filter(Boolean).join(" · ") || "–"}</span></div>
+    <div class="field"><span class="label">In cases</span><CaseChips trackId={track.track_id} /></div>
 
     <div class="buttons">
       <Button variant="primary" small onclick={() => playTrack(track.track_id)}>Play</Button>
       <Button small onclick={() => editMetadata(selectedIds)}>{many ? `Edit ${selectedIds.length} tracks…` : "Edit metadata…"}</Button>
+      <Button small onclick={() => labelEditor.edit(selectedIds.length ? selectedIds : [track.track_id])}>{many ? `Tags for ${selectedIds.length}…` : "Tags, colour, energy…"}</Button>
       <Button small onclick={() => editGrid(track.track_id)}>Edit grid</Button>
       <Button small active={many ? allFav : fav} onclick={() => tracksState.setFavourite(selectedIds, !(many ? allFav : fav))}>
         ♥ {(many ? allFav : fav) ? "Unfavourite" : "Favourite"}
@@ -127,6 +175,12 @@
       <Button small onclick={() => addToCase.ask(selectedIds)}>{many ? `Add ${selectedIds.length} to case…` : "Add to case…"}</Button>
       <Button small onclick={() => addToMix(selectedIds)}>{many ? `Add ${selectedIds.length} to mix` : "Add to mix"}</Button>
       <Button small onclick={() => revealInExplorer(track.track_id)}>Show in Explorer</Button>
+      <Button
+        small
+        disabled={!jobs.canWrite}
+        onclick={() => jobs.askReanalyse(selectedIds)}
+        title="Work out the beat grid and BPM again from the audio"
+      >{many ? `Re-analyse ${selectedIds.length}…` : "Re-analyse…"}</Button>
     </div>
 
     <div class="note">
@@ -224,6 +278,16 @@
   }
   .key {
     font-weight: 600;
+  }
+  .labs {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+  }
+  .chip.tagc {
+    background: var(--hover);
+    color: var(--text);
   }
   .buttons {
     display: flex;

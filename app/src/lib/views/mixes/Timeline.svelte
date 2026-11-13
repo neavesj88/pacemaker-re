@@ -7,10 +7,12 @@
   import type { Clip, EnvNode, ProcessDoc, TransitionDoc } from "$lib/api/mixes";
   import * as E from "$lib/state/mixedit";
   import { mixes } from "$lib/state/mixes.svelte";
+  import { vocal } from "$lib/state/vocal.svelte";
   import ContextMenu, { type MenuItem } from "$lib/ui/ContextMenu.svelte";
   import { addProcessAt, addTracks, autoTransition, beatmatch, clipTitle, duplicateSelection, neighbours, pasteAtPlayhead } from "./actions";
   import ClipBlock from "./ClipBlock.svelte";
   import EnvelopeSvg from "./EnvelopeSvg.svelte";
+  import { toolPrefs } from "./listPrefs.svelte";
   import { HEADER_W, PPS_MAX, PPS_MIN, SR, clamp, envToKey, keyToEnv, packRows, rulerTicks, mmss } from "./layout";
   import { preview } from "./preview.svelte";
   import ToolBlock from "./ToolBlock.svelte";
@@ -144,6 +146,7 @@
     const el = e.currentTarget as HTMLElement;
     const at = (ev: PointerEvent) => Math.max(0, Math.round(mv.samples(ev.clientX - el.getBoundingClientRect().left)));
     el.setPointerCapture(e.pointerId);
+    if (e.shiftKey) return markRange(e, el, at);
     void preview.seek(at(e));
     const move = (ev: PointerEvent) => {
       mv.playhead = at(ev);
@@ -155,6 +158,24 @@
       if (preview.playing) void preview.seek(at(ev));
     };
     el.addEventListener("pointermove", move);
+    el.addEventListener("pointerup", up);
+    el.addEventListener("pointercancel", up);
+  }
+
+  /** Shift-drag on the ruler marks a stretch for "Export audio"; a Shift-click without a drag clears it. */
+  function markRange(e: PointerEvent, el: HTMLElement, at: (ev: PointerEvent) => number) {
+    const a = at(e);
+    const set = (ev: PointerEvent) => {
+      const b = at(ev);
+      mv.marked = Math.abs(b - a) >= SR / 10 ? { from: Math.min(a, b), to: Math.max(a, b) } : null;
+    };
+    const up = () => {
+      el.removeEventListener("pointermove", set);
+      el.removeEventListener("pointerup", up);
+      el.removeEventListener("pointercancel", up);
+    };
+    set(e);
+    el.addEventListener("pointermove", set);
     el.addEventListener("pointerup", up);
     el.addEventListener("pointercancel", up);
   }
@@ -190,7 +211,7 @@
   function fxMenu(deck: number, at: number): MenuItem[] {
     const add = (type: string, label: string): MenuItem => ({ label, onclick: () => addProcessAt(type, deck, at) });
     return [
-      ...E.TOOL_TYPES.map((t) => add(t.name, t.label)),
+      ...E.addableToolTypes(vocal.mode, toolPrefs.showTrans).map((t) => add(t.name, t.label)),
       add("loop", "Loop"),
       add("reverse", "Reverse"),
       add("ignore", "Ignore"),
@@ -260,7 +281,7 @@
       return;
     }
     let at = sampleAt(e);
-    const targets = E.snapTargets(doc, mixes.snap, [], [at - SR, at + SR]);
+    const targets = E.snapTargets(doc, mixes.snap, [], [at - SR, at + SR], mixes.sectionLookup);
     at = E.snap(at, targets, mixes.threshold);
     void addTracks(ids, at, deck);
   }
@@ -294,7 +315,7 @@
           <span class="muted">{bpm.toFixed(1)} BPM</span>
         </div>
         <!-- svelte-ignore a11y_no_static_element_interactions -->
-        <div class="track" style:width="{contentW}px" onpointerdown={scrub} title="Click or drag to place the playhead">
+        <div class="track" style:width="{contentW}px" onpointerdown={scrub} title="Click or drag to place the playhead. Shift-drag marks a stretch to export (Shift-click clears it).">
           {#each ticks.beats as s (s)}<i class="beat" style:left="{s * mv.pps}px"></i>{/each}
           {#each ticks.bars as b (b.bar)}
             <i class="bar" style:left="{b.sec * mv.pps}px"></i>
@@ -352,7 +373,7 @@
                   title="Add a crossfade over the overlap of “{clipTitle(g.from)}” and “{clipTitle(g.to)}”"
                   onclick={() => mixes.addTransition(g.from.id, g.to.id, g.start, g.end - g.start)}>+ X-fade</button
                 >
-                <button title="Crossfade with a bass swap, as suggested from the beat grids" onclick={() => void autoTransition(g.from.id, g.to.id)}>Auto</button>
+                <button title="Build a transition here with the recipe and length set in the Auto transition settings (select a crossfade or a clip to change them)" onclick={() => void autoTransition(g.from.id, g.to.id)}>Auto</button>
               </div>
             {/if}
           {/each}
@@ -474,6 +495,12 @@
       <!-- playhead -->
       <!-- the clip keeps the line from showing over the sticky lane headers -->
       <div class="phwrap" style:clip-path="inset(0 0 0 {mv.scrollLeft + HEADER_W}px)">
+        {#if mv.marked}
+          <div class="xrange marked" style:left="{HEADER_W + mv.x(mv.marked.from)}px" style:width="{Math.max(2, mv.x(mv.marked.to - mv.marked.from))}px" title="Marked for export: {mmss(mv.marked.from / SR)} to {mmss(mv.marked.to / SR)}"></div>
+        {/if}
+        {#if mv.rangeBand}
+          <div class="xrange" style:left="{HEADER_W + mv.x(mv.rangeBand.from)}px" style:width="{Math.max(2, mv.x(mv.rangeBand.to - mv.rangeBand.from))}px" title="The part of the mix the export will contain"></div>
+        {/if}
         <div class="playhead" style:left="{HEADER_W + mv.x(mv.playhead)}px"><span>{mmss(mv.playhead / SR)}</span></div>
       </div>
     </div>
@@ -592,6 +619,21 @@
     inset: 0;
     pointer-events: none;
     z-index: 7;
+  }
+  .xrange {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    background: var(--accent-soft);
+    border-left: 1px solid var(--accent);
+    border-right: 1px solid var(--accent);
+    box-sizing: border-box;
+    pointer-events: none;
+  }
+  .xrange.marked {
+    border-left-style: dashed;
+    border-right-style: dashed;
+    opacity: 0.7;
   }
   .playhead {
     position: absolute;

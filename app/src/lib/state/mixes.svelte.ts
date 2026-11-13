@@ -19,6 +19,7 @@ import {
   mixNew,
   mixOpen,
   mixSave,
+  mixSaveAs,
   mixValidate,
   type BeatmatchSuggestion,
   type Clip,
@@ -28,7 +29,8 @@ import {
   type ProcessDoc,
   type TransitionSuggestion,
 } from "$lib/api/mixes";
-import { renderMixPreview } from "$lib/api/export";
+import { renderMixPreview, type PreviewGains } from "$lib/api/export";
+import { sections } from "./sections.svelte";
 import { session } from "./session.svelte";
 import { toast } from "./toast.svelte";
 import * as E from "./mixedit";
@@ -147,6 +149,30 @@ class Mixes {
       }
       toast.show(`Saved "${saved.name}"`, "ok");
       void this.refreshList();
+    } finally {
+      this.busy = false;
+    }
+  }
+
+  /** Writes the open document (with its unsaved edits) as a NEW mix called `name` and opens that
+   * mix in its place: the undo history is cleared, because its snapshots belong to the old mix id
+   * and undoing into one would save over the original. The mix it came from keeps its last saved
+   * content. Throws the backend's message (taken name, blocking problems) and changes nothing. */
+  async saveAs(name: string) {
+    const root = this.root;
+    const doc = this.doc;
+    if (!root || !doc) throw new Error("no mix is open");
+    this.busy = true;
+    try {
+      const saved = await mixSaveAs(root, doc, name);
+      void this.refreshList();
+      try {
+        this.#load(await mixOpen(root, saved.id));
+      } catch (e) {
+        // the copy exists; do not let a retry in the dialog run into its own name
+        toast.show(`Saved as "${saved.name}", but it could not be opened: ${e instanceof Error ? e.message : String(e)}`, "bad", 12000);
+      }
+      return saved;
     } finally {
       this.busy = false;
     }
@@ -294,8 +320,12 @@ class Mixes {
   // Editing actions (thin wrappers over mixedit.ts)
   // ------------------------------------------------------------------------------------------
 
+  /** Detected sections of a track (app-side estimates), for the "section" snap mode and the
+   * auto-transition option; null for a track without any. */
+  readonly sectionLookup: E.SectionsLookup = (trackId) => sections.of(trackId);
+
   #snapOpts(exclude: string[] = []): E.SnapOptions {
-    return { mode: this.snap, threshold: this.threshold, exclude };
+    return { mode: this.snap, threshold: this.threshold, exclude, sections: this.sectionLookup };
   }
 
   setName(name: string) {
@@ -337,8 +367,9 @@ class Mixes {
     this.edit("Change deck", (d) => E.updateClip(d, id, (c) => ({ ...c, channel })));
   }
 
-  addTool(clipId: string, type: string, localStart: number, length: number) {
-    const tool = E.newTool(type, localStart, length);
+  /** `startBpm` is for Trans only (the tempo its gate follows). */
+  addTool(clipId: string, type: string, localStart: number, length: number, startBpm = 0) {
+    const tool = E.newTool(type, localStart, length, undefined, startBpm);
     this.edit(`Add ${type}`, (d) => E.addProcess(d, clipId, tool));
     this.selected = [tool.id];
     return tool;
@@ -472,27 +503,37 @@ class Mixes {
     return s;
   }
 
-  /** Asks for a transition between two clips. Returns it without applying when
-   * `apply` is false (to preview or let the user choose); apply later with `applyTransition`. */
-  async autoTransition(fromClipId: string, toClipId: string, apply = true): Promise<TransitionSuggestion> {
+  /** Asks for a transition between two clips, `bars` long (null = the backend's default of 16).
+   * Returns it without applying when `apply` is false (to reshape it with a recipe or let the
+   * user choose); apply later with `applyTransition`. */
+  async autoTransition(fromClipId: string, toClipId: string, apply = true, bars: number | null = null): Promise<TransitionSuggestion> {
     const root = this.root;
     if (!root || !this.doc) throw new Error("no mix is open");
-    const s = await mixAutoTransition(root, this.doc, fromClipId, toClipId);
+    const s = await mixAutoTransition(root, this.doc, fromClipId, toClipId, bars);
     if (apply) this.applyTransition(s);
     return s;
   }
 
-  applyTransition(s: TransitionSuggestion, replaceConflicts = false) {
-    this.edit("Auto transition", (d) => E.applyTransition(d, s, replaceConflicts));
+  /** Adds a suggestion as one undo step. `replaceConflicts` removes the tools it overlaps (else
+   * the new tool is skipped); `replacing` deletes that transition first (rebuilding it) and
+   * `remove` the tools with those ids. */
+  applyTransition(s: TransitionSuggestion, replaceConflicts = false, opts: { label?: string; replacing?: string; remove?: string[] } = {}) {
+    this.edit(opts.label ?? "Auto transition", (d) => {
+      let x = opts.replacing ? E.deleteTransitions(d, [opts.replacing]) : d;
+      if (opts.remove?.length) x = E.deleteProcesses(x, opts.remove);
+      return E.applyTransition(x, s, replaceConflicts);
+    });
     this.selected = [s.transition.id];
   }
 
   /** Renders `[fromSec, toSec]` of the open (possibly unsaved) document to a temporary file for
-   * preview; play it with `playback`. The audio area implements `export_render_preview`. */
-  async renderPreview(fromSec: number, toSec: number) {
+   * preview; play it with `playback`. The audio area implements `export_render_preview`.
+   * `gains` are the loudness gains an export would apply; `edgeFadeMs` fades the window's cuts (a
+   * range preview). */
+  async renderPreview(fromSec: number, toSec: number, gains?: PreviewGains, edgeFadeMs?: number) {
     const root = this.root;
     if (!root || !this.doc) throw new Error("no mix is open");
-    return renderMixPreview(root, this.doc, fromSec, toSec);
+    return renderMixPreview(root, this.doc, fromSec, toSec, gains, edgeFadeMs);
   }
 
   // ------------------------------------------------------------------------------------------

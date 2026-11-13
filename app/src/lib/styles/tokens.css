@@ -14,13 +14,31 @@
   --green: #00ff46;
   --accent: #ff00c8;
   --accent-soft: rgba(255, 0, 200, 0.14);
+  /* the dim behind a dialog */
+  --scrim: rgba(0, 0, 0, 0.6);
   /* waveform bands and editor markers (grid editor, mix editor, tracks) */
   --wave-low: #ff48a8;
   --wave-mid: #e070ff;
   --wave-high: #00ff46;
   --beat: #3a5a42;
   --cue: #ffd23b;
+  /* colour labels on tracks (state/labels.ts LABEL_COLOURS; app-side, not stored on the device) */
+  --label-red: #ff5252;
+  --label-orange: #ff9a2e;
+  --label-yellow: #ffd23b;
+  --label-green: #4be37a;
+  --label-teal: #19d3c5;
+  --label-blue: #4d9bff;
+  --label-purple: #a98aff;
+  --label-pink: #ff7ac0;
   --accent-ramp: linear-gradient(90deg, #c800ff, #ff00c8);
+  /* section markers on waveforms (analysis: intro, build, drop, breakdown, outro) */
+  --sec-intro: #3d9bff;
+  --sec-build: #ffc02e;
+  --sec-drop: #ff4d6d;
+  --sec-breakdown: #2fd6c4;
+  --sec-outro: #8a7dff;
+  --sec-section: #7d8f82;
   --ok: #00ff46;
   --bad: #ff3b6b;
   --bad-bg: #2a0716;

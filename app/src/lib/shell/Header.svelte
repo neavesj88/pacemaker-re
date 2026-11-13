@@ -30,7 +30,12 @@
         ? "Analyse audio files and copy them to the device"
         : "Unavailable while a job runs or the library is not device-compatible"}
     >Add tracks…</Button>
-    <input class="search" placeholder="Search" bind:value={filters.query} />
+    <input
+      class="search"
+      placeholder="Search, or bpm:120-128 key:~8A tag:peak"
+      title="Words match the title, artist, album, genre, key, comments, label, remixer, composer, year and tags. Fields, ranges, -not and OR work too: see the ? in the Tracks toolbar."
+      bind:value={filters.query}
+    />
   {/if}
 </header>
 
@@ -60,6 +65,6 @@
   }
   .search {
     margin-left: auto;
-    width: 240px;
+    width: 300px;
   }
 </style>

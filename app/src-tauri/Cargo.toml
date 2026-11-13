@@ -28,6 +28,15 @@ tauri-plugin-dialog = "2"
 pm-formats = { version = "0.1.0", path = "../../crates/pm-formats" }
 pm-analysis = { version = "0.1.0", path = "../../crates/pm-analysis" }
 pm-mixer = { version = "0.1.0", path = "../../crates/pm-mixer" }
+lofty = "0.25.5"
+# audio payload fingerprint of the tag writer (already in the build through tauri; MIT / Apache-2.0)
+sha2 = "0.10"
+# stem separation (S1). ort feature: HTDemucs through ONNX Runtime, loaded at run time.
+pm-stems = { version = "0.1.0", path = "../../crates/pm-stems", features = ["ort"] }
+# ureq + zip (and sha2 above): the consent-gated download of the model / onnxruntime (https, SHA-256 checked,
+# the onnxruntime zip unpacked); nothing else in the app uses the network
+ureq = "3.5.1"
+zip = { version = "9.5.1", default-features = false, features = ["deflate"] }
 
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration

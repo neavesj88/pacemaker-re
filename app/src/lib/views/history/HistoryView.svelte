@@ -11,10 +11,11 @@
   import { toast } from "$lib/state/toast.svelte";
   import Button from "$lib/ui/Button.svelte";
   import Table, { type Column } from "$lib/ui/Table.svelte";
+  import PlayLog from "./PlayLog.svelte";
   import SaveCaseModal from "./SaveCaseModal.svelte";
   import { ago, dayLabel, sessionLabel, timeLabel } from "./when";
 
-  type Tab = "sessions" | "most" | "never" | "collections";
+  type Tab = "sessions" | "most" | "never" | "collections" | "log";
   type Row = { track: Track; plays?: number; last?: number; at?: number };
   // What the open "Save as case" dialog will create.
   type Pending = { name: string; ids: number[]; source: string };
@@ -125,6 +126,7 @@
     { id: "most", label: "Most played" },
     { id: "never", label: "Never played" },
     { id: "collections", label: "Cases and mixes" },
+    { id: "log", label: "Play log" },
   ];
   function tabKey(e: KeyboardEvent) {
     const d = e.key === "ArrowRight" ? 1 : e.key === "ArrowLeft" ? -1 : 0;
@@ -310,6 +312,8 @@
         </div>
       {/if}
       {#if neverRows.length === 0}<p class="empty">Every track has been played at least once.</p>{/if}
+    {:else if tab === "log"}
+      <PlayLog {byId} {ask} />
     {:else}
       {#each [{ title: "Cases", rows: data.cases, noun: "cases", view: "cases" as const }, { title: "Mixes", rows: data.mixes, noun: "mixes", view: "mixes" as const }] as g (g.title)}
         <h4 class="sub">{g.title}</h4>
@@ -421,7 +425,8 @@
     background: var(--panel);
     border: 1px solid var(--line);
     border-radius: 8px;
-    overflow: hidden;
+    /* scrolls, not hidden: in a narrow window the row buttons sit past the card's edge */
+    overflow-x: auto;
   }
   .head {
     flex-wrap: wrap;

@@ -1,11 +1,11 @@
 <script lang="ts">
   import {
     deviceBackup,
-    deviceSnapshots,
-    deviceSnapshotsOpen,
+    deviceVerifyBackup,
     JOB_BACKUP,
+    JOB_VERIFY,
     pickBackupFolder,
-    type SnapshotsView,
+    pickVerifyFolder,
   } from "$lib/api/device";
   import { jobs } from "$lib/state/jobs.svelte";
   import { session } from "$lib/state/session.svelte";
@@ -16,40 +16,28 @@
   import { device } from "./device.svelte";
   import JobProgress from "./JobProgress.svelte";
   import { bytes, plural } from "./format";
+  import VerifyModal from "./VerifyModal.svelte";
 
   let includeAudio = $state(false);
   let dest = $state<string | null>(null);
   let lib = $derived(session.library);
   let audioBytes = $derived(device.overview?.storage.music_bytes ?? 0);
 
-  // The automatic music.db safety copies (made before the first write of each session).
-  let snaps = $state<SnapshotsView | null>(null);
-  let snapsError = $state("");
-  $effect(() => {
-    const root = lib?.root;
-    // re-read after a job ends too: a first write may just have made one
-    void device.job;
-    snaps = null;
-    snapsError = "";
-    if (!root) return;
-    deviceSnapshots(root).then(
-      (s) => (snaps = s),
-      (e) => (snapsError = String(e)),
-    );
-  });
-
-  async function openSnaps() {
-    if (!lib) return;
-    try {
-      await deviceSnapshotsOpen(lib.root);
-    } catch (e) {
-      toast.show(String(e), "bad", 8000);
-    }
-  }
-
   async function choose() {
     const d = await pickBackupFolder();
     if (d) dest = d;
+  }
+
+  async function verify() {
+    const folder = await pickVerifyFolder();
+    if (!folder) return;
+    device.begin(JOB_VERIFY, "Starting the check");
+    try {
+      await deviceVerifyBackup(folder);
+    } catch (e) {
+      device.job = null;
+      toast.show(String(e), "bad", 8000);
+    }
   }
 
   async function start() {
@@ -69,7 +57,8 @@
 <Card title="Backup">
   <p class="muted">
     A snapshot of the library: the database (tracks, mixes, cases), the device settings, the system file and every
-    beat grid. Audio is left out unless you tick the box. Each file is read back and checked, and a SHA-256 list is
+    beat grid. Audio is left out unless you tick the box. Each file is compared with its source right after it is written (the system may
+    answer that from its cache, so run Check on the backup later to read it from the disk again), and a SHA-256 list is
     saved beside the copy.
   </p>
   <label class="check">
@@ -88,24 +77,23 @@
   {#if device.results[JOB_BACKUP]}<p class="note">{device.results[JOB_BACKUP]}</p>{/if}
 
   <div class="auto">
-    <h4>Automatic snapshots</h4>
+    <h4>Check a backup</h4>
     <p class="muted">
-      Before the first change to this library in each session the app copies music.db and the settings to its own data
-      folder (never onto the Pacemaker) and keeps the last {snaps?.keep ?? 10}. If the copy fails, nothing is written.
+      Re-reads every file of a backup folder and checks it against the SHA-256 list saved beside it, so a backup can be
+      trusted before it is needed. The result is listed file by file. Nothing on the Pacemaker is read or changed.
     </p>
-    {#if snapsError}
-      <p class="bad">{snapsError}</p>
-    {:else if snaps}
-      <p class="muted">
-        {snaps.snapshots.length === 0
-          ? "None yet: the first change in this session makes one."
-          : `${plural(snaps.snapshots.length, "snapshot")}, newest ${snaps.snapshots[0].name.replace("music-db-", "")}`}
-      </p>
-      <p class="path">{snaps.folder}</p>
-      <Button small onclick={openSnaps}>Open folder</Button>
-    {/if}
+    <div class="actions">
+      <Button disabled={!lib || device.blocked} onclick={verify}>Verify a backup…</Button>
+      {#if device.verify}<Button variant="ghost" onclick={() => (device.verifyOpen = true)}>Show the files</Button>{/if}
+    </div>
+    <JobProgress kind={JOB_VERIFY} />
+    {#if device.results[JOB_VERIFY]}<p class="note">{device.results[JOB_VERIFY]}</p>{/if}
   </div>
 </Card>
+
+{#if device.verifyOpen && device.verify}
+  <VerifyModal report={device.verify} onclose={() => (device.verifyOpen = false)} />
+{/if}
 
 {#if dest && lib}
   <Modal title="Back up the Pacemaker?" onclose={() => (dest = null)}>
@@ -148,15 +136,6 @@
   .auto h4 {
     margin: 0 0 4px;
     font-size: 13px;
-  }
-  .path {
-    font-size: 12px;
-    overflow-wrap: anywhere;
-    margin: 4px 0 8px;
-  }
-  .bad {
-    color: var(--bad);
-    font-size: 12px;
   }
   .note {
     font-size: 12px;

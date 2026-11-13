@@ -2,21 +2,32 @@
   // The open mix: toolbar, library picker, timeline, inspector and transport, plus the keyboard.
   import { tick } from "svelte";
   import * as E from "$lib/state/mixedit";
+  import { mixExport } from "$lib/state/mixexport.svelte";
   import { mixes } from "$lib/state/mixes.svelte";
+  import { sections } from "$lib/state/sections.svelte";
+  import { tracklist } from "$lib/state/tracklist.svelte";
   import { toast } from "$lib/state/toast.svelte";
   import Button from "$lib/ui/Button.svelte";
   import { describe, duplicateSelection, errText, pasteAtPlayhead } from "./actions";
   import { confirm } from "./confirm.svelte";
-  import { cancelExport, closeMix, exportAudio, newMix, saveMix } from "./flow";
+  import { cancelExport, closeMix, exportAudio, newMix, saveMix, saveMixAs } from "./flow";
   import Inspector from "./Inspector.svelte";
   import { PPS_MAX, PPS_MIN, SR, clock, ppsFromSlider, sliderFromPps } from "./layout";
   import { preview } from "./preview.svelte";
   import Timeline from "./Timeline.svelte";
   import TrackPicker from "./TrackPicker.svelte";
   import { mv } from "./view.svelte";
+  import { setlist } from "../setlist/setlist.svelte";
 
   const doc = $derived(mixes.doc!);
   let saving = $state(false);
+  tracklist.ensureLoaded();
+  mixExport.ensureLoaded();
+
+  function openExport() {
+    mixExport.startFor(mixes.doc?.id);
+    mixExport.open = true;
+  }
 
   // fit a mix to the window when it is opened
   let fittedFor = -1;
@@ -82,7 +93,8 @@
     const k = e.key.toLowerCase();
     if (mod && k === "s") {
       e.preventDefault();
-      void save();
+      if (e.shiftKey) saveMixAs();
+      else void save();
       return;
     }
     if (editable(e.target)) return;
@@ -166,17 +178,26 @@
     <span class="chip">mix · {doc.clips.length} track{doc.clips.length === 1 ? "" : "s"} · {clock(doc.lengthSec)}</span>
     <Button onclick={newMix}>New</Button>
     <Button variant="primary" disabled={!mixes.dirty || saving || mixes.busy} onclick={save} title={mixes.problems.length ? `Cannot save yet: ${mixes.problems[0]}` : "Save (Ctrl+S)"}>Save</Button>
+    <Button
+      disabled={saving || mixes.busy}
+      onclick={saveMixAs}
+      title={mixes.problems.length ? `Cannot save yet: ${mixes.problems[0]}` : "Save the mix as a new mix under another name; this one keeps its last saved content (Ctrl+Shift+S)"}>Save as…</Button
+    >
     <span class="sep"></span>
     <Button disabled={mixes.undoDepth === 0} onclick={() => mixes.undo()} title={mixes.undoLabel ? `Undo ${mixes.undoLabel} (Ctrl+Z)` : "Nothing to undo"} aria-label="Undo">↶</Button>
     <Button disabled={mixes.redoDepth === 0} onclick={() => mixes.redo()} title={mixes.redoLabel ? `Redo ${mixes.redoLabel} (Ctrl+Y)` : "Nothing to redo"} aria-label="Redo">↷</Button>
     <span class="sep"></span>
     <label class="ctl">Snap
-      <select bind:value={mixes.snap}>
+      <select bind:value={mixes.snap} title="Section snaps to where detected sections begin (intro, build, drop, breakdown, outro; Tracks, Sections panel). A clip whose track has none snaps to its phrase lines instead.">
         <option value="beat">Beat</option>
         <option value="bar">Bar</option>
         <option value="phrase">Phrase (8 bars)</option>
+        <option value="section">Section</option>
         <option value="off">Off</option>
       </select>
+    </label>
+    <label class="ctl follow" title={sections.showMarkers ? "Draw the detected sections (intro, build, drop, breakdown, outro) on the clips. Clips of tracks without sections show nothing." : "Turned off in the Sections panel's settings (show markers on waveforms)"}>
+      <input type="checkbox" checked={mv.sectionMarkers && sections.showMarkers} disabled={!sections.showMarkers} onchange={(e) => mv.setSectionMarkers(e.currentTarget.checked)} /> sections
     </label>
     <label class="ctl">Zoom
       <input
@@ -192,16 +213,25 @@
     </label>
     <Button small onclick={() => mv.fit(doc.length)} title="Show the whole mix">Fit</Button>
     <Button small active={mv.pickerOpen} onclick={() => (mv.pickerOpen = !mv.pickerOpen)}>Tracks</Button>
-    <span class="grow"></span>
-    {#if mixes.problems.length > 0}
-      <span class="problem" title={mixes.problems.join("\n")}>⚠ {mixes.problems.length} problem{mixes.problems.length === 1 ? "" : "s"} blocking save</span>
-    {/if}
-    <Button disabled={mv.exporting || doc.clips.length === 0} onclick={() => void exportAudio()} title="Render the mix to an audio file">
-      {mv.exporting ? (mv.exportPct > 0 ? `Exporting ${Math.round(mv.exportPct * 100)}%` : "Exporting…") : "Export audio"}
-    </Button>
-    {#if mv.exporting}
-      <Button onclick={() => void cancelExport()} title="Stop rendering; no file is kept">Cancel export</Button>
-    {/if}
+    <div class="acts">
+      {#if mixes.problems.length > 0}
+        <span class="problem" title={mixes.problems.join("\n")}>⚠ {mixes.problems.length} problem{mixes.problems.length === 1 ? "" : "s"} blocking save</span>
+      {/if}
+      <Button disabled={doc.clips.length === 0} onclick={() => (tracklist.open = true)} title="Start times of the tracks as text, CSV, YouTube chapters or a CUE sheet. Its settings also say whether Export audio writes a .cue beside the audio.">Track list</Button>
+      <Button disabled={doc.clips.length === 0} onclick={() => setlist.openMix(doc.id)} title="A printable setlist of this mix">Setlist…</Button>
+      <Button
+        disabled={mv.exporting || doc.clips.length === 0}
+        onclick={openExport}
+        title="Render the mix, or part of it, to an audio file. Choose the part and a target loudness first."
+      >
+        {mv.exporting
+          ? `${mv.exportPhase === "measuring" ? "Measuring" : "Exporting"}${mv.exportPct > 0 ? ` ${Math.round(mv.exportPct * 100)}%` : "…"}`
+          : "Export audio…"}
+      </Button>
+      {#if mv.exporting}
+        <Button onclick={() => void cancelExport()} title="Stop rendering; no file is kept">Cancel export</Button>
+      {/if}
+    </div>
   </div>
   {#if mv.exporting}<div class="progress" role="progressbar" aria-label="Exporting audio"><i></i></div>{/if}
 
@@ -221,9 +251,14 @@
     <span class="muted">/ {clock(doc.lengthSec)}</span>
     {#if busyLabel}<span class="muted">{busyLabel}</span>{/if}
     {#if preview.stale && (preview.playing || preview.status === "paused")}
-      <span class="stale" title="The preview was rendered before your last edit. Press play again to hear the change.">preview is out of date</span>
+      <span class="stale" title="The preview was rendered before your last edit or before the Vocal setting changed. Press play again to hear the change.">preview is out of date</span>
     {/if}
     {#if preview.notice}<span class="notice" role="status">{preview.notice}</span>{/if}
+    {#if mixExport.previewGains()}
+      <span class="level" title="The preview plays at the level your last loudness analysis found for the export settings.">export level</span>
+    {:else if mixExport.previewBehind}
+      <span class="stale" title="Loudness settings are on but the last analysis is about a different mix or settings. Analyse again in Export audio to hear the export level.">not at export level</span>
+    {/if}
     <label class="ctl" title="Preview volume only; it is not saved in the mix">Master
       <input type="range" min="0" max="1" step="0.01" bind:value={preview.volume} aria-label="Preview volume" />
     </label>
@@ -268,8 +303,12 @@
     height: 20px;
     background: var(--line);
   }
-  .grow {
-    flex: 1;
+  /* the right-hand actions stay together: when the toolbar is too narrow they move to a second row as a group */
+  .acts {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-left: auto;
   }
   .ctl {
     display: inline-flex;
@@ -338,6 +377,13 @@
   .stale {
     color: var(--warn);
     font-size: 12px;
+  }
+  .level {
+    color: var(--green);
+    font-size: 12px;
+    border: 1px solid var(--line-hi);
+    border-radius: 4px;
+    padding: 1px 6px;
   }
   .notice {
     color: var(--bad-text);

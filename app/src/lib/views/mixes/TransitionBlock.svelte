@@ -55,7 +55,7 @@
       if (!moved && Math.abs(ev.clientX - startX) < 3) return;
       moved = true;
       const d = mv.samples(ev.clientX - startX);
-      const opts = { mode: ev.altKey ? ("off" as const) : mixes.snap, threshold: mixes.threshold };
+      const opts = { mode: ev.altKey ? ("off" as const) : mixes.snap, threshold: mixes.threshold, sections: mixes.sectionLookup };
       mixes.edit(
         "Move crossfade",
         (doc) => {

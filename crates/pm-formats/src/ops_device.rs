@@ -11,7 +11,7 @@ use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::library::{Error, Library};
 use crate::{naming, pfw, strfile};
@@ -23,11 +23,11 @@ fn invalid<T>(msg: impl Into<String>) -> Result<T, Error> {
 /// Start of the message of an operation stopped by the user (the UI shows it without "Failed").
 pub const CANCELLED: &str = "Cancelled";
 
-fn pacemaker_dir(root: &Path) -> PathBuf {
+pub(crate) fn pacemaker_dir(root: &Path) -> PathBuf {
     root.join(".Pacemaker")
 }
 
-fn music_dir(root: &Path) -> PathBuf {
+pub(crate) fn music_dir(root: &Path) -> PathBuf {
     root.join(naming::MUSIC_DIR)
 }
 
@@ -182,7 +182,7 @@ pub struct Storage {
     pub other_bytes: u64,
 }
 
-fn walk(dir: &Path, out: &mut Vec<(PathBuf, u64)>) -> std::io::Result<()> {
+pub(crate) fn walk(dir: &Path, out: &mut Vec<(PathBuf, u64)>) -> std::io::Result<()> {
     let rd = match fs::read_dir(dir) {
         Ok(r) => r,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
@@ -205,7 +205,7 @@ fn is_str(p: &Path) -> bool {
 }
 
 /// Path relative to `base`, '/'-separated.
-fn rel_string(base: &Path, p: &Path) -> String {
+pub(crate) fn rel_string(base: &Path, p: &Path) -> String {
     p.strip_prefix(base)
         .unwrap_or(p)
         .components()
@@ -513,7 +513,7 @@ pub fn install_pfw(
 // ---------------------------------------------------------------------------------------------
 // Library health and the unreferenced-file scan
 
-const AUDIO_EXTS: [&str; 11] = ["mp3", "flac", "wav", "m4a", "aac", "ogg", "opus", "aif", "aiff", "wma", "mp4"];
+pub(crate) const AUDIO_EXTS: [&str; 11] = ["mp3", "flac", "wav", "m4a", "aac", "ogg", "opus", "aif", "aiff", "wma", "mp4"];
 
 /// A file under `.Pacemaker/Music` that no track row refers to.
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -714,8 +714,12 @@ pub fn utc_stamp(unix_secs: u64) -> String {
     format!("{y:04}{m:02}{d:02}T{:02}{:02}{:02}Z", rem / 3600, rem % 3600 / 60, rem % 60)
 }
 
-/// Copies `src` to `dst` hashing the bytes read, then reads `dst` back and checks the hash.
-fn copy_hashed(src: &Path, dst: &Path) -> Result<(String, u64), Error> {
+/// Copies `src` to `dst` hashing the bytes read, then reads `dst` back and checks the hash. The
+/// read-back goes through the operating system, which will usually serve it from its cache right
+/// after the write: it proves the bytes were handed to the OS correctly (and the data synced), not
+/// that they can be read from the medium later. `verify_manifest` on the finished folder is the
+/// check to repeat later, when the cache no longer holds them.
+pub(crate) fn copy_hashed(src: &Path, dst: &Path) -> Result<(String, u64), Error> {
     if let Some(parent) = dst.parent() {
         fs::create_dir_all(parent)?;
     }
@@ -741,7 +745,7 @@ fn copy_hashed(src: &Path, dst: &Path) -> Result<(String, u64), Error> {
     Ok((sum, n_total))
 }
 
-fn inside(parent: &Path, child: &Path) -> bool {
+pub(crate) fn inside(parent: &Path, child: &Path) -> bool {
     match (fs::canonicalize(parent), fs::canonicalize(child)) {
         (Ok(p), Ok(c)) => c.starts_with(p),
         _ => false,
@@ -816,28 +820,166 @@ pub fn backup_snapshot(
     })
 }
 
-/// Checks a backup folder against its manifest. Returns the problems found (empty = intact).
-pub fn verify_manifest(folder: &Path) -> Result<Vec<String>, Error> {
-    let text = fs::read_to_string(folder.join(MANIFEST_NAME))?;
-    let mut problems = Vec::new();
-    for line in text.lines().filter(|l| !l.trim().is_empty()) {
-        let Some((sum, rel)) = line.split_once("  ") else {
-            problems.push(format!("unreadable manifest line: {line}"));
+/// Result of checking one manifest line against the file in the backup folder.
+#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum CheckStatus {
+    /// The file is there and its SHA-256 matches the manifest.
+    Ok,
+    /// The file is there but its bytes are not the ones the backup recorded.
+    Differs,
+    /// The manifest lists it, the folder does not have it.
+    Missing,
+    /// The file exists but could not be read (permissions, a failing disk).
+    Unreadable,
+    /// The manifest names a path that would leave the backup folder; it was not opened.
+    Unsafe,
+    /// A manifest line that is not `<64 hex digits>  <path>`.
+    BadLine,
+}
+
+/// One row of a backup verification.
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct FileCheck {
+    /// The path as the manifest wrote it ('/'-separated, relative to the backup folder).
+    pub path: String,
+    pub status: CheckStatus,
+    /// The size on disk, when the file was found.
+    pub size: Option<u64>,
+    /// Why, in words, for every status but `Ok`.
+    pub detail: Option<String>,
+}
+
+/// What [`verify_manifest_detailed`] found in a backup folder.
+#[derive(Debug, Clone, Serialize, Default)]
+pub struct VerifyReport {
+    pub folder: String,
+    /// Lines the manifest has (blank lines excluded).
+    pub listed: usize,
+    /// How many of them were checked before the end or a cancel.
+    pub checked: usize,
+    pub ok: usize,
+    /// Every row that is not `Ok`, plus all `Ok` rows: the full list, in manifest order.
+    pub files: Vec<FileCheck>,
+    /// Files in the folder that the manifest does not list (not an error: a note).
+    pub extra: Vec<String>,
+    /// Bytes read while hashing.
+    pub bytes: u64,
+    pub cancelled: bool,
+}
+
+impl VerifyReport {
+    /// Rows that are not `Ok`.
+    pub fn problems(&self) -> usize {
+        self.files.iter().filter(|f| f.status != CheckStatus::Ok).count()
+    }
+}
+
+/// A manifest path that stays inside the backup folder: plain names only. Colons and
+/// backslashes are refused on every platform (`C:/x` or `..\x` would leave the folder on
+/// Windows), as are empty, `.` and `..` components.
+fn manifest_path_is_plain(rel: &str) -> bool {
+    !rel.is_empty() && !rel.contains([':', '\\', '\0']) && rel.split('/').all(|c| !c.is_empty() && c != "." && c != "..")
+}
+
+fn is_sha256_hex(s: &str) -> bool {
+    s.len() == 64 && s.bytes().all(|b| b.is_ascii_hexdigit())
+}
+
+/// Checks a backup folder against its manifest, file by file: re-hashes each listed file and
+/// reports it as ok, changed, missing, unreadable, unsafe or malformed. Also lists files in the
+/// folder the manifest does not mention. Reads only. `progress(done, total, path)` is called
+/// before each file; `cancel()` is polled before each file and stops the check early (the
+/// report says so and holds what was checked until then).
+pub fn verify_manifest_detailed(
+    folder: &Path,
+    progress: &mut dyn FnMut(usize, usize, &str),
+    cancel: &dyn Fn() -> bool,
+) -> Result<VerifyReport, Error> {
+    let text = fs::read_to_string(folder.join(MANIFEST_NAME))
+        .map_err(|e| Error::Invalid(format!("{} has no readable {MANIFEST_NAME} ({e}): it is not a backup folder", folder.display())))?;
+    let lines: Vec<&str> = text.lines().filter(|l| !l.trim().is_empty()).collect();
+    let mut rep = VerifyReport { folder: folder.display().to_string(), listed: lines.len(), ..VerifyReport::default() };
+    let mut listed_paths: HashSet<String> = HashSet::new();
+    for (i, line) in lines.iter().enumerate() {
+        if cancel() {
+            rep.cancelled = true;
+            break;
+        }
+        let parsed = line.split_once("  ").filter(|(sum, _)| is_sha256_hex(sum));
+        let Some((sum, rel)) = parsed else {
+            rep.files.push(FileCheck {
+                path: (*line).to_string(),
+                status: CheckStatus::BadLine,
+                size: None,
+                detail: Some("not a line of the form <checksum>  <path>".into()),
+            });
+            rep.checked += 1;
             continue;
         };
-        if rel.split('/').any(|c| c == ".." || c.is_empty()) {
-            problems.push(format!("unsafe path in manifest: {rel}"));
+        progress(i, lines.len(), rel);
+        listed_paths.insert(rel.to_lowercase());
+        rep.checked += 1;
+        if !manifest_path_is_plain(rel) {
+            rep.files.push(FileCheck {
+                path: rel.to_string(),
+                status: CheckStatus::Unsafe,
+                size: None,
+                detail: Some("the manifest names a path outside the backup folder; it was not opened".into()),
+            });
             continue;
         }
         let mut p = folder.to_path_buf();
         p.extend(rel.split('/'));
-        match sha256_file(&p) {
-            Ok(got) if got == sum => {}
-            Ok(_) => problems.push(format!("{rel}: checksum differs")),
-            Err(_) => problems.push(format!("{rel}: missing")),
-        }
+        let size = fs::metadata(&p).ok().filter(|m| m.is_file()).map(|m| m.len());
+        let (status, detail) = match sha256_file(&p) {
+            Ok(got) if got.eq_ignore_ascii_case(sum) => {
+                rep.ok += 1;
+                rep.bytes += size.unwrap_or(0);
+                (CheckStatus::Ok, None)
+            }
+            Ok(_) => {
+                rep.bytes += size.unwrap_or(0);
+                (CheckStatus::Differs, Some("the file's checksum is not the one recorded: it changed or was damaged after the backup".to_string()))
+            }
+            Err(Error::Io(e)) if e.kind() == std::io::ErrorKind::NotFound => {
+                (CheckStatus::Missing, Some("listed in the manifest but not in the folder".to_string()))
+            }
+            Err(e) => (CheckStatus::Unreadable, Some(format!("could not be read: {e}"))),
+        };
+        rep.files.push(FileCheck { path: rel.to_string(), status, size, detail });
     }
-    Ok(problems)
+    progress(rep.checked, lines.len(), "");
+    if !rep.cancelled {
+        let mut all = Vec::new();
+        walk(folder, &mut all)?;
+        for (p, _) in all {
+            let rel = rel_string(folder, &p);
+            if rel != MANIFEST_NAME && !listed_paths.contains(&rel.to_lowercase()) {
+                rep.extra.push(rel);
+            }
+        }
+        rep.extra.sort();
+    }
+    Ok(rep)
+}
+
+/// Checks a backup folder against its manifest. Returns the problems found (empty = intact).
+pub fn verify_manifest(folder: &Path) -> Result<Vec<String>, Error> {
+    let rep = verify_manifest_detailed(folder, &mut |_, _, _| {}, &|| false)?;
+    Ok(rep
+        .files
+        .iter()
+        .filter(|f| f.status != CheckStatus::Ok)
+        .map(|f| match f.status {
+            CheckStatus::BadLine => format!("unreadable manifest line: {}", f.path),
+            CheckStatus::Unsafe => format!("unsafe path in manifest: {}", f.path),
+            CheckStatus::Differs => format!("{}: checksum differs", f.path),
+            CheckStatus::Missing => format!("{}: missing", f.path),
+            CheckStatus::Unreadable => format!("{}: unreadable", f.path),
+            CheckStatus::Ok => unreachable!(),
+        })
+        .collect())
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -848,6 +990,16 @@ pub const SNAPSHOT_PREFIX: &str = "music-db-";
 
 /// How many automatic snapshots of one library the app keeps.
 pub const SNAPSHOTS_KEPT: usize = 10;
+
+/// How many pinned snapshots are kept besides the newest [`SNAPSHOTS_KEPT`] ordinary ones. A
+/// pinned snapshot is the session's first-write copy ("before anything changed") or the safety
+/// copy a restore makes; bulk operations take ordinary snapshots of their own, and ten of those
+/// must not push the pinned ones out.
+pub const SNAPSHOTS_PINNED_KEPT: usize = 10;
+
+/// File inside a snapshot folder that marks it as pinned (see [`SNAPSHOTS_PINNED_KEPT`]). It is
+/// not listed in [`SnapshotEntry::files`].
+const PINNED_MARKER: &str = "pinned";
 
 /// One automatic snapshot on disk.
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -864,7 +1016,7 @@ fn is_snapshot_dir(name: &str) -> bool {
 
 /// Sort key of a snapshot folder name: the UTC stamp, then the same-second counter (`-2`, `-3`,
 /// ... `-10`; none = 1). Compared as a number, so `-10` is newer than `-2`.
-fn snapshot_order(name: &str) -> (String, u64) {
+pub(crate) fn snapshot_order(name: &str) -> (String, u64) {
     let rest = name.strip_prefix(SNAPSHOT_PREFIX).unwrap_or(name);
     match rest.split_once('-') {
         Some((stamp, n)) => (stamp.to_string(), n.parse().unwrap_or(1)),
@@ -885,8 +1037,13 @@ pub fn list_snapshots(dest_dir: &Path) -> Vec<SnapshotEntry> {
             if !is_snapshot_dir(&name) {
                 return None;
             }
-            let mut files: Vec<String> =
-                fs::read_dir(e.path()).into_iter().flatten().flatten().map(|f| f.file_name().to_string_lossy().into_owned()).collect();
+            let mut files: Vec<String> = fs::read_dir(e.path())
+                .into_iter()
+                .flatten()
+                .flatten()
+                .map(|f| f.file_name().to_string_lossy().into_owned())
+                .filter(|f| f != PINNED_MARKER)
+                .collect();
             files.sort();
             Some(SnapshotEntry { folder: e.path().display().to_string(), name, files })
         })
@@ -903,6 +1060,25 @@ pub fn list_snapshots(dest_dir: &Path) -> Vec<SnapshotEntry> {
 /// so a folder with the final name is always whole. Reads the device only. Call it before the
 /// first write to a library and do not write if it fails.
 pub fn snapshot_library(root: &Path, dest_dir: &Path, keep: usize) -> Result<SnapshotEntry, Error> {
+    snapshot_library_protecting(root, dest_dir, keep, &[])
+}
+
+/// [`snapshot_library`] whose retention never removes the snapshots named in `protect` (a
+/// restore reads from one of them while it makes the safety copy of what it is about to
+/// replace, and the newest-`keep` rule must not delete its source from under it).
+pub fn snapshot_library_protecting(root: &Path, dest_dir: &Path, keep: usize, protect: &[&str]) -> Result<SnapshotEntry, Error> {
+    snapshot_library_impl(root, dest_dir, keep, protect, false)
+}
+
+/// [`snapshot_library_protecting`] for a snapshot that must outlast the ordinary ones: the first
+/// write of a session, or the safety copy of a restore. It is marked pinned and counted against
+/// [`SNAPSHOTS_PINNED_KEPT`] instead of `keep`, so later snapshots of bulk operations cannot push
+/// it out.
+pub fn snapshot_library_pinned(root: &Path, dest_dir: &Path, keep: usize, protect: &[&str]) -> Result<SnapshotEntry, Error> {
+    snapshot_library_impl(root, dest_dir, keep, protect, true)
+}
+
+fn snapshot_library_impl(root: &Path, dest_dir: &Path, keep: usize, protect: &[&str], pinned: bool) -> Result<SnapshotEntry, Error> {
     let pm = pacemaker_dir(root);
     if !pm.join("music.db").is_file() {
         return Err(Error::NotALibrary(root.to_path_buf()));
@@ -932,6 +1108,9 @@ pub fn snapshot_library(root: &Path, dest_dir: &Path, keep: usize) -> Result<Sna
                 files.push(f.to_string());
             }
         }
+        if pinned {
+            fs::write(partial.join(PINNED_MARKER), b"first write of a session, or the safety copy of a restore\n")?;
+        }
         fs::rename(&partial, &folder)?;
         Ok(files)
     })();
@@ -942,10 +1121,15 @@ pub fn snapshot_library(root: &Path, dest_dir: &Path, keep: usize) -> Result<Sna
             return Err(e);
         }
     };
-    // retention: oldest first out, never the one just made; stale half-built folders go too
-    let all = list_snapshots(dest_dir);
-    for old in all.iter().skip(keep.max(1)) {
-        let _ = fs::remove_dir_all(&old.folder);
+    // retention: oldest first out, never the one just made; stale half-built folders go too.
+    // Ordinary and pinned snapshots are counted apart, so one kind cannot push out the other.
+    let (kept_pinned, ordinary): (Vec<_>, Vec<_>) =
+        list_snapshots(dest_dir).into_iter().partition(|s| Path::new(&s.folder).join(PINNED_MARKER).is_file());
+    let doomed = ordinary.iter().skip(keep.max(1)).chain(kept_pinned.iter().skip(SNAPSHOTS_PINNED_KEPT.max(1)));
+    for old in doomed {
+        if !protect.contains(&old.name.as_str()) {
+            let _ = fs::remove_dir_all(&old.folder);
+        }
     }
     for e in fs::read_dir(dest_dir).into_iter().flatten().flatten() {
         let n = e.file_name().to_string_lossy().into_owned();
@@ -1436,6 +1620,110 @@ pub fn write_settings(root: &Path, changes: &[(i64, f64)]) -> Result<usize, Erro
     Ok(changed)
 }
 
+// ---------------------------------------------------------------------------------------------
+// Vocal filter flag (Revival firmware 180096073 and later)
+// ---------------------------------------------------------------------------------------------
+
+/// The flag file that switches the vocal filter on: `.Pacemaker/revival-vocal`. The names are
+/// constants on purpose: nothing a caller passes (or the database holds) ever becomes part of
+/// the path.
+const VOCAL_FLAG: &str = "revival-vocal";
+/// The kill switch: while `.Pacemaker/revival-no-preload` exists the device runs its stock Wah
+/// whatever the vocal flag says. This module only ever reads it.
+const NO_PRELOAD_FLAG: &str = "revival-no-preload";
+
+/// What the vocal flag file asks of the device.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum VocalMode {
+    /// No flag file: the stock Wah.
+    Off,
+    /// The flag file exists: Wah pad right keeps the vocals, left cuts them.
+    Vocal,
+    /// The flag file starts with `i`: the two directions swapped.
+    Inverted,
+}
+
+/// The first firmware that has the vocal hook. An older one ignores the flag file.
+pub const VOCAL_MIN_FIRMWARE: u64 = 180_096_073;
+
+/// The state of the vocal filter on a card.
+#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
+pub struct VocalState {
+    /// What the flag file says.
+    pub mode: VocalMode,
+    /// `revival-no-preload` exists: the device ignores the flag file and plays the stock Wah.
+    pub kill_switch: bool,
+    /// `system.xml` says the installed firmware is older than [`VOCAL_MIN_FIRMWARE`]: the device
+    /// has no vocal filter whatever the flag file says. False when the version cannot be read.
+    pub firmware_too_old: bool,
+    /// What the device will actually play: `mode`, or `Off` under the kill switch or on a firmware
+    /// that is known to be too old. Previews and exports of mixes use this.
+    pub effective: VocalMode,
+}
+
+/// The first byte of the flag file decides the direction. A file that cannot be read is an error;
+/// a missing one is `Off`.
+fn read_vocal_mode(dir: &Path) -> Result<VocalMode, Error> {
+    match File::open(dir.join(VOCAL_FLAG)) {
+        Ok(mut f) => {
+            let mut first = [0u8; 1];
+            let n = f.read(&mut first)?;
+            Ok(if n == 1 && (first[0] == b'i' || first[0] == b'I') { VocalMode::Inverted } else { VocalMode::Vocal })
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(VocalMode::Off),
+        Err(e) => Err(e.into()),
+    }
+}
+
+/// The installed firmware number from `system.xml`, when it is there and numeric.
+fn installed_firmware_number(dir: &Path) -> Option<u64> {
+    let text = fs::read(dir.join("system.xml")).ok()?;
+    parse_system_xml(&String::from_utf8_lossy(&text)).fw_version?.trim().parse().ok()
+}
+
+/// Reads the vocal flag the way the device does at boot: the file's existence switches the
+/// filter on, a first byte of `i` (or `I`) inverts it. Read-only.
+pub fn read_vocal(root: &Path) -> Result<VocalState, Error> {
+    let dir = pacemaker_dir(root);
+    let mode = read_vocal_mode(&dir)?;
+    let kill_switch = dir.join(NO_PRELOAD_FLAG).exists();
+    let firmware_too_old = installed_firmware_number(&dir).is_some_and(|n| n < VOCAL_MIN_FIRMWARE);
+    Ok(VocalState { mode, kill_switch, firmware_too_old, effective: if kill_switch || firmware_too_old { VocalMode::Off } else { mode } })
+}
+
+/// Sets the vocal flag: Off deletes `revival-vocal`, Vocal writes it empty, Inverted writes `i`.
+/// Atomic (temp file, fsync, rename), and a no-op when the card already says so. Touches no other
+/// file, `revival-no-preload` included. Returns the state read back from the card.
+pub fn write_vocal(root: &Path, mode: VocalMode) -> Result<VocalState, Error> {
+    let dir = pacemaker_dir(root);
+    if !dir.is_dir() {
+        return Err(Error::NotALibrary(root.to_path_buf()));
+    }
+    // A flag that cannot be read (locked, or a folder of that name) is not a reason to refuse:
+    // go on and write, which repairs it or reports the real I/O error.
+    if let Ok(before) = read_vocal(root) {
+        if before.mode == mode {
+            return Ok(before);
+        }
+    }
+    let path = dir.join(VOCAL_FLAG);
+    match mode {
+        VocalMode::Off => match fs::remove_file(&path) {
+            Ok(()) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => return Err(e.into()),
+        },
+        VocalMode::Vocal => crate::library::atomic_write(&path, b"")?,
+        VocalMode::Inverted => crate::library::atomic_write(&path, b"i")?,
+    }
+    let now = read_vocal(root)?;
+    if now.mode != mode {
+        return invalid(format!("the flag file reads back as {:?} after writing {:?}", now.mode, mode));
+    }
+    Ok(now)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1744,6 +2032,68 @@ mod tests {
     }
 
     #[test]
+    fn verify_reports_every_file_with_its_own_result() {
+        let (root, _tracks) = device_volume();
+        fs::write(root.join(".Pacemaker/settings.dat"), "settings").unwrap();
+        fs::write(root.join(".Pacemaker/system.xml"), SYSTEM_XML).unwrap();
+        let dest = scratch("verify");
+        let r = backup_snapshot(&root, &dest, false, &mut |_, _, _| {}, &|| false).unwrap();
+        let folder = PathBuf::from(&r.folder);
+
+        // an intact backup: one `Ok` row per manifest line, nothing extra, progress per file
+        let mut ticks = Vec::new();
+        let rep = verify_manifest_detailed(&folder, &mut |d, t, p| ticks.push((d, t, p.to_string())), &|| false).unwrap();
+        assert_eq!((rep.listed, rep.checked, rep.ok), (r.files, r.files, r.files));
+        assert_eq!(rep.problems(), 0);
+        assert!(rep.files.iter().all(|f| f.status == CheckStatus::Ok && f.size.is_some() && f.detail.is_none()));
+        assert!(rep.extra.is_empty() && !rep.cancelled);
+        assert!(rep.bytes > 0);
+        assert_eq!(ticks.last().unwrap().0, r.files, "the closing tick reports all done");
+
+        // damage it in every way a manifest can be wrong
+        fs::write(folder.join(".Pacemaker/settings.dat"), "tampered").unwrap();
+        fs::remove_file(folder.join(".Pacemaker/system.xml")).unwrap();
+        fs::write(folder.join("notes.txt"), "not in the manifest").unwrap();
+        let sum = "0".repeat(64);
+        let mut manifest = fs::read_to_string(folder.join(MANIFEST_NAME)).unwrap();
+        for bad in ["not a manifest line", &format!("{sum}  ../outside.txt"), &format!("{sum}  C:/Windows/win.ini"), &format!("{sum}  a\\b.txt")] {
+            manifest.push_str(bad);
+            manifest.push('\n');
+        }
+        fs::write(folder.join(MANIFEST_NAME), manifest).unwrap();
+        let rep = verify_manifest_detailed(&folder, &mut |_, _, _| {}, &|| false).unwrap();
+        let status = |p: &str| rep.files.iter().find(|f| f.path == p).unwrap_or_else(|| panic!("no row for {p}")).status;
+        assert_eq!(status(".Pacemaker/settings.dat"), CheckStatus::Differs);
+        assert_eq!(status(".Pacemaker/system.xml"), CheckStatus::Missing);
+        assert_eq!(status("not a manifest line"), CheckStatus::BadLine);
+        assert_eq!(status("../outside.txt"), CheckStatus::Unsafe);
+        assert_eq!(status("C:/Windows/win.ini"), CheckStatus::Unsafe);
+        assert_eq!(status("a\\b.txt"), CheckStatus::Unsafe);
+        assert_eq!(rep.problems(), 6);
+        assert_eq!(rep.ok, r.files - 2);
+        assert_eq!(rep.extra, ["notes.txt"]);
+        // the summary form keeps its old wording
+        let problems = verify_manifest(&folder).unwrap();
+        assert!(problems.contains(&".Pacemaker/settings.dat: checksum differs".to_string()), "{problems:?}");
+        assert!(problems.contains(&".Pacemaker/system.xml: missing".to_string()), "{problems:?}");
+
+        // a cancel stops after the files already checked and says so
+        let polls = std::cell::Cell::new(0);
+        let rep = verify_manifest_detailed(&folder, &mut |_, _, _| {}, &|| {
+            polls.set(polls.get() + 1);
+            polls.get() > 2
+        })
+        .unwrap();
+        assert!(rep.cancelled);
+        assert_eq!(rep.checked, 2);
+        assert!(rep.extra.is_empty(), "no extra-file scan after a cancel");
+
+        // not a backup folder at all
+        let e = verify_manifest_detailed(&dest, &mut |_, _, _| {}, &|| false).unwrap_err().to_string();
+        assert!(e.contains("not a backup folder"), "{e}");
+    }
+
+    #[test]
     fn backup_cancel_and_failure_leave_no_folder() {
         let (root, tracks) = device_volume();
         let dest = scratch("backup-cancel");
@@ -1962,6 +2312,32 @@ mod tests {
     }
 
     #[test]
+    fn bulk_operation_snapshots_cannot_push_out_the_pinned_ones() {
+        let root = scratch("snap-pin-root");
+        let dest = scratch("snap-pin-dest").join("snaps");
+        let pm = root.join(".Pacemaker");
+        fs::create_dir_all(&pm).unwrap();
+        fs::write(pm.join("music.db"), b"database bytes").unwrap();
+
+        let first = snapshot_library_pinned(&root, &dest, 3, &[]).unwrap();
+        assert_eq!(first.files, ["music.db"], "the marker is not a snapshot file");
+        for _ in 0..6 {
+            snapshot_library(&root, &dest, 3).unwrap();
+        }
+        let left = list_snapshots(&dest);
+        assert!(left.iter().any(|e| e.name == first.name), "the first-write copy is still there");
+        assert_eq!(left.len(), 4, "3 ordinary + the pinned one");
+        // the pinned ones have a cap of their own
+        for _ in 0..SNAPSHOTS_PINNED_KEPT + 2 {
+            snapshot_library_pinned(&root, &dest, 3, &[]).unwrap();
+        }
+        let pinned = list_snapshots(&dest).into_iter().filter(|e| Path::new(&e.folder).join(PINNED_MARKER).is_file()).count();
+        assert_eq!(pinned, SNAPSHOTS_PINNED_KEPT);
+        let _ = fs::remove_dir_all(&root);
+        let _ = fs::remove_dir_all(dest.parent().unwrap());
+    }
+
+    #[test]
     fn snapshots_made_in_one_second_order_by_number_not_by_text() {
         let stamp = "music-db-20260609T101320Z";
         let mut names: Vec<String> = ["", "-2", "-9", "-10", "-11"].iter().map(|n| format!("{stamp}{n}")).collect();
@@ -2019,5 +2395,108 @@ mod tests {
         assert_eq!(emit_settings(&a).as_bytes(), raw.as_slice());
         let v = describe_settings(&a);
         assert!(v.settings.iter().all(|s| s.present), "every known id is in a real dump: {:?}", v.settings.iter().filter(|s| !s.present).map(|s| s.id).collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn vocal_flag_round_trip_and_the_files_it_must_not_touch() {
+        let root = scratch("vocal");
+        let pm = root.join(".Pacemaker");
+        fs::create_dir_all(&pm).unwrap();
+        fs::write(pm.join("music.db"), b"db").unwrap();
+        fs::write(pm.join("settings.dat"), b"settings").unwrap();
+        let st = |m, k, e| VocalState { mode: m, kill_switch: k, firmware_too_old: false, effective: e };
+
+        assert_eq!(read_vocal(&root).unwrap(), st(VocalMode::Off, false, VocalMode::Off));
+        // Vocal = an empty file
+        assert_eq!(write_vocal(&root, VocalMode::Vocal).unwrap(), st(VocalMode::Vocal, false, VocalMode::Vocal));
+        assert_eq!(fs::read(pm.join("revival-vocal")).unwrap(), b"");
+        // Inverted = "i"
+        assert_eq!(write_vocal(&root, VocalMode::Inverted).unwrap(), st(VocalMode::Inverted, false, VocalMode::Inverted));
+        assert_eq!(fs::read(pm.join("revival-vocal")).unwrap(), b"i");
+        // back to Vocal replaces the content
+        assert_eq!(write_vocal(&root, VocalMode::Vocal).unwrap().mode, VocalMode::Vocal);
+        assert_eq!(fs::read(pm.join("revival-vocal")).unwrap(), b"");
+        // Off deletes, twice is fine
+        assert_eq!(write_vocal(&root, VocalMode::Off).unwrap(), st(VocalMode::Off, false, VocalMode::Off));
+        assert!(!pm.join("revival-vocal").exists());
+        assert_eq!(write_vocal(&root, VocalMode::Off).unwrap().mode, VocalMode::Off);
+
+        // the device only looks at the first letter; hand-made files still read right
+        for (content, want) in [("", VocalMode::Vocal), ("invert\n", VocalMode::Inverted), ("I", VocalMode::Inverted), ("yes\n", VocalMode::Vocal), ("x i", VocalMode::Vocal)] {
+            fs::write(pm.join("revival-vocal"), content).unwrap();
+            assert_eq!(read_vocal(&root).unwrap().mode, want, "{content:?}");
+        }
+        // a card that already says so is not rewritten (a hand-made 'invert' file stays as it is)
+        fs::write(pm.join("revival-vocal"), "invert\n").unwrap();
+        write_vocal(&root, VocalMode::Inverted).unwrap();
+        assert_eq!(fs::read(pm.join("revival-vocal")).unwrap(), b"invert\n");
+
+        // the kill switch is reported, overrides the effective mode, and is never touched
+        fs::write(pm.join("revival-no-preload"), b"keep me").unwrap();
+        let s = read_vocal(&root).unwrap();
+        assert_eq!((s.mode, s.kill_switch, s.effective), (VocalMode::Inverted, true, VocalMode::Off));
+        for m in [VocalMode::Vocal, VocalMode::Inverted, VocalMode::Off, VocalMode::Vocal] {
+            let s = write_vocal(&root, m).unwrap();
+            assert!(s.kill_switch && s.effective == VocalMode::Off && s.mode == m);
+        }
+        assert_eq!(fs::read(pm.join("revival-no-preload")).unwrap(), b"keep me");
+
+        // nothing else changed and no temp file was left
+        assert_eq!(fs::read(pm.join("music.db")).unwrap(), b"db");
+        assert_eq!(fs::read(pm.join("settings.dat")).unwrap(), b"settings");
+        let mut names: Vec<String> = fs::read_dir(&pm).unwrap().flatten().map(|e| e.file_name().to_string_lossy().into_owned()).collect();
+        names.sort();
+        assert_eq!(names, ["music.db", "revival-no-preload", "revival-vocal", "settings.dat"]);
+    }
+
+    #[test]
+    fn vocal_flag_is_ignored_by_a_firmware_known_to_be_too_old() {
+        let root = scratch("vocal-fw");
+        let pm = root.join(".Pacemaker");
+        fs::create_dir_all(&pm).unwrap();
+        let xml = |v: &str| format!("<SYSTEM FWVERSION=\"{v}\" SWVERSION=\"{v}\"/>");
+        write_vocal(&root, VocalMode::Inverted).unwrap();
+        // no system.xml, or a version that is not a number: unknown, so the flag counts
+        assert_eq!(read_vocal(&root).unwrap().effective, VocalMode::Inverted);
+        fs::write(pm.join("system.xml"), xml("beta")).unwrap();
+        assert_eq!(read_vocal(&root).unwrap().effective, VocalMode::Inverted);
+        // older than the vocal hook: the file still says Inverted, the device does not act on it
+        fs::write(pm.join("system.xml"), xml("180096070")).unwrap();
+        let s = read_vocal(&root).unwrap();
+        assert_eq!((s.mode, s.firmware_too_old, s.effective), (VocalMode::Inverted, true, VocalMode::Off));
+        // writing the flag still works (it takes effect once the firmware is updated)
+        assert_eq!(write_vocal(&root, VocalMode::Vocal).unwrap().mode, VocalMode::Vocal);
+        // the first firmware with the hook, and later ones
+        for v in ["180096073", "180096074", "190000000"] {
+            fs::write(pm.join("system.xml"), xml(v)).unwrap();
+            let s = read_vocal(&root).unwrap();
+            assert_eq!((s.firmware_too_old, s.effective), (false, VocalMode::Vocal), "{v}");
+        }
+    }
+
+    #[test]
+    fn an_unreadable_vocal_flag_is_reported_and_a_write_does_not_pretend_it_worked() {
+        let root = scratch("vocal-unreadable");
+        let pm = root.join(".Pacemaker");
+        // a folder where the flag file should be: neither readable nor removable as a file
+        fs::create_dir_all(pm.join("revival-vocal")).unwrap();
+        assert!(read_vocal(&root).is_err());
+        // the write goes on to the real operation and reports its error instead of stopping at the probe
+        assert!(write_vocal(&root, VocalMode::Vocal).is_err());
+        assert!(write_vocal(&root, VocalMode::Off).is_err());
+        assert!(pm.join("revival-vocal").is_dir(), "nothing was removed");
+        // once the obstruction is gone the same call repairs the card
+        fs::remove_dir(pm.join("revival-vocal")).unwrap();
+        assert_eq!(write_vocal(&root, VocalMode::Vocal).unwrap().mode, VocalMode::Vocal);
+    }
+
+    #[test]
+    fn vocal_flag_refuses_a_folder_that_is_not_a_card() {
+        let root = scratch("vocal-nolib");
+        assert_eq!(read_vocal(&root).unwrap().mode, VocalMode::Off);
+        assert!(matches!(write_vocal(&root, VocalMode::Vocal), Err(Error::NotALibrary(_))));
+        assert!(!root.join(".Pacemaker").exists(), "nothing may be created");
+        // 'Off' on a non-card is refused too, rather than reporting success
+        assert!(write_vocal(&root, VocalMode::Off).is_err());
     }
 }

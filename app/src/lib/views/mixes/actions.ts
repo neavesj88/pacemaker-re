@@ -3,8 +3,22 @@
 import type { Clip, MixDoc } from "$lib/api/mixes";
 import * as E from "$lib/state/mixedit";
 import { mixes } from "$lib/state/mixes.svelte";
+import { alignSuggestion } from "$lib/state/sectionTransition";
 import { toast } from "$lib/state/toast.svelte";
+import { vocal } from "$lib/state/vocal.svelte";
+import {
+  buildRecipe,
+  describeTools,
+  lengthLabel,
+  recipeDef,
+  requestedBars,
+  toolsInTheWay,
+  type InTheWay,
+  type RecipeId,
+} from "$lib/state/transitionRecipes";
+import { confirm } from "./confirm.svelte";
 import { SR, toolLabel } from "./layout";
+import { recipePrefs } from "./recipePrefs.svelte";
 import { mv } from "./view.svelte";
 
 export const errText = (e: unknown) => (typeof e === "string" ? e : e instanceof Error ? e.message : String(e));
@@ -18,7 +32,7 @@ export function describe(doc: MixDoc, id: string): string {
   if (f.kind === "clip") return `clip "${clipTitle(f.clip)}"`;
   if (f.kind === "process") {
     const p = f.process;
-    const name = p.kind === "tool" ? toolLabel(p.effects[0]?.name ?? p.toolType) : toolLabel(p.kind);
+    const name = p.kind === "tool" ? toolLabel(p.effects[0]?.name ?? p.toolType, vocal.mode) : toolLabel(p.kind);
     return `${name} on "${clipTitle(f.clip)}"`;
   }
   const t = f.transition;
@@ -63,7 +77,7 @@ export function addProcessAt(type: string, deck: number, at: number = mv.playhea
       start = hit.start + hit.length;
       length = Math.min(want, clip.length - start);
       if (length < E.MIN_LENGTH) {
-        toast.show(`There is no room for another ${toolLabel(type)} on "${clipTitle(clip)}" after the existing one.`, "info");
+        toast.show(`There is no room for another ${toolLabel(type, vocal.mode)} on "${clipTitle(clip)}" after the existing one.`, "info");
         return false;
       }
     }
@@ -73,7 +87,7 @@ export function addProcessAt(type: string, deck: number, at: number = mv.playhea
     return false;
   }
   if (isRegion) mixes.addRegion(clip.id, type, start, length);
-  else mixes.addTool(clip.id, type, start, length);
+  else mixes.addTool(clip.id, type, start, length, type === "Trans" ? E.effectiveBpm(clip, start) || bpm : 0);
   return true;
 }
 
@@ -172,17 +186,78 @@ export async function beatmatch(clipId: string) {
   }
 }
 
-/** Builds a crossfade (and bass-swap EQ tools) between two clips with the backend's suggestion. */
-export async function autoTransition(fromId: string, toId: string) {
+export type AutoOptions = {
+  /** The recipe; default is the one in the settings. */
+  recipe?: RecipeId;
+  /** Length in bars; default is the settings' (or the recipe's own). */
+  bars?: number;
+  /** Rebuild this transition: it is deleted in the same undo step. */
+  replacing?: string;
+};
+
+/** The words for one tool in the way: `EQ on "Title" (overlaps the new one)`. */
+function wayText(doc: MixDoc, w: InTheWay): string {
+  const clip = E.clipOf(doc, w.clipId);
+  const what = `${toolLabel(w.toolType, vocal.mode)} on "${clipTitle(clip)}"`;
+  return w.why === "overlaps" ? `${what} (overlaps one the new transition adds)` : `${what} (inside the transition being rebuilt)`;
+}
+
+/** Builds a transition between two clips with a recipe (the settings' by default): the backend
+ * works out where and how long from the beat grids, the recipe makes the crossfade curve and the
+ * tools. Tools of the user's that are in the way are handled by the `onConflict` setting (asks by
+ * default, naming every one). One undo step. */
+export async function autoTransition(fromId: string, toId: string, opts: AutoOptions = {}) {
   try {
-    const s = await mixes.autoTransition(fromId, toId, false);
-    const conflicts = s.tools.filter((t) => t.conflicts.length > 0);
-    // EQ tools that would overlap existing ones are skipped rather than silently replacing them
-    mixes.applyTransition(s, false);
-    const note = conflicts.length ? ` ${conflicts.length} EQ tool(s) skipped: the clip already has an EQ there.` : "";
-    toast.show(`Transition added (${s.bars % 1 === 0 ? s.bars : s.bars.toFixed(1)} bars).${note}${s.notes.length ? " " + s.notes.join("; ") : ""}`, "ok", 7000);
+    const prefs = recipePrefs.value;
+    const recipe = opts.recipe ?? prefs.recipe;
+    const def = recipeDef(recipe);
+    const bars = opts.bars ?? requestedBars(recipe, prefs);
+    const base = await mixes.autoTransition(fromId, toId, false, bars);
+    const doc = mixes.doc;
+    if (!doc) return;
+    // with the section setting on, the window may move onto section boundaries first (the backend
+    // knows nothing of sections); off, or without sections near, this is the backend's own window
+    const aligned = alignSuggestion(doc, base, prefs, mixes.sectionLookup, def.lengths[0] * 4 * base.beat);
+    const built = buildRecipe(doc, aligned.suggestion, recipe, { cutAt: prefs.cutAt, moved: aligned.moved }, E.recipeKit);
+    const old = opts.replacing ? E.find(doc, opts.replacing) : null;
+    const replacing = old?.kind === "transition" ? old.transition : null;
+    const way = toolsInTheWay(doc, built, replacing);
+    const label = `${def.label} (${lengthLabel(built.bars)})`;
+    const noteText = built.notes.length ? " " + built.notes.join("; ") + "." : "";
+
+    const finish = (replace: boolean) => {
+      recipePrefs.built.set(built.transition.id, { recipe, bars: built.bars });
+      mixes.applyTransition(built, replace, {
+        label: `Transition: ${label}`,
+        replacing: replacing?.id,
+        remove: replace ? way.map((w) => w.id) : [],
+      });
+      const added = describeTools(built, (id) => clipTitle(E.clipOf(doc, id)), (t) => toolLabel(t, vocal.mode));
+      // new tools left out because one of the user's is in the way (one old tool can block several)
+      const skipped = !replace ? built.tools.filter((t) => t.conflicts.length > 0).length : 0;
+      // the rebuilt transition's old tools stay when the user chose to keep theirs
+      const kept = !replace ? way.filter((w) => w.why === "inside") : [];
+      const bits = [`${label} added.`];
+      if (added.length) bits.push(`Tools: ${added.join(", ")}.`);
+      if (skipped) bits.push(`${skipped} new tool(s) skipped because yours are in the way.`);
+      if (kept.length) bits.push(`Kept (setting "Keep mine"): ${kept.map((w) => wayText(doc, w)).join("; ")}.`);
+      if (replace && way.length) bits.push(`Replaced: ${way.map((w) => wayText(doc, w)).join("; ")}.`);
+      toast.show(bits.join(" ") + noteText, "ok", 9000);
+    };
+
+    if (way.length === 0) return finish(false);
+    if (prefs.onConflict === "skip") return finish(false);
+    if (prefs.onConflict === "replace") return finish(true);
+    confirm.ask({
+      title: `Replace tools for the ${def.label.toLowerCase()}?`,
+      message: `${way.length === 1 ? "This tool is" : `These ${way.length} tools are`} in the way. Replacing removes ${way.length === 1 ? "it" : "them"} (Undo brings ${way.length === 1 ? "it" : "them"} back). Cancel leaves everything as it is; the setting "When tools are in the way" can be set to keep yours and add only the rest.`,
+      items: way.map((w) => wayText(doc, w)),
+      confirmLabel: "Replace and build",
+      danger: true,
+      run: () => finish(true),
+    });
   } catch (e) {
-    toast.show(`Auto transition: ${errText(e)}`, "bad", 7000);
+    toast.show(`Auto transition: ${errText(e)}`, "bad", 9000);
   }
 }
 

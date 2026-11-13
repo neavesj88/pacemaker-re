@@ -1,19 +1,26 @@
 <script lang="ts">
   import { untrack } from "svelte";
+  import { cases } from "$lib/state/cases.svelte";
   import { jobs } from "$lib/state/jobs.svelte";
   import { session } from "$lib/state/session.svelte";
+  import { smartSettings } from "$lib/state/smartSettings.svelte";
   import Button from "$lib/ui/Button.svelte";
   import ImportPreview from "./ImportPreview.svelte";
+  import WatchFolders from "./WatchFolders.svelte";
+  import WatchResults from "./WatchResults.svelte";
   import { interop } from "./interop.svelte";
 
   const lib = $derived(session.library);
 
-  // what the list exports cover: "library", "case:<id>" or "mix:<id>"
+  // what the list exports cover: "library", "case:<id>", "mix:<id>" or "smart:<id>"
   let scope = $state("library");
   $effect(() => {
-    // a case or mix that no longer exists (another library, or deleted) falls back to the library
+    void smartSettings.ensure();
+  });
+  $effect(() => {
+    // a case, mix or smart case that no longer exists (another library, or deleted) falls back to the library
     const [kind, id] = scope.split(":");
-    const list = kind === "case" ? lib?.cases : kind === "mix" ? lib?.mixes : null;
+    const list = kind === "case" ? lib?.cases : kind === "mix" ? lib?.mixes : kind === "smart" ? cases.smart : null;
     if (kind !== "library" && !list?.some((c) => String(c.id) === id)) scope = "library";
   });
 
@@ -27,6 +34,13 @@
   }
 
   function exportList(format: "m3u8" | "csv") {
+    const [kind, id] = scope.split(":");
+    if (kind === "smart") {
+      // a smart case is exported as what it matches right now (the cases area owns that export)
+      const s = cases.smart.find((x) => String(x.id) === id);
+      if (s) cases.exportSmart(s, format);
+      return;
+    }
     const t = target();
     interop.export(format, t.where, t.name);
   }
@@ -46,30 +60,45 @@
     <Button variant="primary" onclick={() => jobs.pickFiles()} disabled={!jobs.canWrite}>Add tracks…</Button>
   </section>
 
+  <WatchFolders />
+  <WatchResults />
+
   <section class="card">
     <h3>rekordbox</h3>
-    <p class="muted">rekordbox.xml: ratings and playlists become ratings and cases (previewed first); cues and grids are not imported yet. Export writes tracks with their tempo grids, ratings, keys and cases.</p>
+    <p class="muted">rekordbox.xml: ratings, playlists and the first memory cue become ratings, cases and (if you choose) cue points, previewed first; beat grids are not imported. Export writes tracks with their tempo grids, ratings, keys and cases. Smart cases are written as ordinary playlists of the tracks they match now (rekordbox XML cannot hold rules).</p>
     <div class="row">
-      <Button onclick={() => interop.pick("Choose a rekordbox XML export")} disabled={!lib || interop.loading}>Import XML…</Button>
+      <Button onclick={() => interop.pick("rekordbox")} disabled={!lib || interop.loading}>Import XML…</Button>
       <Button onclick={() => interop.export("rekordbox", { scope: "library" }, "rekordbox")} disabled={!lib || interop.exporting}>Export XML…</Button>
     </div>
+    <label class="opt">
+      <input type="checkbox" checked={smartSettings.value.export_smart} onchange={(e) => smartSettings.set({ export_smart: e.currentTarget.checked })} />
+      Include smart cases{cases.smart.length ? ` (${cases.smart.length})` : ""}
+    </label>
   </section>
 
   <section class="card">
     <h3>iTunes / Music</h3>
     <p class="muted">Library.xml: ratings (0-100 become 0-5 stars) and playlists become cases.</p>
-    <Button onclick={() => interop.pick("Choose an iTunes / Music Library.xml")} disabled={!lib || interop.loading}>Import…</Button>
+    <Button onclick={() => interop.pick("itunes")} disabled={!lib || interop.loading}>Import…</Button>
   </section>
 
   <section class="card">
     <h3>Playlists and lists</h3>
-    <p class="muted">Save a case, a mix or the whole library as an M3U8 playlist or a CSV list.</p>
+    <p class="muted">Import an M3U / M3U8 playlist as a case (relative and absolute paths, #EXTINF titles), or save a case, a smart case, a mix or the whole library as an M3U8 playlist or a CSV list.</p>
     <div class="row">
+      <Button onclick={() => interop.pick("m3u")} disabled={!lib || interop.loading}>Import playlist…</Button>
+    </div>
+    <div class="row export">
       <select bind:value={scope} disabled={!lib} aria-label="What to export">
         <option value="library">Whole library</option>
         {#if lib?.cases.length}
           <optgroup label="Cases">
             {#each lib.cases as c (c.id)}<option value={`case:${c.id}`}>{c.name}</option>{/each}
+          </optgroup>
+        {/if}
+        {#if cases.smart.length}
+          <optgroup label="Smart cases (as they match now)">
+            {#each cases.smart as s (s.id)}<option value={`smart:${s.id}`}>{s.name}</option>{/each}
           </optgroup>
         {/if}
         {#if lib?.mixes.length}
@@ -84,8 +113,18 @@
   </section>
 
   <section class="card">
-    <h3>Serato · Traktor</h3>
-    <p class="muted">Importing crates and cues from Serato or Traktor is not built yet.</p>
+    <h3>Serato</h3>
+    <p class="muted">Crates become cases. Pick the <code>_Serato_</code> folder (on your music drive, or in your Music folder) to read every crate in it, or a single <code>.crate</code> file. A crate holds file paths only, so tracks are matched by file name and size and the files must be reachable from this computer. Smart crates are not imported.</p>
+    <div class="row">
+      <Button onclick={() => interop.pick("serato-folder")} disabled={!lib || interop.loading}>Import _Serato_ folder…</Button>
+      <Button onclick={() => interop.pick("serato-crate")} disabled={!lib || interop.loading}>Import .crate…</Button>
+    </div>
+  </section>
+
+  <section class="card">
+    <h3>Traktor</h3>
+    <p class="muted">collection.nml: ratings, playlists and the first cue of each track become ratings, cases and (if you choose) cue points, previewed first. Colours and beat grids are not imported.</p>
+    <Button onclick={() => interop.pick("traktor")} disabled={!lib || interop.loading}>Import collection.nml…</Button>
   </section>
 
   {#if interop.error}<p class="err" role="alert">{interop.error}</p>{/if}
@@ -111,11 +150,21 @@
     margin: 0 0 6px;
     font-size: 14px;
   }
+  .row.export {
+    margin-top: 8px;
+  }
   .row {
     display: flex;
     flex-wrap: wrap;
     gap: 6px;
     align-items: center;
+  }
+  .opt {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    margin-top: 8px;
+    font-size: 13px;
   }
   select {
     background: var(--panel);

@@ -7,9 +7,13 @@ import {
   deviceHealth,
   deviceOverview,
   deviceSettings,
+  deviceVerifyReport,
+  JOB_RELINK,
+  JOB_VERIFY,
   type DeviceOverview,
   type Health,
   type SettingsView,
+  type VerifyReport,
 } from "$lib/api/device";
 import type { DoneEvent, ProgressEvent } from "$lib/api/types";
 import { jobs } from "$lib/state/jobs.svelte";
@@ -28,6 +32,15 @@ class DeviceStore {
   /** The finished line of the last job of each kind, kept on screen until the next one starts. */
   results = $state<Record<string, string>>({});
   cleanupOpen = $state(false);
+  /** The Health card's "remove dead rows" dialog. */
+  fixOpen = $state(false);
+  /** The Health card's "find missing audio" (relink) dialog. */
+  relinkOpen = $state(false);
+  /** Bumped when the snapshot list may have changed (a restore), so the Restore card re-reads it. */
+  snapshotTick = $state(0);
+  /** The per-file result of the last finished backup verification. */
+  verify = $state<VerifyReport | null>(null);
+  verifyOpen = $state(false);
   /** The library object that was ejected. The session has no way to close a library, so the
    *  view treats exactly this object as detached; opening a drive again gives a new object. */
   ejected = $state.raw<unknown>(null);
@@ -88,6 +101,8 @@ class DeviceStore {
         this.health = null;
         this.settings = undefined;
         this.results = {};
+        this.verify = null;
+        this.verifyOpen = false;
         toast.show("Ejected. It is safe to unplug the USB cable.", "ok", 8000);
         await session.refreshVolumes();
       } else {
@@ -125,6 +140,24 @@ class DeviceStore {
     } else {
       this.results[ev.job] = ev.summary;
       toast.show(ev.summary, ev.failed > 0 ? "bad" : "ok", 8000);
+    }
+    if (ev.job === JOB_RELINK && this.#root && !this.isDetached(session.library)) {
+      // track locations changed: the open library and the Restore card's snapshot list are stale
+      await session.load(this.#root, true);
+      this.snapshotTick++;
+    }
+    if (ev.job === JOB_VERIFY) {
+      // reads the backup folder only: the card did not change, so no new scan of it
+      if (!ev.error) {
+        try {
+          this.verify = await deviceVerifyReport();
+          // the per-file result is the point of the check: show it
+          this.verifyOpen = !!this.verify;
+        } catch (e) {
+          toast.show(String(e), "bad", 8000);
+        }
+      }
+      return;
     }
     if (this.#root && !this.isDetached(session.library)) await this.load(this.#root);
   }

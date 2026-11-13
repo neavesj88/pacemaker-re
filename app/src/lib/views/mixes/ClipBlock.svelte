@@ -5,7 +5,9 @@
   import * as E from "$lib/state/mixedit";
   import { effectiveBpm } from "$lib/state/mixedit";
   import { mixes } from "$lib/state/mixes.svelte";
+  import { sections } from "$lib/state/sections.svelte";
   import { HEADER_W, SR } from "./layout";
+  import ClipSections from "./ClipSections.svelte";
   import ClipWave from "./ClipWave.svelte";
   import { mv } from "./view.svelte";
 
@@ -84,7 +86,7 @@
         const snapOn = !ev.altKey && mixes.snap !== "off";
         const primary = orig.get(clip.id)! + delta;
         const snapped = snapOn
-          ? E.snapClipStart(doc0, clip.id, primary, { mode: mixes.snap, threshold: mixes.threshold, exclude: ids })
+          ? E.snapClipStart(doc0, clip.id, primary, { mode: mixes.snap, threshold: mixes.threshold, exclude: ids, sections: mixes.sectionLookup })
           : primary;
         const d = snapped - orig.get(clip.id)!;
         const deck = ids.length === 1 ? laneAt(ev.clientY) : null;
@@ -170,6 +172,7 @@
   oncontextmenu={ctx}
 >
   <ClipWave {clip} pps={mv.pps} from={win.from} to={win.to} {height} />
+  {#if mv.sectionMarkers && sections.showMarkers}<ClipSections {clip} pps={mv.pps} />{/if}
   <span class="grip left"></span>
   <span class="grip right"></span>
   <span class="title" style:max-width="{Math.max(0, width - 8)}px">{title}<em>{tempoText}</em></span>

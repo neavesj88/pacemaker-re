@@ -1,6 +1,7 @@
 // Case commands (src-tauri/src/commands/cases.rs). Argument keys are camelCase; fields inside an
 // object argument keep their Rust (snake_case) names.
 import { invoke } from "@tauri-apps/api/core";
+import { open } from "@tauri-apps/plugin-dialog";
 
 /** A case with the metadata the Editor's case table and dialog show. */
 export type CaseInfo = {
@@ -68,38 +69,84 @@ export const favouriteIds = (root: string) => invoke<number[]>("cases_favourite_
 
 // ---- smart cases ------------------------------------------------------------------------------
 
-/** One condition; a smart case matches the tracks for which every rule holds. */
+/** How a group combines its items: all (AND), any (OR) or none (NOT any). */
+export type Mode = "all" | "any" | "none";
+export type TextField = "title" | "artist" | "album" | "genre" | "label" | "comments" | "remixer";
+export type TextOp = "contains" | "is" | "starts_with";
+
+/** How a tag rule treats its tags: the track has at least one ("any"), every one ("all"), or none of them. */
+export type TagMatch = "any" | "all" | "none";
+
+/** One condition, or a group of them (groups nest). The old `genre` rule is rewritten by the
+ * backend into `text` on load, so it never arrives here. */
 export type Rule =
   | { kind: "rating_min"; stars: number }
   | { kind: "favourite"; value: boolean }
   | { kind: "plays_zero" }
   | { kind: "plays_min"; n: number }
+  | { kind: "plays_range"; min: number | null; max: number | null }
   | { kind: "played_within"; days: number }
+  /** Last played more than `days` days ago (stale); never-played tracks count when `include_never`. */
+  | { kind: "last_played_before"; days: number; include_never: boolean }
   | { kind: "bpm_range"; min: number | null; max: number | null }
   | { kind: "key"; key: string }
   | { kind: "key_compatible"; key: string }
-  | { kind: "genre"; text: string }
-  | { kind: "analysed"; value: boolean };
+  | { kind: "analysed"; value: boolean }
+  | { kind: "text"; field: TextField; op: TextOp; text: string }
+  | { kind: "year_range"; min: number | null; max: number | null }
+  | { kind: "added_within"; days: number }
+  | { kind: "added_before"; days: number }
+  | { kind: "duration_range"; min_secs: number | null; max_secs: number | null }
+  | { kind: "format"; value: string }
+  | { kind: "in_case"; case_id: number; value: boolean; case_name?: string }
+  /** Tags (app-side labels, compared ignoring case): the track has any / all / none of `tags`. */
+  | { kind: "tags"; how: TagMatch; tags: string[] }
+  /** Colour label: is one of `colours` (`value` true) or none of them (false); "none" stands for no colour label. */
+  | { kind: "colour"; colours: string[]; value: boolean }
+  /** Energy 1 to 10 under the Energy source setting, between `min` and `max`; tracks with no energy never match. */
+  | { kind: "energy_range"; min: number | null; max: number | null }
+  | { kind: "group"; mode: Mode; items: Rule[] };
 
-export type SmartCase = {
+export type SortField =
+  | "title" | "artist" | "album" | "genre" | "label" | "bpm" | "key" | "rating" | "year"
+  | "duration" | "date_added" | "plays" | "last_played" | "format" | "file_size";
+
+export type Sort = { field: SortField; descending: boolean };
+
+/** What a smart case asks for: `mode` over `rules`, then the order, then "only the first N".
+ * No order = artist, title. No limit = every match. */
+export type Query = { mode: Mode; rules: Rule[]; sort: Sort | null; limit: number | null };
+
+export type SmartCase = Query & {
   /** 0 for a new one; the backend assigns the id on save. */
   id: number;
   name: string;
-  rules: Rule[];
   /** "Put on Pacemaker" is on: a real case with the matches exists on the device. */
   on_device: boolean;
   device_case_id: number | null;
 };
 
-export type DeviceCopy = { smart_case: SmartCase; count: number };
+/** `error` is set when a smart case was skipped (a refresh of all of them) and nothing was written. */
+export type DeviceCopy = { smart_case: SmartCase; count: number; error: string | null };
+
+/** The live result of a query. */
+export type Preview = {
+  /** Track ids in display order, after the limit. */
+  ids: number[];
+  /** How many tracks matched before the limit cut the list. */
+  matched: number;
+  /** For an order by a column the track table lacks (year, date added ...): each track's value, aligned with `ids`; else empty. */
+  values: string[];
+};
 
 export const listSmartCases = (root: string) => invoke<SmartCase[]>("smart_cases_list", { root });
 
 /** Match count of each saved smart case right now. */
-export const smartCaseCounts = (root: string) => invoke<{ id: number; count: number }[]>("smart_cases_counts", { root });
+export const smartCaseCounts = (root: string) =>
+  invoke<{ id: number; count: number; error: string | null }[]>("smart_cases_counts", { root });
 
-/** Track ids a rule set matches, in display order. Saves nothing. */
-export const evaluateRules = (root: string, rules: Rule[]) => invoke<number[]>("smart_cases_evaluate", { root, rules });
+/** The tracks a query matches, in its order, and how many matched before its limit. Saves nothing. */
+export const evaluateRules = (root: string, query: Query) => invoke<Preview>("smart_cases_evaluate", { root, query });
 
 /** Saves a new (id 0) or edited smart case in the app's config dir; never touches the device. */
 export const saveSmartCase = (root: string, smartCase: SmartCase) =>
@@ -114,5 +161,259 @@ export const deleteSmartCase = (root: string, id: number, removeDeviceCase: bool
 export const setSmartCaseOnDevice = (root: string, id: number, on: boolean) =>
   invoke<DeviceCopy>("smart_cases_set_on_device", { root, id, on });
 
-/** Refreshes the device case of every smart case that has "Put on Pacemaker" on. */
-export const refreshSmartDeviceCases = (root: string) => invoke<DeviceCopy[]>("smart_cases_refresh_all", { root });
+// ---- keeping the Pacemaker copies current, settings, export -----------------------------------
+
+/** A track named in a refresh summary. */
+export type TrackRef = { track_id: number; title: string; artist: string };
+
+/** What a refresh does (or did) to one smart case's Pacemaker copy. `create`: it does not exist
+ * (never made, or deleted on the Pacemaker) and is made; `update`: tracks, their order or its name
+ * differ; `unchanged`; `skip`: it cannot be refreshed (see `error`), nothing is written for it. */
+export type RefreshAction = "create" | "update" | "unchanged" | "skip";
+
+export type RefreshItem = {
+  /** The smart case. */
+  id: number;
+  name: string;
+  /** What its Pacemaker copy is called. */
+  device_name: string;
+  action: RefreshAction;
+  /** Tracks in the copy before, and after the refresh. */
+  before: number;
+  after: number;
+  added: TrackRef[];
+  removed: TrackRef[];
+  /** The same tracks in another order. */
+  reordered: boolean;
+  /** The copy's current name when it is not `device_name`. */
+  renamed_from: string | null;
+  /** The smart case had a copy once, but it was deleted (or replaced) on the Pacemaker. */
+  recreated: boolean;
+  error: string | null;
+};
+
+export type RefreshReport = {
+  items: RefreshItem[];
+  /** Items that are (or were) written: `create` and `update`. */
+  changes: number;
+};
+
+/** What a refresh would change, by smart case, with the tracks named. Reads only. */
+export const smartRefreshPlan = (root: string) => invoke<RefreshReport>("smart_cases_refresh_plan", { root });
+
+/** Refreshes the Pacemaker copies that are out of date and returns what was done. Writes nothing
+ * when every copy is current. */
+export const smartRefreshApply = (root: string) => invoke<RefreshReport>("smart_cases_refresh_apply", { root });
+
+/** Off: only the button. Ask: say what would change and wait. Auto: write it, then say what changed. */
+export type RefreshMode = "off" | "ask" | "auto";
+
+export type SmartSettings = {
+  refresh_mode: RefreshMode;
+  /** Library rekordbox XML: smart cases as playlists of their current matches. */
+  export_smart: boolean;
+  /** ...inside a "Smart cases" folder rather than beside the cases. */
+  export_folder: boolean;
+};
+
+export type SmartSettingsState = { settings: SmartSettings; warning: string | null };
+
+export const getSmartSettings = () => invoke<SmartSettingsState>("smart_settings_get");
+export const setSmartSettings = (settings: SmartSettings) => invoke<SmartSettingsState>("smart_settings_set", { settings });
+
+/** Writes one smart case, as it matches right now, as M3U8, CSV or rekordbox XML. */
+export const exportSmartCase = (root: string, id: number, format: CaseExportFormat, dest: string) =>
+  invoke<{ path: string; tracks: number; notes?: string[] }>("smart_cases_export", { root, id, format, dest });
+
+// ---- organising: duplicate, merge, copy / move, delete several, export ------------------------
+
+/** What a merge adds. Counts are tracks; `added` is the list that will be appended, in order. */
+export type MergePlan = {
+  added: number[];
+  /** Source tracks the destination already holds. */
+  already_there: number;
+  /** Source tracks left out because an earlier source supplied them. */
+  repeated: number;
+  /** Source rows that point at a track no longer in the library (not copied). */
+  stale: number;
+};
+
+export type MergeDone = { case_id: number; added: number; deleted_sources: number };
+
+/** What copying or moving tracks between cases does. Every list holds track ids. */
+export type TransferPlan = {
+  to_add: number[];
+  already_there: number[];
+  /** Removed from the source (a move only). */
+  to_remove: number[];
+  not_in_source: number[];
+  /** Ids that are not tracks of the library. */
+  missing: number[];
+};
+
+export type TransferDone = { added: number; removed: number };
+export type TransferNewDone = TransferDone & { case_id: number };
+
+/** Where a merge goes: an existing case (kept as it is, new tracks appended) or a new one. */
+export type MergeTarget = { existing: number } | { newName: string };
+
+/** A copy of a case under `name` (tracks in order, metadata copied, play statistics reset);
+ * returns the new case's id. */
+export const duplicateCase = (root: string, caseId: number, name: string) =>
+  invoke<number>("cases_duplicate", { root, caseId, name });
+
+/** What `mergeCases` would add for the same arguments. Writes nothing. */
+export const mergePreview = (root: string, sourceIds: number[], target: number | null) =>
+  invoke<MergePlan>("cases_merge_preview", { root, sourceIds, target });
+
+/** Merges cases without repeats, into an existing case or a new one; with `deleteSources` the
+ * source cases are deleted in the same transaction (their tracks stay in the library). */
+export const mergeCases = (root: string, sourceIds: number[], to: MergeTarget, deleteSources: boolean) =>
+  invoke<MergeDone>("cases_merge", {
+    root,
+    sourceIds,
+    target: "existing" in to ? to.existing : null,
+    newName: "newName" in to ? to.newName : null,
+    deleteSources,
+  });
+
+/** What `transferTracks` would do for the same arguments. `from` null = picked from the library. */
+export const transferPreview = (root: string, from: number | null, to: number, trackIds: number[], removeFromSource: boolean) =>
+  invoke<TransferPlan>("cases_transfer_preview", { root, from, to, trackIds, removeFromSource });
+
+/** Copies (`removeFromSource` false) or moves tracks from case `from` into case `to`, appended
+ * and skipping any it already holds. A move takes them out of `from` only. */
+export const transferTracks = (root: string, from: number | null, to: number, trackIds: number[], removeFromSource: boolean) =>
+  invoke<TransferDone>("cases_transfer", { root, from, to, trackIds, removeFromSource });
+
+/** Like `transferTracks` into a case created by the same write: if the transfer fails no empty
+ * case is left behind. */
+export const transferToNewCase = (root: string, from: number | null, newName: string, trackIds: number[], removeFromSource: boolean) =>
+  invoke<TransferNewDone>("cases_transfer_new", { root, from, newName, trackIds, removeFromSource });
+
+/** Deletes several cases in one transaction (the tracks stay); returns how many went. */
+/** A case as the confirmation listed it. The backend deletes a case only while it still has this
+ * name and creation time (case ids are reused), and reports the rest as kept. */
+export type ConfirmedCase = { id: number; name: string; date_created: number };
+export type CaseDeleteReport = { deleted: number; kept: { id: number; name: string; error: string }[] };
+export const deleteCases = (root: string, cases: ConfirmedCase[]) => invoke<CaseDeleteReport>("cases_delete_many", { root, cases });
+
+export type CaseExportFormat = "m3u8" | "csv" | "rekordbox";
+
+/** Writes one case to `dest` (a file outside the device volume) as M3U8, CSV or rekordbox XML. */
+export const exportCase = (root: string, caseId: number, format: CaseExportFormat, dest: string) =>
+  invoke<{ path: string; tracks: number; notes?: string[] }>("cases_export", { root, caseId, format, dest });
+
+// ---- exporting several cases to a folder (commands/cases/export_bulk.rs) ------------------------
+
+export type AudioLayout = "shared" | "per_case";
+/** What to do with a file the export would write where one already exists. */
+export type ExportConflict = "skip" | "replace" | "number";
+/** How copied audio files are named: from the tags, or the short code the card gave the file. */
+export type AudioNames = "tags" | "device";
+
+/** The user's export choices, kept in the app's config (not on the device). */
+export type ExportPrefs = {
+  folder: string | null;
+  format: CaseExportFormat;
+  /** M3U8 only. */
+  relative_paths: boolean;
+  copy_audio: boolean;
+  audio_layout: AudioLayout;
+  audio_names: AudioNames;
+  conflict: ExportConflict;
+  /** Save the folder and format after each export. */
+  remember: boolean;
+};
+
+export type ExportPrefsState = { prefs: ExportPrefs; warning: string | null };
+
+export const getExportPrefs = () => invoke<ExportPrefsState>("cases_export_prefs_get");
+export const setExportPrefs = (prefs: ExportPrefs) => invoke<ExportPrefsState>("cases_export_prefs_set", { prefs });
+
+/** What the dialog asks for. */
+export type ExportRequest = {
+  folder: string;
+  format: CaseExportFormat;
+  case_ids: number[];
+  smart_ids: number[];
+  relative_paths: boolean;
+  copy_audio: boolean;
+  audio_layout: AudioLayout;
+  audio_names: AudioNames;
+  conflict: ExportConflict;
+};
+
+/** What will happen to one file. */
+export type ExportAction = "write" | "replace" | "renamed" | "skip" | "same" | "missing" | "blocked";
+
+export type ExportListEntry = {
+  name: string;
+  smart: boolean;
+  /** Inside the export folder, `/`-separated. */
+  file: string;
+  path: string;
+  tracks: number;
+  action: ExportAction;
+  /** For "renamed": the name the file would have had. */
+  wanted: string | null;
+};
+
+export type ExportAudioEntry = {
+  title: string;
+  file: string;
+  path: string;
+  size: number;
+  action: ExportAction;
+  wanted: string | null;
+  used_by: number;
+  problem: string | null;
+};
+
+/** Every file the export would write, with what happens to each. */
+export type ExportPlan = {
+  folder: string;
+  lists: ExportListEntry[];
+  audio: ExportAudioEntry[];
+  notes: string[];
+  copy_bytes: number;
+  /** The moment the plan was made for; sent back with the start. */
+  now_ms: number;
+  /** Fingerprint of the plan; sent back with the start, which refuses to run on another plan. */
+  digest: string;
+};
+
+/** The plan the user confirmed: the export runs only if the plan rebuilt now is this one. */
+export type ExportConfirmed = { now_ms: number; digest: string };
+
+/** The preview. Writes nothing; the export is made from the same plan. */
+export const planExport = (root: string, request: ExportRequest) => invoke<ExportPlan>("cases_export_plan", { root, request });
+
+/** Starts the export job ("cases-export" in the job events) and returns at once. */
+export const startExport = (root: string, request: ExportRequest, confirmed: ExportConfirmed) =>
+  invoke<{ folder: string; writes: number }>("cases_export_start", { root, request, confirmed });
+
+/** Stops the running export before its next file; what was already written stays. */
+export const cancelExport = () => invoke<void>("cases_export_cancel");
+
+export const CASES_EXPORT_JOB = "cases-export";
+
+/** Where to export to: a native folder picker (null if cancelled). */
+export async function pickExportFolder(start: string | null): Promise<string | null> {
+  const dir = await open({ directory: true, title: "Choose the folder to export to (not on the Pacemaker)", ...(start ? { defaultPath: start } : {}) });
+  return typeof dir === "string" ? dir : null;
+}
+
+// ---- which cases hold a track -------------------------------------------------------------------
+
+/** A case that holds a track, with the track's place in it. `smart_copy_of` is set when the case is
+ * the Pacemaker copy of a smart case. */
+export type HoldingCase = { case_id: number; name: string; position: number; of: number; smart_copy_of: number | null };
+
+/** A smart case whose rules match the track right now. */
+export type HoldingSmart = { id: number; name: string; on_device: boolean; device_case_id: number | null };
+
+export type TrackHolding = { track_id: number; cases: HoldingCase[]; smart: HoldingSmart[] };
+
+/** For each track, the cases that hold it and the smart cases that match it. Reads only. */
+export const casesHolding = (root: string, trackIds: number[]) => invoke<TrackHolding[]>("cases_holding", { root, trackIds });

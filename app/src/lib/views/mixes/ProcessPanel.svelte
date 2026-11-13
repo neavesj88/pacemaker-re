@@ -3,6 +3,7 @@
   import type { Clip, EnvNode, LoopDoc, ProcessDoc, ToolDoc } from "$lib/api/mixes";
   import * as E from "$lib/state/mixedit";
   import { mixes } from "$lib/state/mixes.svelte";
+  import { vocal } from "$lib/state/vocal.svelte";
   import EnvelopeSvg from "./EnvelopeSvg.svelte";
   import { clipTitle, duplicateSelection } from "./actions";
   import { SR, clock, fmtValue, toolColour, toolLabel } from "./layout";
@@ -11,7 +12,8 @@
 
   const type = $derived(p.kind === "tool" ? p.effects[0]?.name ?? p.toolType : p.kind);
   const tool = $derived(p.kind === "tool" ? (p as ToolDoc) : null);
-  const catalogue = $derived(E.TOOL_TYPES.find((t) => t.name === type));
+  const catalogue = $derived(E.toolTypesFor(vocal.mode).find((t) => t.name === type));
+  const name = $derived(toolLabel(type, vocal.mode));
   const clash = $derived(tool ? E.toolConflicts(clip, tool).length > 0 : false);
   let selNode = $state(-1);
 
@@ -52,11 +54,11 @@
   const step = (max: number, min: number) => ((max - min) > 50 ? 1 : (max - min) > 5 ? 0.1 : 0.01);
 </script>
 
-<h3 style:color={toolColour(type)}>{p.kind === "loop" ? "Loop" : toolLabel(type)}</h3>
+<h3 style:color={toolColour(type)}>{p.kind === "loop" ? "Loop" : name}</h3>
 <div class="muted">{p.kind === "tool" ? "tool" : "region"} on “{clipTitle(clip)}”</div>
 
 {#if clash}
-  <div class="warn">Another {toolLabel(type)} overlaps this one on the same clip. Saving is refused until they are separate: move or shorten one.</div>
+  <div class="warn">Another {name} overlaps this one on the same clip. Saving is refused until they are separate: move or shorten one.</div>
 {/if}
 
 <div class="field">
@@ -94,7 +96,33 @@
   {#if lp.parent}<div class="muted small">This loop continues the previous loop of the clip.</div>{/if}
 {/if}
 
-{#if tool}
+{#if tool && type === "Trans"}
+  {@const eff = tool.effects[0]}
+  <h4>Trans</h4>
+  <div class="field">
+    <label for="pp-trans-bpm">Gate tempo</label>
+    <span class="inline">
+      <input
+        id="pp-trans-bpm"
+        type="number"
+        min="0"
+        max="300"
+        step="0.01"
+        value={eff && eff.class === "trans" ? eff.startBpm : 0}
+        onchange={(e) => {
+          const v = e.currentTarget.valueAsNumber;
+          const bpm = Number.isFinite(v) ? Math.min(300, Math.max(0, v)) : 0;
+          patch("Trans tempo", (q) => ({ ...q, effects: (q as ToolDoc).effects.map((x, i) => (i === 0 && x.class === "trans" ? { ...x, startBpm: bpm } : x)) }) as ToolDoc);
+        }}
+      />
+      <span class="muted">BPM</span>
+    </span>
+  </div>
+  <p class="note">Chops the clip on and off in eighth notes from the start of this block, at the tempo above (0 follows the clip's tempo). It has no curves.</p>
+  <div class="warn">The file layout of a Trans tool has not been checked on a real Pacemaker or in the Tonium Editor (no mix with one has been seen). The preview and the audio export play it; if the device does not like it, delete the block and save again.</div>
+{/if}
+
+{#if tool && params.length > 0}
   <h4>Parameters</h4>
   <div class="curves" bind:clientWidth={boxW}>
     {#each params as prm (prm.key)}

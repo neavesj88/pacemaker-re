@@ -1,4 +1,10 @@
-//! Import: bring audio (and later other libraries) onto the device. Only `add_tracks` writes.
+//! Import: bring audio (and later other libraries) onto the device. Only `add_tracks` and
+//! `interop_apply` write; the watch-folder scan (`watch.rs`) only reads and keeps its settings
+//! in the app config dir.
+
+pub mod watch;
+
+pub mod request;
 
 use std::path::{Path, PathBuf};
 
@@ -74,25 +80,20 @@ pub fn add_tracks(app: AppHandle, lock: State<'_, JobLock>, root: String, files:
     })
 }
 
-// ---- other libraries: rekordbox XML, iTunes / Music Library.xml, M3U8 / CSV out ----
+// ---- other libraries: rekordbox XML, iTunes, Traktor NML, Serato crates, M3U / M3U8; M3U8 / CSV out ----
 
 const JOB_INTEROP: &str = "interop";
-/// Library files bigger than this are refused instead of read into memory.
-const MAX_LIBRARY_FILE: u64 = 2 << 30;
 
+/// Reads whatever the user picked (a library file, a playlist, a `.crate` or a `_Serato_` folder).
+/// The reader picks the format; paths inside the file are never probed unless they are plain
+/// local ones (see `pm_formats::interop::paths`).
 fn read_foreign(path: &str) -> AppResult<interop::ForeignLibrary> {
-    let meta = std::fs::metadata(path)?;
-    if meta.len() > MAX_LIBRARY_FILE {
-        return Err("That file is larger than 2 GB; it is not a library export.".into());
-    }
-    let bytes = std::fs::read(path)?;
-    // no second copy of a big file when it is valid UTF-8 (the usual case)
-    let text = String::from_utf8(bytes).unwrap_or_else(|e| String::from_utf8_lossy(e.as_bytes()).into_owned());
-    Ok(interop::parse_library(&text)?)
+    Ok(interop::read_path(Path::new(path))?)
 }
 
-/// Reads a rekordbox XML or iTunes `Library.xml` and lists exactly what importing it would
-/// change in the library on `root`. Writes nothing.
+/// Reads a rekordbox / iTunes / Traktor library, a Serato crate (file or `_Serato_` folder) or an
+/// M3U / M3U8 playlist and lists exactly what importing it would change in the library on
+/// `root`. Writes nothing.
 #[tauri::command]
 pub async fn interop_preview(root: String, path: String, options: Option<ImportOptions>) -> AppResult<ImportPlan> {
     tauri::async_runtime::spawn_blocking(move || {
@@ -127,7 +128,7 @@ pub async fn interop_apply(
             events::emit(app, JOB_PROGRESS, p);
         })?;
         Ok(JobOutcome {
-            ok: rep.ratings_set + rep.cases_created + rep.cases_extended,
+            ok: rep.ratings_set + rep.cues_set + rep.cases_created + rep.cases_extended,
             failed: rep.failures.len(),
             summary: rep.summary(),
         })
@@ -138,18 +139,26 @@ pub async fn interop_apply(
 pub struct ExportDone {
     pub path: String,
     pub tracks: usize,
+    /// What the user should know about this export (smart cases written or left out), in words.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub notes: Vec<String>,
 }
 
 /// Writes a track list for other software. `format` is "m3u8", "csv" or "rekordbox" (the whole
-/// library with playlists; `scope` is ignored); `scope` is "library", "case" or "mix" with the
+/// library with playlists, and the smart cases as playlists of their current matches when the
+/// smart-case setting is on; `scope` is ignored); `scope` is "library", "case" or "mix" with the
 /// id of the case or mix. The file goes to `dest`, a path the user chose; nothing on the
 /// volume is changed.
 #[tauri::command]
-pub async fn interop_export(root: String, format: String, scope: String, id: Option<i64>, dest: String) -> AppResult<ExportDone> {
+pub async fn interop_export(app: AppHandle, root: String, format: String, scope: String, id: Option<i64>, dest: String) -> AppResult<ExportDone> {
     tauri::async_runtime::spawn_blocking(move || {
         let lib = Library::open_read_only(Path::new(&root))?;
+        let mut notes = Vec::new();
         let (text, tracks) = if format == "rekordbox" {
-            (interop::export_rekordbox(&lib)?, lib.tracks()?.len())
+            // the cases area owns smart cases, so the library XML is built there
+            let x = crate::commands::cases::library_xml(&app, &root)?;
+            notes = x.notes;
+            (x.text, x.tracks)
         } else {
             let scope = match (scope.as_str(), id) {
                 ("library", _) => interop::Scope::Library,
@@ -166,11 +175,8 @@ pub async fn interop_export(root: String, format: String, scope: String, id: Opt
             (text, tracks.len())
         };
         // write beside the destination and rename, so a failed write never leaves half a file
-        let tmp = format!("{dest}.part");
-        std::fs::write(&tmp, text).and_then(|_| std::fs::rename(&tmp, &dest)).inspect_err(|_| {
-            let _ = std::fs::remove_file(&tmp);
-        })?;
-        Ok(ExportDone { path: dest, tracks })
+        crate::store::write_file(Path::new(&dest), text.as_bytes())?;
+        Ok(ExportDone { path: dest, tracks, notes })
     })
     .await
     .map_err(|e| e.to_string())?
@@ -188,8 +194,43 @@ macro_rules! import_commands {
                 $crate::commands::import::interop_preview,
                 $crate::commands::import::interop_apply,
                 $crate::commands::import::interop_export,
+                $crate::commands::import::watch::watch_settings_get,
+                $crate::commands::import::watch::watch_settings_set,
+                $crate::commands::import::watch::watch_scan,
+                $crate::commands::import::watch::watch_state,
+                $crate::commands::import::watch::watch_ignore,
+                $crate::commands::import::watch::watch_unignore,
+                $crate::commands::import::watch::watch_log_add,
+                $crate::commands::import::request::matcher_read_list,
+                $crate::commands::import::request::matcher_save_text,
             ];
             $($rest),*
         }
     };
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use pm_formats::interop::{CueMode, Source};
+
+    // the UI sends these exact names; an options object from before `cues` existed still works
+    #[test]
+    fn options_json_contract() {
+        let o: ImportOptions =
+            serde_json::from_str(r#"{"ratings":true,"playlists":false,"playlist_indexes":[1,2],"cues":"overwrite"}"#).unwrap();
+        assert_eq!((o.cues, o.playlists, o.playlist_indexes), (CueMode::Overwrite, false, Some(vec![1, 2])));
+        let o: ImportOptions = serde_json::from_str(r#"{"ratings":true,"playlists":true,"playlist_indexes":null}"#).unwrap();
+        assert_eq!(o.cues, CueMode::Off);
+        assert!(serde_json::from_str::<ImportOptions>(r#"{"cues":"sometimes"}"#).is_err());
+        assert_eq!(serde_json::to_string(&Source::Serato).unwrap(), "\"serato\"");
+        assert_eq!(serde_json::to_string(&Source::M3u).unwrap(), "\"m3u\"");
+        assert_eq!(serde_json::to_string(&Source::Traktor).unwrap(), "\"traktor\"");
+    }
+
+    #[test]
+    fn read_foreign_reports_unreadable_input_as_an_error_string() {
+        let e = read_foreign("Z:/this/does/not/exist.nml").unwrap_err();
+        assert!(!e.to_string().is_empty());
+    }
 }

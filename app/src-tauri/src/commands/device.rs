@@ -2,12 +2,20 @@
 //! files, settings.dat and eject. The logic lives in `pm_formats::ops_device`; this file is the
 //! command layer. Reads are plain commands; anything that copies or deletes many files is a
 //! background job (`device-firmware`, `device-backup`, `device-cleanup`) so it shows progress and
-//! cannot overlap another write job.
+//! cannot overlap another write job. `space` is the free-space planner (archive and remove);
+//! `relink` finds the audio of tracks whose file is missing and relinks or copies it back;
+//! `preset` saves, previews and applies named settings.dat presets.
+
+pub mod preset;
+pub mod relink;
+pub mod space;
+pub mod trust;
+pub mod undo;
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use pm_formats::ops_device::{self, FirmwareInfo, Health, PfwInfo, SettingsView, Storage};
+use pm_formats::ops_device::{self, FirmwareInfo, Health, PfwInfo, SettingsView, Storage, VocalMode, VocalState};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager, State};
 
@@ -23,6 +31,8 @@ pub struct DeviceCancel(AtomicBool);
 
 pub fn setup(app: &mut tauri::App) {
     app.manage(DeviceCancel::default());
+    app.manage(undo::UndoState::default());
+    trust::setup(app);
 }
 
 fn start_job_cancel(app: &AppHandle) {
@@ -98,6 +108,35 @@ pub async fn device_settings_write(app: AppHandle, root: String, changes: Vec<Se
     .await
 }
 
+/// The Vocal filter flag on the card (`.Pacemaker/revival-vocal`) and whether the kill switch
+/// (`revival-no-preload`) overrides it. `effective` is what the device will play and what mix
+/// previews and exports render. Read-only.
+#[tauri::command]
+pub async fn device_vocal(root: String) -> AppResult<VocalState> {
+    tauri::async_runtime::spawn_blocking(move || -> AppResult<VocalState> { Ok(ops_device::read_vocal(Path::new(&root))?) }).await?
+}
+
+/// Sets the Vocal filter flag: `off` deletes `revival-vocal`, `vocal` writes it empty, `inverted`
+/// writes `i`. Takes effect at the device's next boot. The only file touched is that one flag
+/// file (its path is fixed in `pm_formats::ops_device`); `revival-no-preload` is never written.
+/// Returns the state read back from the card.
+#[tauri::command]
+pub async fn device_vocal_set(app: AppHandle, root: String, mode: VocalMode) -> AppResult<VocalState> {
+    // a card that already says so needs no write: no gate, no first-write snapshot. A flag that
+    // cannot be read counts as unknown and goes on to the write, which repairs it or reports the
+    // real error (stopping here would leave no way to fix the card from the app).
+    let probe = root.clone();
+    if let Ok(current) = tauri::async_runtime::spawn_blocking(move || ops_device::read_vocal(Path::new(&probe))).await? {
+        if current.mode == mode {
+            return Ok(current);
+        }
+    }
+    // a quick write like settings.dat: refused during an eject / backup / firmware install,
+    // snapshotted once per session, waited for by Eject
+    let path = root.clone();
+    crate::state::quick_write(app, root, move || -> AppResult<VocalState> { Ok(ops_device::write_vocal(Path::new(&path), mode)?) }).await
+}
+
 /// Checks a `.pfw` (trailer, checksum, the device's version gate). Nothing is written.
 #[tauri::command]
 pub async fn device_firmware_inspect(path: String) -> AppResult<PfwInfo> {
@@ -153,7 +192,7 @@ pub async fn device_backup(app: AppHandle, lock: State<'_, JobLock>, root: Strin
             ok: rep.files,
             failed: 0,
             summary: format!(
-                "Backed up {} files ({}) to {}. Every file was read back and checked; checksums are in {}.",
+                "Backed up {} files ({}) to {}. Every file was copied and its checksum compared after writing (through the system's cache: use Check on the backup later to read it from the disk again); checksums are in {}.",
                 rep.files,
                 mb(rep.bytes),
                 rep.folder,
@@ -212,6 +251,8 @@ pub async fn device_eject(app: AppHandle, root: String) -> AppResult<bool> {
         if ejected {
             // a different device may come back under this drive letter: it gets its own snapshot
             app.state::<crate::state::WriteGate>().forget(Path::new(&root));
+            // the edit history describes a card that is gone
+            undo::clear(&app, &root);
         }
         Ok(ejected)
     })
@@ -284,6 +325,8 @@ macro_rules! device_commands {
                 $crate::commands::device::device_health,
                 $crate::commands::device::device_settings,
                 $crate::commands::device::device_settings_write,
+                $crate::commands::device::device_vocal,
+                $crate::commands::device::device_vocal_set,
                 $crate::commands::device::device_firmware_inspect,
                 $crate::commands::device::device_firmware_install,
                 $crate::commands::device::device_backup,
@@ -292,6 +335,40 @@ macro_rules! device_commands {
                 $crate::commands::device::device_cancel,
                 $crate::commands::device::device_snapshots,
                 $crate::commands::device::device_snapshots_open,
+                $crate::commands::device::space::device_space_settings,
+                $crate::commands::device::space::device_space_settings_set,
+                $crate::commands::device::space::device_space_plan,
+                $crate::commands::device::space::device_space_run_preview,
+                $crate::commands::device::space::device_space_run,
+                $crate::commands::device::space::device_space_open_folder,
+                $crate::commands::device::trust::device_trust_settings,
+                $crate::commands::device::trust::device_trust_settings_set,
+                $crate::commands::device::trust::device_snapshot_rows,
+                $crate::commands::device::trust::device_snapshot_preview,
+                $crate::commands::device::trust::device_restore_snapshot,
+                $crate::commands::device::trust::device_verify_backup,
+                $crate::commands::device::trust::device_verify_report,
+                $crate::commands::device::trust::device_fix_plan,
+                $crate::commands::device::trust::device_fix_remove_rows,
+                $crate::commands::device::preset::device_presets_list,
+                $crate::commands::device::preset::device_preset_get,
+                $crate::commands::device::preset::device_preset_save_current,
+                $crate::commands::device::preset::device_preset_delete,
+                $crate::commands::device::preset::device_preset_export,
+                $crate::commands::device::preset::device_preset_read_file,
+                $crate::commands::device::preset::device_preset_import,
+                $crate::commands::device::preset::device_preset_diff,
+                $crate::commands::device::preset::device_preset_apply,
+                $crate::commands::device::relink::device_relink_settings,
+                $crate::commands::device::relink::device_relink_settings_set,
+                $crate::commands::device::relink::device_relink_scan,
+                $crate::commands::device::relink::device_relink_scan_cancel,
+                $crate::commands::device::relink::device_relink_inspect,
+                $crate::commands::device::relink::device_relink_run,
+                $crate::commands::device::undo::device_undo_list,
+                $crate::commands::device::undo::device_undo_preview,
+                $crate::commands::device::undo::device_undo_apply,
+                $crate::commands::device::undo::device_undo_clear,
             ];
             $($rest),*
         }

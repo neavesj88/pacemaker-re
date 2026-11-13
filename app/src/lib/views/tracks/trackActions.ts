@@ -10,7 +10,9 @@ import { playback } from "$lib/state/playback.svelte";
 import { session } from "$lib/state/session.svelte";
 import { toast } from "$lib/state/toast.svelte";
 
-export const playTrack = (trackId: number) => playback.load(trackId, true);
+// An empty queue: next / previous walk the Tracks table as it is shown when they are pressed,
+// not a list left over from playing somewhere else.
+export const playTrack = (trackId: number) => playback.load(trackId, true, []);
 
 export const editMetadata = (ids: number[]) => metadataEditor.edit([...ids]);
 
@@ -19,6 +21,9 @@ export const editMetadata = (ids: number[]) => metadataEditor.edit([...ids]);
 export const addToMix = (ids: number[]) => nav.go("mixes", { "mixes.addTracks": [...ids], addTracks: [...ids] });
 
 export const editGrid = (trackId: number) => nav.go("grid", { "grid.trackId": trackId, trackId });
+
+/** Opens the Set builder with these tracks (it orders them by key and tempo; nothing is written). */
+export const buildSet = (ids: number[]) => nav.go("setbuilder", { "setbuilder.trackIds": [...ids] });
 
 export async function revealInExplorer(trackId: number) {
   const root = session.library?.root;
@@ -30,8 +35,8 @@ export async function revealInExplorer(trackId: number) {
   }
 }
 
-/** Sets the star rating at once and puts the old one back if the device refuses it. `track` must
- *  be the object in `session.library.tracks` so every table showing it updates. */
+/** Sets the star rating at once (every table showing the track updates) and puts the old one back
+ *  if the device refuses it. */
 export async function rate(track: Track, stars: number) {
   const root = session.library?.root;
   if (!root || stars === track.rating) return;
@@ -40,11 +45,13 @@ export async function rate(track: Track, stars: number) {
     return;
   }
   const before = track.rating;
-  track.rating = stars;
+  const id = track.track_id;
+  session.patchTracks([id], { rating: stars });
   try {
     await setRating(root, track.track_id, stars);
   } catch (e) {
-    if (track.rating === stars) track.rating = before;
+    // only if nothing else changed the rating meanwhile
+    if (session.library?.tracks.find((t) => t.track_id === id)?.rating === stars) session.patchTracks([id], { rating: before });
     toast.show(`Could not save the rating: ${e}`, "bad");
   }
 }

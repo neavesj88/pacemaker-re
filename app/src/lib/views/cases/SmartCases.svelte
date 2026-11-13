@@ -7,6 +7,7 @@
   import { cases } from "$lib/state/cases.svelte";
   import { nav } from "$lib/state/nav.svelte";
   import { session } from "$lib/state/session.svelte";
+  import CaseDrops from "./CaseDrops.svelte";
 
   $effect(() => {
     if (!session.library?.root) return;
@@ -26,6 +27,9 @@
   }
 </script>
 
+<!-- the drop strip that shows while tracks are being dragged (see CaseDrops.svelte) -->
+<CaseDrops />
+
 <div class="sect head">
   <span>Smart cases</span>
   <button class="new" onclick={() => open(0)} title="Build a smart case from rules">+ New</button>
@@ -35,7 +39,11 @@
     <span class="label">
       <span class="ic" aria-hidden="true">{s.on_device ? "▣" : "◇"}</span>{s.name}
     </span>
-    <span class="n">{cases.smartCounts[s.id] ?? ""}</span>
+    {#if cases.smartErrors[s.id]}
+      <span class="n bad" title={cases.smartErrors[s.id]} aria-label={`Cannot run: ${cases.smartErrors[s.id]}`}>!</span>
+    {:else}
+      <span class="n">{cases.smartCounts[s.id] ?? ""}</span>
+    {/if}
   </button>
 {:else}
   <p class="note">None yet. Rules like “rated 4+ and never played”.</p>
@@ -89,5 +97,9 @@
   }
   .n {
     color: var(--muted);
+  }
+  .n.bad {
+    color: var(--bad);
+    font-weight: 700;
   }
 </style>

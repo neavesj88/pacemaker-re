@@ -363,14 +363,18 @@ fn a_preview_window_matches_the_full_render() {
 
 /// RMS of the same tone with and without a tool across `[1 s, 3 s)` of a 4 s clip.
 fn tool_gain_db(freq_hz: f32, effect: Effect, values: &[(&str, f32)]) -> f64 {
+    tool_gain_db_with(&Options::default(), freq_hz, effect, values)
+}
+
+fn tool_gain_db_with(opts: &Options, freq_hz: f32, effect: Effect, values: &[(&str, f32)]) -> f64 {
     let d = dir("tool");
     let src = sine(freq_hz, 4.0, 0.3);
     let f = put(&d, &format!("t{freq_hz}.wav"), &src);
     let plain = mix_of(vec![track(&f, src.len(), 120.0, 1.0, 0.0)]);
     let mut t = track(&f, src.len(), 120.0, 1.0, 0.0);
     t.processes.push(tool(effect, SR as f64, 2.0 * SR as f64, values));
-    let (a, _) = render(&d, &plain, &Options::default());
-    let (b, _) = render(&d, &mix_of(vec![t]), &Options::default());
+    let (a, _) = render(&d, &plain, opts);
+    let (b, _) = render(&d, &mix_of(vec![t]), opts);
     let w = |v: &[f32]| rms(&v[SR + SR / 2..2 * SR + SR / 2]);
     db(w(&b)) - db(w(&a))
 }
@@ -388,6 +392,54 @@ fn eq_kills_a_band_and_leaves_the_others() {
     // half cut = -12 dB
     let half = tool_gain_db(80.0, Effect::eq(), &[("Lo", -50.0), ("Mid", 0.0), ("Hi", 0.0)]);
     assert!((half + 12.0).abs() < 1.5, "{half}");
+}
+
+#[test]
+fn wah_tool_follows_the_peq_mode() {
+    use pm_mixer::PeqMode;
+    let with = |peq| Options { peq, ..Options::default() };
+    let wah = |peq, v: f32| tool_gain_db_with(&with(peq), 1000.0, Effect::wah(), &[("CutOff", v)]);
+    // vocal: negative cuts a centred 1 kHz tone, positive keeps it (about +2.9 dB)
+    assert!(wah(PeqMode::Vocal, -100.0) < -30.0, "{}", wah(PeqMode::Vocal, -100.0));
+    let keep = wah(PeqMode::Vocal, 100.0);
+    assert!(keep > 1.5 && keep < 4.0, "{keep}");
+    // inverted swaps the two directions
+    assert!(wah(PeqMode::VocalInverted, 100.0) < -30.0);
+    assert!(wah(PeqMode::VocalInverted, -100.0) > 1.5);
+    // the neutral position of the vocal filter is transparent (the stock Wah stand-in is not)
+    for m in [PeqMode::Vocal, PeqMode::VocalInverted] {
+        assert!(wah(m, 0.0).abs() < 1e-6, "{m:?}");
+    }
+    // the default stays the stock Wah stand-in, which is not the vocal filter
+    assert_eq!(Options::default().peq, PeqMode::Wah);
+    assert_eq!(tool_gain_db(1000.0, Effect::wah(), &[("CutOff", -100.0)]), wah(PeqMode::Wah, -100.0));
+    assert!(wah(PeqMode::Wah, -100.0) > -30.0);
+}
+
+/// A window that starts inside a tool sounds like the same stretch of the full render: the lead-in
+/// the engine renders and drops has settled the Vocal filter (it cold-starts with a ~10 ms fade-in
+/// from the dry signal) before the first kept frame.
+#[test]
+fn a_window_starting_inside_a_vocal_tool_matches_the_full_render() {
+    use pm_mixer::PeqMode;
+    let d = dir("vocalwindow");
+    let src = sine(1000.0, 5.0, 0.3);
+    let f = put(&d, "v.wav", &src);
+    for peq in [PeqMode::Vocal, PeqMode::VocalInverted] {
+        let mut t = track(&f, src.len(), 120.0, 1.0, 0.0);
+        t.processes.push(tool(Effect::wah(), SR as f64, 3.0 * SR as f64, &[("CutOff", -100.0)]));
+        let m = mix_of(vec![t]);
+        let full_opts = Options { peq, ..Options::default() };
+        let (full, _) = render(&d, &m, &full_opts);
+        // start well inside the tool, a few frames past a block boundary, and just after its start
+        for from in [1.5f64, 2.0, 2.0 + 37.0 / SR as f64, 1.2] {
+            let (win, _) = render(&d, &m, &Options { peq, ..Options::window_secs(from, from + 1.0) });
+            let at = (from * SR as f64).round() as usize;
+            assert_eq!(win.len(), SR);
+            let worst = win.iter().zip(&full[at..]).map(|(a, b)| (a - b).abs()).fold(0.0f32, f32::max);
+            assert!(worst < 1e-3, "{peq:?} from {from}: window differs from the full render by {worst}");
+        }
+    }
 }
 
 #[test]
@@ -641,4 +693,29 @@ fn benchmark_stretched_mix_with_tools() {
     let audio = out.frames as f64 / SR as f64;
     println!("rendered {audio:.0} s of audio in {el:.2} s = {:.1}x real time", audio / el);
     assert!(audio / el > 10.0, "slower than 10x real time");
+}
+
+/// The span that exports (and the track list / cue sheet of an export) are computed from is the
+/// span the renderer really produces, including trims, a bypassed clip and a fractional start.
+#[test]
+fn export_span_is_the_rendered_length_and_skips_what_the_engine_skips() {
+    let d = dir("span");
+    let src = sine(440.0, 2.0, 0.5);
+    let f = put(&d, "a.wav", &src);
+    let mut a = track(&f, src.len(), 120.0, 1.0, 1.5 * SR as f64 + 0.4);
+    a.position.l_offset = 0.25 * SR as f64;
+    let b = track(&f, src.len(), 120.0, 1.0, 5.0 * SR as f64);
+    let mut hidden = track(&f, src.len(), 120.0, 1.0, 0.0);
+    hidden.clip_bypassed = true;
+    let mut empty = track(&f, src.len(), 120.0, 1.0, 20.0 * SR as f64);
+    empty.position.r_offset = empty.position.length; // nothing audible
+    let m = mix_of(vec![hidden, a, empty, b]);
+
+    let audible = engine::audible_clips(&m);
+    assert_eq!(audible.iter().map(|c| c.index).collect::<Vec<_>>(), vec![1, 3], "bypassed and fully trimmed tracks are not audible");
+    let (from, to) = engine::export_span(&m).unwrap();
+    assert_eq!(from, (1.5 * SR as f64 + 0.4 + 0.25 * SR as f64).round() as i64);
+    let (l, _) = render(&d, &m, &Options { skip_leading_silence: true, ..Options::default() });
+    assert_eq!((to - from) as usize, l.len(), "the audio file is exactly the span");
+    assert!(engine::export_span(&mix_of(vec![])).is_none());
 }
