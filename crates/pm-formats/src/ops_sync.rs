@@ -14,6 +14,11 @@
 //!
 //! Smart cases are kept by the app on one computer, not in `music.db`; they are never synced
 //! (the plan says so in [`SyncPlan::notes`]).
+//!
+//! [`plan_selection`] / [`apply_selection`] (in `selection`) do the same for only what the user
+//! picked (some tracks, mixes and cases, optionally tracks into a named case on the target): the
+//! picked items plus the tracks they need, found by indexed lookups instead of reading every row,
+//! decided by the same helpers, never removing anything.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Component, Path, PathBuf};
@@ -162,6 +167,15 @@ pub struct SyncItem {
     pub target_id: Option<i64>,
     /// For a track removal: the mixes and cases on the target that use it.
     pub blockers: Vec<Blocker>,
+    /// For a track a selection plan pulled in because a selected mix or case needs it (and that
+    /// was not itself selected): those mixes and cases, as `mix "Name"` / `case "Name"`.
+    pub needed_by: Vec<String>,
+    /// For the item that puts the selected tracks into a case on the target: that case's name.
+    pub into_case: Option<String>,
+    /// What the item was decided from (the rows' ids and stamps). Only a selection plan's digest
+    /// reads it, so a plan goes stale when a selected item moved and not when something else did.
+    #[serde(skip)]
+    fp: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -258,9 +272,46 @@ impl TrackRow {
 }
 
 fn read_tracks(lib: &Library) -> Result<Vec<TrackRow>, Error> {
-    let mut st = lib.con.prepare("SELECT * FROM tracks WHERE track_id >= 0 ORDER BY track_id")?;
+    query_tracks(lib, "SELECT * FROM tracks WHERE track_id >= 0 ORDER BY track_id", Vec::new())
+}
+
+/// Rows per `IN (...)` query (SQLite's variable limit is far above this).
+const IN_CHUNK: usize = 400;
+
+/// The rows with these ids (indexed lookups); an id nobody has is not in the result.
+fn rows_by_ids(lib: &Library, ids: &[i64]) -> Result<HashMap<i64, TrackRow>, Error> {
+    let mut out = HashMap::new();
+    for chunk in ids.chunks(IN_CHUNK) {
+        let marks = vec!["?"; chunk.len()].join(",");
+        let rows = query_tracks(lib, &format!("SELECT * FROM tracks WHERE track_id >= 0 AND track_id IN ({marks}) ORDER BY track_id"), chunk.iter().map(|i| Value::Integer(*i)).collect())?;
+        out.extend(rows.into_iter().map(|r| (r.id, r)));
+    }
+    Ok(out)
+}
+
+/// The rows at these locations (the `tracks_location_idx` index); where a location repeats the
+/// lowest track id is kept, as the full plan does.
+fn rows_by_locations(lib: &Library, locs: &[String]) -> Result<HashMap<String, TrackRow>, Error> {
+    let mut out: HashMap<String, TrackRow> = HashMap::new();
+    for chunk in locs.chunks(IN_CHUNK) {
+        let marks = vec!["?"; chunk.len()].join(",");
+        let rows = query_tracks(lib, &format!("SELECT * FROM tracks WHERE track_id >= 0 AND location IN ({marks}) ORDER BY track_id"), chunk.iter().map(|l| Value::Text(l.clone())).collect())?;
+        for r in rows {
+            out.entry(r.location.clone()).or_insert(r);
+        }
+    }
+    Ok(out)
+}
+
+/// `(location -> lowest track id)` of these locations on `lib`.
+fn ids_by_locations(lib: &Library, locs: &[String]) -> Result<HashMap<String, i64>, Error> {
+    Ok(rows_by_locations(lib, locs)?.into_iter().map(|(l, r)| (l, r.id)).collect())
+}
+
+fn query_tracks(lib: &Library, sql: &str, args: Vec<Value>) -> Result<Vec<TrackRow>, Error> {
+    let mut st = lib.con.prepare(sql)?;
     let names: Vec<String> = st.column_names().iter().map(|s| s.to_string()).collect();
-    let rows = st.query_map([], |r| {
+    let rows = st.query_map(params_from_iter(args), |r| {
         let mut cols = BTreeMap::new();
         for (i, n) in names.iter().enumerate() {
             cols.insert(n.clone(), r.get::<_, Value>(i)?);
@@ -384,6 +435,9 @@ fn blank_item(key: String, kind: ItemKind, label: String, action: SyncAction) ->
         source_id: None,
         target_id: None,
         blockers: Vec::new(),
+        needed_by: Vec::new(),
+        into_case: None,
+        fp: String::new(),
     }
 }
 
@@ -398,17 +452,11 @@ pub fn plan(source: &Library, target: &Library, settings: &SyncSettings, source_
 
 /// [`plan`] with the target's free space given (tests give a small one).
 pub fn plan_with_free(source: &Library, target: &Library, settings: &SyncSettings, source_label: &str, free: Option<u64>) -> Result<SyncPlan, Error> {
-    let same_root = match (std::fs::canonicalize(source.root()), std::fs::canonicalize(target.root())) {
-        (Ok(a), Ok(b)) => a == b,
-        _ => source.root() == target.root(),
-    };
-    if same_root {
-        return Err(Error::Invalid("the source and the target are the same library".into()));
-    }
+    ensure_different(source, target)?;
     let s_tracks = read_tracks(source)?;
     let t_tracks = read_tracks(target)?;
     let t_by_loc: HashMap<&str, &TrackRow> = t_tracks.iter().rev().map(|t| (t.location.as_str(), t)).collect();
-    let src_loc_by_id: HashMap<i64, &TrackRow> = s_tracks.iter().map(|t| (t.id, t)).collect();
+    let src_by_id: HashMap<i64, &TrackRow> = s_tracks.iter().map(|t| (t.id, t)).collect();
     let mut items: Vec<SyncItem> = Vec::new();
 
     // tracks
@@ -424,76 +472,14 @@ pub fn plan_with_free(source: &Library, target: &Library, settings: &SyncSetting
             items.push(item);
             continue;
         }
-        let mut item = blank_item(format!("track:{}", s.location), ItemKind::Track, s.label(), SyncAction::Copy);
-        item.global_id = Some(s.global_id.clone()).filter(|g| !g.is_empty());
-        item.location = Some(s.location.clone());
-        item.source_id = Some(s.id);
-        let Some((audio, side)) = paths_of(source, &s.location) else {
-            item.action = skip("it is not stored under /pmdb_tracks/");
-            items.push(item);
-            continue;
-        };
-        match t_by_loc.get(s.location.as_str()) {
-            None => {
-                item.action = match (file_len(&audio), file_len(&side)) {
-                    (None, _) => skip("its audio file is missing"),
-                    (_, None) => skip("its analysis file (.str) is missing"),
-                    (Some(a), Some(b)) => {
-                        item.bytes = a + b;
-                        SyncAction::Copy
-                    }
-                };
-            }
-            Some(t) => {
-                item.target_id = Some(t.id);
-                if s.file_size >= 0 && t.file_size >= 0 && s.file_size != t.file_size {
-                    item.action = skip("a different file is stored at the same place");
-                } else if same_columns(s, t) {
-                    item.action = skip(SAME);
-                } else {
-                    let want_update = match settings.tracks_on_both {
-                        TracksOnBoth::Leave => Err("both have it and the setting leaves it as it is"),
-                        TracksOnBoth::Source => Ok(()),
-                        TracksOnBoth::Newer => {
-                            if s.int("date_modified").unwrap_or(0) > t.int("date_modified").unwrap_or(0) {
-                                Ok(())
-                            } else {
-                                Err(TARGET_NEWER_TRACK)
-                            }
-                        }
-                    };
-                    item.action = match want_update {
-                        Err(why) => skip(why),
-                        Ok(()) => match file_len(&side) {
-                            None => skip("its analysis file (.str) is missing"),
-                            Some(b) => {
-                                item.bytes = b;
-                                SyncAction::Update
-                            }
-                        },
-                    };
-                }
-                // plays counted on the sending side come over even when nothing else changes
-                if settings.play_counts == PlayCounts::Higher
-                    && matches!(&item.action, SyncAction::Skip { reason } if reason == SAME || reason == TARGET_NEWER_TRACK)
-                    && plays_ahead(s.int("times_played"), s.int("last_played"), t.int("times_played"), t.int("last_played"))
-                {
-                    item.action = SyncAction::UpdatePlays;
-                    item.detail = PLAYED_MORE.into();
-                }
-            }
-        }
-        items.push(item);
+        items.push(track_item(source, s, t_by_loc.get(s.location.as_str()).copied(), settings));
     }
 
     // mixes
     let t_mixes = target.mix_infos()?;
-    let mut t_mix_by_name: HashMap<String, &crate::library::MixInfo> = HashMap::new();
-    for m in t_mixes.iter().rev() {
-        t_mix_by_name.insert(norm(&m.name), m);
-    }
-    let mut taken_names: HashSet<String> = t_mixes.iter().map(|m| norm(&m.name)).collect();
+    let mut mix_ctx = MixCtx::new(&t_mixes);
     let s_mixes = source.mix_infos()?;
+    let row_of = |id: i64| src_by_id.get(&id).map(|r| (r.location.clone(), r.label()));
     let mut seen_mix: HashSet<String> = HashSet::new();
     for m in &s_mixes {
         let n = norm(&m.name);
@@ -505,89 +491,13 @@ pub fn plan_with_free(source: &Library, target: &Library, settings: &SyncSetting
             items.push(item);
             continue;
         }
-        let mut item = blank_item(format!("mix:{n}"), ItemKind::Mix, m.name.clone(), SyncAction::Copy);
-        item.source_id = Some(m.id);
-        match source.read_mix(m.id) {
-            Err(e) => {
-                item.action = skip(format!("its document could not be read ({e})"));
-                items.push(item);
-                continue;
-            }
-            Ok(doc) => {
-                let mut seen = HashSet::new();
-                let mut bad = None;
-                for t in &doc.tracks {
-                    match src_loc_by_id.get(&t.library_id) {
-                        Some(row) if t.library_id >= 0 => {
-                            if seen.insert(row.location.clone()) {
-                                item.needs.push(Need { location: row.location.clone(), label: row.label() });
-                            }
-                        }
-                        _ if t.library_id < 0 => bad = Some("it has a track that was removed from the library"),
-                        _ => bad = Some("it refers to a track that is not in the library"),
-                    }
-                }
-                if let Some(b) = bad {
-                    item.action = skip(b);
-                    items.push(item);
-                    continue;
-                }
-            }
-        }
-        if let Some(t) = t_mix_by_name.get(&n) {
-            item.target_id = Some(t.id);
-            let stamps_equal = t.date_created == m.date_created && t.date_modified == m.date_modified;
-            item.action = if stamps_equal {
-                skip(SAME)
-            } else {
-                match settings.mixes_same_name {
-                    MixesSameName::Skip => skip("a mix with this name is already there and the setting skips it"),
-                    MixesSameName::Replace => SyncAction::Replace,
-                    MixesSameName::Newer => {
-                        if m.date_modified > t.date_modified {
-                            SyncAction::Replace
-                        } else {
-                            skip(TARGET_NEWER_MIX)
-                        }
-                    }
-                    MixesSameName::KeepBoth => {
-                        let base = copy_name(&m.name, source_label);
-                        let already = t_mixes.iter().any(|x| is_copy_name(&norm(&x.name), &norm(&base)) && x.date_created == m.date_created && x.date_modified == m.date_modified);
-                        if already {
-                            skip(SAME)
-                        } else {
-                            let mut name = base.clone();
-                            let mut k = 2;
-                            while taken_names.contains(&norm(&name)) {
-                                name = format!("{base} {k}");
-                                k += 1;
-                            }
-                            taken_names.insert(norm(&name));
-                            SyncAction::CopyAsNew { name }
-                        }
-                    }
-                }
-            };
-            if settings.play_counts == PlayCounts::Higher
-                && matches!(&item.action, SyncAction::Skip { reason } if reason == SAME || reason == TARGET_NEWER_MIX)
-                && plays_ahead(Some(m.times_played), Some(m.last_played), Some(t.times_played), Some(t.last_played))
-            {
-                item.action = SyncAction::UpdatePlays;
-                item.detail = PLAYED_MORE.into();
-            }
-        } else {
-            taken_names.insert(n);
-        }
-        items.push(item);
+        items.push(mix_item(m, source.read_mix(m.id), &row_of, &mut mix_ctx, settings, source_label));
     }
 
     // cases
     let s_cases = source.case_infos()?;
     let t_cases = target.case_infos()?;
-    let mut t_case_by_name: HashMap<String, &crate::library::CaseInfo> = HashMap::new();
-    for c in t_cases.iter().rev() {
-        t_case_by_name.insert(norm(&c.name), c);
-    }
+    let t_case_by_name = first_by_name(&t_cases);
     let t_loc_by_id: HashMap<i64, &str> = t_tracks.iter().map(|t| (t.id, t.location.as_str())).collect();
     let will_exist: HashSet<String> = t_tracks
         .iter()
@@ -605,53 +515,17 @@ pub fn plan_with_free(source: &Library, target: &Library, settings: &SyncSetting
             items.push(item);
             continue;
         }
-        let mut item = blank_item(format!("case:{n}"), ItemKind::Case, c.name.clone(), SyncAction::Copy);
-        item.source_id = Some(c.id);
-        let mut locs: Vec<String> = Vec::new();
+        let mut needs: Vec<Need> = Vec::new();
         for id in source.case_track_ids(c.id)? {
-            if let Some(row) = src_loc_by_id.get(&id) {
-                if !locs.contains(&row.location) {
-                    item.needs.push(Need { location: row.location.clone(), label: row.label() });
-                    locs.push(row.location.clone());
+            if let Some(row) = src_by_id.get(&id) {
+                if !needs.iter().any(|n| n.location == row.location) {
+                    needs.push(Need { location: row.location.clone(), label: row.label() });
                 }
             }
         }
-        let avail: Vec<&String> = locs.iter().filter(|l| will_exist.contains(*l)).collect();
-        if avail.len() < locs.len() {
-            item.detail = format!("{} of {} tracks will not be there and are left out", locs.len() - avail.len(), locs.len());
-        }
-        if let Some(t) = t_case_by_name.get(&n) {
-            item.target_id = Some(t.id);
-            let t_locs: Vec<String> = target.case_track_ids(t.id)?.iter().filter_map(|id| t_loc_by_id.get(id).map(|s| s.to_string())).collect();
-            item.action = match settings.cases_same_name {
-                CasesSameName::Skip => skip("a case with this name is already there and the setting skips it"),
-                CasesSameName::Merge => {
-                    let have: HashSet<&String> = t_locs.iter().collect();
-                    if avail.iter().all(|l| have.contains(*l)) {
-                        skip(SAME)
-                    } else {
-                        SyncAction::Merge
-                    }
-                }
-                CasesSameName::Replace => {
-                    if avail.len() == t_locs.len() && avail.iter().zip(&t_locs).all(|(a, b)| *a == b) {
-                        skip(SAME)
-                    } else {
-                        SyncAction::Replace
-                    }
-                }
-            };
-            if settings.play_counts == PlayCounts::Higher
-                && matches!(&item.action, SyncAction::Skip { reason } if reason == SAME)
-                && plays_ahead(Some(c.times_played), Some(c.last_played), Some(t.times_played), Some(t.last_played))
-            {
-                item.action = SyncAction::UpdatePlays;
-                item.detail = PLAYED_MORE.into();
-            }
-        }
-        items.push(item);
+        let t_locs = |id: i64| -> Result<Vec<String>, Error> { Ok(target.case_track_ids(id)?.iter().filter_map(|i| t_loc_by_id.get(i).map(|s| s.to_string())).collect()) };
+        items.push(case_item(c, needs, &|l| will_exist.contains(l), t_case_by_name.get(&n).copied(), &t_locs, settings)?);
     }
-
     // removals
     if settings.remove_missing {
         let s_locs: HashSet<&str> = s_tracks.iter().map(|t| t.location.as_str()).collect();
@@ -718,6 +592,265 @@ pub fn plan_with_free(source: &Library, target: &Library, settings: &SyncSetting
     let notes = vec!["Smart cases are kept by the app on this computer and are not synced.".to_string()];
     let digest = digest_of(&items, settings, source_label, &stamp(source)?, &stamp(target)?);
     Ok(SyncPlan { items, settings: settings.clone(), source_label: source_label.to_string(), bytes_to_copy: bytes, free_bytes: free, fits, digest, notes })
+}
+
+fn ensure_different(source: &Library, target: &Library) -> Result<(), Error> {
+    let same_root = match (std::fs::canonicalize(source.root()), std::fs::canonicalize(target.root())) {
+        (Ok(a), Ok(b)) => a == b,
+        _ => source.root() == target.root(),
+    };
+    if same_root {
+        return Err(Error::Invalid("the source and the target are the same library".into()));
+    }
+    Ok(())
+}
+
+trait Named {
+    fn name(&self) -> &str;
+}
+impl Named for crate::library::MixInfo {
+    fn name(&self) -> &str {
+        &self.name
+    }
+}
+impl Named for crate::library::CaseInfo {
+    fn name(&self) -> &str {
+        &self.name
+    }
+}
+
+/// The first row of each (normalised) name; the list is in name order, so this is the one a
+/// by-name lookup means when names repeat.
+fn first_by_name<T: Named>(rows: &[T]) -> HashMap<String, &T> {
+    let mut out: HashMap<String, &T> = HashMap::new();
+    for r in rows.iter().rev() {
+        out.insert(norm(r.name()), r);
+    }
+    out
+}
+
+/// What a sync does about one source track, given the target's row at the same place (if any).
+/// Shared by the full plan and the selection plan.
+fn track_item(source: &Library, s: &TrackRow, t: Option<&TrackRow>, settings: &SyncSettings) -> SyncItem {
+    let mut item = blank_item(format!("track:{}", s.location), ItemKind::Track, s.label(), SyncAction::Copy);
+    item.global_id = Some(s.global_id.clone()).filter(|g| !g.is_empty());
+    item.location = Some(s.location.clone());
+    item.source_id = Some(s.id);
+    let stamp = |r: &TrackRow| format!("{}/{}/{}/{}/{}", r.id, r.int("date_modified").unwrap_or(0), r.int("times_played").unwrap_or(0), r.int("rating").unwrap_or(0), r.file_size);
+    item.fp = format!("{}|{}", stamp(s), t.map(stamp).unwrap_or_default());
+    let Some((audio, side)) = paths_of(source, &s.location) else {
+        item.action = skip("it is not stored under /pmdb_tracks/");
+        return item;
+    };
+    match t {
+        None => {
+            item.action = match (file_len(&audio), file_len(&side)) {
+                (None, _) => skip("its audio file is missing"),
+                (_, None) => skip("its analysis file (.str) is missing"),
+                (Some(a), Some(b)) => {
+                    item.bytes = a + b;
+                    SyncAction::Copy
+                }
+            };
+        }
+        Some(t) => {
+            item.target_id = Some(t.id);
+            if s.file_size >= 0 && t.file_size >= 0 && s.file_size != t.file_size {
+                item.action = skip("a different file is stored at the same place");
+            } else if same_columns(s, t) {
+                item.action = skip(SAME);
+            } else {
+                let want_update = match settings.tracks_on_both {
+                    TracksOnBoth::Leave => Err("both have it and the setting leaves it as it is"),
+                    TracksOnBoth::Source => Ok(()),
+                    TracksOnBoth::Newer => {
+                        if s.int("date_modified").unwrap_or(0) > t.int("date_modified").unwrap_or(0) {
+                            Ok(())
+                        } else {
+                            Err(TARGET_NEWER_TRACK)
+                        }
+                    }
+                };
+                item.action = match want_update {
+                    Err(why) => skip(why),
+                    Ok(()) => match file_len(&side) {
+                        None => skip("its analysis file (.str) is missing"),
+                        Some(b) => {
+                            item.bytes = b;
+                            SyncAction::Update
+                        }
+                    },
+                };
+            }
+            // plays counted on the sending side come over even when nothing else changes
+            if settings.play_counts == PlayCounts::Higher
+                && matches!(&item.action, SyncAction::Skip { reason } if reason == SAME || reason == TARGET_NEWER_TRACK)
+                && plays_ahead(s.int("times_played"), s.int("last_played"), t.int("times_played"), t.int("last_played"))
+            {
+                item.action = SyncAction::UpdatePlays;
+                item.detail = PLAYED_MORE.into();
+            }
+        }
+    }
+    item
+}
+
+/// The target's mixes as the mix planning needs them: by name, and the names a copy would take.
+struct MixCtx<'a> {
+    all: &'a [crate::library::MixInfo],
+    by_name: HashMap<String, &'a crate::library::MixInfo>,
+    taken: HashSet<String>,
+}
+
+impl<'a> MixCtx<'a> {
+    fn new(all: &'a [crate::library::MixInfo]) -> Self {
+        MixCtx { all, by_name: first_by_name(all), taken: all.iter().map(|m| norm(&m.name)).collect() }
+    }
+}
+
+/// What a sync does about one source mix. `doc` is the mix's document as read from the source,
+/// `row_of` maps a source track id to its `(location, label)`.
+fn mix_item(
+    m: &crate::library::MixInfo,
+    doc: Result<crate::mix::Mix, Error>,
+    row_of: &dyn Fn(i64) -> Option<(String, String)>,
+    ctx: &mut MixCtx,
+    settings: &SyncSettings,
+    source_label: &str,
+) -> SyncItem {
+    let n = norm(&m.name);
+    let mut item = blank_item(format!("mix:{n}"), ItemKind::Mix, m.name.clone(), SyncAction::Copy);
+    item.source_id = Some(m.id);
+    item.fp = format!("{}/{}/{}/{}/{}/{}", m.id, m.date_created, m.date_modified, m.times_played, m.last_played, m.track_count);
+    match doc {
+        Err(e) => {
+            item.action = skip(format!("its document could not be read ({e})"));
+            return item;
+        }
+        Ok(doc) => {
+            let mut seen = HashSet::new();
+            let mut bad = None;
+            for t in &doc.tracks {
+                match row_of(t.library_id) {
+                    Some((location, label)) if t.library_id >= 0 => {
+                        if seen.insert(location.clone()) {
+                            item.needs.push(Need { location, label });
+                        }
+                    }
+                    _ if t.library_id < 0 => bad = Some("it has a track that was removed from the library"),
+                    _ => bad = Some("it refers to a track that is not in the library"),
+                }
+            }
+            if let Some(b) = bad {
+                item.action = skip(b);
+                return item;
+            }
+        }
+    }
+    let Some(&t) = ctx.by_name.get(&n) else {
+        ctx.taken.insert(n);
+        return item;
+    };
+    item.target_id = Some(t.id);
+    // the target mix whose plays a plays-only update would raise: the same-named one, or with
+    // "keep both" the earlier copy that was kept
+    let mut plays_t = t;
+    let stamps_equal = t.date_created == m.date_created && t.date_modified == m.date_modified;
+    item.action = if stamps_equal {
+        skip(SAME)
+    } else {
+        match settings.mixes_same_name {
+            MixesSameName::Skip => skip("a mix with this name is already there and the setting skips it"),
+            MixesSameName::Replace => SyncAction::Replace,
+            MixesSameName::Newer => {
+                if m.date_modified > t.date_modified {
+                    SyncAction::Replace
+                } else {
+                    skip(TARGET_NEWER_MIX)
+                }
+            }
+            MixesSameName::KeepBoth => {
+                let base = copy_name(&m.name, source_label);
+                let kept = ctx.all.iter().find(|x| is_copy_name(&norm(&x.name), &norm(&base)) && x.date_created == m.date_created && x.date_modified == m.date_modified);
+                if let Some(k) = kept {
+                    plays_t = k;
+                    item.target_id = Some(k.id);
+                    skip(SAME)
+                } else {
+                    let mut name = base.clone();
+                    let mut k = 2;
+                    while ctx.taken.contains(&norm(&name)) {
+                        name = format!("{base} {k}");
+                        k += 1;
+                    }
+                    ctx.taken.insert(norm(&name));
+                    SyncAction::CopyAsNew { name }
+                }
+            }
+        }
+    };
+    item.fp.push_str(&format!("|{}/{}/{}/{}/{}", plays_t.id, plays_t.date_created, plays_t.date_modified, plays_t.times_played, plays_t.last_played));
+    if settings.play_counts == PlayCounts::Higher
+        && matches!(&item.action, SyncAction::Skip { reason } if reason == SAME || reason == TARGET_NEWER_MIX)
+        && plays_ahead(Some(m.times_played), Some(m.last_played), Some(plays_t.times_played), Some(plays_t.last_played))
+    {
+        item.action = SyncAction::UpdatePlays;
+        item.detail = PLAYED_MORE.into();
+    }
+    item
+}
+
+/// What a sync does about one source case. `needs` are its tracks (distinct locations, in order),
+/// `will_exist` says whether a location is or will be on the target, `t_locs` gives the locations
+/// of the tracks in a target case.
+fn case_item(
+    c: &crate::library::CaseInfo,
+    needs: Vec<Need>,
+    will_exist: &dyn Fn(&str) -> bool,
+    t_case: Option<&crate::library::CaseInfo>,
+    t_locs: &dyn Fn(i64) -> Result<Vec<String>, Error>,
+    settings: &SyncSettings,
+) -> Result<SyncItem, Error> {
+    let n = norm(&c.name);
+    let mut item = blank_item(format!("case:{n}"), ItemKind::Case, c.name.clone(), SyncAction::Copy);
+    item.source_id = Some(c.id);
+    item.fp = format!("{}/{}/{}/{}/{}", c.id, c.date_modified, c.times_played, c.last_played, c.track_count);
+    let avail: Vec<&String> = needs.iter().map(|n| &n.location).filter(|l| will_exist(l)).collect();
+    if avail.len() < needs.len() {
+        item.detail = format!("{} of {} tracks will not be there and are left out", needs.len() - avail.len(), needs.len());
+    }
+    if let Some(t) = t_case {
+        item.target_id = Some(t.id);
+        item.fp.push_str(&format!("|{}/{}/{}/{}/{}", t.id, t.date_modified, t.times_played, t.last_played, t.track_count));
+        let t_locs: Vec<String> = t_locs(t.id)?;
+        item.action = match settings.cases_same_name {
+            CasesSameName::Skip => skip("a case with this name is already there and the setting skips it"),
+            CasesSameName::Merge => {
+                let have: HashSet<&String> = t_locs.iter().collect();
+                if avail.iter().all(|l| have.contains(*l)) {
+                    skip(SAME)
+                } else {
+                    SyncAction::Merge
+                }
+            }
+            CasesSameName::Replace => {
+                if avail.len() == t_locs.len() && avail.iter().zip(&t_locs).all(|(a, b)| *a == b) {
+                    skip(SAME)
+                } else {
+                    SyncAction::Replace
+                }
+            }
+        };
+        if settings.play_counts == PlayCounts::Higher
+            && matches!(&item.action, SyncAction::Skip { reason } if reason == SAME)
+            && plays_ahead(Some(c.times_played), Some(c.last_played), Some(t.times_played), Some(t.last_played))
+        {
+            item.action = SyncAction::UpdatePlays;
+            item.detail = PLAYED_MORE.into();
+        }
+    }
+    item.needs = needs;
+    Ok(item)
 }
 
 /// Whether the sending side has more plays or a later last-played than the target.
@@ -822,14 +955,55 @@ pub fn apply(
     cancel: &dyn Fn() -> bool,
 ) -> Result<SyncReport, Error> {
     let fresh = plan(source, target, &plan_seen.settings, &plan_seen.source_label)?;
-    if fresh.digest != plan_seen.digest {
+    ensure_fresh(&fresh, plan_seen)?;
+    let target_locs: HashSet<String> = read_tracks(target)?.into_iter().map(|t| t.location).collect();
+    let s_rows: HashMap<String, TrackRow> = read_tracks(source)?.into_iter().map(|t| (t.location.clone(), t)).collect();
+    run_plan(source, target, fresh, excluded, &target_locs, s_rows, progress, cancel)
+}
+
+/// [`apply`] for the plan [`plan_selection`] made: plans the same selection again (looking at the
+/// selected items only), refuses when it no longer matches what the user saw, then runs it. A
+/// change to an unrelated track, mix or case does not make the plan stale; a change to a selected
+/// item, or to the target row or case it meets, does.
+pub fn apply_selection(
+    source: &Library,
+    target: &mut Library,
+    plan_seen: &SyncPlan,
+    selection: &Selection,
+    progress: &mut dyn FnMut(&SyncProgress),
+    cancel: &dyn Fn() -> bool,
+) -> Result<SyncReport, Error> {
+    let fresh = plan_selection(source, target, &plan_seen.settings, &plan_seen.source_label, selection, None)?;
+    ensure_fresh(&fresh, plan_seen)?;
+    let ids: Vec<i64> = fresh.items.iter().filter(|i| i.kind == ItemKind::Track && i.action.acts()).filter_map(|i| i.source_id).collect();
+    let s_rows: HashMap<String, TrackRow> = rows_by_ids(source, &ids)?.into_values().map(|t| (t.location.clone(), t)).collect();
+    let locs: Vec<String> = fresh.items.iter().flat_map(|i| i.needs.iter().map(|n| n.location.clone()).chain(i.location.clone())).collect();
+    let target_locs: HashSet<String> = rows_by_locations(target, &locs)?.into_keys().collect();
+    run_plan(source, target, fresh, &[], &target_locs, s_rows, progress, cancel)
+}
+
+fn ensure_fresh(fresh: &SyncPlan, seen: &SyncPlan) -> Result<(), Error> {
+    if fresh.digest != seen.digest {
         return Err(Error::Invalid(format!("{STALE}: a library changed since the plan was made; plan again")));
     }
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn run_plan(
+    source: &Library,
+    target: &mut Library,
+    fresh: SyncPlan,
+    excluded: &[String],
+    target_locs: &HashSet<String>,
+    s_rows: HashMap<String, TrackRow>,
+    progress: &mut dyn FnMut(&SyncProgress),
+    cancel: &dyn Fn() -> bool,
+) -> Result<SyncReport, Error> {
     let settings = fresh.settings.clone();
     let excluded: HashSet<String> = excluded.iter().cloned().collect();
     let mut items = fresh.items;
-    let target_locs: HashSet<String> = read_tracks(target)?.into_iter().map(|t| t.location).collect();
-    settle(&mut items, &target_locs, &excluded);
+    settle(&mut items, target_locs, &excluded);
 
     let need_bytes: u64 = items.iter().filter(|i| i.kind == ItemKind::Track && i.action.acts()).map(|i| i.bytes).sum();
     if need_bytes > 0 {
@@ -855,7 +1029,6 @@ pub fn apply(
             },
         })
         .collect();
-    let s_rows: HashMap<String, TrackRow> = read_tracks(source)?.into_iter().map(|t| (t.location.clone(), t)).collect();
     let mut done_n = 0usize;
     let mut bytes_done = 0u64;
     let mut cancelled = false;
@@ -884,6 +1057,7 @@ pub fn apply(
             (ItemKind::Mix, SyncAction::Remove) => target.delete_mix(it.target_id.unwrap_or(-1)).map(|_| Outcome::Done),
             (ItemKind::Mix, _) => copy_mix(source, target, it, &settings),
             (ItemKind::Case, SyncAction::Remove) => target.delete_case(it.target_id.unwrap_or(-1)).map(|_| Outcome::Done),
+            (ItemKind::Case, _) if it.into_case.is_some() => copy_into_case(target, it),
             (ItemKind::Case, _) => copy_case(source, target, it, &settings),
         };
         results[idx].outcome = match res {
@@ -909,10 +1083,6 @@ pub fn apply(
 
 fn bad(msg: impl Into<String>) -> Error {
     Error::Invalid(msg.into())
-}
-
-fn target_ids(lib: &Library) -> Result<HashMap<String, i64>, Error> {
-    Ok(read_tracks(lib)?.into_iter().rev().map(|t| (t.location, t.id)).collect())
 }
 
 fn copy_track(source: &Library, target: &mut Library, row: &TrackRow, it: &SyncItem, settings: &SyncSettings) -> Result<Outcome, Error> {
@@ -1048,9 +1218,11 @@ fn copy_mix(source: &Library, target: &mut Library, it: &SyncItem, settings: &Sy
     let sid = it.source_id.ok_or_else(|| bad("no source mix"))?;
     let info = source.mix_info(sid)?.ok_or_else(|| bad("the source mix is gone"))?;
     let mut doc = source.read_mix(sid)?;
-    let s_rows = read_tracks(source)?;
-    let by_id: HashMap<i64, &TrackRow> = s_rows.iter().map(|t| (t.id, t)).collect();
-    let t_ids = target_ids(target)?;
+    // only the rows this mix uses, not both libraries
+    let used: Vec<i64> = doc.tracks.iter().map(|t| t.library_id).filter(|i| *i >= 0).collect();
+    let by_id = rows_by_ids(source, &used)?;
+    let locs: Vec<String> = by_id.values().map(|r| r.location.clone()).collect();
+    let t_ids = ids_by_locations(target, &locs)?;
     let mut lost = Vec::new();
     for t in &mut doc.tracks {
         let row = by_id.get(&t.library_id);
@@ -1130,10 +1302,11 @@ fn finish_mix_row(con: &Connection, tid: i64, s: &crate::library::MixInfo, image
 fn copy_case(source: &Library, target: &mut Library, it: &SyncItem, settings: &SyncSettings) -> Result<Outcome, Error> {
     let sid = it.source_id.ok_or_else(|| bad("no source case"))?;
     let info = source.case_info(sid)?.ok_or_else(|| bad("the source case is gone"))?;
-    let s_rows = read_tracks(source)?;
-    let by_id: HashMap<i64, &str> = s_rows.iter().map(|t| (t.id, t.location.as_str())).collect();
-    let t_ids = target_ids(target)?;
-    let ids: Vec<i64> = source.case_track_ids(sid)?.iter().filter_map(|id| by_id.get(id).and_then(|l| t_ids.get(*l)).copied()).collect();
+    let s_ids = source.case_track_ids(sid)?;
+    let by_id = rows_by_ids(source, &s_ids)?;
+    let locs: Vec<String> = by_id.values().map(|r| r.location.clone()).collect();
+    let t_ids = ids_by_locations(target, &locs)?;
+    let ids: Vec<i64> = s_ids.iter().filter_map(|id| by_id.get(id).and_then(|r| t_ids.get(&r.location)).copied()).collect();
     let meta = CaseMeta {
         name: info.name.clone(),
         genre: info.genre.clone(),
@@ -1228,6 +1401,33 @@ pub fn copy_labels(config_dir: &Path, source_volume: &str, target_volume: &str, 
     }
     Ok(changed)
 }
+
+/// Puts the tracks of an "into case" item (its `needs`) into the target case: appends them to the
+/// existing one (nothing is taken out), or makes the case when the item is a copy.
+fn copy_into_case(target: &mut Library, it: &SyncItem) -> Result<Outcome, Error> {
+    let name = it.into_case.clone().ok_or_else(|| bad("no case name"))?;
+    let locs: Vec<String> = it.needs.iter().map(|n| n.location.clone()).collect();
+    let t_ids = ids_by_locations(target, &locs)?;
+    let ids: Vec<i64> = locs.iter().filter_map(|l| t_ids.get(l).copied()).collect();
+    if ids.is_empty() {
+        return Ok(Outcome::Skipped { reason: "none of the tracks is on the target".into() });
+    }
+    match it.action {
+        SyncAction::Copy => {
+            if target.case_infos()?.iter().any(|c| norm(&c.name) == norm(&name)) {
+                return Err(bad(format!("a case named \"{name}\" appeared on the target meanwhile")));
+            }
+            target.create_case_with_tracks(&name, &ids)?;
+        }
+        _ => {
+            target.add_case_tracks(it.target_id.ok_or_else(|| bad("no target case"))?, &ids)?;
+        }
+    }
+    Ok(Outcome::Done)
+}
+
+mod selection;
+pub use selection::{plan_selection, IntoCase, Selection};
 
 #[cfg(test)]
 mod tests;

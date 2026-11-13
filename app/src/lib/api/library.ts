@@ -1,7 +1,7 @@
 // Library / session commands (src-tauri/src/commands/library.rs).
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
-import type { LibraryView } from "./types";
+import type { LibraryView, PaneLibrary } from "./types";
 
 /** The two settings of the library on this computer (src-tauri/src/commands/library/computer.rs). */
 export type ComputerLibrarySettings = {
@@ -33,6 +33,10 @@ export const listVolumes = () => invoke<string[]>("list_volumes");
 /** The licences of everything the app contains (bundled `THIRD-PARTY-NOTICES.md`). */
 export const appNotices = () => invoke<string>("app_notices");
 export const openLibrary = (root: string) => invoke<LibraryView>("open_library", { root });
+/** The tracks, mixes and cases of a library for a Libraries pane. Read-only, from music.db alone (the
+ *  analysis files are not looked at). Call it only when the user asked for that library: a detected
+ *  Pacemaker is never read by itself. */
+export const libraryPane = (root: string) => invoke<PaneLibrary>("library_pane", { root });
 
 /** Folder picker for the drive (the folder that contains .Pacemaker); null if cancelled. */
 export async function chooseLibraryFolder(): Promise<string | null> {

@@ -214,7 +214,8 @@ class SyncStore {
 
   /** job-done for "device-sync". */
   async onDone(ev: DoneEvent) {
-    if (ev.job !== JOB_SYNC) return;
+    // only the run this store started: the Libraries view runs the same job for a drag and drop
+    if (ev.job !== JOB_SYNC || !this.running) return;
     this.running = false;
     const cancelled = !!ev.error && ev.error.includes("Cancelled:");
     if (ev.error && !cancelled) {

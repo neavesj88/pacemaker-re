@@ -1,7 +1,7 @@
 // Mock of src-tauri/src/commands/library.rs.
-import { cases, needs, tracks } from "./db";
+import { needs } from "./db";
 import { libraryKind } from "../state/place";
-import { mixes } from "./mixes";
+import { libraryFor, stripIds } from "./libraries";
 import type { Handlers } from "./types";
 
 export const handlers: Handlers = {
@@ -9,14 +9,18 @@ export const handlers: Handlers = {
   app_notices: () => "# Third-party notices\n\nThe licences of the software in this app are listed here in the installed app.\n",
   open_library: (a) => {
     const root = a.root ?? "P:\\";
+    const kind = libraryKind(root);
+    // the computer's library is the shared mock one; the Pacemaker's is its own (devmock/libraries.ts),
+    // so what a copy between them adds shows in both
+    const lib = libraryFor(root);
     return {
       root,
-      kind: libraryKind(root),
+      kind,
       problems: root.includes("broken") ? ["user_version is 12, device requires 677"] : [],
-      tracks,
-      mixes,
-      cases: cases.map(({ ids: _ids, ...c }) => c),
-      needs_analysis: [...needs].map(([track_id, reason]) => ({ track_id, reason })),
+      tracks: lib.tracks,
+      mixes: lib.mixes.map(stripIds),
+      cases: lib.cases.map(stripIds),
+      needs_analysis: kind === "computer" ? [...needs].map(([track_id, reason]) => ({ track_id, reason })) : [],
     };
   },
 };

@@ -54,7 +54,7 @@ export function libraryLabel(kind: LibraryKind, root: string): string {
 
 /** Two spellings of one library root (`E:` and `e:/`, a trailing separator) are the same place. */
 export const sameRoot = (a: string, b: string) => rootKey(a) === rootKey(b);
-const rootKey = (r: string) => r.trim().replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+export const rootKey = (r: string) => r.trim().replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
 
 export type PickerOption = { value: string; label: string };
 

@@ -748,3 +748,5 @@ fn keep_both_copies_are_not_removals_and_trackmap_rows_go_with_a_track() {
     let left: i64 = fx.dst.con.query_row("SELECT COUNT(*) FROM trackmap WHERE int_id = ?1", [lone], |r| r.get(0)).unwrap();
     assert_eq!(left, 0, "no dangling trackmap row");
 }
+
+mod selection;

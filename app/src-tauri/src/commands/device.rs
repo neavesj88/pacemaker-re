@@ -371,6 +371,8 @@ macro_rules! device_commands {
                 $crate::commands::device::sync::sync_settings_set,
                 $crate::commands::device::sync::sync_plan,
                 $crate::commands::device::sync::sync_apply,
+                $crate::commands::device::sync::sync_plan_selection,
+                $crate::commands::device::sync::sync_apply_selection,
                 $crate::commands::device::undo::device_undo_list,
                 $crate::commands::device::undo::device_undo_preview,
                 $crate::commands::device::undo::device_undo_apply,

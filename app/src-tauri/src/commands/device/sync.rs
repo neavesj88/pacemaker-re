@@ -18,7 +18,7 @@ use std::path::Path;
 
 use pm_formats::library::Library;
 use pm_formats::ops_device::{self, SNAPSHOTS_KEPT};
-use pm_formats::ops_sync::{self, ItemKind, Outcome, SyncAction, SyncPlan, SyncReport, SyncSettings};
+use pm_formats::ops_sync::{self, ItemKind, Outcome, Selection, SyncAction, SyncPlan, SyncReport, SyncSettings};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, State};
 
@@ -123,11 +123,31 @@ fn plan_now(source: &str, target: &str, settings: &SyncSettings) -> AppResult<Sy
     Ok(ops_sync::plan(&src, &dst, settings, label_of(Path::new(source)))?)
 }
 
+/// What copying only the picked tracks, mixes and cases of `source` into `target` would do (the
+/// Libraries view's drag and drop). Read-only and scoped: it looks up the picked items and
+/// leaves the rest of both libraries alone, so it is quick on a library of any size. The
+/// settings are the saved ones; the result's `digest` goes back with [`sync_apply_selection`].
+#[tauri::command]
+pub async fn sync_plan_selection(app: AppHandle, source: String, target: String, selection: Selection) -> AppResult<SyncPlan> {
+    let (prefs, _) = load_settings(&config_dir(&app)?);
+    tauri::async_runtime::spawn_blocking(move || -> AppResult<SyncPlan> { plan_selection_now(&source, &target, &prefs.sync, &selection) }).await?
+}
+
+fn plan_selection_now(source: &str, target: &str, settings: &SyncSettings, selection: &Selection) -> AppResult<SyncPlan> {
+    let src = Library::open_read_only(Path::new(source))?;
+    let dst = Library::open_read_only(Path::new(target))?;
+    let free = ops_device::volume_space(dst.root()).ok().map(|(_, free)| free);
+    Ok(ops_sync::plan_selection(&src, &dst, settings, label_of(Path::new(source)), selection, free)?)
+}
+
 // ---- run ------------------------------------------------------------------------------------
 
 fn plural(n: usize, one: &str) -> String {
     format!("{n} {one}{}", if n == 1 { "" } else { "s" })
 }
+
+/// The sentence of a run that did nothing.
+const NOTHING: &str = "Nothing to sync, the two libraries already match";
 
 /// The sentence a finished run is reported with.
 pub fn summarise(rep: &SyncReport) -> String {
@@ -201,9 +221,42 @@ pub fn summarise(rep: &SyncReport) -> String {
         parts.push(format!("{} could not be synced: {}", plural(failed.len(), "item"), failed.join("; ")));
     }
     if parts.is_empty() {
-        parts.push("Nothing to sync, the two libraries already match".into());
+        parts.push(NOTHING.into());
     }
     parts.join(". ")
+}
+
+/// The sentence a finished drag-and-drop copy is reported with: the usual counts, then what went
+/// into a case, in words.
+pub fn summarise_selection(rep: &SyncReport) -> String {
+    let (into, rest): (Vec<_>, Vec<_>) = rep.items.iter().cloned().partition(|i| i.key.starts_with("into-case:"));
+    let base = summarise(&SyncReport { items: rest, cancelled: rep.cancelled, bytes_copied: rep.bytes_copied, done: 0, skipped: 0, failed: 0 });
+    let mut parts: Vec<String> = Vec::new();
+    if base != NOTHING {
+        parts.push(base);
+    }
+    for i in &into {
+        match &i.outcome {
+            Outcome::Done => parts.push(match (i.label.strip_prefix("Add "), i.label.strip_prefix("New case ")) {
+                (Some(r), _) => format!("Added {r}"),
+                (_, Some(r)) => format!("Made new case {r}"),
+                _ => i.label.clone(),
+            }),
+            Outcome::Skipped { reason } if i.action.acts() && !reason.starts_with("cancelled") => parts.push(format!("{}: {reason}", i.label)),
+            Outcome::Failed { error } => parts.push(format!("{} could not be done: {error}", i.label)),
+            _ => {}
+        }
+    }
+    if parts.is_empty() {
+        parts.push("Nothing to copy, all of it is there already".into());
+    }
+    parts.join(". ")
+}
+
+/// What a run covers: the whole plan (minus the keys the user unticked) or a picked selection.
+enum Scope {
+    All { excluded: Vec<String> },
+    Picked(Selection),
 }
 
 /// Job `device-sync`: runs the plan the user saw. `digest` is the plan's digest, `excluded` the
@@ -213,32 +266,47 @@ pub fn summarise(rep: &SyncReport) -> String {
 /// unused files). Stopped with `device_cancel`: finished items stay finished.
 #[tauri::command]
 pub fn sync_apply(app: AppHandle, lock: State<'_, JobLock>, source: String, target: String, digest: String, excluded: Vec<String>) -> AppResult<()> {
+    run_job(app, &lock, source, target, digest, Scope::All { excluded })
+}
+
+/// The same job for a picked selection (the Libraries view's drag and drop): runs exactly the
+/// plan [`sync_plan_selection`] showed. The engine plans the same selection again and refuses
+/// when a selected item moved since; a change elsewhere in either library does not matter.
+#[tauri::command]
+pub fn sync_apply_selection(app: AppHandle, lock: State<'_, JobLock>, source: String, target: String, selection: Selection, digest: String) -> AppResult<()> {
+    run_job(app, &lock, source, target, digest, Scope::Picked(selection))
+}
+
+fn run_job(app: AppHandle, lock: &JobLock, source: String, target: String, digest: String, scope: Scope) -> AppResult<()> {
     let (prefs, _) = load_settings(&config_dir(&app)?);
     let target_root = target.clone();
-    spawn_write_job(app, &lock, JOB_SYNC, target_root, move |app| {
+    spawn_write_job(app, lock, JOB_SYNC, target_root, move |app| {
         super::start_job_cancel(app);
         let src = Library::open_read_only(Path::new(&source))?;
         let mut dst = Library::open(Path::new(&target))?;
         let label = label_of(Path::new(&source));
-        let seen = ops_sync::plan(&src, &dst, &prefs.sync, label)?;
+        let seen = match &scope {
+            Scope::All { .. } => ops_sync::plan(&src, &dst, &prefs.sync, label)?,
+            Scope::Picked(sel) => {
+                let free = ops_device::volume_space(dst.root()).ok().map(|(_, free)| free);
+                ops_sync::plan_selection(&src, &dst, &prefs.sync, label, sel, free)?
+            }
+        };
         if seen.digest != digest {
             return Err(format!("{}: the libraries changed since the preview, so nothing was synced. Look at the preview again.", ops_sync::STALE).into());
         }
         // the session's first-write copy may be hours old: this run gets its own
         ops_device::snapshot_library(Path::new(&target), &snapshots_dir(app, Path::new(&target))?, SNAPSHOTS_KEPT)?;
-        let rep = ops_sync::apply(
-            &src,
-            &mut dst,
-            &seen,
-            &excluded,
-            &mut |p| {
-                let mut ev = Progress::new(JOB_SYNC, p.current.clone(), p.done, p.total, "syncing");
-                ev.detail = Some(format!("{} of {}", super::mb(p.bytes_done), super::mb(p.bytes_total)));
-                events::emit(app, JOB_PROGRESS, ev);
-            },
-            &|| super::cancelled(app),
-        )?;
-        let mut summary = summarise(&rep);
+        let mut on_progress = |p: &ops_sync::SyncProgress| {
+            let mut ev = Progress::new(JOB_SYNC, p.current.clone(), p.done, p.total, "syncing");
+            ev.detail = Some(format!("{} of {}", super::mb(p.bytes_done), super::mb(p.bytes_total)));
+            events::emit(app, JOB_PROGRESS, ev);
+        };
+        let rep = match &scope {
+            Scope::All { excluded } => ops_sync::apply(&src, &mut dst, &seen, excluded, &mut on_progress, &|| super::cancelled(app))?,
+            Scope::Picked(sel) => ops_sync::apply_selection(&src, &mut dst, &seen, sel, &mut on_progress, &|| super::cancelled(app))?,
+        };
+        let mut summary = if matches!(scope, Scope::All { .. }) { summarise(&rep) } else { summarise_selection(&rep) };
         if prefs.labels_follow {
             let ids: Vec<String> = rep
                 .items
@@ -315,6 +383,19 @@ mod tests {
             assert_eq!(label_of(Path::new("/home/example/Music/Pacemaker Revival")), "computer");
             assert_eq!(label_of(Path::new("/media/example/PACEMAKER/Sub")), "computer");
         }
+    }
+
+    #[test]
+    fn the_selection_summary_names_what_went_where() {
+        let mut rep = SyncReport { items: vec![], cancelled: false, bytes_copied: 3 << 20, done: 0, skipped: 0, failed: 0 };
+        assert_eq!(summarise_selection(&rep), "Nothing to copy, all of it is there already");
+        let into = |label: &str, key: &str| ItemResult { key: key.into(), ..done(ItemKind::Case, SyncAction::Merge, label) };
+        rep.items = vec![done(ItemKind::Track, SyncAction::Copy, "A - One"), done(ItemKind::Track, SyncAction::Copy, "B - Two"), into("Add 2 tracks to case Crate", "into-case:crate")];
+        assert_eq!(summarise_selection(&rep), "Copied 2 tracks (3.0 MB). Added 2 tracks to case Crate");
+        rep.items = vec![into("New case Fresh with 1 track", "into-case:fresh")];
+        assert_eq!(summarise_selection(&rep), "Made new case Fresh with 1 track");
+        rep.items = vec![ItemResult { outcome: Outcome::Skipped { reason: "none of the tracks is on the target".into() }, ..into("Add 1 track to case X", "into-case:x") }];
+        assert_eq!(summarise_selection(&rep), "Add 1 track to case X: none of the tracks is on the target");
     }
 
     #[test]

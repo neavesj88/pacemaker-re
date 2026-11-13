@@ -50,6 +50,16 @@ export type LibraryView = {
   readonly needs_analysis: NeedsAnalysis[];
 };
 
+/** What a Libraries pane lists of a library: the tracks, mixes and cases, read from music.db alone
+ *  (no analysis check, so no `needs_analysis` and no `problems`). */
+export type PaneLibrary = {
+  readonly root: string;
+  readonly kind: LibraryKind;
+  readonly tracks: Track[];
+  readonly mixes: Collection[];
+  readonly cases: Collection[];
+};
+
 /** What kind of job: "add", "reanalyse", or any string a new area picks. */
 export type JobKind = string;
 

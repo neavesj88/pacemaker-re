@@ -52,6 +52,16 @@ test("scopeMatches: picker drags only reach mix targets, case drags only case ta
   assert.equal(scopeMatches(undefined, "mix"), false);
 });
 
+test("library pane drags have their own scope and reach nothing else", () => {
+  assert.equal(scopeOf("lib:left:tracks"), "lib");
+  assert.equal(scopeOf("lib:right:cases"), "lib");
+  assert.equal(scopeMatches("lib", "lib"), true);
+  assert.equal(scopeMatches("lib", "cases"), false);
+  assert.equal(scopeMatches("lib", "mix"), false);
+  assert.equal(scopeMatches(undefined, "lib"), false, "case targets never take a pane drag");
+  assert.equal(scopeMatches("mix", "lib"), false);
+});
+
 test("scopeOf: picker drags are mix drags, the rest reach cases", () => {
   assert.equal(scopeOf("mix:picker"), "mix");
   assert.equal(scopeOf("tracks"), "cases");

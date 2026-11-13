@@ -3,6 +3,7 @@
 
 pub mod computer;
 pub(crate) mod kind;
+pub mod pane;
 
 use std::path::PathBuf;
 
@@ -82,6 +83,7 @@ macro_rules! library_commands {
                 $($acc)*
                 $crate::commands::library::list_volumes,
                 $crate::commands::library::open_library,
+                $crate::commands::library::pane::library_pane,
                 $crate::commands::library::app_notices,
                 $crate::commands::library::computer::computer_library_get,
                 $crate::commands::library::computer::computer_library_set,

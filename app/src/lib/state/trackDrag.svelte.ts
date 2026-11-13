@@ -15,8 +15,10 @@
 // in an open case; Add at playhead / Add to end in the mix editor's picker).
 //
 // A drag has a scope, taken from its `from` name: "mix:..." drags (the mix editor's picker) are
-// only offered to targets declared with scope "mix" (the deck lanes of the timeline); every other
-// drag has scope "cases" and only reaches case targets. Reordering rows inside one table (set
+// only offered to targets declared with scope "mix" (the deck lanes of the timeline);
+// "lib:<side>:<tab>" drags (the Libraries view's two panes carry tracks, mixes or cases of one
+// library to the other) are only offered to targets declared with scope "lib" (the panes); every
+// other drag has scope "cases" and only reaches case targets. Reordering rows inside one table (set
 // builder, open case) is not a track drag at all: see pointerReorder.svelte.ts, which shares this
 // file's DRAG_THRESHOLD and the same listener pattern.
 
@@ -32,7 +34,8 @@ class TrackDrag {
   active = $state(false);
   /** How many tracks it carries. */
   count = $state(0);
-  /** Where it started: "tracks" (the Tracks table), "case:<id>" (an open case) or "mix:picker". */
+  /** Where it started: "tracks" (the Tracks table), "case:<id>" (an open case), "mix:picker" or
+   * "lib:<left|right>:<tracks|mixes|cases>" (a Libraries pane). */
   from = $state("");
   /** Which targets it can reach (see the header). Derived from `from` when the drag starts. */
   scope = $state<DragScope>("cases");
@@ -48,8 +51,9 @@ export type DropOptions = {
   scope?: DragScope;
   /** Whether a drop at `hit` (the element under the pointer) would be taken. */
   accept: (hit: Element) => boolean;
-  /** Called on release over an accepting target. */
-  ondrop: (ids: number[], hit: Element, at: DropPoint) => void;
+  /** Called on release over an accepting target. `from` is the drag's `from` name (it is cleared
+   * from `trackDrag.from` before this runs). */
+  ondrop: (ids: number[], hit: Element, at: DropPoint, from: string) => void;
   /** Called with the element under the pointer while an accepted drag is over the target, and
    * with null when it leaves. Without it the target gets a `data-drop-over` attribute instead. */
   onhover?: (hit: Element | null) => void;
@@ -73,7 +77,9 @@ export function trackDropTarget(node: HTMLElement, options: DropOptions) {
   };
 }
 
-type Source = () => { ids: number[] };
+/** The ids the drag carries (read when it starts) and, when they are not tracks, the words for the
+ * pill ("2 mixes"). */
+type Source = () => { ids: number[]; label?: string };
 
 let session: {
   startX: number;
@@ -83,6 +89,7 @@ let session: {
   from: string;
   scope: DragScope;
   ids: number[];
+  label: string | undefined;
   ghost: HTMLElement | null;
   hover: HTMLElement | null;
   hit: Element | null;
@@ -113,9 +120,9 @@ function setHover(node: HTMLElement | null, hit: Element | null) {
   }
 }
 
-function makeGhost(n: number) {
+function makeGhost(n: number, label?: string) {
   const g = document.createElement("div");
-  g.textContent = `${n} track${n === 1 ? "" : "s"}`;
+  g.textContent = label ?? `${n} track${n === 1 ? "" : "s"}`;
   Object.assign(g.style, {
     position: "fixed",
     left: "0",
@@ -140,10 +147,11 @@ function onMove(e: PointerEvent) {
   if (e.buttons === 0) return finish(false);
   if (!s.ghost) {
     if (Math.hypot(e.clientX - s.startX, e.clientY - s.startY) < DRAG_THRESHOLD) return;
-    const { ids } = s.source();
+    const { ids, label } = s.source();
     if (ids.length === 0) return finish(false, e);
     s.ids = ids;
-    s.ghost = makeGhost(ids.length);
+    s.label = label;
+    s.ghost = makeGhost(ids.length, label);
     trackDrag.from = s.from;
     trackDrag.scope = s.scope;
     trackDrag.count = ids.length;
@@ -207,7 +215,7 @@ function finish(drop: boolean, e?: PointerEvent) {
     trackDrag.count = 0;
     trackDrag.from = "";
     trackDrag.scope = "cases";
-    if (t && at) t.opts.ondrop(s.ids, t.hit, at);
+    if (t && at) t.opts.ondrop(s.ids, t.hit, at, s.from);
   }
 }
 
@@ -217,7 +225,7 @@ function finish(drop: boolean, e?: PointerEvent) {
 export function armTrackDrag(e: PointerEvent, from: string, source: Source) {
   if (e.button !== 0 || !e.isPrimary || session) return;
   if ((e.target as Element).closest("button, input, select, textarea, a, [data-no-drag]")) return;
-  session = { startX: e.clientX, startY: e.clientY, pointerId: e.pointerId, source, from, scope: scopeOf(from), ids: [], ghost: null, hover: null, hit: null };
+  session = { startX: e.clientX, startY: e.clientY, pointerId: e.pointerId, source, from, scope: scopeOf(from), ids: [], label: undefined, ghost: null, hover: null, hit: null };
   window.addEventListener("pointermove", onMove, true);
   window.addEventListener("pointerup", onUp, true);
   window.addEventListener("pointercancel", onCancel, true);
