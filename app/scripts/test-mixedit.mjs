@@ -12,6 +12,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import * as E from "../src/lib/state/mixedit.ts";
 import * as R from "../src/lib/state/transitionRecipes.ts";
+import * as ST from "../src/lib/state/sectionTransition.ts";
 import * as L from "../src/lib/views/mixes/layout.ts";
 import * as ML from "../src/lib/views/mixes/mixlist.ts";
 
@@ -477,9 +478,9 @@ test("recipe lengths: labels, nearest, requested", () => {
 test("recipe settings: defaults, merge ignores junk", () => {
   assert.deepEqual(R.mergeRecipePrefs(undefined), R.DEFAULT_RECIPE_PREFS);
   assert.deepEqual(R.mergeRecipePrefs("x"), R.DEFAULT_RECIPE_PREFS);
-  assert.deepEqual(R.DEFAULT_RECIPE_PREFS, { recipe: "bassSwap", bars: null, cutAt: "end", onConflict: "ask" });
-  assert.deepEqual(R.mergeRecipePrefs({ recipe: "echoOut", bars: 4, cutAt: "start", onConflict: "replace" }), { recipe: "echoOut", bars: 4, cutAt: "start", onConflict: "replace" });
-  assert.deepEqual(R.mergeRecipePrefs({ recipe: "nope", bars: -3, cutAt: "middle", onConflict: 7 }), R.DEFAULT_RECIPE_PREFS);
+  assert.deepEqual(R.DEFAULT_RECIPE_PREFS, { recipe: "bassSwap", bars: null, cutAt: "end", onConflict: "ask", sectionEdge: "off", sectionReachBars: 8 });
+  assert.deepEqual(R.mergeRecipePrefs({ recipe: "echoOut", bars: 4, cutAt: "start", onConflict: "replace" }), { ...R.DEFAULT_RECIPE_PREFS, recipe: "echoOut", bars: 4, cutAt: "start", onConflict: "replace" });
+  assert.deepEqual(R.mergeRecipePrefs({ recipe: "nope", bars: -3, cutAt: "middle", onConflict: 7, sectionEdge: "middle", sectionReachBars: "8" }), R.DEFAULT_RECIPE_PREFS);
   assert.equal(R.mergeRecipePrefs({ bars: 1000 }).bars, null);
   assert.equal(R.mergeRecipePrefs({ bars: "8" }).bars, null);
   assert.equal(R.mergeRecipePrefs({ bars: 0.25 }).bars, 0.25);
@@ -829,6 +830,254 @@ test("Trans can be created (no envelope, tempo kept), Volume never is, and the m
   assert.deepEqual(E.toolConflicts(d1.clips[0], tr), [], "alone on its clip");
   const d2 = E.addProcess(d1, "a", E.newTool("Trans", 5 * BAR, 2 * BAR, "tr2", 128));
   assert.deepEqual(E.toolConflicts(d2.clips[0], d2.clips[0].processes.find((p) => p.id === "tr2")), ["tr"], "two Trans overlapping is refused like any tool");
+});
+
+// ---- sections in the mix editor ---------------------------------------------------------------
+
+/** Invented sections, `bars` long each, at 120 BPM (2 s a bar): [kind, bars] pairs. */
+function secs(...parts) {
+  let bar = 0;
+  return parts.map(([kind, bars], i) => {
+    const out = { kind, start_secs: bar * 2, end_secs: (bar + bars) * 2, start_bar: bar, end_bar: bar + bars, confidence: 0.8, start_confidence: i === 0 ? 1 : 0.7, on_phrase: true };
+    bar += bars;
+    return out;
+  });
+}
+// track 1 (clip a): boundaries at bars 8, 40, 56, 72; track 2 (clip b): boundaries at bars 8, 40
+const SEC_A = secs(["intro", 8], ["drop", 32], ["breakdown", 16], ["drop", 16], ["outro", 8]);
+const SEC_B = secs(["intro", 8], ["drop", 32], ["outro", 24]);
+const lookupOf = (m) => (id) => m[id] ?? null;
+const LOOK = lookupOf({ 1: SEC_A, 2: SEC_B });
+/** Clip a (track 1, bars 0 to 80) and clip b (track 2, from bar 16): boundaries on the timeline at a: 8 40 56 72, b: 24 56. */
+function secDoc(extraB = {}) {
+  const a = clip("a", 0, 80 * BAR, 120, 1, grid(120, 0, 800, 0));
+  const b = clip("b", 16 * BAR, 80 * BAR, 120, 1, grid(120, 0, 800, 0), { channel: 1, trackId: 2, ...extraB });
+  return doc([a, b]);
+}
+
+test("section points: boundaries on the timeline through the clip's start and tempo, none without sections", () => {
+  const d = secDoc();
+  const pts = E.clipSectionPoints(d.clips[1], SEC_B);
+  assert.deepEqual(pts.map((p) => p.time), [24 * BAR, 56 * BAR]);
+  assert.deepEqual(pts.map((p) => [p.before, p.after]), [["intro", "drop"], ["drop", "outro"]]);
+  assert.equal(pts[0].confidence, 0.7);
+  // a clip played 25% faster: the audio at source second 16 is heard 12.8 s into the clip
+  const fast = clip("f", 3 * BAR, 80 * BAR, 120, 1.25, grid(120, 0, 800, 0));
+  const fp = E.clipSectionPoints(fast, SEC_A);
+  close(fp[0].time, 3 * BAR + (8 * BAR) / 1.25, 1e-6);
+  close(fp[1].time, 3 * BAR + (40 * BAR) / 1.25, 1e-6);
+  // nothing, one section, junk
+  assert.deepEqual(E.clipSectionPoints(d.clips[0], null), []);
+  assert.deepEqual(E.clipSectionPoints(d.clips[0], undefined), []);
+  assert.deepEqual(E.clipSectionPoints(d.clips[0], secs(["drop", 40])), []);
+  assert.deepEqual(E.clipSectionPoints(d.clips[0], [{ ...SEC_A[0] }, { ...SEC_A[1], start_secs: NaN }]), []);
+  // out of order input comes back ascending
+  assert.deepEqual(E.clipSectionPoints(d.clips[0], [SEC_A[0], SEC_A[3], SEC_A[1], SEC_A[2]]).map((p) => p.time), [8 * BAR, 40 * BAR, 56 * BAR]);
+});
+
+test("section spans cover the clip in clip-local samples through its tempo", () => {
+  const d = secDoc();
+  const spans = E.clipSectionSpans(d.clips[0], SEC_A);
+  assert.equal(spans.length, 5);
+  assert.deepEqual([spans[0].from, spans[0].to], [0, 8 * BAR]);
+  assert.equal(spans[4].to, 80 * BAR);
+  assert.equal(spans[1].kind, "drop");
+  const fast = clip("f", 0, 80 * BAR, 120, 1.25, grid(120, 0, 800, 0));
+  close(E.clipSectionSpans(fast, SEC_A)[0].to, (8 * BAR) / 1.25, 1e-6);
+  assert.deepEqual(E.clipSectionSpans(d.clips[0], null), []);
+  assert.deepEqual(E.clipSectionSpans(d.clips[0], [{ ...SEC_A[0], end_secs: 0 }]), [], "an empty or backwards section is not drawn");
+});
+
+test("snap mode 'section': targets are section boundaries where a clip has them, phrase lines where it has none", () => {
+  const d = secDoc();
+  const t = E.snapTargets(d, "section", [], null, LOOK);
+  for (const bar of [8, 40, 56, 72, 24]) assert.ok(t.includes(bar * BAR), `bar ${bar} is a boundary`);
+  assert.ok(!t.includes(4 * BAR) && !t.includes(12 * BAR), "no plain bars / beats");
+  assert.ok(!t.includes(0), "the clip's start is not a boundary");
+  // the clip without sections falls back to its phrase lines (every 8 bars)
+  const d2 = secDoc({ trackId: 3 });
+  const t2 = E.snapTargets(d2, "section", [], null, LOOK);
+  assert.ok(t2.includes(8 * BAR) && t2.includes(16 * BAR) && t2.includes(32 * BAR), "b's phrase lines");
+  assert.ok(!t2.includes(12 * BAR), "but not its bars");
+  // no sections anywhere (or no lookup at all): exactly the phrase mode, so tracks without sections behave as today
+  assert.deepEqual(E.snapTargets(d, "section"), E.snapTargets(d, "phrase"));
+  assert.deepEqual(E.snapTargets(d, "section", [], null, lookupOf({})), E.snapTargets(d, "phrase"));
+  // the other modes ignore the lookup
+  for (const mode of ["beat", "bar", "phrase"]) assert.deepEqual(E.snapTargets(d, mode, [], null, LOOK), E.snapTargets(d, mode));
+  // excluded clips contribute nothing
+  assert.ok(!E.snapTargets(d, "section", ["a"], null, LOOK).includes(72 * BAR));
+  // a clip's boundaries outside its audible part are not targets
+  const trimmed = secDoc();
+  trimmed.clips[0].visibleEnd = 50 * BAR;
+  const t3 = E.snapTargets(trimmed, "section", ["b"], null, LOOK);
+  assert.ok(t3.includes(40 * BAR) && !t3.includes(56 * BAR));
+  // with no clip to snap to the reference tempo's phrase grid is used, as in phrase mode
+  const lone = doc([clip("c", 0, 10 * BAR, 120, 1, null)]);
+  assert.deepEqual(E.snapTargets(lone, "section", ["c"], [0, 70 * BAR], LOOK), E.snapTargets(lone, "phrase", ["c"], [0, 70 * BAR]));
+});
+
+test("snapping a dragged clip by its own section boundary onto another clip's", () => {
+  const d = secDoc();
+  const opts = { mode: "section", threshold: 8000, sections: LOOK };
+  // b's boundary at local bar 8 should meet a's boundary at bar 40: b starts at bar 32
+  close(E.snapClipStart(d, "b", 32 * BAR + 1000, opts), 32 * BAR, 1e-6);
+  close(E.snapClipStart(d, "b", 32 * BAR - 5000, opts), 32 * BAR, 1e-6);
+  // too far: unchanged
+  assert.equal(E.snapClipStart(d, "b", 32 * BAR + 20000, opts), 32 * BAR + 20000);
+  // without the lookup the same drag is exactly phrase mode
+  assert.equal(E.snapClipStart(d, "b", 32 * BAR + 1000, { mode: "section", threshold: 8000 }), E.snapClipStart(d, "b", 32 * BAR + 1000, { mode: "phrase", threshold: 8000 }));
+  // resizing and moving a crossfade take the lookup too
+  // (a is resized onto b's boundary at bar 56)
+  const r = E.resizeClip(d, "a", "right", 56 * BAR + 900, opts);
+  close(r.clips[0].visibleEnd, 56 * BAR, 1e-6);
+  const withT = E.applyTransition(d, { transition: E.newTransition("a", "b", 16 * BAR, 8 * BAR, "tx"), tools: [], bars: 8, beat: BEAT, barsAvailable: 8, notes: [] });
+  const moved = E.moveTransition(withT, "tx", 40 * BAR + 700, null, opts);
+  assert.equal(moved.transitions[0].start, 40 * BAR);
+});
+
+test("auto transition on section boundaries: off changes nothing, each mode moves what it should", () => {
+  const d = secDoc();
+  const base = baseSuggestion(d, 8); // bars 16 to 24
+  const prefs = (extra) => ({ sectionEdge: "off", sectionReachBars: 8, ...extra });
+  const minLen = 2 * BAR;
+  // off, or no lookup, or no sections: the very same suggestion object comes back
+  for (const [p, look] of [[prefs(), LOOK], [prefs({ sectionEdge: "both" }), undefined], [prefs({ sectionEdge: "both" }), lookupOf({})]]) {
+    const r = ST.alignSuggestion(d, base, p, look, minLen);
+    assert.equal(r.suggestion, base);
+    assert.equal(r.moved, false);
+    assert.deepEqual(r.notes, []);
+  }
+  // start: the nearest boundary to bar 16 within 8 bars is b's intro end at bar 24; the length is kept
+  let r = ST.alignSuggestion(d, base, prefs({ sectionEdge: "start" }), LOOK, minLen);
+  assert.equal(r.moved, true);
+  assert.equal(r.suggestion.transition.start, 24 * BAR);
+  assert.equal(r.suggestion.transition.length, 8 * BAR);
+  assert.equal(r.suggestion.transition.startSec, (24 * BAR) / E.SR);
+  assert.equal(r.suggestion.bars, 8);
+  assert.equal(r.suggestion.barsAvailable, 56);
+  assert.match(r.notes[0], /^Starts where a drop begins \(8 bars later than the beat-matched start\)\.$/);
+  assert.equal(base.transition.start, 16 * BAR, "the backend's suggestion is not mutated");
+  assert.deepEqual(base.notes, []);
+  // out of reach: untouched geometry, but the note says why
+  r = ST.alignSuggestion(d, base, prefs({ sectionEdge: "start", sectionReachBars: 4 }), LOOK, minLen);
+  assert.equal(r.moved, false);
+  assert.equal(r.suggestion.transition.start, 16 * BAR);
+  assert.match(r.notes[0], /No section boundary within 4 bars of the start/);
+  assert.deepEqual(r.suggestion.notes, r.notes);
+  // end: 12 bars from 16 end at 28; the nearest boundary within 8 is bar 24: shorter by 4 bars
+  const long = baseSuggestion(d, 12);
+  r = ST.alignSuggestion(d, long, prefs({ sectionEdge: "end" }), LOOK, minLen);
+  assert.equal(r.moved, true);
+  assert.equal(r.suggestion.transition.start, 16 * BAR);
+  assert.equal(r.suggestion.transition.length, 8 * BAR);
+  assert.equal(r.suggestion.bars, 8);
+  assert.match(r.notes[0], /^Ends where a drop begins \(4 bars shorter than asked\)\.$/);
+  // an end that is already on a boundary is reported but nothing moves (the backend's tools stay valid)
+  r = ST.alignSuggestion(d, base, prefs({ sectionEdge: "end" }), LOOK, minLen);
+  assert.equal(r.moved, false);
+  assert.equal(r.suggestion.transition.length, 8 * BAR);
+  assert.match(r.notes[0], /^Ends where a drop begins\.$/);
+  // both: 14 bars from 16 end at 30; the start goes to 24, the end to the boundary at 40 (reach 10)
+  const l14 = baseSuggestion(d, 14);
+  r = ST.alignSuggestion(d, l14, prefs({ sectionEdge: "both", sectionReachBars: 10 }), LOOK, minLen);
+  assert.equal(r.moved, true);
+  assert.equal(r.suggestion.transition.start, 24 * BAR);
+  assert.equal(r.suggestion.transition.length, 16 * BAR);
+  assert.equal(r.suggestion.bars, 16);
+  assert.equal(r.notes.length, 2);
+  // both, but only the start finds a boundary: the end keeps the length from the new start
+  r = ST.alignSuggestion(d, long, prefs({ sectionEdge: "both" }), LOOK, minLen);
+  assert.equal(r.suggestion.transition.start, 24 * BAR);
+  assert.equal(r.suggestion.transition.length, 12 * BAR);
+  assert.match(r.notes.join(" "), /No section boundary within 8 bars of the end, so it keeps its length/);
+  // the window stays inside the audible part of both clips whatever the boundaries
+  for (const mode of ["start", "end", "both"]) {
+    for (const reach of [1, 8, 32]) {
+      for (const bars of [2, 8, 12, 40]) {
+        const x = ST.alignSuggestion(d, baseSuggestion(d, bars), prefs({ sectionEdge: mode, sectionReachBars: reach }), LOOK, minLen).suggestion.transition;
+        assert.ok(x.start >= d.clips[1].visibleStart && x.start + x.length <= d.clips[0].visibleEnd + 1, `${mode}/${reach}/${bars} stays inside`);
+        assert.ok(x.length >= 1);
+      }
+    }
+  }
+});
+
+test("alignTransition: a boundary near the end of the clips shortens the window to fit; unusable boundaries are ignored", () => {
+  const d = secDoc();
+  const base = baseSuggestion(d, 8);
+  const pt = (bar) => ({ time: bar * BAR, before: "drop", after: "outro", confidence: 0.9 });
+  const input = (points, extra = {}) => ({ mode: "start", points, lo: 16 * BAR, hi: 80 * BAR, minLength: 2 * BAR, reachBars: 64, ...extra });
+  const r = ST.alignTransition(base, input([pt(76)]));
+  assert.equal(r.moved, true);
+  assert.equal(r.suggestion.transition.start, 76 * BAR);
+  assert.equal(r.suggestion.transition.length, 4 * BAR);
+  assert.match(r.notes.join(" "), /Only 4 bars of both clips are left after the new start: the transition is shortened to fit\./);
+  // a boundary with less than the minimum left before the end is not used at all
+  const none = ST.alignTransition(base, input([pt(79)]));
+  assert.equal(none.moved, false);
+  assert.equal(none.suggestion.transition.start, 16 * BAR);
+  // a boundary before the audible start is never used
+  assert.equal(ST.alignTransition(base, input([pt(10)])).moved, false);
+  // equally near boundaries: the earlier one
+  assert.equal(ST.alignTransition(base, input([pt(14 + 4), pt(22 + 0)], { lo: 0 })).suggestion.transition.start, 18 * BAR);
+  // no tempo (beat 0), no 'between', no points: the suggestion itself comes back
+  const noBeat = { ...base, beat: 0 };
+  assert.equal(ST.alignTransition(noBeat, input([pt(24)], { mode: "both" })).suggestion, noBeat);
+  const noBetween = { ...base, transition: { ...base.transition, between: null } };
+  assert.equal(ST.alignTransition(noBetween, input([pt(24)], { mode: "both" })).suggestion, noBetween);
+  assert.equal(ST.alignTransition(base, input([], { mode: "both" })).suggestion, base);
+  // distances in words
+  assert.equal(ST.barsText(8 * BAR, BAR), "8 bars");
+  assert.equal(ST.barsText(-BAR, BAR), "1 bar");
+  assert.equal(ST.barsText(BAR / 2, BAR), "2 beats");
+  assert.equal(ST.barsText(1.5 * BAR, BAR), "1.5 bars");
+  assert.equal(ST.barsText(0, BAR), "no distance");
+});
+
+test("every recipe builds a valid transition on a window that moved onto section boundaries", () => {
+  for (const r of R.RECIPES) {
+    for (const cutAt of ["start", "end"]) {
+      const d = secDoc();
+      const base = baseSuggestion(d, 12);
+      const al = ST.alignSuggestion(d, base, { sectionEdge: "both", sectionReachBars: 10 }, LOOK, r.lengths[0] * BAR);
+      assert.equal(al.moved, true, r.id);
+      const t0 = al.suggestion.transition;
+      const s = R.buildRecipe(d, al.suggestion, r.id, { cutAt, moved: al.moved }, E.recipeKit);
+      checkBuilt(d, s, `moved ${r.id}/${cutAt}`);
+      assert.equal(s.transition.start, t0.start);
+      assert.equal(s.transition.length, t0.length);
+      assert.ok(s.notes.length >= al.notes.length, "the section notes reach the user");
+    }
+  }
+  // the bass swap builds its own tools on a moved window: one EQ on each clip, inside the window
+  const d = secDoc();
+  const al = ST.alignSuggestion(d, baseSuggestion(d, 12), { sectionEdge: "start", sectionReachBars: 8 }, LOOK, BAR);
+  const s = R.buildRecipe(d, al.suggestion, "bassSwap", { cutAt: "end", moved: true }, E.recipeKit);
+  assert.equal(s.tools.length, 2);
+  assert.deepEqual(s.tools.map((x) => x.clipId).sort(), ["a", "b"]);
+  // unmoved, it still keeps the backend's own tools
+  const base = baseSuggestion(d, 16);
+  base.tools = [{ clipId: "a", tool: E.newTool("EQ", 16 * BAR, 16 * BAR, "ea"), conflicts: [] }];
+  assert.deepEqual(R.buildRecipe(d, base, "bassSwap", { cutAt: "end", moved: false }, E.recipeKit).tools, base.tools);
+  // under a bar a moved bass swap has no tools and says so, instead of throwing
+  const tiny = baseSuggestion(d, 0.5);
+  const ts = R.buildRecipe(d, tiny, "bassSwap", { cutAt: "end", moved: true }, E.recipeKit);
+  assert.equal(ts.tools.length, 0);
+  assert.match(ts.notes.join(" "), /no bass swap tools/);
+});
+
+test("section words and saved settings", () => {
+  assert.equal(R.sectionEdgeWords("off"), "");
+  assert.equal(R.sectionEdgeWords("start"), "starts on a section boundary");
+  assert.equal(R.sectionEdgeWords("end"), "ends on a section boundary");
+  assert.equal(R.sectionEdgeWords("both"), "starts and ends on section boundaries");
+  assert.deepEqual(R.SECTION_EDGES, ["off", "start", "end", "both"]);
+  assert.equal(R.mergeRecipePrefs({ sectionEdge: "both", sectionReachBars: 12.4 }).sectionReachBars, 12);
+  assert.equal(R.mergeRecipePrefs({ sectionReachBars: 0 }).sectionReachBars, 8);
+  assert.equal(R.mergeRecipePrefs({ sectionReachBars: 33 }).sectionReachBars, 8);
+  assert.equal(R.mergeRecipePrefs({ sectionEdge: "both" }).sectionEdge, "both");
+  // an old saved value without the new fields reads back as "off"
+  assert.equal(R.mergeRecipePrefs({ recipe: "echoOut", bars: 4, cutAt: "start", onConflict: "skip" }).sectionEdge, "off");
 });
 
 // the set builder's solver and mix layout have their own test file; running it here keeps one entry point

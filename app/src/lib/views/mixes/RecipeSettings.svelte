@@ -44,10 +44,10 @@
 <div class="field">
   <label for="rs-sec">Sections</label>
   <select id="rs-sec" value={p.sectionEdge} onchange={(e) => recipePrefs.set({ sectionEdge: e.currentTarget.value as SectionEdge })}>
-    <option value="off">Ignore sections (start on the beat-matched start)</option>
-    <option value="start">Start on the nearest section boundary</option>
-    <option value="end">End on the nearest section boundary</option>
-    <option value="both">Start and end on section boundaries</option>
+    <option value="off">Ignore sections</option>
+    <option value="start">Start on a boundary</option>
+    <option value="end">End on a boundary</option>
+    <option value="both">Start and end on boundaries</option>
   </select>
 </div>
 {#if p.sectionEdge !== "off"}

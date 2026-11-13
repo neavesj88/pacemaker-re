@@ -35,7 +35,7 @@ export type AlignInput = {
   mode: SectionEdge;
   /** Section boundaries of the two clips on the timeline (samples). */
   points: readonly SectionPoint[];
-  /** The earliest the transition may start: the incoming clip's audible start. */
+  /** The earliest the transition may start: where both clips are audible (the later start). */
   lo: number;
   /** The latest it may end: the earlier of the two clips' audible ends. */
   hi: number;
@@ -116,6 +116,9 @@ export function alignTransition(base: TransitionSuggestion, o: AlignInput): Alig
     notes.push(`Ends where ${KIND_WORD[endPick.after] ?? "a new section"} begins${Math.abs(d) < 1 ? "" : ` (${barsText(d, bar)} ${d < 0 ? "shorter" : "longer"} than asked)`}.`);
   }
 
+  // a boundary that is where the window already sits says so, but leaves the backend's tools valid
+  if (s === s0 && length === t.length) return { suggestion: { ...base, notes: [...base.notes, ...notes] }, moved: false, notes };
+
   const suggestion: TransitionSuggestion = {
     ...base,
     transition: { ...t, start: s, length, startSec: s / SR, lengthSec: length / SR },
@@ -134,7 +137,7 @@ export function alignInputFor(doc: MixDoc, base: TransitionSuggestion, prefs: Pi
   const from = clipOf(doc, between.from);
   const to = clipOf(doc, between.to);
   if (!from || !to) return null;
-  const lo = to.visibleStart;
+  const lo = Math.max(from.visibleStart, to.visibleStart);
   const hi = Math.min(from.visibleEnd, to.visibleEnd);
   const inside = (c: Clip) => clipSectionPoints(c, lookup(c.trackId)).filter((p) => p.time >= lo && p.time <= hi);
   return {

@@ -746,4 +746,82 @@ await test("building a mix: the overlap cap and the tool-conflict choice are hon
   assert.deepEqual(flags, [false, true]);
 });
 
+// ---- sections: leave on an outro, arrive on an intro --------------------------------------------
+
+/** A track with the section flags the set builder derives (no flags = no sections detected). */
+const withSides = (t, sides) => (sides ? { ...t, intro: sides.intro, outro: sides.outro } : t);
+
+await test("section preference: off by default, never changes a score, says what a hop does", () => {
+  assert.equal(S.DEFAULT_SOLVER.sectionPref, false);
+  assert.equal(S.DEFAULT_PREFS.preferSections, false);
+  const none = { intro: false, outro: false };
+  const a = withSides(tr(1, 124, "8A"), { intro: false, outro: true });
+  const b = withSides(tr(2, 124, "8A"), { intro: true, outro: false });
+  const plain = S.transitionBetween(a, b, O());
+  assert.equal(plain.sectionFit, null, "preference off");
+  const on = S.transitionBetween(a, b, O({ sectionPref: true }));
+  assert.deepEqual(on.sectionFit, { out: true, in: true });
+  assert.equal(on.score, plain.score, "sections never change the score");
+  assert.deepEqual(on.concerns, plain.concerns);
+  assert.equal(S.sectionFitText(on), "outro into intro");
+  assert.equal(S.sectionFitText(S.transitionBetween(a, withSides(tr(3, 124, "8A"), none), O({ sectionPref: true }))), "leaves on an outro");
+  assert.equal(S.sectionFitText(S.transitionBetween(withSides(tr(3, 124, "8A"), none), b, O({ sectionPref: true }))), "arrives on an intro");
+  assert.equal(S.sectionFitText(S.transitionBetween(withSides(tr(3, 124, "8A"), none), withSides(tr(4, 124, "8A"), none), O({ sectionPref: true }))), "");
+  // tracks without sections: nothing to say, on or off
+  const bare = S.transitionBetween(tr(5, 124, "8A"), tr(6, 124, "8A"), O({ sectionPref: true }));
+  assert.equal(bare.sectionFit, null);
+  assert.equal(S.sectionFitText(bare), "");
+  assert.equal(S.sectionFitText({ sectionFit: null }), "");
+});
+
+await test("section preference: a tie-breaker between hops that are otherwise alike, no penalty without sections", () => {
+  // four tracks that match each other perfectly: only sections tell the orders apart
+  const A = withSides(tr(1, 124, "8A"), { intro: false, outro: true });
+  const B = withSides(tr(2, 124, "8A"), { intro: true, outro: false });
+  const C = tr(3, 124, "8A");
+  const D = tr(4, 124, "8A");
+  const tracks = [A, B, C, D];
+  const off = O();
+  const on = O({ sectionPref: true });
+  // preference off: every order costs the same, with or without section data
+  assert.equal(costOfOrder(tracks, [1, 2, 3, 4], off), costOfOrder(tracks, [2, 1, 3, 4], off));
+  // on: outro into intro is cheaper by the bonus of both sides, and nothing else is penalised
+  const good = costOfOrder(tracks, [1, 2, 3, 4], on);
+  const bad = costOfOrder(tracks, [2, 1, 3, 4], on);
+  // (A still leaves on its outro in the second order, but B has nothing to arrive from: one bonus is lost)
+  assert.equal(good, costOfOrder(tracks, [1, 2, 3, 4], off) - 2 * S.SECTION_BONUS);
+  assert.equal(bad - good, S.SECTION_BONUS);
+  assert.equal(costOfOrder([C, D], [3, 4], on), costOfOrder([C, D], [3, 4], off), "no sections: same cost either way");
+  // the solver puts the outro track right before the intro track
+  const r = S.solve(tracks, new Map(), on);
+  assert.equal(r.order.length, 4);
+  assert.equal(r.order[r.order.indexOf(1) + 1], 2, `order ${r.order}`);
+});
+
+await test("section preference never trades a key or tempo limit for an outro", () => {
+  const on = O({ sectionPref: true });
+  // 1 (outro) -> 2 (intro) is two steps on the wheel (not allowed); 1 -> 3 -> 2 keeps every limit
+  const A = withSides(tr(1, 124, "8A"), { intro: false, outro: true });
+  const B = withSides(tr(2, 124, "10A"), { intro: true, outro: false });
+  const C = tr(3, 124, "9A");
+  const clean = S.solve([A, B, C], new Map(), on);
+  assert.equal(S.evaluate(byIdOf([A, B, C]), clean.order, on).violations, 0, `order ${clean.order}`);
+  // both bonuses together are far below the cost of a broken limit
+  assert.ok(2 * S.SECTION_BONUS < 60);
+  // tempo limit likewise
+  const E1 = withSides(tr(1, 124, "8A"), { intro: false, outro: true });
+  const E2 = withSides(tr(2, 132, "8A"), { intro: true, outro: false });
+  const E3 = tr(3, 128, "8A");
+  const r2 = S.solve([E1, E2, E3], new Map(), on);
+  assert.equal(S.evaluate(byIdOf([E1, E2, E3]), r2.order, on).violations, 0, `order ${r2.order}`);
+});
+
+await test("section preference: saved setting and the options built from it", () => {
+  assert.equal(S.mergePrefs({ preferSections: true }).preferSections, true);
+  assert.equal(S.mergePrefs({ preferSections: "yes" }).preferSections, false);
+  assert.equal(S.mergePrefs(undefined).preferSections, false);
+  assert.equal(S.solverOptions({ ...S.DEFAULT_PREFS, preferSections: true }).sectionPref, true);
+  assert.equal(S.solverOptions(S.DEFAULT_PREFS).sectionPref, false);
+});
+
 console.log(`\n${n} set builder tests passed`);

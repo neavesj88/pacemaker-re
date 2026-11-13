@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   boundariesOf, clampSetting, clock, confidenceOpacity, coverageText, coveredSecs, DEFAULT_SETTINGS, entriesById, KIND_LABEL, KINDS, kindColor, LIMITS,
-  neighbourBoundary, phraseText, runTitle, sameSettings, sectionAt, sectionTitle, skipHint, snapToBoundary, summaryTitle, toAnalyse,
+  mixSides, MIN_MIX_BARS, neighbourBoundary, phraseText, runTitle, sameSettings, sectionAt, sectionTitle, skipHint, snapToBoundary, summaryTitle, toAnalyse,
 } from "./sectionLogic.ts";
 
 const sec = (kind, start_bar, end_bar, over = {}) => ({
@@ -135,4 +135,20 @@ test("wording", () => {
   assert.match(skipHint("no usable beat grid"), /beat grid/);
   assert.match(skipHint("fewer than 32 bars"), /Lower the shortest/);
   assert.equal(skipHint("silent"), "");
+});
+
+test("mixSides: an intro / outro of a phrase or more counts, no sections is unknown (null), not false", () => {
+  assert.equal(MIN_MIX_BARS, 8);
+  assert.deepEqual(mixSides(SECTIONS), { intro: true, outro: true }, "the outro is exactly 8 bars (long enough), the intro 16");
+  assert.deepEqual(mixSides([sec("intro", 0, 16), sec("drop", 16, 40), sec("outro", 40, 47)]), { intro: true, outro: false }, "7 bars is under a phrase");
+  assert.equal(mixSides(null), null);
+  assert.equal(mixSides(undefined), null);
+  assert.equal(mixSides([]), null);
+  // too short on either side
+  assert.deepEqual(mixSides([sec("intro", 0, 4), sec("drop", 4, 40), sec("outro", 40, 44)]), { intro: false, outro: false });
+  assert.deepEqual(mixSides([sec("intro", 0, 8), sec("drop", 8, 40), sec("outro", 40, 48)]), { intro: true, outro: true });
+  // a track that starts on a drop or ends on a breakdown has neither
+  assert.deepEqual(mixSides([sec("drop", 0, 32), sec("breakdown", 32, 48)]), { intro: false, outro: false });
+  // the limit is a parameter
+  assert.deepEqual(mixSides([sec("intro", 0, 4), sec("drop", 4, 40), sec("outro", 40, 44)], 4), { intro: true, outro: true });
 });
