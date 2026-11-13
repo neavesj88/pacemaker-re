@@ -83,12 +83,12 @@
     margin: 0;
   }
   .strip {
-    /* room for the progress card (bar, label, Cancel) */
-    height: 84px;
+    /* room for the progress card (bar, label, Cancel); a minimum, not a cap, so a large OS font
+       scale or a long result sentence grows the strip instead of being cut off */
+    min-height: 84px;
     flex: none;
     display: flex;
     align-items: center;
-    overflow: hidden;
   }
   .strip > * {
     flex: 1;
