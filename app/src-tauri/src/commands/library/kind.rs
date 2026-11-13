@@ -13,38 +13,7 @@ pub const COMPUTER: &str = "computer";
 /// `/media`, `/run/media` or `/mnt`). Everything else is a folder on this computer: subfolders
 /// of a drive, network shares (`\\server\share`), relative paths.
 pub fn library_kind(root: &str) -> &'static str {
-    if is_volume_root(root) { PACEMAKER } else { COMPUTER }
-}
-
-fn is_volume_root(root: &str) -> bool {
-    let s = root.trim().replace('\\', "/");
-    if let Some(rest) = s.strip_prefix("//?/") {
-        // \\?\G:\ is a drive; \\?\UNC\server\share is a network share
-        return !rest.starts_with("UNC/") && is_drive_root(rest);
-    }
-    if s.starts_with("//") {
-        return false;
-    }
-    is_drive_root(&s) || is_mount_point(&s)
-}
-
-/// `G:` with nothing after it but separators. `G:foo` is a path relative to the drive's current
-/// folder, not its root.
-fn is_drive_root(s: &str) -> bool {
-    let b = s.as_bytes();
-    b.len() >= 2 && b[0].is_ascii_alphabetic() && b[1] == b':' && s[2..].trim_end_matches('/').is_empty()
-}
-
-fn is_mount_point(s: &str) -> bool {
-    if !s.starts_with('/') {
-        return false;
-    }
-    let parts: Vec<&str> = s.split('/').filter(|p| !p.is_empty()).collect();
-    if parts.iter().any(|p| *p == "." || *p == "..") {
-        return false;
-    }
-    const BASES: [&[&str]; 4] = [&["Volumes"], &["media"], &["run", "media"], &["mnt"]];
-    BASES.iter().any(|base| parts.starts_with(base) && matches!(parts.len() - base.len(), 1 | 2))
+    if pm_formats::library::is_volume_root(root) { PACEMAKER } else { COMPUTER }
 }
 
 #[cfg(test)]

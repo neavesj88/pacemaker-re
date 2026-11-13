@@ -65,7 +65,8 @@
       <h4>Your Pacemaker</h4>
       <p>
         This library is on this computer at <code>{lib.root}</code>. Plug in your Pacemaker (or put its card in a reader) to
-        send tracks, mixes and cases to it.
+        send tracks, mixes and cases to it. Only a drive root (such as <code>G:\</code>) or a mount point counts as a Pacemaker; a
+        card image copied into a folder is opened as a library on this computer, so the card-only tools are not offered for it.
       </p>
       <Button variant="primary" onclick={() => nav.go("sync")}>Sync with a Pacemaker…</Button>
       <h4 class="sub">Where this library is kept</h4>

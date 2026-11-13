@@ -55,7 +55,7 @@
               {#each h.compatibility_problems as p (p)}<li>{p}</li>{/each}
             </ul>
           {:else}
-            Database matches what the device requires.
+            Database matches what the Pacemaker requires.
           {/if}
         </div>
       </li>

@@ -43,14 +43,13 @@ export type SyncItemKind = "track" | "mix" | "case";
 export type SyncAction =
   | { type: "copy" }
   | { type: "update" }
+  /** Only the play counts come over; no file is copied. */
+  | { type: "update_plays" }
   | { type: "replace" }
   | { type: "copy_as_new"; name: string }
   | { type: "merge" }
   | { type: "skip"; reason: string }
   | { type: "remove" };
-
-/** Shown when nothing needs doing. */
-export const SYNC_SAME = "already the same";
 
 export type SyncNeed = { location: string; label: string };
 export type SyncBlocker = { key: string; label: string };

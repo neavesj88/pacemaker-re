@@ -10,7 +10,7 @@
   <div class="sect">{title}</div>
   {#each views.filter((v) => v.section === id && (!v.visible || v.visible())) as v (v.id)}
     <button class:active={nav.view === v.id} onclick={() => nav.go(v.id)}>
-      {v.label}
+      {v.title ? v.title() : v.label}
       {#if v.count && session.library}<span>{v.count(session.library)}</span>{/if}
     </button>
   {/each}

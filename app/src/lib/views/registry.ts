@@ -8,6 +8,8 @@ import type { ViewId } from "./ids";
 export type ViewDef = {
   id: ViewId;
   label: string;
+  /** The sidebar text when it depends on the open library (falls back to `label`). */
+  title?: () => string;
   /** Sidebar section. */
   section: "library" | "tools";
   /** Position in the sidebar within its section (lower first). */

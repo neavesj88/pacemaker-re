@@ -71,6 +71,11 @@
     background: var(--deep);
     border-bottom: 1px solid var(--line);
   }
+  /* one line each, even at a narrow window: the search box gives way instead */
+  header :global(button),
+  .brand {
+    white-space: nowrap;
+  }
   .brand {
     display: flex;
     align-items: center;
@@ -88,6 +93,8 @@
   }
   .search {
     margin-left: auto;
+    flex: 0 1 300px;
+    min-width: 100px;
     width: 300px;
   }
 </style>

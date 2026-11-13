@@ -6,6 +6,7 @@
   import { save } from "@tauri-apps/plugin-dialog";
   import { exportTracklist, exportTracklistSave, type TracklistFormat, type TracklistOut } from "$lib/api/export";
   import { mixes } from "$lib/state/mixes.svelte";
+  import { session } from "$lib/state/session.svelte";
   import { toast } from "$lib/state/toast.svelte";
   import { tracklist } from "$lib/state/tracklist.svelte";
   import { FORMATS, audioFileName, baseName, listFileName, withExtension } from "$lib/state/tracklistprefs";
@@ -166,7 +167,7 @@
                   <td class="t num">{e.startLabel}</td>
                   <td class="name" title={e.album}>{e.artist ? `${e.artist} - ${e.title}` : e.title}</td>
                   <td class="flags muted">
-                    {#if !e.available}no audio on the device{:else if e.overlapsPrevious}crossfade{/if}
+                    {#if !e.available}no audio {session.place.on}{:else if e.overlapsPrevious}crossfade{/if}
                   </td>
                 </tr>
               {:else}

@@ -115,7 +115,7 @@ fn all_same(p: &SyncPlan) {
 fn nothing_left_to_do(p: &SyncPlan) {
     for i in &p.items {
         let r = reason(i);
-        assert!(r == SAME || (i.kind == ItemKind::Track && r.contains("same age or newer")), "{}: {r}", i.key);
+        assert!(r == SAME || r.contains("already in the plan") || (i.kind == ItemKind::Track && r.contains("same age or newer")), "{}: {r}", i.key);
     }
 }
 
@@ -422,7 +422,7 @@ fn keep_both_names_stay_unique() {
     let sa = fx.add(&mut s, "alpha", 3000, "Alpha");
     let da = fx.add(&mut d, "alpha", 3000, "Alpha");
     make_mix(&mut s, "Set", &[sa]);
-    make_mix(&mut s, "set ", &[sa]); // same name once trimmed and folded: one item
+    make_mix(&mut s, "set ", &[sa]); // same name once trimmed and folded: one item, and a skip that says so
     make_mix(&mut d, "Set", &[da]);
     make_mix(&mut d, "Set (from computer)", &[da]);
     make_mix(&mut d, "set (FROM computer) 2", &[da]);
@@ -431,8 +431,9 @@ fn keep_both_names_stay_unique() {
     fx.dst = d;
     let settings = SyncSettings { mixes_same_name: MixesSameName::KeepBoth, ..SyncSettings::default() };
     let p = fx.plan(&settings);
-    assert_eq!(p.items.iter().filter(|i| i.kind == ItemKind::Mix).count(), 1);
+    assert_eq!(p.items.iter().filter(|i| i.kind == ItemKind::Mix && i.action.acts()).count(), 1);
     assert_eq!(item(&p, "mix:set").action, SyncAction::CopyAsNew { name: "Set (from computer) 3".into() });
+    assert!(reason(item(&p, "mix:set#2")).contains("already in the plan"));
     fx.run(&p, &[]).unwrap();
     nothing_left_to_do(&fx.plan(&settings));
     // the other direction names its copies after the Pacemaker
@@ -653,4 +654,97 @@ fn labels_follow_copied_tracks_without_overwriting_the_targets() {
     assert_eq!(after.get(Kind::Track, "g:bbb").unwrap().colour.as_deref(), Some("blue"));
     assert_eq!(copy_labels(&dir, "src", "dst", &ids).unwrap(), 0, "again: nothing more to carry");
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+fn set_plays(lib: &Library, table: &str, id_col: &str, id: i64, times: i64, last: i64) {
+    lib.con.execute(&format!("UPDATE {table} SET times_played = {times}, last_played = {last} WHERE {id_col} = {id}"), []).unwrap();
+}
+
+fn plays(lib: &Library, table: &str, id_col: &str, id: i64) -> (i64, i64) {
+    lib.con.query_row(&format!("SELECT CAST(times_played AS INTEGER), CAST(last_played AS INTEGER) FROM {table} WHERE {id_col} = {id}"), [], |r| Ok((r.get(0)?, r.get(1)?))).unwrap()
+}
+
+#[test]
+fn plays_alone_come_over_for_tracks_mixes_and_cases() {
+    let mut fx = Fx::new();
+    let mut s = Library::open(fx.src.root()).unwrap();
+    let mut d = Library::open(fx.dst.root()).unwrap();
+    let sa = fx.add(&mut s, "alpha", 3000, "Alpha");
+    let da = fx.add(&mut d, "alpha", 3000, "Alpha");
+    // identical rows, then the device counts plays (no date_modified move)
+    let row = |lib: &Library, id: i64| -> (f64, f64) { lib.con.query_row("SELECT date_modified, date_added FROM tracks WHERE track_id = ?1", [id], |r| Ok((r.get(0)?, r.get(1)?))).unwrap() };
+    let (m, a) = row(&s, sa);
+    d.con.execute("UPDATE tracks SET date_modified = ?1, date_added = ?2 WHERE track_id = ?3", params![m, a, da]).unwrap();
+    let sm = make_mix(&mut s, "Set", &[sa]);
+    let dm = make_mix(&mut d, "Set", &[da]);
+    let (cr, md): (i64, i64) = s.con.query_row("SELECT date_created, date_modified FROM mixes WHERE mix_id = ?1", [sm], |r| Ok((r.get(0)?, r.get(1)?))).unwrap();
+    d.con.execute("UPDATE mixes SET date_created = ?1, date_modified = ?2 WHERE mix_id = ?3", params![cr, md, dm]).unwrap();
+    let sc = s.create_case_with_tracks("Crate", &[sa]).unwrap();
+    let dc = d.create_case_with_tracks("Crate", &[da]).unwrap();
+    set_plays(&s, "tracks", "track_id", sa, 7, 500);
+    set_plays(&s, "mixes", "mix_id", sm, 3, 600);
+    set_plays(&s, "cases", "case_id", sc, 2, 700);
+    set_plays(&d, "tracks", "track_id", da, 9, 100);
+    fx.src = s;
+    fx.dst = d;
+    let settings = SyncSettings::default();
+    let p = fx.plan(&settings);
+    let loc = loc_of(&fx.src, sa);
+    for key in [format!("track:{loc}"), "mix:set".to_string(), "case:crate".to_string()] {
+        assert_eq!(item(&p, &key).action, SyncAction::UpdatePlays, "{key}");
+        assert_eq!(item(&p, &key).detail, PLAYED_MORE);
+        assert_eq!(item(&p, &key).bytes, 0);
+    }
+    let r = fx.run(&p, &[]).unwrap();
+    assert_eq!((r.done, r.failed), (3, 0));
+    assert_eq!(plays(&fx.dst, "tracks", "track_id", da), (9, 500), "the higher count stays, the later last-played wins");
+    assert_eq!(plays(&fx.dst, "mixes", "mix_id", dm), (3, 600));
+    assert_eq!(plays(&fx.dst, "cases", "case_id", dc), (2, 700));
+    all_same(&fx.plan(&settings));
+    // the Leave setting brings nothing
+    set_plays(&fx.src, "tracks", "track_id", sa, 50, 900);
+    assert_eq!(reason(item(&fx.plan(&SyncSettings { play_counts: PlayCounts::Leave, ..settings.clone() }), &format!("track:{loc}"))), SAME);
+    // a later run does not lower anything
+    let p = fx.plan(&settings);
+    fx.run(&p, &[]).unwrap();
+    assert_eq!(plays(&fx.dst, "tracks", "track_id", da), (50, 900));
+}
+
+#[test]
+fn a_second_source_item_with_the_same_name_or_place_is_reported() {
+    let mut fx = Fx::new();
+    let mut s = Library::open(fx.src.root()).unwrap();
+    let sa = fx.add(&mut s, "alpha", 3000, "Alpha");
+    s.create_case_with_tracks("Crate", &[sa]).unwrap();
+    s.create_case_with_tracks("crate ", &[sa]).unwrap();
+    fx.src = s;
+    let p = fx.plan(&SyncSettings::default());
+    assert!(reason(item(&p, "case:crate#2")).contains("already in the plan"));
+    assert_eq!(item(&p, "case:crate").action, SyncAction::Copy);
+}
+
+#[test]
+fn keep_both_copies_are_not_removals_and_trackmap_rows_go_with_a_track() {
+    let mut fx = Fx::new();
+    let mut s = Library::open(fx.src.root()).unwrap();
+    let mut d = Library::open(fx.dst.root()).unwrap();
+    let sa = fx.add(&mut s, "alpha", 3000, "Alpha");
+    let da = fx.add(&mut d, "alpha", 3000, "Alpha");
+    let lone = fx.add(&mut d, "lone", 3100, "Lone");
+    make_mix(&mut s, "Set", &[sa]);
+    make_mix(&mut d, "Set", &[da]);
+    make_mix(&mut d, "Set (from computer)", &[da]);
+    s.con.execute("UPDATE mixes SET date_modified = 2000000000000", []).unwrap();
+    d.con.execute("INSERT INTO trackmap (ext_db, ext_id, int_id) VALUES ('x', 1, ?1)", [lone]).unwrap();
+    fx.src = s;
+    fx.dst = d;
+    let settings = SyncSettings { mixes_same_name: MixesSameName::KeepBoth, remove_missing: true, ..SyncSettings::default() };
+    let p = fx.plan(&settings);
+    assert!(p.items.iter().all(|i| i.key != "remove-mix:set (from computer)"), "{:?}", p.items.iter().map(|i| &i.key).collect::<Vec<_>>());
+    assert_eq!(item(&p, &format!("remove-track:{}", loc_of(&fx.dst, lone))).action, SyncAction::Remove);
+    let before: i64 = fx.dst.con.query_row("SELECT COUNT(*) FROM trackmap WHERE int_id = ?1", [lone], |r| r.get(0)).unwrap();
+    assert_eq!(before, 1);
+    fx.run(&p, &[]).unwrap();
+    let left: i64 = fx.dst.con.query_row("SELECT COUNT(*) FROM trackmap WHERE int_id = ?1", [lone], |r| r.get(0)).unwrap();
+    assert_eq!(left, 0, "no dangling trackmap row");
 }

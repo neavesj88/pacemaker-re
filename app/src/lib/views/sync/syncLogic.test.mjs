@@ -86,6 +86,7 @@ test("groups: removals apart, what happens first, already the same last", () => 
 test("action words", () => {
   assert.equal(actionText({ type: "copy" }), "Copy");
   assert.equal(actionText({ type: "update" }), "Update");
+  assert.equal(actionText({ type: "update_plays" }), "Update play counts");
   assert.equal(actionText({ type: "replace" }), "Replace");
   assert.equal(actionText({ type: "copy_as_new", name: "Warm-up (2)" }), 'Copy as "Warm-up (2)"');
   assert.equal(actionText({ type: "merge" }), "Merge");
@@ -126,6 +127,13 @@ test("totals follow the boxes", () => {
   assert.deepEqual([less.copyTracks, less.mixes, less.skippedMixes, less.cases, less.bytes], [0, 1, 1, 1, 1000]);
   assert.equal(tallyText(less), "Will update 1 track, bring 1 mix, bring 1 case. 1 mix will be skipped.");
   assert.equal(tallyText(tally(items, new Set(items.map((i) => i.key)))), "Nothing will be changed.");
+  // plays-only items are their own count, need nothing, and copy no bytes
+  const p = [trk(1, { type: "update_plays" }, 0), mix("M", [need(9)]), item("case:C", "case", { type: "update_plays" }, { needs: [need(9)] })];
+  p[1].action = { type: "update_plays" };
+  const pt = tally(p, new Set(["track:/t/9"]));
+  assert.deepEqual([pt.plays, pt.updateTracks, pt.mixes, pt.cases, pt.bytes], [3, 0, 0, 0, 0]);
+  assert.equal(tallyText(pt), "Will update the play counts of 3 items.");
+  assert.equal(isStale("stale plan: a library changed since the plan was made; plan again"), true);
   assert.deepEqual(excludedKeys(items, new Set(["track:/t/1", "track:/t/3", "gone"])), ["track:/t/1"]);
 });
 

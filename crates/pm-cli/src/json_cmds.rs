@@ -53,7 +53,7 @@ usage:
   pm export-playlists <volume> [--out <file>]
   pm tags <volume> --config-dir <dir> [--tag <name>] [--tracks] [--strict]
   pm duplicates <volume> [--config-dir <dir>] [--by tags|size] [--strict]
-  pm sync --from <library> --to <library> [--plan-only] [--config-dir <dir>] [--exclude <key>]... [--json]
+  pm sync --from <library> --to <library> [--plan-only] [--remove] [--config-dir <dir>] [--exclude <key>]... [--json]
 JSON on stdout for health, backup, verify, export-playlists, tags, duplicates and sync; errors on stderr.
 --config-dir is the app's config folder (the one holding labels-*.json and duplicate-settings.json).
 exit: 0 ok, 1 error, 2 usage, 3 a check found problems (health --strict, backup --verify, verify,
@@ -431,7 +431,9 @@ pub fn duplicates(args: &[String]) -> Res<Done> {
 /// same engine the app's sync uses (`pm_formats::ops_sync`). It WRITES the target (the other
 /// commands here only read); it takes no snapshot of the target's music.db (the app does), and
 /// does not move the app's tags and labels. `--config-dir` reads the app's `sync.json` for the
-/// choices (defaults without it). `--exclude <key>` leaves an item out, as unticking it does.
+/// choices (defaults without it); the "remove what the other side lacks" choice is ignored there and
+/// is on only with `--remove`, because this command runs the plan at once (list it first with
+/// `--plan-only --remove`). `--exclude <key>` leaves an item out, as unticking it does.
 /// `--json` is accepted for symmetry: the output is always JSON. Exit 3 when an item failed.
 pub fn sync(args: &[String]) -> Res<Done> {
     use pm_formats::ops_sync::{self, SyncSettings};
@@ -445,7 +447,7 @@ pub fn sync(args: &[String]) -> Res<Done> {
             rest.push(a.clone());
         }
     }
-    let q = parse(&rest, &["--plan-only", "--json"], &["--from", "--to", "--config-dir"])?;
+    let q = parse(&rest, &["--plan-only", "--json", "--remove"], &["--from", "--to", "--config-dir"])?;
     if !q.positional.is_empty() {
         return Err(Usage("expected pm sync --from <library> --to <library>".into()).into());
     }
@@ -463,7 +465,10 @@ pub fn sync(args: &[String]) -> Res<Done> {
             Err(e) => warning = Some(format!("{}: {e}; the defaults are in use", file.display())),
         }
     }
-    let label = if from_is_device(from) { "Pacemaker" } else { "computer" };
+    // a removal is never taken from a settings file: it needs --remove on this command line
+    settings.remove_missing = q.has("--remove");
+    // the same text rule as the app's library kind, so the labels agree for every spelling of a root
+    let label = if pm_formats::library::is_volume_root(from) { "Pacemaker" } else { "computer" };
     let source = Library::open_read_only(Path::new(from))?;
     let mut target_lib = if q.has("--plan-only") { Library::open_read_only(Path::new(to))? } else { Library::open(Path::new(to))? };
     let plan = ops_sync::plan(&source, &target_lib, &settings, label)?;
@@ -474,13 +479,6 @@ pub fn sync(args: &[String]) -> Res<Done> {
         "plan": plan, "report": report,
     }))?;
     Ok(if failed { Done::Problems } else { Done::Clean })
-}
-
-/// Whether a library path is a volume root the way `find_volumes` lists them (a drive root on
-/// Windows, a mount point elsewhere); only used to word copies made by "keep both".
-fn from_is_device(path: &str) -> bool {
-    let p = Path::new(path);
-    pm_formats::library::find_volumes().iter().any(|v| v == p)
 }
 
 #[cfg(test)]
@@ -854,6 +852,23 @@ mod tests {
         let lib = Library::open_read_only(&to).unwrap();
         assert_eq!(lib.tracks().unwrap().len(), 3);
         assert_eq!((lib.cases().unwrap().len(), lib.mixes().unwrap().len()), (1, 1));
+        // removals only with --remove, even when a settings file asks for them
+        let cfg = scratch("sync-cfg");
+        std::fs::write(cfg.join("sync.json"), r#"{"remove_missing": true}"#).unwrap();
+        let c = cfg.to_string_lossy().to_string();
+        let mut extra = Library::open(&to).unwrap();
+        let src_dir = scratch("sync-extra");
+        let file = src_dir.join("only there.mp3");
+        std::fs::write(&file, vec![9u8; 3100]).unwrap();
+        let analysis = Analysis { normalize_factor: 1.0, beat_start_offset: 0, beats: (0..8).map(|i| Beat { pos: i * 20000, bpm: 128.0 }).collect(), first_downbeat: Some(0) };
+        extra.add_track(&file, &TrackMeta { title: "Only there".into(), artist: "X".into(), format: "MP3".into(), play_time_secs: 90, ..Default::default() }, &analysis).unwrap();
+        drop(extra);
+        assert_eq!(sync(&a(&["--from", &f, "--to", &t, "--config-dir", &c])).unwrap(), Done::Clean);
+        assert_eq!(Library::open_read_only(&to).unwrap().tracks().unwrap().len(), 4, "no --remove, nothing removed");
+        assert_eq!(sync(&a(&["--from", &f, "--to", &t, "--config-dir", &c, "--remove"])).unwrap(), Done::Clean);
+        assert_eq!(Library::open_read_only(&to).unwrap().tracks().unwrap().len(), 3, "--remove removes the unlisted track");
+        let _ = std::fs::remove_dir_all(cfg);
+        let _ = std::fs::remove_dir_all(src_dir);
         // a second run has nothing to do
         assert_eq!(sync(&a(&["--from", &f, "--to", &t])).unwrap(), Done::Clean);
         assert_eq!(Library::open_read_only(&to).unwrap().tracks().unwrap().len(), 3);

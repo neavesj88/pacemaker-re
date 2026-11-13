@@ -27,6 +27,11 @@ use crate::{appfile, naming};
 
 /// Reason text of every item that needs nothing; planning again right after an apply gives only these.
 pub const SAME: &str = "already the same";
+/// Why a track or mix is not updated because the target's is the same age or newer.
+const TARGET_NEWER_TRACK: &str = "the target's copy is the same age or newer";
+const TARGET_NEWER_MIX: &str = "the target's mix is newer";
+/// Detail of an item that only brings play counts over.
+pub const PLAYED_MORE: &str = "played more on the sending side";
 /// Prefix of the error [`apply`] returns when the libraries changed since the plan was made.
 pub const STALE: &str = "stale plan";
 /// Room kept free on the target beyond the files themselves.
@@ -63,7 +68,8 @@ pub enum CasesSameName {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PlayCounts {
-    /// On an update keep the higher play count and the later last-played.
+    /// Bring a higher play count and a later last-played over, even when nothing else differs
+    /// (plays counted on a Pacemaker never change a track's details).
     Higher,
     Leave,
 }
@@ -107,6 +113,9 @@ pub enum SyncAction {
     Replace,
     CopyAsNew { name: String },
     Merge,
+    /// Only the play counts and last-played time are brought over (the row is otherwise the same,
+    /// or the target's is newer); no file is copied.
+    UpdatePlays,
     Skip { reason: String },
     Remove,
 }
@@ -404,8 +413,15 @@ pub fn plan_with_free(source: &Library, target: &Library, settings: &SyncSetting
 
     // tracks
     let mut seen_locs: HashSet<&str> = HashSet::new();
+    let mut dups: HashMap<String, usize> = HashMap::new();
     for s in &s_tracks {
         if !seen_locs.insert(s.location.as_str()) {
+            let k = dups.entry(format!("track:{}", s.location)).or_insert(1);
+            *k += 1;
+            let mut item = blank_item(format!("track:{}#{k}", s.location), ItemKind::Track, s.label(), skip("another track at the same place is already in the plan"));
+            item.location = Some(s.location.clone());
+            item.source_id = Some(s.id);
+            items.push(item);
             continue;
         }
         let mut item = blank_item(format!("track:{}", s.location), ItemKind::Track, s.label(), SyncAction::Copy);
@@ -442,7 +458,7 @@ pub fn plan_with_free(source: &Library, target: &Library, settings: &SyncSetting
                             if s.int("date_modified").unwrap_or(0) > t.int("date_modified").unwrap_or(0) {
                                 Ok(())
                             } else {
-                                Err("the target's copy is the same age or newer")
+                                Err(TARGET_NEWER_TRACK)
                             }
                         }
                     };
@@ -456,6 +472,14 @@ pub fn plan_with_free(source: &Library, target: &Library, settings: &SyncSetting
                             }
                         },
                     };
+                }
+                // plays counted on the sending side come over even when nothing else changes
+                if settings.play_counts == PlayCounts::Higher
+                    && matches!(&item.action, SyncAction::Skip { reason } if reason == SAME || reason == TARGET_NEWER_TRACK)
+                    && plays_ahead(s.int("times_played"), s.int("last_played"), t.int("times_played"), t.int("last_played"))
+                {
+                    item.action = SyncAction::UpdatePlays;
+                    item.detail = PLAYED_MORE.into();
                 }
             }
         }
@@ -474,6 +498,11 @@ pub fn plan_with_free(source: &Library, target: &Library, settings: &SyncSetting
     for m in &s_mixes {
         let n = norm(&m.name);
         if !seen_mix.insert(n.clone()) {
+            let k = dups.entry(format!("mix:{n}")).or_insert(1);
+            *k += 1;
+            let mut item = blank_item(format!("mix:{n}#{k}"), ItemKind::Mix, m.name.clone(), skip("another mix with this name is already in the plan"));
+            item.source_id = Some(m.id);
+            items.push(item);
             continue;
         }
         let mut item = blank_item(format!("mix:{n}"), ItemKind::Mix, m.name.clone(), SyncAction::Copy);
@@ -518,18 +547,12 @@ pub fn plan_with_free(source: &Library, target: &Library, settings: &SyncSetting
                         if m.date_modified > t.date_modified {
                             SyncAction::Replace
                         } else {
-                            skip("the target's mix is newer")
+                            skip(TARGET_NEWER_MIX)
                         }
                     }
                     MixesSameName::KeepBoth => {
                         let base = copy_name(&m.name, source_label);
-                        let already = t_mixes.iter().any(|x| {
-                            let xn = norm(&x.name);
-                            let bn = norm(&base);
-                            (xn == bn || xn.strip_prefix(&format!("{bn} ")).is_some_and(|r| !r.is_empty() && r.bytes().all(|b| b.is_ascii_digit())))
-                                && x.date_created == m.date_created
-                                && x.date_modified == m.date_modified
-                        });
+                        let already = t_mixes.iter().any(|x| is_copy_name(&norm(&x.name), &norm(&base)) && x.date_created == m.date_created && x.date_modified == m.date_modified);
                         if already {
                             skip(SAME)
                         } else {
@@ -545,6 +568,13 @@ pub fn plan_with_free(source: &Library, target: &Library, settings: &SyncSetting
                     }
                 }
             };
+            if settings.play_counts == PlayCounts::Higher
+                && matches!(&item.action, SyncAction::Skip { reason } if reason == SAME || reason == TARGET_NEWER_MIX)
+                && plays_ahead(Some(m.times_played), Some(m.last_played), Some(t.times_played), Some(t.last_played))
+            {
+                item.action = SyncAction::UpdatePlays;
+                item.detail = PLAYED_MORE.into();
+            }
         } else {
             taken_names.insert(n);
         }
@@ -568,6 +598,11 @@ pub fn plan_with_free(source: &Library, target: &Library, settings: &SyncSetting
     for c in &s_cases {
         let n = norm(&c.name);
         if !seen_case.insert(n.clone()) {
+            let k = dups.entry(format!("case:{n}")).or_insert(1);
+            *k += 1;
+            let mut item = blank_item(format!("case:{n}#{k}"), ItemKind::Case, c.name.clone(), skip("another case with this name is already in the plan"));
+            item.source_id = Some(c.id);
+            items.push(item);
             continue;
         }
         let mut item = blank_item(format!("case:{n}"), ItemKind::Case, c.name.clone(), SyncAction::Copy);
@@ -606,6 +641,13 @@ pub fn plan_with_free(source: &Library, target: &Library, settings: &SyncSetting
                     }
                 }
             };
+            if settings.play_counts == PlayCounts::Higher
+                && matches!(&item.action, SyncAction::Skip { reason } if reason == SAME)
+                && plays_ahead(Some(c.times_played), Some(c.last_played), Some(t.times_played), Some(t.last_played))
+            {
+                item.action = SyncAction::UpdatePlays;
+                item.detail = PLAYED_MORE.into();
+            }
         }
         items.push(item);
     }
@@ -617,9 +659,15 @@ pub fn plan_with_free(source: &Library, target: &Library, settings: &SyncSetting
         let s_case_names: HashSet<String> = s_cases.iter().map(|c| norm(&c.name)).collect();
         let mut gone: HashSet<String> = HashSet::new();
         let mut removals: Vec<SyncItem> = Vec::new();
+        // with "keep both" the earlier "<name> (from computer)" copies are kept, not removed
+        let copy_bases: Vec<String> = if settings.mixes_same_name == MixesSameName::KeepBoth {
+            s_mixes.iter().map(|m| norm(&copy_name(&m.name, source_label))).collect()
+        } else {
+            Vec::new()
+        };
         for m in &t_mixes {
             let n = norm(&m.name);
-            if !s_mix_names.contains(&n) {
+            if !s_mix_names.contains(&n) && !copy_bases.iter().any(|b| is_copy_name(&n, b)) {
                 let key = format!("remove-mix:{n}");
                 gone.insert(key.clone());
                 let mut it = blank_item(key, ItemKind::Mix, m.name.clone(), SyncAction::Remove);
@@ -670,6 +718,27 @@ pub fn plan_with_free(source: &Library, target: &Library, settings: &SyncSetting
     let notes = vec!["Smart cases are kept by the app on this computer and are not synced.".to_string()];
     let digest = digest_of(&items, settings, source_label, &stamp(source)?, &stamp(target)?);
     Ok(SyncPlan { items, settings: settings.clone(), source_label: source_label.to_string(), bytes_to_copy: bytes, free_bytes: free, fits, digest, notes })
+}
+
+/// Whether the sending side has more plays or a later last-played than the target.
+fn plays_ahead(s_times: Option<i64>, s_last: Option<i64>, t_times: Option<i64>, t_last: Option<i64>) -> bool {
+    s_times.unwrap_or(0) > t_times.unwrap_or(0) || s_last.unwrap_or(-1) > t_last.unwrap_or(-1)
+}
+
+/// Raises a row's play count and last-played to the given values; never lowers them. `table` and
+/// `id_col` are fixed names from this file.
+fn bump_plays(con: &Connection, table: &str, id_col: &str, id: i64, times: i64, last: i64) -> rusqlite::Result<()> {
+    con.execute(
+        &format!("UPDATE {table} SET times_played = MAX(IFNULL(times_played,0), ?1), last_played = MAX(IFNULL(last_played,-1), ?2) WHERE {id_col} = ?3"),
+        params![times, last, id],
+    )?;
+    Ok(())
+}
+
+/// Whether `name` (normalised) is `base` (normalised, from [`copy_name`]) or `base` with a number
+/// after it, the way "keep both" names its copies.
+fn is_copy_name(name: &str, base: &str) -> bool {
+    name == base || name.strip_prefix(&format!("{base} ")).is_some_and(|r| !r.is_empty() && r.bytes().all(|b| b.is_ascii_digit()))
 }
 
 fn copy_name(name: &str, label: &str) -> String {
@@ -807,6 +876,7 @@ pub fn apply(
         let it = &items[idx];
         let res = match (it.kind, &it.action) {
             (ItemKind::Track, SyncAction::Remove) => remove_track(target, it),
+            (_, SyncAction::UpdatePlays) => update_plays(source, target, it, &s_rows),
             (ItemKind::Track, _) => match s_rows.get(it.location.as_deref().unwrap_or("")) {
                 Some(row) => copy_track(source, target, row, it, &settings),
                 None => Err(Error::Invalid("the source track is gone".into())),
@@ -854,14 +924,14 @@ fn copy_track(source: &Library, target: &mut Library, row: &TrackRow, it: &SyncI
     if it.action == SyncAction::Update {
         let tid = it.target_id.ok_or_else(|| bad("no target row"))?;
         let previous = std::fs::read(&t_side).ok();
-        copy_checked(&s_side, &t_side)?;
-        let res = update_row(&target.con, tid, row, settings);
+        // copy_checked removes a copy that came out the wrong size, so the old grid goes back on that too
+        let res = copy_checked(&s_side, &t_side).and_then(|_| update_row(&target.con, tid, row, settings).map_err(Error::from));
         if let Err(e) = res {
             let _ = match previous {
                 Some(old) => atomic_write(&t_side, &old),
                 None => std::fs::remove_file(&t_side),
             };
-            return Err(e.into());
+            return Err(e);
         }
         return Ok(Outcome::Done);
     }
@@ -925,16 +995,32 @@ fn update_row(con: &Connection, track_id: i64, row: &TrackRow, settings: &SyncSe
     vals.push(Value::Integer(track_id));
     let id_mark = vals.len();
     let tx_sql = format!("UPDATE tracks SET {} WHERE track_id = ?{id_mark}", sets.join(", "));
-    con.execute(&tx_sql, params_from_iter(vals))?;
+    let tx = con.unchecked_transaction()?;
+    tx.execute(&tx_sql, params_from_iter(vals))?;
     if settings.play_counts == PlayCounts::Higher {
-        let s_times = row.int("times_played").unwrap_or(0);
-        let s_last = row.int("last_played").unwrap_or(-1);
-        con.execute(
-            "UPDATE tracks SET times_played = MAX(IFNULL(times_played,0), ?1), last_played = MAX(IFNULL(last_played,-1), ?2) WHERE track_id = ?3",
-            params![s_times, s_last, track_id],
-        )?;
+        bump_plays(&tx, "tracks", "track_id", track_id, row.int("times_played").unwrap_or(0), row.int("last_played").unwrap_or(-1))?;
     }
-    Ok(())
+    tx.commit()
+}
+
+/// Brings only the play counts of a track, mix or case over; the row is otherwise left alone.
+fn update_plays(source: &Library, target: &Library, it: &SyncItem, s_rows: &HashMap<String, TrackRow>) -> Result<Outcome, Error> {
+    let tid = it.target_id.ok_or_else(|| bad("no target row"))?;
+    match it.kind {
+        ItemKind::Track => {
+            let row = s_rows.get(it.location.as_deref().unwrap_or("")).ok_or_else(|| bad("the source track is gone"))?;
+            bump_plays(&target.con, "tracks", "track_id", tid, row.int("times_played").unwrap_or(0), row.int("last_played").unwrap_or(-1))?;
+        }
+        ItemKind::Mix => {
+            let m = source.mix_info(it.source_id.ok_or_else(|| bad("no source mix"))?)?.ok_or_else(|| bad("the source mix is gone"))?;
+            bump_plays(&target.con, "mixes", "mix_id", tid, m.times_played, m.last_played)?;
+        }
+        ItemKind::Case => {
+            let c = source.case_info(it.source_id.ok_or_else(|| bad("no source case"))?)?.ok_or_else(|| bad("the source case is gone"))?;
+            bump_plays(&target.con, "cases", "case_id", tid, c.times_played, c.last_played)?;
+        }
+    }
+    Ok(Outcome::Done)
 }
 
 fn remove_track(target: &mut Library, it: &SyncItem) -> Result<Outcome, Error> {
@@ -949,7 +1035,8 @@ fn remove_track(target: &mut Library, it: &SyncItem) -> Result<Outcome, Error> {
     }
     let loc: Option<String> = target.con.query_row("SELECT location FROM tracks WHERE track_id = ?1", [tid], |r| r.get(0)).optional()?;
     let Some(loc) = loc else { return Ok(Outcome::Skipped { reason: "it is already gone".into() }) };
-    target.con.execute("DELETE FROM tracks WHERE track_id = ?1 AND track_id >= 0", [tid])?;
+    // the shared delete: the trackmap rows go with the track, in one transaction
+    crate::ops_fix::delete_track_rows(&mut target.con, &[tid])?;
     if let Some((audio, side)) = paths_of(target, &loc) {
         let _ = std::fs::remove_file(audio);
         let _ = std::fs::remove_file(side);
@@ -999,7 +1086,12 @@ fn copy_mix(source: &Library, target: &mut Library, it: &SyncItem, settings: &Sy
         }
         return Err(e);
     }
-    finish_mix_row(&target.con, tid, &info, image, replacing, settings)?;
+    if let Err(e) = finish_mix_row(&target.con, tid, &info, image, replacing, settings) {
+        if !replacing {
+            let _ = target.delete_mix(tid);
+        }
+        return Err(e);
+    }
     Ok(Outcome::Done)
 }
 
@@ -1011,24 +1103,27 @@ fn finish_mix_row(con: &Connection, tid: i64, s: &crate::library::MixInfo, image
     } else {
         (s.times_played, s.last_played)
     };
-    con.execute(
+    // one transaction: a failure in the middle never leaves mix_image pointing at a deleted image
+    let tx = con.unchecked_transaction()?;
+    tx.execute(
         "UPDATE mixes SET genre = ?1, year = ?2, rating = ?3, producer = ?4, remixer = ?5, comments = ?6,
                 date_created = ?7, date_modified = ?8, creator_id = ?9, times_played = ?10, last_played = ?11
          WHERE mix_id = ?12",
         params![s.genre, s.year, s.rating, s.producer, s.remixer, s.comments, s.date_created, s.date_modified, s.creator_id, times, last, tid],
     )?;
     if replacing {
-        con.execute(
+        tx.execute(
             "DELETE FROM miximages WHERE id IN (SELECT mix_image FROM mixes WHERE mix_id = ?1 AND mix_image > 0)",
             [tid],
         )?;
-        con.execute("UPDATE mixes SET mix_image = 0 WHERE mix_id = ?1", [tid])?;
+        tx.execute("UPDATE mixes SET mix_image = 0 WHERE mix_id = ?1", [tid])?;
     }
     if let Some(blob) = image {
-        con.execute("INSERT INTO miximages (data) VALUES (?1)", [blob])?;
-        let img = con.last_insert_rowid();
-        con.execute("UPDATE mixes SET mix_image = ?1 WHERE mix_id = ?2", params![img, tid])?;
+        tx.execute("INSERT INTO miximages (data) VALUES (?1)", [blob])?;
+        let img = tx.last_insert_rowid();
+        tx.execute("UPDATE mixes SET mix_image = ?1 WHERE mix_id = ?2", params![img, tid])?;
     }
+    tx.commit()?;
     Ok(())
 }
 
@@ -1055,10 +1150,14 @@ fn copy_case(source: &Library, target: &mut Library, it: &SyncItem, settings: &S
                 let _ = target.delete_case(id);
                 return Err(e);
             }
-            target.con.execute(
+            let stamped = target.con.execute(
                 "UPDATE cases SET date_created = ?1, date_modified = ?2, creator_id = ?3, times_played = ?4, last_played = ?5 WHERE case_id = ?6",
                 params![info.date_created, info.date_modified, crate::library::CASE_CREATOR_ID, info.times_played, info.last_played, id],
-            )?;
+            );
+            if let Err(e) = stamped {
+                let _ = target.delete_case(id);
+                return Err(e.into());
+            }
             return Ok(Outcome::Done);
         }
         _ => it.target_id.ok_or_else(|| bad("no target case"))?,
@@ -1066,6 +1165,9 @@ fn copy_case(source: &Library, target: &mut Library, it: &SyncItem, settings: &S
     match &it.action {
         SyncAction::Merge => {
             target.add_case_tracks(tid, &ids)?;
+            if settings.play_counts == PlayCounts::Higher {
+                bump_plays(&target.con, "cases", "case_id", tid, info.times_played, info.last_played)?;
+            }
         }
         _ => {
             let cur = target.case_info(tid)?.ok_or_else(|| bad("the target case is gone"))?;

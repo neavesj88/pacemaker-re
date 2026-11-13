@@ -134,6 +134,7 @@ export function actionText(a: SyncAction): string {
   switch (a.type) {
     case "copy": return "Copy";
     case "update": return "Update";
+    case "update_plays": return "Update play counts";
     case "replace": return "Replace";
     case "copy_as_new": return `Copy as "${a.name}"`;
     case "merge": return "Merge";
@@ -146,6 +147,7 @@ export function actionText(a: SyncAction): string {
 export function reasonText(i: SyncItem, s: Omit<SyncSettings, "labels_follow">, sourceLabel: string): string {
   const a = i.action;
   if (a.type === "skip") return a.reason;
+  if (a.type === "update_plays") return "played more on the sending side";
   if (a.type === "remove") return `not in ${sourceLabel === "computer" ? "the library on this computer" : "the Pacemaker's library"}`;
   if (i.kind === "track") {
     if (a.type === "copy") return "not on the other side yet";
@@ -173,7 +175,8 @@ export function dependencyMarks(items: SyncItem[], excluded: ReadonlySet<string>
   const copying = new Set(items.filter((i) => i.kind === "track" && !isRemoval(i) && i.action.type === "copy").map((i) => i.key));
   const out = new Map<string, Mark>();
   for (const i of items) {
-    if (!isActionable(i) || excluded.has(i.key)) continue;
+    // a play-count update copies nothing, so it needs nothing
+    if (!isActionable(i) || excluded.has(i.key) || i.action.type === "update_plays") continue;
     if (isRemoval(i) && i.kind === "track") {
       const keep = i.blockers.filter((b) => excluded.has(b.key)).map((b) => b.label);
       if (keep.length) out.set(i.key, { leaves: keep, skipped: true });
@@ -197,6 +200,8 @@ export function markText(kind: SyncItem["kind"], isRemove: boolean, m: Mark): st
 
 export type Tally = {
   copyTracks: number; updateTracks: number; removeTracks: number;
+  /** Items that only bring their play counts over. */
+  plays: number;
   mixes: number; cases: number; removeOthers: number;
   /** Skipped mixes (by the plan or by a left-out track) are not counted in `mixes`. */
   skippedMixes: number;
@@ -207,7 +212,7 @@ export type Tally = {
  *  left-out track holds up. */
 export function tally(items: SyncItem[], excluded: ReadonlySet<string>): Tally {
   const marks = dependencyMarks(items, excluded);
-  const t: Tally = { copyTracks: 0, updateTracks: 0, removeTracks: 0, mixes: 0, cases: 0, removeOthers: 0, skippedMixes: 0, bytes: 0 };
+  const t: Tally = { copyTracks: 0, updateTracks: 0, removeTracks: 0, plays: 0, mixes: 0, cases: 0, removeOthers: 0, skippedMixes: 0, bytes: 0 };
   for (const i of items) {
     if (!isActionable(i) || excluded.has(i.key)) continue;
     const m = marks.get(i.key);
@@ -215,7 +220,8 @@ export function tally(items: SyncItem[], excluded: ReadonlySet<string>): Tally {
       if (i.kind === "mix") t.skippedMixes++;
       continue;
     }
-    if (isRemoval(i)) {
+    if (i.action.type === "update_plays") t.plays++;
+    else if (isRemoval(i)) {
       if (i.kind === "track") t.removeTracks++;
       else t.removeOthers++;
     } else if (i.kind === "track") {
@@ -228,12 +234,13 @@ export function tally(items: SyncItem[], excluded: ReadonlySet<string>): Tally {
   return t;
 }
 
-export const doesAnything = (t: Tally) => t.copyTracks + t.updateTracks + t.removeTracks + t.mixes + t.cases + t.removeOthers > 0;
+export const doesAnything = (t: Tally) => t.copyTracks + t.updateTracks + t.plays + t.removeTracks + t.mixes + t.cases + t.removeOthers > 0;
 
 export function tallyText(t: Tally): string {
   const p: string[] = [];
   if (t.copyTracks) p.push(`copy ${plural(t.copyTracks, "track")}`);
   if (t.updateTracks) p.push(`update ${plural(t.updateTracks, "track")}`);
+  if (t.plays) p.push(`update the play counts of ${plural(t.plays, "item")}`);
   if (t.mixes) p.push(`bring ${plural(t.mixes, "mix", "mixes")}`);
   if (t.cases) p.push(`bring ${plural(t.cases, "case")}`);
   const rm = t.removeTracks + t.removeOthers;
@@ -289,5 +296,5 @@ export function resultParts(summary: string): ResultPart[] {
 }
 
 /** The refusal the backend gives when either library moved since the preview. */
-export const isStale = (msg: string) => /changed since the preview/i.test(msg);
+export const isStale = (msg: string) => /changed since the preview|stale plan/i.test(msg);
 export const STALE_TEXT = "The libraries changed since you checked; check again.";

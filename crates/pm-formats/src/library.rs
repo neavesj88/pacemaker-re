@@ -174,6 +174,41 @@ pub fn find_volumes() -> Vec<PathBuf> {
     roots.into_iter().filter(|r| db_path(r).is_file()).collect()
 }
 
+/// Whether `root` is a volume root as plain text: a drive root on Windows (`G:`, `G:\`, `G:/`, also
+/// with the `\?\` prefix) or a mount point of the kind [`find_volumes`] scans (one or two levels
+/// under `/Volumes`, `/media`, `/run/media` or `/mnt`). Pure text, no file access, so it holds on any
+/// host OS and tests can name Windows paths on Linux. The app and the CLI share this one rule.
+pub fn is_volume_root(root: &str) -> bool {
+    let s = root.trim().replace('\\', "/");
+    if let Some(rest) = s.strip_prefix("//?/") {
+        // \\?\G:\ is a drive; \\?\UNC\server\share is a network share
+        return !rest.starts_with("UNC/") && is_drive_root(rest);
+    }
+    if s.starts_with("//") {
+        return false;
+    }
+    is_drive_root(&s) || is_mount_point(&s)
+}
+
+/// `G:` with nothing after it but separators. `G:foo` is a path relative to the drive's current
+/// folder, not its root.
+fn is_drive_root(s: &str) -> bool {
+    let b = s.as_bytes();
+    b.len() >= 2 && b[0].is_ascii_alphabetic() && b[1] == b':' && s[2..].trim_end_matches('/').is_empty()
+}
+
+fn is_mount_point(s: &str) -> bool {
+    if !s.starts_with('/') {
+        return false;
+    }
+    let parts: Vec<&str> = s.split('/').filter(|p| !p.is_empty()).collect();
+    if parts.iter().any(|p| *p == "." || *p == "..") {
+        return false;
+    }
+    const BASES: [&[&str]; 4] = [&["Volumes"], &["media"], &["run", "media"], &["mnt"]];
+    BASES.iter().any(|base| parts.starts_with(base) && matches!(parts.len() - base.len(), 1 | 2))
+}
+
 /// How long a write waits for another connection's lock before giving up. A quick write (a
 /// rating, a case edit) that lands while a long job (adding tracks) holds a short transaction
 /// waits for it instead of failing with "database is locked".
@@ -1288,6 +1323,16 @@ mod tests {
         let _ = std::fs::remove_dir_all(&d);
         std::fs::create_dir_all(&d).unwrap();
         d
+    }
+
+    #[test]
+    fn volume_roots_are_told_by_text_alone() {
+        for r in ["G:\\", "G:", "g:/", "G:\\\\", "  G:\\", "\\\\?\\G:\\", "//?/g:/", "/Volumes/PM", "/media/jo/PM/", "/run/media/jo/PM", "/mnt/usb"] {
+            assert!(is_volume_root(r), "{r:?}");
+        }
+        for r in ["", "G", "G:foo", "G:\\Music", "C:\\Users\\me\\Music", "\\\\nas\\music", "\\\\?\\UNC\\nas\\music", "/media", "/mnt/a/b/c", "/home/jo/Music", "/mnt/usb/../x", "Music"] {
+            assert!(!is_volume_root(r), "{r:?}");
+        }
     }
 
     #[test]

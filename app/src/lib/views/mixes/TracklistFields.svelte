@@ -1,6 +1,7 @@
 <script lang="ts">
   // The track list and CUE sheet settings: shown in the track list dialog and in the Settings view.
   // They live in `tracklist` (kept on this computer), so a change here is the change there.
+  import { session } from "$lib/state/session.svelte";
   import { tracklist } from "$lib/state/tracklist.svelte";
 
   tracklist.ensureLoaded();
@@ -28,7 +29,7 @@
   </select>
 </div>
 <label class="check"><input type="checkbox" bind:checked={tracklist.options.numbered} onchange={changed} /> Number the lines of the text list</label>
-<label class="check"><input type="checkbox" bind:checked={tracklist.options.includeUnavailable} onchange={changed} /> List tracks whose audio is not on the device (they are silent in the export)</label>
+<label class="check"><input type="checkbox" bind:checked={tracklist.options.includeUnavailable} onchange={changed} /> List tracks whose audio is not {session.place.on} (they are silent in the export)</label>
 <label class="check"><input type="checkbox" bind:checked={tracklist.options.csvBom} onchange={changed} /> CSV file starts with a byte-order mark (Excel needs it for accented names)</label>
 <label class="check"><input type="checkbox" bind:checked={tracklist.writeCue} onchange={changed} /> Write a CUE sheet next to every audio export</label>
 <div class="grid">

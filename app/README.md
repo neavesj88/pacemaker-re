@@ -10,7 +10,11 @@ Svelte 5 + TypeScript UI (`src/`).
 `npm run dev` alone serves the UI in a browser with a synthetic library (`src/lib/devmock/`),
 for UI work without the native shell.
 
-Current scope: find a docked Pacemaker (or open a folder holding `.Pacemaker`), check the
+Current scope: a library on this computer (a normal folder with the exact device layout, made
+in the app, opened at start, audio copied into it) that works with no Pacemaker connected, and
+Sync to merge it with a Pacemaker either way (a preview first; see `ops_sync` and `pm sync`).
+A folder opened by hand counts as a library on this computer; only a drive root or a mount point
+is a Pacemaker. Also: find a docked Pacemaker (or open a folder holding `.Pacemaker`), check the
 database against the device's rules, and browse tracks, mixes and cases (a case lists its
 tracks). Browsing is read-only; only two explicit actions write to the volume, each after a
 confirmation naming the destination:

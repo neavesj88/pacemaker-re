@@ -199,11 +199,17 @@
 {:else}
   {#if !data.any_plays}
     <div class="none" role="status">
+      {#if session.isComputer}
+        <b>No plays are recorded in this library yet.</b>
+        Plays are counted on the Pacemaker, not by this app. Use Get from Pacemaker in Sync to bring them here (the setting for play
+        counts decides how they are merged). Until then everything is listed as never played.
+      {:else}
       <b>The device has not recorded any plays yet.</b>
       Every play counter in this library is zero: no track, case or mix has ever been played on it, or it was reset. The
       Pacemaker counts a play on the device itself when it plays something; those counters are read back here each time you open
       the library. Play something on the device, reconnect it and open it again, and this page fills in. Tracks you have only
       played in this app are not counted. Until then everything is listed as never played.
+      {/if}
     </div>
   {/if}
 

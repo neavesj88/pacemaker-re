@@ -37,7 +37,7 @@
 
   <h2>{offer.start || offer.open ? "Or work on a Pacemaker directly" : "Open a Pacemaker"}</h2>
   {#if session.volumes.length > 0}
-    <p>Found on this computer:</p>
+    <p>Pacemakers found:</p>
     <div class="actions">
       {#each session.volumes as v}
         <Button variant={offer.start || offer.open ? "default" : "primary"} onclick={() => session.load(v)}>Open {volumeName(v)}</Button>

@@ -5,6 +5,7 @@
   // "Apply" opens the confirmation that names every change again.
   import type { CaseAction, CueAction, CueMode } from "$lib/api/import";
   import { jobs } from "$lib/state/jobs.svelte";
+  import { session } from "$lib/state/session.svelte";
   import { LABEL_COLOURS, colourName, isColour } from "$lib/state/labels";
   import Button from "$lib/ui/Button.svelte";
   import ColourSwatch from "../tracks/ColourSwatch.svelte";
@@ -16,7 +17,7 @@
     create: "New case",
     extend: "Add to existing case",
     unchanged: "Already complete",
-    skip: "No tracks on the device",
+    skip: "No tracks found here",
   };
   const CUE_MODES: [CueMode, string][] = [
     ["off", "Leave cue points alone"],
@@ -39,7 +40,7 @@
       <Button small variant="ghost" onclick={() => interop.close()}>Close</Button>
     </header>
     <p class="summary">
-      {plan.foreign_tracks} tracks in the file; <b>{plan.matched}</b> found on the device
+      {plan.foreign_tracks} tracks in the file; <b>{plan.matched}</b> found {session.place.on}
       <span class="muted">({plan.matched_by_file} by file name and size, {plan.matched_by_tags} by title and artist)</span>;
       <b>{plan.unmatched_total}</b> not found. Nothing is written until you apply.
     </p>
@@ -84,7 +85,7 @@
               <span class="muted num">
                 {#if doable}+{c.tracks.length}{/if}
                 {#if c.already_in}{doable ? " · " : ""}{c.already_in} already in{/if}
-                {#if c.unmatched}{doable || c.already_in ? " · " : ""}{c.unmatched} not on the device{/if}
+                {#if c.unmatched}{doable || c.already_in ? " · " : ""}{c.unmatched} not {session.place.on}{/if}
               </span>
             </summary>
             {#if c.tracks.length}
@@ -200,7 +201,7 @@
 
     {#if plan.unmatched_total}
       <details>
-        <summary>Not found on the device ({plan.unmatched_total})</summary>
+        <summary>Not found {session.place.on} ({plan.unmatched_total})</summary>
         <ul class="rows">
           {#each plan.unmatched as u, i (i)}
             <li>

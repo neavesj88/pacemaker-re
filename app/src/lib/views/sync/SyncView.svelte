@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { JOB_SYNC } from "$lib/api/sync";
   import { nav } from "$lib/state/nav.svelte";
   import { sameRoot } from "$lib/state/place";
   import { session } from "$lib/state/session.svelte";
@@ -57,6 +58,8 @@
   const t = $derived(plan ? tally(plan.items, sync.excluded) : null);
   const space = $derived(plan && t ? spaceLine(plan, t.bytes) : null);
   const removing = $derived(plan ? removalList(plan.items, sync.excluded) : []);
+  /** Mixes and cases whose contents on the target are overwritten by the ticked plan, named in words. */
+  const replacing = $derived(plan ? plan.items.filter((i) => i.action.type === "replace" && !sync.excluded.has(i.key) && !marks.get(i.key)?.skipped).map((i) => `${i.kind === "mix" ? "mix" : "case"} "${i.label}"`) : []);
   const canStart = $derived(!!plan && !!t && doesAnything(t) && !!space?.fits && !sync.busy && !sync.stale);
 
   let showSame = $state<Record<string, boolean>>({});
@@ -162,10 +165,10 @@
     </p>
   {/if}
 
-  {#if sync.running || (device.job?.kind === "device-sync")}
+  {#if sync.running || (device.job?.kind === JOB_SYNC)}
     <section class="card" aria-label="Sync progress">
       <h3>Syncing…</h3>
-      <JobProgress kind="device-sync" />
+      <JobProgress kind={JOB_SYNC} />
     </section>
   {/if}
 
@@ -199,6 +202,8 @@
         </Button>
       </div>
       {#each plan.notes as n (n)}<p class="muted note">{n}</p>{/each}
+      {#if replacing.length > 0}<p class="muted note">Replaced on {inText(sync.planFor?.to ?? "")}: {replacing.join(", ")}.</p>{/if}
+      <p class="muted note">A copy of {inText(sync.planFor?.to ?? "")}'s database is saved before the first change, so Restore can bring the rows back. Copied audio files stay.</p>
       {#if !space.fits}<p class="warn">Leave some tracks out, or free space on {nameOf(sync.planFor?.to ?? "")}, to continue.</p>{/if}
 
       {#each GROUPS as g (g.id)}

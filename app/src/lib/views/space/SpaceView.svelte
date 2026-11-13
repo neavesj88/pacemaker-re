@@ -25,7 +25,8 @@
     const r = root;
     if (!r) return;
     untrack(() => {
-      if (device.isDetached(session.library)) return;
+      // a library on this computer is the master copy: there is no card to free space on
+      if (device.isDetached(session.library) || session.isComputer) return;
       void space.loadSettings().then(() => space.refresh());
     });
   });
@@ -86,9 +87,11 @@
   {#if lib}
     <span class="chip">{session.isComputer ? "This computer" : volumeName(lib.root)}</span>
     <span class="sp"></span>
-    <Button small disabled={space.planning || device.blocked || detached} onclick={() => space.refresh()}>
-      {space.planning ? "Scanning…" : "Scan again"}
-    </Button>
+    {#if !session.isComputer}
+      <Button small disabled={space.planning || device.blocked || detached} onclick={() => space.refresh()}>
+        {space.planning ? "Scanning…" : "Scan again"}
+      </Button>
+    {/if}
   {/if}
 </div>
 
@@ -97,13 +100,18 @@
     {volumeName(lib.root)} was ejected. It is safe to unplug the USB cable. To plan space on a Pacemaker again, plug it in
     and open it from the drive list.
   </p>
+{:else if lib && session.isComputer}
+  <p class="muted pad" role="status">
+    Free space plans which tracks to archive or remove so the music fits on a Pacemaker. This library on this computer is your master
+    copy, so nothing is archived or removed from it. Open the Pacemaker and use this view there.
+  </p>
 {:else if lib}
   <div class="layout">
     <aside class="side"><SettingsPanel /></aside>
     <div class="main">
       <section class="card summary" aria-live="polite">
         {#if !plan}
-          <p class="muted">{space.planning ? (session.isComputer ? "Reading the library and comparing audio files…" : "Reading the card and comparing audio files…") : space.error ? "" : "Not scanned yet."}</p>
+          <p class="muted">{space.planning ? "Reading the card and comparing audio files…" : space.error ? "" : "Not scanned yet."}</p>
         {:else}
           <p class="goal">{goalLine(plan, space.planKind)}</p>
           {#if meter && meter.total > 0}
@@ -120,7 +128,7 @@
           {#if v}<p class="verdict {v.tone}">{v.text}</p>{/if}
           {#if hiddenLine(plan.hidden)}<p class="note muted">{hiddenLine(plan.hidden)}</p>{/if}
           {#if plan.missing_audio > 0}
-            <p class="note muted">{plural(plan.missing_audio, "track")} {plan.missing_audio === 1 ? "has" : "have"} no audio file {session.isComputer ? "in the library" : "on the card"}; the Device view's Library health card lists them.</p>
+            <p class="note muted">{plural(plan.missing_audio, "track")} {plan.missing_audio === 1 ? "has" : "have"} no audio file on the card; the Device view's Library health card lists them.</p>
           {/if}
           {#if plan.unchecked > 0}
             <p class="note muted">{plural(plan.unchecked, "track")} {plan.unchecked === 1 ? "has" : "have"} a stored location that is not a plain path under the Music folder, so no file was looked at.</p>
@@ -193,14 +201,6 @@
         </div>
       </section>
 
-      {#if session.isComputer}
-        <section class="card actions">
-          <p class="muted">
-            This library on this computer is your master copy, so nothing is archived or removed from it here. Use this plan to see what
-            fits on a card; to free space on a Pacemaker, open that Pacemaker and use this view there.
-          </p>
-        </section>
-      {:else}
       <section class="card actions">
         <div class="sum">
           {#if plan}
@@ -245,7 +245,6 @@
           </p>
         {/if}
       </section>
-      {/if}
     </div>
   </div>
   <RunModal />

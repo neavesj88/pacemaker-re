@@ -152,6 +152,10 @@ pub fn summarise(rep: &SyncReport) -> String {
     if n > 0 {
         parts.push(format!("Updated {}", plural(n, "track")));
     }
+    let n = rep.items.iter().filter(|i| i.outcome == Outcome::Done && i.action == SyncAction::UpdatePlays).count();
+    if n > 0 {
+        parts.push(format!("Updated the play counts of {}", plural(n, "item")));
+    }
     let n = count(ItemKind::Mix, |a| *a == SyncAction::Replace);
     if n > 0 {
         parts.push(format!("Replaced {}", plural(n, "mix").replace("mixs", "mixes")));
@@ -218,7 +222,7 @@ pub fn sync_apply(app: AppHandle, lock: State<'_, JobLock>, source: String, targ
         let label = label_of(Path::new(&source));
         let seen = ops_sync::plan(&src, &dst, &prefs.sync, label)?;
         if seen.digest != digest {
-            return Err("The libraries changed since the preview, so nothing was synced. Look at the preview again.".into());
+            return Err(format!("{}: the libraries changed since the preview, so nothing was synced. Look at the preview again.", ops_sync::STALE).into());
         }
         // the session's first-write copy may be hours old: this run gets its own
         ops_device::snapshot_library(Path::new(&target), &snapshots_dir(app, Path::new(&target))?, SNAPSHOTS_KEPT)?;
@@ -322,6 +326,7 @@ mod tests {
             done(ItemKind::Track, SyncAction::Copy, "B - Two"),
             done(ItemKind::Track, SyncAction::Update, "C - Three"),
             done(ItemKind::Mix, SyncAction::Copy, "Set"),
+            done(ItemKind::Case, SyncAction::UpdatePlays, "Crate"),
             done(ItemKind::Mix, SyncAction::Replace, "Old set"),
             done(ItemKind::Case, SyncAction::Merge, "Crate"),
             ItemResult { outcome: Outcome::Failed { error: "disk full".into() }, ..done(ItemKind::Track, SyncAction::Copy, "D - Four") },
@@ -330,6 +335,7 @@ mod tests {
         rep.cancelled = true;
         let s = summarise(&rep);
         assert!(s.starts_with("Copied 2 tracks (5.0 MB), 1 mix"), "{s}");
+        assert!(s.contains("Updated the play counts of 1 item"), "{s}");
         assert!(s.contains("Updated 1 track") && s.contains("Replaced 1 mix") && s.contains("Merged 1 case"), "{s}");
         assert!(s.contains("Stopped at your request"), "{s}");
         assert!(s.contains("1 item left out: Other set: it needs \"X\""), "{s}");

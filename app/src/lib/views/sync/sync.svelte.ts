@@ -8,6 +8,7 @@
 import { deviceCancel } from "$lib/api/device";
 import {
   DEFAULT_SYNC_SETTINGS,
+  JOB_SYNC,
   syncApply,
   syncPlan,
   syncSettingsGet,
@@ -190,7 +191,7 @@ class SyncStore {
       await this.flushSettings();
       // the done event can beat the reply of a very short run, so the run is marked before the call
       this.running = true;
-      device.begin("device-sync", "Starting the sync");
+      device.begin(JOB_SYNC, "Starting the sync");
       await syncApply(pf.from, pf.to, plan.digest, excludedKeys(plan.items, this.excluded));
     } catch (e) {
       this.running = false;
@@ -213,7 +214,7 @@ class SyncStore {
 
   /** job-done for "device-sync". */
   async onDone(ev: DoneEvent) {
-    if (ev.job !== "device-sync") return;
+    if (ev.job !== JOB_SYNC) return;
     this.running = false;
     const cancelled = !!ev.error && ev.error.includes("Cancelled:");
     if (ev.error && !cancelled) {
