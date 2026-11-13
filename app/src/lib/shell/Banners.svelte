@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { libraryLabel } from "$lib/state/place";
   import { session } from "$lib/state/session.svelte";
 </script>
 
@@ -8,10 +9,10 @@
 
 {#if session.library}
   {#if session.library.problems.length === 0}
-    <div class="banner ok">{session.library.root} · music.db is device-compatible</div>
+    <div class="banner ok">{libraryLabel(session.library.kind, session.library.root)} · {session.library.root} · music.db is device-compatible</div>
   {:else}
     <div class="banner bad">
-      This library would not load on the device:
+      {session.isComputer ? "This library is not in the format the Pacemaker needs, so it stays read-only here:" : "This library would not load on the device:"}
       <ul>
         {#each session.library.problems as p}<li>{p}</li>{/each}
       </ul>

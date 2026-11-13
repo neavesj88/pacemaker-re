@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { session } from "$lib/state/session.svelte";
   import type { Collection } from "$lib/api/types";
   import { mmss } from "$lib/format";
   import Button from "./Button.svelte";
@@ -34,5 +35,5 @@
   {/snippet}
 </Table>
 {#if rows.length === 0}
-  <p class="empty">No {noun} on this device yet.</p>
+  <p class="empty">No {noun} {session.place.on} yet.</p>
 {/if}

@@ -114,7 +114,7 @@
     {#if worst.id >= 0 && Math.abs(worst.pct) >= 0.05}
       <p class="muted">Largest tempo change: {sign(worst.pct)} on “{titleOf(pre?.usable[worst.id]?.id ?? 0)}”.</p>
     {/if}
-    <p class="muted">Open it in the Mixes view to listen and adjust. The mix is saved on the Pacemaker's library like any other.</p>
+    <p class="muted">Open it in the Mixes view to listen and adjust. The mix is saved in the library like any other.</p>
   {:else}
     <form
       onsubmit={(e) => {

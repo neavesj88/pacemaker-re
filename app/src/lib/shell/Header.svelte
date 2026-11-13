@@ -1,24 +1,38 @@
 <script lang="ts">
-  import { volumeName } from "$lib/format";
   import { filters } from "$lib/state/filters.svelte";
   import { jobs } from "$lib/state/jobs.svelte";
+  import { pickerOptions, sameRoot } from "$lib/state/place";
   import { session } from "$lib/state/session.svelte";
   import Button from "$lib/ui/Button.svelte";
   import RMark from "$lib/ui/RMark.svelte";
+
+  // "This computer" first, then each detected Pacemaker; a folder opened by hand is added so the
+  // picker always names what is open.
+  const options = $derived(
+    pickerOptions(session.computer?.path ?? null, session.computer?.exists ?? false, session.volumes, session.library),
+  );
+  const current = $derived(options.find((o) => session.library && sameRoot(o.value, session.library.root))?.value ?? "");
+
+  function pick(value: string) {
+    const c = session.computer;
+    // choosing "This computer (new)" makes the library first
+    if (c && sameRoot(value, c.path) && !c.exists) void session.startComputer();
+    else void session.load(value);
+  }
 </script>
 
 <header>
   <div class="brand"><RMark size={20} /><b>Pacemaker <span>Revival</span></b></div>
   <div class="source">
-    {#if session.volumes.length > 0}
-      <select onchange={(e) => session.load((e.currentTarget as HTMLSelectElement).value)}>
-        <option value="" disabled selected={!session.library}>Choose a device…</option>
-        {#each session.volumes as v}
-          <option value={v} selected={session.library?.root === v}>{volumeName(v)}</option>
+    {#if options.length > 0}
+      <select aria-label="Library" value={current} onchange={(e) => pick((e.currentTarget as HTMLSelectElement).value)}>
+        <option value="" disabled>Choose a library…</option>
+        {#each options as o (o.value)}
+          <option value={o.value}>{o.label}</option>
         {/each}
       </select>
     {/if}
-    <Button onclick={() => session.refreshVolumes()} title="Look for connected devices">Rescan</Button>
+    <Button onclick={() => session.refreshVolumes()} title="Look for a connected Pacemaker">Rescan</Button>
     <Button onclick={() => session.openFolder()}>Open folder…</Button>
   </div>
   {#if session.library}
@@ -27,7 +41,9 @@
       onclick={() => jobs.pickFiles()}
       disabled={!jobs.canWrite}
       title={jobs.canWrite
-        ? "Analyse audio files and copy them to the device"
+        ? session.isComputer
+          ? "Analyse audio files and copy them into the library on this computer"
+          : "Analyse audio files and copy them to the Pacemaker"
         : "Unavailable while a job runs or the library is not device-compatible"}
     >Add tracks…</Button>
     <input

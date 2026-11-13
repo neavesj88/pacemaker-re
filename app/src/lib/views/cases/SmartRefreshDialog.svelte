@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { session } from "$lib/state/session.svelte";
   // The question (or, from the button, the preview) before the Pacemaker copies of smart cases are
   // rewritten. Every smart case is named with what happens to its copy, and every track that
   // comes or goes is listed, so nothing is written that is not on this screen. The list is the
@@ -16,10 +17,10 @@
 </script>
 
 {#if report}
-  <Modal title="Refresh smart cases on the Pacemaker?" onclose={() => smartRefresh.dismiss()}>
+  <Modal title={`Refresh smart cases ${session.place.on}?`} onclose={() => smartRefresh.dismiss()}>
     {#if todo.length > 0}
       <p>
-        The Pacemaker copy of {plural(todo.length, "smart case")} no longer matches {todo.length === 1 ? "its" : "their"} rules. Each copy is rewritten
+        The {session.isComputer ? 'case' : 'Pacemaker copy'} of {plural(todo.length, "smart case")} no longer matches {todo.length === 1 ? "its" : "their"} rules. Each copy is rewritten
         to hold exactly what the rules match now, in the order of the rules. Nothing else on the device is changed.
       </p>
       <ul class="items">
@@ -43,7 +44,7 @@
         {/each}
       </ul>
     {:else}
-      <p>No Pacemaker copy needs rewriting.</p>
+      <p>No {session.isComputer ? 'case' : 'Pacemaker copy'} needs rewriting.</p>
     {/if}
     {#if stuck.length > 0}
       <p class="warn">Cannot be refreshed, and left as they are:</p>

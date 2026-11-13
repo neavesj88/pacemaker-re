@@ -395,3 +395,7 @@ From the repo root: `cargo test` (the whole workspace: `pm-formats`, `pm-analysi
 `npm run dev` serves the UI in a browser against devmock (no Tauri needed). `svelte-check` covers
 every file, so a half-finished component in one area shows up in everyone's check: keep your area
 compiling, or stub the part you have not finished.
+
+## Library on this computer
+
+A library is `kind` "pacemaker" when its root is a volume root (a drive root, or a mount point `find_volumes` scans), else "computer" (`commands/library/kind.rs::library_kind`, mirrored by `lib/state/place.ts` for the browser preview; one table of paths in both tests). The library on this computer is a normal folder with the exact device layout, made by `Library::create`; settings (`path`, `open_at_start`) live in the app config folder (`commands/library/computer.rs`, commands `computer_library_get` / `_set` / `_create`). `session.start()` opens it at start when it exists and `open_at_start` is on; a Pacemaker is never opened by itself. Views say where a library is with `session.place` / `session.isComputer` (`lib/state/place.ts`): device-only controls (storage, eject, firmware, vocal filter, settings.dat, backup) are not shown for a computer library.

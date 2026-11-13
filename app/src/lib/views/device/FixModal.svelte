@@ -112,7 +112,7 @@
   {:else}
     {#if !plan.music_folder_ok}
       <p class="err">
-        The Music folder (.Pacemaker/Music) is missing or not a folder on this drive, so no track can be judged dead.
+        The Music folder (.Pacemaker/Music) is missing or not a folder in {session.place.drive}, so no track can be judged dead.
         Nothing is offered for removal.
       </p>
     {/if}
@@ -122,7 +122,7 @@
       <h3>Library rows without an audio file ({plan.dead_rows.length})</h3>
       <p class="muted">
         Ticked rows are removed from the library, and from the cases named beside them. The audio is already gone;
-        nothing on the drive is deleted. A copy of music.db is saved first, so Restore from a snapshot brings the rows
+        nothing in {session.place.drive} is deleted. A copy of music.db is saved first, so Restore from a snapshot brings the rows
         back.
       </p>
       <p class="muted">
@@ -145,7 +145,7 @@
       {#if needsAck}
         <label class="ack">
           <input type="checkbox" bind:checked={acknowledged} />
-          I have checked that this is the right drive and that it is fully mounted
+          I have checked that this is the right {session.isComputer ? 'folder' : 'drive'} and that it is fully {session.isComputer ? 'available' : 'mounted'}
         </label>
       {/if}
     {/if}
@@ -176,7 +176,7 @@
     {#if plan.grids.length > 0}
       <h3>Audio without a usable beat grid ({plan.grids.length})</h3>
       <p class="muted">
-        Re-analysing writes a new .str and BPM for exactly these tracks from the audio on the drive. You are asked to
+        Re-analysing writes a new .str and BPM for exactly these tracks from the audio in {session.place.drive}. You are asked to
         confirm, with this list, before it starts.
       </p>
       <ul class="list" aria-label="Tracks to re-analyse">

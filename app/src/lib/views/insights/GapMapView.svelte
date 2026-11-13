@@ -91,7 +91,7 @@
 <div class="gap">
 <div class="bar">
   <h2>Library gap map</h2>
-  <span class="muted">Where the collection is thick and where it is thin. Worked out here from the tracks on the card; nothing is written.</span>
+  <span class="muted">Where the collection is thick and where it is thin. Worked out here from the tracks in the library; nothing is written.</span>
   <span class="grow"></span>
   <Button small active={settingsOpen} aria-expanded={settingsOpen} onclick={() => (settingsOpen = !settingsOpen)}>Settings</Button>
 </div>

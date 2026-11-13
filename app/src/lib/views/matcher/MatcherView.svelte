@@ -79,7 +79,7 @@
       <h3>Request list</h3>
       <p class="muted">
         Paste lines like <code>Artist - Title</code>, or open a text, CSV, TSV or M3U file (a Spotify, Beatport or YouTube playlist saved as text or CSV works the same way).
-        Nothing leaves this computer: the list is compared with the tracks on the card here.
+        Nothing leaves this computer: the list is compared with the tracks in the library here.
       </p>
       <textarea
         bind:value={matcher.text}

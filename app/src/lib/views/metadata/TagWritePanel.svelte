@@ -33,9 +33,9 @@
 
 <div class="intro">
   <p class="muted">
-    The Pacemaker reads the tags in its own library, not in the audio files. This writes the library’s values into each file’s own
-    tags so other software (a tag editor, a media player, another DJ program) sees the same names. It changes the files on the
-    device, so it asks first and lists every file. A blank value in the library never erases a tag in the file.
+    The Pacemaker reads the tags in its library, not in the audio files. This writes the library’s values into each file’s own
+    tags so other software (a tag editor, a media player, another DJ program) sees the same names. It changes the files in the
+    library, so it asks first and lists every file. A blank value in the library never erases a tag in the file.
   </p>
   <p class="muted">
     Only the fields you tick are replaced. Everything else in the file’s tag stays as it is: ratings and play counts, cover art,

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { session } from "$lib/state/session.svelte";
   // Saved filter presets and the two view settings. A preset is the search text plus the
   // toolbar filters (and, if asked, the sort); applying one replaces what is set now. Presets
   // live in this app's own store for the library (commands/tracks/views.rs): they are not on the
@@ -118,7 +119,7 @@
           {/if}
         </div>
       {:else}
-        <p class="muted none">No saved filters for this device yet.</p>
+        <p class="muted none">No saved filters for this library yet.</p>
       {/each}
 
       <h4>Save the current view</h4>
@@ -145,7 +146,7 @@
       <h4>Remembering</h4>
       <label class="check">
         <input type="checkbox" checked={tracksState.prefs.rememberView} onchange={(e) => tracksState.setRememberView(e.currentTarget.checked)} />
-        Remember each device’s search, filters and sort
+        Remember each library’s search, filters and sort
       </label>
       <label class="check">
         <input type="checkbox" checked={tracksState.prefs.findClearsFilters} onchange={(e) => tracksState.setFindClearsFilters(e.currentTarget.checked)} />

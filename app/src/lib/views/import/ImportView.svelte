@@ -56,7 +56,7 @@
 <div class="import">
   <section class="card">
     <h3>Music files</h3>
-    <p class="muted">Drop files or folders anywhere in the window, or pick them. Each is analysed, copied to the device and added with its beat grid.</p>
+    <p class="muted">Drop files or folders anywhere in the window, or pick them. Each is analysed, copied {session.isComputer ? 'into the library' : 'to the device'} and added with its beat grid.</p>
     <Button variant="primary" onclick={() => jobs.pickFiles()} disabled={!jobs.canWrite}>Add tracks…</Button>
   </section>
 

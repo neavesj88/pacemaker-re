@@ -149,7 +149,7 @@
     <label class="check">
       <input type="radio" name="watch-mode" checked={auto} onchange={() => commit({ mode: "auto" })} />
       <span>
-        <b>Add them automatically</b>: up to {watch.settings.auto_max_files} files at once go onto the Pacemaker without the question. You still see a notice, the progress and a log of what was added. A bigger find is left for you to review.
+        <b>Add them automatically</b>: up to {watch.settings.auto_max_files} files at once go {session.isComputer ? 'into the library' : 'onto the Pacemaker'} without the question. You still see a notice, the progress and a log of what was added. A bigger find is left for you to review.
       </span>
     </label>
   </fieldset>

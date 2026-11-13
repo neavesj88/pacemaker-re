@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { session } from "$lib/state/session.svelte";
   import { untrack } from "svelte";
   import type { UndoPreview } from "$lib/api/device";
   import { undo } from "$lib/state/undo.svelte";
@@ -46,7 +47,7 @@
 </script>
 
 <WideModal title={`Undo ${plural(count, "edit")}?`} {onclose} width={640}>
-  <p class="muted">The edits below are reversed, newest first. Nothing else on the card changes.</p>
+  <p class="muted">The edits below are reversed, newest first. Nothing else in {session.place.card} changes.</p>
   <ol class="edits" aria-label="Edits to undo">
     {#each covered as e (e.id)}<li>{e.summary}</li>{/each}
   </ol>

@@ -54,10 +54,10 @@
 </script>
 
 {#if device.cleanupOpen}
-  <Modal title={`Delete ${plural(chosen.length, "unused file")} from the Pacemaker?`} onclose={close}>
+  <Modal title={`Delete ${plural(chosen.length, "unused file")} from ${session.place.the}?`} onclose={close}>
     <p class="muted">
       These files are under .Pacemaker/Music on {session.library?.root} and no track in the library uses them. Ticked
-      files are deleted for good; there is no recycle bin on the device. Untick any you want to keep.
+      files are deleted for good; there is no recycle bin {session.isComputer ? 'for them' : 'on the device'}. Untick any you want to keep.
     </p>
     <ul class="files" aria-label="Unused files">
       {#each files as f (f.path)}

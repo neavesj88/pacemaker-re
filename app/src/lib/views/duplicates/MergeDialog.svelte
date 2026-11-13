@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { session } from "$lib/state/session.svelte";
   // The review of a merge. Every kept track and every copy is named, with each change to its
   // case places, its row in the library and its files, and the list is the backend's own plan
   // (the job is started from it and refuses to run if the library changed). Removing the copies
@@ -48,7 +49,7 @@
         </label>
         <label class:dis={!d.removeRows}>
           <input type="checkbox" checked={d.deleteFiles} disabled={!d.removeRows} onchange={(e) => d.setDeleteFiles(e.currentTarget.checked)} />
-          <span><b>Also delete their audio files from the Pacemaker.</b> This cannot be undone. A file another track still uses is kept.</span>
+          <span><b>Also delete their audio files from {session.place.the}.</b> This cannot be undone. A file another track still uses is kept.</span>
         </label>
       </div>
 

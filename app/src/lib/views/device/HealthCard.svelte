@@ -43,7 +43,7 @@
   {/snippet}
 
   {#if !h}
-    <p class="muted">{device.scanning ? "Checking every file on the drive…" : "Not checked yet."}</p>
+    <p class="muted">{device.scanning ? `Checking every file in ${session.isComputer ? "the library folder" : "the drive"}…` : "Not checked yet."}</p>
   {:else}
     <ul>
       <li class={h.compatibility_problems.length ? "bad" : "ok"}>
@@ -64,7 +64,7 @@
         <span class="mark">{h.missing_audio.length ? "✗" : "✓"}</span>
         <div class="what">
           {#if h.missing_audio.length}
-            {plural(h.missing_audio.length, "track")} listed in the library but without an audio file on the drive: {missingNames}.
+            {plural(h.missing_audio.length, "track")} listed in the library but without an audio file in {session.place.drive}: {missingNames}.
           {:else}
             Every track has its audio file.
           {/if}

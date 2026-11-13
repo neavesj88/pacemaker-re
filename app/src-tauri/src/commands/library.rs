@@ -1,4 +1,8 @@
-//! Library / session: find volumes and read a library read-only. Nothing here writes.
+//! Library / session: find volumes and read a library read-only. Nothing here writes, except that
+//! `computer::computer_library_create` makes the empty library on this computer.
+
+pub mod computer;
+mod kind;
 
 use std::path::PathBuf;
 
@@ -17,6 +21,8 @@ pub struct NeedsAnalysis {
 #[derive(Serialize)]
 pub struct LibraryView {
     root: String,
+    /// "pacemaker" (a drive or card the device reads) or "computer" (a folder on this computer).
+    kind: &'static str,
     problems: Vec<String>,
     tracks: Vec<Track>,
     mixes: Vec<Collection>,
@@ -60,6 +66,7 @@ pub async fn open_library(root: String) -> AppResult<LibraryView> {
             cases: lib.cases()?,
             tracks,
             needs_analysis,
+            kind: kind::library_kind(&root),
             root,
         })
     })
@@ -76,6 +83,9 @@ macro_rules! library_commands {
                 $crate::commands::library::list_volumes,
                 $crate::commands::library::open_library,
                 $crate::commands::library::app_notices,
+                $crate::commands::library::computer::computer_library_get,
+                $crate::commands::library::computer::computer_library_set,
+                $crate::commands::library::computer::computer_library_create,
             ];
             $($rest),*
         }

@@ -27,7 +27,7 @@
     small
     onclick={() => jobs.askReanalyse()}
     disabled={!jobs.canWrite}
-    title="Rewrite the beat grid (.str) of these tracks from their audio on the device"
+    title="Rewrite the beat grid (.str) of these tracks from their audio {session.isComputer ? 'in the library' : 'on the device'}"
   >Analyse {session.needs.size}…</Button>
 {:else}
   <div class="stat">All tracks analysed</div>

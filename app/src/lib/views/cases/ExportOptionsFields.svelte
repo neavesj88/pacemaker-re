@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { session } from "$lib/state/session.svelte";
   // The choices of the case export that are policies rather than a particular export: relative
   // paths, copying the audio, how the copies are laid out and named, what to do with a file already
   // there, and whether to remember the folder. Shown in the export dialog and in the Settings view,
@@ -23,7 +24,7 @@
     <input type="checkbox" bind:checked={prefs.copy_audio} />
     <span>
       <strong>Copy the audio files too</strong>
-      <span class="muted note">Copies each track's file from the Pacemaker next to the playlists and points the lists at the copies. The files on the Pacemaker are only read.</span>
+      <span class="muted note">Copies each track's file from {session.isComputer ? 'the library' : 'the Pacemaker'} next to the playlists and points the lists at the copies. The files {session.place.on} are only read.</span>
     </span>
   </label>
   {#if prefs.copy_audio}
