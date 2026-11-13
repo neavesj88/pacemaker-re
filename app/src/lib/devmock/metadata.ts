@@ -102,8 +102,9 @@ export const handlers: Handlers = {
       }
       if (any) changed++;
     }
-    // the device area's undo history (devmock/device-trust.ts) is fed by every edit
-    if (changed > 0) {
+    // the device area's undo history (devmock/device-trust.ts) is fed by every edit, except the
+    // clean-up page's invented demo names (metacleanup.ts), which the user never made
+    if (changed > 0 && !a.seed) {
       const names = [...new Set(lines.map((l) => l.what.toLowerCase()))].join(", ");
       const only = lines.length === 1 ? lines[0] : null;
       recordMockUndo(lines.every((l) => l.what === "Rating") ? "rating" : "metadata",

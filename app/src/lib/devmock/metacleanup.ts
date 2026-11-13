@@ -24,7 +24,7 @@ const seedMessyNames = () => {
     else if (i % 4 === 2) edits.push({ track_id: t.track_id, title: `${t.title} (Example Remixer Remix)` });
   });
   try {
-    metadata.metadata_save({ edits });
+    metadata.metadata_save({ edits, seed: true });
   } catch {
     /* the preview just shows clean data */
   }

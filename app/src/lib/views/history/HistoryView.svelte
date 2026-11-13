@@ -425,7 +425,8 @@
     background: var(--panel);
     border: 1px solid var(--line);
     border-radius: 8px;
-    overflow: hidden;
+    /* scrolls, not hidden: in a narrow window the row buttons sit past the card's edge */
+    overflow-x: auto;
   }
   .head {
     flex-wrap: wrap;

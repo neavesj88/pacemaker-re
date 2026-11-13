@@ -244,7 +244,8 @@
 
 <SmartPreview ids={preview.ids} values={preview.values} valueLabel={sortLabel} />
 {#if preview.ids.length === 0 && !ruleError && !fieldError}
-  <p class="empty">No tracks match these rules.</p>
+  <!-- a slow card can take seconds to answer; "no matches" before it has would be a wrong answer -->
+  <p class="empty">{counting ? "Working out which tracks match…" : "No tracks match these rules."}</p>
 {/if}
 
 {#if menu}
