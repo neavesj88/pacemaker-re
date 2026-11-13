@@ -1,13 +1,16 @@
 <script lang="ts">
   // Searchable library list on the left of the editor. Drag rows onto a channel lane, double-click
   // a row, or use “Add at playhead”. The list is windowed, so a library of thousands stays cheap.
+  import { onDestroy } from "svelte";
   import type { Track } from "$lib/api/types";
   import { mixes } from "$lib/state/mixes.svelte";
   import { session } from "$lib/state/session.svelte";
-  import { armTrackDrag } from "$lib/state/trackDrag.svelte";
+  import { armTrackDrag, endTrackDrag } from "$lib/state/trackDrag.svelte";
   import { addTracks } from "./actions";
   import { mmss } from "./layout";
   import { mv } from "./view.svelte";
+
+  onDestroy(endTrackDrag);
 
   const ROW = 44;
   let query = $state("");
@@ -151,6 +154,8 @@
     padding: 4px 8px;
     border-bottom: 1px solid var(--line);
     cursor: grab;
+    user-select: none;
+    touch-action: none;
     display: grid;
     grid-template-columns: 1fr;
     align-content: center;

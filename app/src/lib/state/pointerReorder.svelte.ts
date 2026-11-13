@@ -9,7 +9,8 @@
 //
 // A press that never moves DRAG_THRESHOLD pixels stays a click. Once it does, `begin(i)` says which
 // rows move (or null to refuse), `over` follows the pointer, release calls `drop` with the insert
-// position, Escape or a cancelled pointer calls only `end`. The scroller scrolls near its edges.
+// position, Escape, a cancelled pointer, the window losing focus or a move with no button down
+// calls only `end`. Mouse only for rows without `touch-action: none`; the case grip has it. The scroller scrolls near its edges.
 
 import { DRAG_THRESHOLD } from "./trackDrag.svelte";
 import { edgeScroll, rowDropAt } from "./dragLogic";
@@ -70,6 +71,8 @@ function tick() {
 function onMove(e: PointerEvent) {
   const s = run;
   if (!s || e.pointerId !== s.pointerId) return;
+  // the release was lost (focus left the window, a system dialog): no button is down any more
+  if (e.buttons === 0) return finish(false);
   s.y = e.clientY;
   if (!s.started) {
     if (Math.hypot(e.clientX - s.startX, e.clientY - s.startY) < DRAG_THRESHOLD) return;
@@ -85,6 +88,8 @@ function onMove(e: PointerEvent) {
 const onUp = (e: PointerEvent) => run && e.pointerId === run.pointerId && finish(true);
 const onCancel = (e: PointerEvent) => run && e.pointerId === run.pointerId && finish(false);
 const onKey = (e: KeyboardEvent) => e.key === "Escape" && run && finish(false);
+const onBlur = () => finish(false);
+const onHidden = () => document.hidden && finish(false);
 
 function swallowClick(e: Event) {
   e.stopPropagation();
@@ -100,6 +105,8 @@ function finish(drop: boolean) {
   window.removeEventListener("pointerup", onUp, true);
   window.removeEventListener("pointercancel", onCancel, true);
   window.removeEventListener("keydown", onKey, true);
+  window.removeEventListener("blur", onBlur);
+  document.removeEventListener("visibilitychange", onHidden);
   document.documentElement.style.userSelect = "";
   document.documentElement.style.cursor = "";
   if (s.started) {
@@ -120,6 +127,8 @@ export function armReorder(e: PointerEvent, opts: ReorderOptions) {
   window.addEventListener("pointerup", onUp, true);
   window.addEventListener("pointercancel", onCancel, true);
   window.addEventListener("keydown", onKey, true);
+  window.addEventListener("blur", onBlur);
+  document.addEventListener("visibilitychange", onHidden);
 }
 
 /** Ends a reorder in progress without dropping (for a view that goes away mid-drag). */

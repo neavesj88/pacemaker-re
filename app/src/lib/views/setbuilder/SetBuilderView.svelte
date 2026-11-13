@@ -1,10 +1,11 @@
 <script lang="ts">
+  import { onDestroy } from "svelte";
   import { cases } from "$lib/state/cases.svelte";
   import { jobs } from "$lib/state/jobs.svelte";
   import { nav } from "$lib/state/nav.svelte";
   import { selection } from "$lib/state/selection.svelte";
   import { insertIndex } from "$lib/state/dragLogic";
-  import { armReorder } from "$lib/state/pointerReorder.svelte";
+  import { armReorder, endReorder } from "$lib/state/pointerReorder.svelte";
   import { session } from "$lib/state/session.svelte";
   import Button from "$lib/ui/Button.svelte";
   import ConfirmDialog from "$lib/views/cases/ConfirmDialog.svelte";
@@ -72,6 +73,8 @@
   let tbody = $state<HTMLElement>();
   let rows = $derived(setBuilder.order.filter((id) => setBuilder.byId.has(id)));
   let selSet = $derived(new Set(sel));
+
+  onDestroy(endReorder);
 
   const rowOf = (id: number) => setBuilder.rows.get(id);
   const titleOf = (id: number) => rowOf(id)?.title || `track #${id}`;
@@ -468,8 +471,10 @@
     padding: 0 4px;
   }
   tr.track {
+    user-select: none;
     background: var(--row);
     cursor: grab;
+    touch-action: none;
   }
   tr.track:hover {
     background: var(--hover);

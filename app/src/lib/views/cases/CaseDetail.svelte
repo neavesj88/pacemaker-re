@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { untrack } from "svelte";
+  import { onDestroy, untrack } from "svelte";
   import type { CaseMeta } from "$lib/api/cases";
   import { mmss } from "$lib/format";
   import { caseExport } from "$lib/state/caseExport.svelte";
@@ -13,8 +13,8 @@
   import { toast } from "$lib/state/toast.svelte";
   import { session } from "$lib/state/session.svelte";
   import { insertIndex } from "$lib/state/dragLogic";
-  import { armReorder } from "$lib/state/pointerReorder.svelte";
-  import { armTrackDrag, trackDrag, trackDropTarget } from "$lib/state/trackDrag.svelte";
+  import { armReorder, endReorder } from "$lib/state/pointerReorder.svelte";
+  import { armTrackDrag, endTrackDrag, trackDrag, trackDropTarget } from "$lib/state/trackDrag.svelte";
   import Button from "$lib/ui/Button.svelte";
   import ContextMenu, { type MenuItem } from "$lib/ui/ContextMenu.svelte";
   import Stars from "$lib/ui/Stars.svelte";
@@ -38,6 +38,11 @@
   // The view only mounts this with a case open; the fallback covers the moment it closes.
   let open = $derived(cases.open ?? { id: -1, name: "", play_time_secs: 0, track_count: 0 });
   let info = $derived(cases.openInfo);
+
+  onDestroy(() => {
+    endReorder();
+    endTrackDrag();
+  });
 
   // ---- rows -------------------------------------------------------------------------------
   let byId = $derived(new Map((session.library?.tracks ?? []).map((t) => [t.track_id, t])));

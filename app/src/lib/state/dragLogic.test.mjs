@@ -2,7 +2,7 @@
 // Pure arithmetic of the pointer drags: row drop position, lane offset, edge auto-scroll, scope.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { edgeScroll, insertIndex, laneOffset, rowDropAt, scopeOf } from "./dragLogic.ts";
+import { edgeScroll, insertIndex, laneOffset, rowDropAt, scopeMatches, scopeOf } from "./dragLogic.ts";
 
 // three 20px rows with a 10px strip between each: tops 0, 30, 60
 const rows = [{ top: 0, height: 20 }, { top: 30, height: 20 }, { top: 60, height: 20 }];
@@ -42,6 +42,14 @@ test("edgeScroll: still in the middle, faster towards the edge, nothing for tiny
   assert.ok(edgeScroll(5, 0, 400) < 0);
   assert.ok(Math.abs(edgeScroll(399, 0, 400)) > Math.abs(edgeScroll(370, 0, 400)));
   assert.equal(edgeScroll(10, 0, 50), 0);
+});
+
+test("scopeMatches: picker drags only reach mix targets, case drags only case targets (default cases)", () => {
+  assert.equal(scopeMatches("mix", "mix"), true);
+  assert.equal(scopeMatches(undefined, "cases"), true);
+  assert.equal(scopeMatches(undefined, undefined), true);
+  assert.equal(scopeMatches("mix", "cases"), false);
+  assert.equal(scopeMatches(undefined, "mix"), false);
 });
 
 test("scopeOf: picker drags are mix drags, the rest reach cases", () => {

@@ -20,7 +20,7 @@
 // builder, open case) is not a track drag at all: see pointerReorder.svelte.ts, which shares this
 // file's DRAG_THRESHOLD and the same listener pattern.
 
-import { scopeOf, type DragScope } from "./dragLogic";
+import { scopeMatches, scopeOf, type DragScope } from "./dragLogic";
 
 /** Pixels the pointer must travel before a press becomes a drag (a plain click stays a click). */
 export const DRAG_THRESHOLD = 6;
@@ -92,7 +92,7 @@ function targetAt(x: number, y: number): { node: HTMLElement; hit: Element; opts
   const hit = document.elementFromPoint(x, y);
   const node = hit?.closest(`[${ATTR}]`) as HTMLElement | null | undefined;
   const opts = node ? targets.get(node) : undefined;
-  if (!node || !opts || !hit || (opts.scope ?? "cases") !== (session?.scope ?? "cases")) return null;
+  if (!node || !opts || !hit || !scopeMatches(opts.scope, session?.scope)) return null;
   return { node, hit, opts };
 }
 
@@ -136,6 +136,8 @@ function makeGhost(n: number) {
 function onMove(e: PointerEvent) {
   const s = session;
   if (!s || e.pointerId !== s.pointerId) return;
+  // the release was lost (focus left the window, a system dialog): no button is down any more
+  if (e.buttons === 0) return finish(false);
   if (!s.ghost) {
     if (Math.hypot(e.clientX - s.startX, e.clientY - s.startY) < DRAG_THRESHOLD) return;
     const { ids } = s.source();
@@ -167,6 +169,9 @@ function onKey(e: KeyboardEvent) {
   if (e.key === "Escape" && session) finish(false);
 }
 
+const onBlur = () => finish(false);
+const onHidden = () => document.hidden && finish(false);
+
 function swallowClick(e: Event) {
   e.stopPropagation();
   e.preventDefault();
@@ -190,6 +195,8 @@ function finish(drop: boolean, e?: PointerEvent) {
   window.removeEventListener("pointerup", onUp, true);
   window.removeEventListener("pointercancel", onCancel, true);
   window.removeEventListener("keydown", onKey, true);
+  window.removeEventListener("blur", onBlur);
+  document.removeEventListener("visibilitychange", onHidden);
   document.documentElement.style.userSelect = "";
   document.documentElement.style.cursor = "";
   if (dragged) {
@@ -215,6 +222,8 @@ export function armTrackDrag(e: PointerEvent, from: string, source: Source) {
   window.addEventListener("pointerup", onUp, true);
   window.addEventListener("pointercancel", onCancel, true);
   window.addEventListener("keydown", onKey, true);
+  window.addEventListener("blur", onBlur);
+  document.addEventListener("visibilitychange", onHidden);
 }
 
 /** Ends any drag in progress without dropping (for a view that goes away mid-drag). */
