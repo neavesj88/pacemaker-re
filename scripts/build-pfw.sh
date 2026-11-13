@@ -7,7 +7,9 @@
 #   scripts/build-pfw.sh STOCK.pfw OUT.pfw [--diag] [--fwver=N] [/image/path=local/file ...] [+/new/path=local/file ...]
 #
 # "/path=file" replaces a file that exists in the image (owner kept). "+/path=file" adds one that does not
-# (mode 0755, owner of the parent directory, which must exist).
+# (mode 0755, owner of the parent directory, which must exist). "mkdir:/path" creates a directory (mode 0755,
+# owner of the parent, which must exist); "=/path=file" adds a data file like "+" but with mode 0644.
+# Arguments run in order, so put mkdir before the files that go inside.
 #
 # --fwver=N writes N as the trailer's fwver. A fwver different from FWVERSION in the device's
 # running /etc/system.xml makes the device FLASH the image's boot/zImage and boot/cramfs.little
@@ -54,8 +56,8 @@ EOF
   echo "replaced $dst ($(stat -c %s "$src") bytes, mode $m, owner $u:$g)"
 }
 
-add() {  # add <new image path> <local file>
-  local dst="$1" src="$2" dir base u g
+add() {  # add <new image path> <local file> [mode, default 755]
+  local dst="$1" src="$2" mode="${3:-755}" dir base u g
   dir="$(dirname "$dst")"; base="$(basename "$dst")"
   [[ -z "$(debugfs -R "stat \"$dst\"" "$img" 2>/dev/null)" ]] || { echo "already in image: $dst" >&2; exit 1; }
   read -r _ u g < <(meta "$dir")
@@ -63,17 +65,36 @@ add() {  # add <new image path> <local file>
   debugfs -w -f - "$img" > "$work/debugfs.log" 2>&1 <<EOF
 cd "$dir"
 write "$src" "$base"
-sif "$base" mode 0100755
+sif "$base" mode 0100$mode
 sif "$base" uid $u
 sif "$base" gid $g
 EOF
   [[ -n "$(debugfs -R "stat \"$dst\"" "$img" 2>/dev/null)" ]] || { cat "$work/debugfs.log" >&2; echo "could not add $dst" >&2; exit 1; }
-  echo "added $dst ($(stat -c %s "$src") bytes, mode 755, owner $u:$g)"
+  echo "added $dst ($(stat -c %s "$src") bytes, mode $mode, owner $u:$g)"
+}
+
+mkdirs() {  # mkdirs <new image dir>  (parent must exist; mode 0755, owner of the parent)
+  local dst="$1" dir base u g
+  dir="$(dirname "$dst")"; base="$(basename "$dst")"
+  [[ -z "$(debugfs -R "stat \"$dst\"" "$img" 2>/dev/null)" ]] || { echo "already in image: $dst" >&2; exit 1; }
+  read -r _ u g < <(meta "$dir")
+  [[ -n "$u" ]] || { echo "no such directory in image: $dir" >&2; exit 1; }
+  debugfs -w -f - "$img" > "$work/debugfs.log" 2>&1 <<EOF
+cd "$dir"
+mkdir "$base"
+sif "$base" mode 040755
+sif "$base" uid $u
+sif "$base" gid $g
+EOF
+  [[ -n "$(debugfs -R "stat \"$dst\"" "$img" 2>/dev/null)" ]] || { cat "$work/debugfs.log" >&2; echo "could not create $dst" >&2; exit 1; }
+  echo "created directory $dst (mode 755, owner $u:$g)"
 }
 
 for arg in "$@"; do
   case "$arg" in
+    mkdir:/*) mkdirs "${arg#mkdir:}" ;;
     +/*=*) a="${arg#+}"; add "${a%%=*}" "${a#*=}" ;;
+    =/*=*) a="${arg#=}"; add "${a%%=*}" "${a#*=}" 644 ;;
     --diag) diag=1 ;;
     --fwver=*) fwver="${arg#--fwver=}"; [[ $fwver =~ ^[0-9]+$ ]] || { echo "bad --fwver" >&2; exit 2; } ;;
     /*=*) replace "${arg%%=*}" "${arg#*=}" ;;

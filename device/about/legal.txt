@@ -1,0 +1,46 @@
+PACEMAKER REVIVAL
+Legal notices (unofficial, unapproved, unrepentant)
+
+1. ABANDONMENT
+The company that built this hardware stopped answering a long time ago. Its support site went dark, its update server went dark, and the warranty expired somewhere around the time phones learned to take photos. This device was left on the kerb of history. Someone picked it up.
+
+2. OWNERSHIP
+The person holding this device owns it. Not licenses it. Not rents it. Owns it. They may open it, flash it, reflash it, swap its drive, recolour its lights, rename its buttons and make it do things it was never meant to do. They can do what they like. That is the whole agreement. There is no "I Agree" button because nobody needs to agree.
+
+3. WARRANTY
+None. Not express, not implied, not whispered. If it breaks, you get to keep both pieces. If it works, that was on purpose and we will take the credit.
+
+4. SUPPORT
+There is no hotline, no ticket queue and no hold music. There is a code repository and the owner's own two hands. Both are open source.
+
+5. DATA AND PRIVACY
+This device phones nobody. It never could, and now it never will. Your music, your mixes and your questionable 3 a.m. track choices stay on this card.
+
+6. FIRMWARE
+This firmware was modified by its owner for their own device. If it misbehaves, put a file called revival-no-preload in the .Pacemaker folder of the card, or hold Play + Cue + Forward + Back at power-on for recovery mode.
+
+7. TRADEMARKS
+Any names and logos that once belonged to somebody still belong to whoever owns them now. This project is not affiliated with, endorsed by, or in contact with anybody. We tried calling. Nobody picked up.
+
+8. SEVERABILITY
+If any part of this notice is found to be unenforceable, the rest of it will carry on dancing.
+
+PACEMAKER REVIVAL
+Free software, GPL-3.0-or-later.
+Code, scripts and notes: github.com/neavesj88/pacemaker-re
+
+THIRD-PARTY SOFTWARE
+This firmware still contains software by other people, used under their licences. The full original notices, the GPL-2 and the LGPL-2.1 are in the firmware at /bin/resources/licenses/.
+- SPIRIT audio decoders. MPEG Layer-3 audio decoding technology licensed from Fraunhofer IIS and Thomson.
+- Anti-Grain Geometry, Copyright (c) 2002-2005 Maxim Shemanarev.
+- Boost 1.34.1, Boost Software License 1.0.
+- FreeType, Copyright (c) 2008 The FreeType Project.
+- zlib, Copyright (c) 1995-2004 Jean-loup Gailly and Mark Adler.
+- libpng, Copyright (c) 2004, 2006-2007 Glenn Randers-Pehrson, Cosmin Truta.
+- JUCE, Copyright (c) 2009 Julian Storer.
+- ICU, Copyright (c) 1995-2006 International Business Machines Corporation and others.
+- Lua, Copyright (c) 1994-2008 Lua.org, PUC-Rio.
+- Ogg Vorbis, Copyright (c) 2007 Xiph.Org Foundation.
+- FLAC, Copyright (c) 2000-2007 Josh Coalson.
+- Linux and other GPL / LGPL components, under the GPL-2 and LGPL-2.1.
+THE SOFTWARE IS PROVIDED AS IS, WITHOUT WARRANTY OF ANY KIND.

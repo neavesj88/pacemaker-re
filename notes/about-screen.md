@@ -1,8 +1,8 @@
 # About screen and Legal notice in pmplayer (firmware 180096069)
 
-Reverse engineering for firmware 180096074: make every user-visible About / Status / Legal string say
-Pacemaker Revival instead of Tonium or the original product. Nothing here is built yet; this is the patch
-plan and the evidence behind it. Stock binary: `work/fw-180096069/bin/pmplayer`, 11 286 972 bytes,
+Reverse engineering for firmware 180096074 (built by `scripts/build-180096074.sh`): make every user-visible About / Status / Legal string say
+Pacemaker Revival instead of Tonium or the original product. Nothing has been run on hardware; this is the patch
+plan and the evidence behind it (the "As built" section at the end records what 180096074 actually applies). Stock binary: `work/fw-180096069/bin/pmplayer`, 11 286 972 bytes,
 sha256 `4c5d502c6d52e2bafab894cef43e7213e35aca73f497b68482dd7867c13797ab`. No serial number or library data
 appears in this note (the serial is only ever read through `/system.xml` at run time).
 
@@ -131,7 +131,7 @@ New block layout inside the 13156-byte region 0x844b90..0x847ef4 (zero everythin
 | 5 | pmplayer | 0x351650 and 0x351c00 (VA 0x359650, 0x359c00) | `c8 87 84 00` | `f0 d6 84 00` | `PwrMgr` constructors, serial prefix `00`. |
 | 6 | pmplayer | 0x35164c and 0x351bfc (VA 0x35964c, 0x359bfc) | `5c 88 84 00` (0x84885c, `666`) | `f0 d6 84 00` | `PwrMgr` constructors, serial prefix `01`. Without it a unit with that prefix would still show `666`. |
 | 7 | english.lang, japanese.lang, korean.lang (`/bin/resources/fonts/`) | string 49 | `49 "\xc2\xa9 Tonium"` | `49 "\xc2\xa9 Revival contributors"` | Text format, no offsets or checksums; UTF-8 via `fromUTF8`; the glyph exists in every font. The english and japanese files to start from are the 073 ones (`device/vocalfx/lang/*.lang`, stock except string 236 `Vocal`); korean is stock. Assert exactly one `49 "\xc2\xa9 Tonium"` per file and nothing else changed. |
-| 8 | image | new file `/bin/resources/licenses/THIRD-PARTY-NOTICES.txt` | | the 13152 stock Legal bytes (extract them from the stock pmplayer before #1; add a trailing LF) | Pure data. legal.txt promises it. |
+| 8 | image | new file `/bin/resources/licenses/THIRD-PARTY-NOTICES.txt` | | the 13152 stock Legal bytes, extracted byte-exactly from the stock pmplayer before #1 (no trailing LF added) | Pure data. legal.txt promises it. |
 | 9 | image | new files `/bin/resources/licenses/GPL-2`, `LGPL-2.1` | | `/usr/share/common-licenses/GPL-2`, `LGPL-2.1` (WSL Debian) | Same. |
 | 10 | image | `/bin/pmplayer.real` | stock | the patched pmplayer | See build notes. |
 
@@ -182,3 +182,38 @@ scans of the raw ELF (pool words, `bl` targets, string tables). New helper scrip
 `XrefAddr.java` (references and absolute pool words for given VAs), `CallsWithArg.java` (call sites with a constant argument),
 `FindImm.java` (instructions with a given immediate). Decompiled with `DecompileMatching.java`, disassembled with `DisasmAt.java`.
 Because `analyzeHeadless.bat` splits commas into separate arguments, scripts that take lists read all arguments.
+
+## As built (firmware 180096074)
+
+`scripts/build-180096074.sh` = the 073 recipe with FW=180096074 plus the rows below. The patches are applied by
+`scripts/patch-about.py` (stock sha256 + size checked, then the Legal hash, the 4 NULs, the old URL, the model
+literals and all eight pool words are asserted before a byte is written; any mismatch refuses). Output is 11 286 972
+bytes, sha256 `f0fb0f36529734afa337ec5bc8b6d570e9a92f60709132cb8a8aeb196cac8d50`, 13 034 bytes differ from stock
+(the freed block 0x844b90..0x847f06 and 8 pool words).
+
+| # | where | what | applied |
+|---|---|---|---|
+| 1 | pmplayer 0x844b90..0x847f06 | zeroed, then `device/about/legal.txt` + NUL (2910 bytes) at 0x844b90, `Pacemaker Revival\0` at 0x8456f0, `github.com/neavesj88/pacemaker-re\0` at 0x845704 | yes |
+| 2 | pmplayer 0x394088 | `f4 fe 84 00` -> `04 d7 84 00` (Support pane URL) | yes |
+| 3 | pmplayer 0x847ef4 | `www.pacemaker.net\0` zeroed (covered by the block zeroing in #1; the test asserts the string is gone) | yes |
+| 4 | pmplayer 0x350874, 0x350924 | `c8 87 84 00` -> `f0 d6 84 00` (PwrSettings default model) | yes |
+| 5 | pmplayer 0x351650, 0x351c00 | `c8 87 84 00` -> `f0 d6 84 00` (PwrMgr, serial prefix 00) | yes |
+| 6 | pmplayer 0x35164c, 0x351bfc | `5c 88 84 00` -> `f0 d6 84 00` (PwrMgr, serial prefix 01) | yes |
+| 7 | `device/about/lang/{english,japanese,korean}.lang` | string 49 `(c) Tonium` -> `(c) Revival contributors`; english/japanese keep 236 `Vocal`; the recipe re-derives each from the image's stock file and asserts equality | yes |
+| 8 | image `/bin/resources/licenses/THIRD-PARTY-NOTICES.txt` | the 13152 stock Legal bytes (sha256 `d2a84f37...c639211`), mode 644 | yes |
+| 9 | image `/bin/resources/licenses/GPL-2`, `LGPL-2.1` | copied from WSL Debian `/usr/share/common-licenses`, mode 644 | yes |
+| 10 | image `/bin/pmplayer.real` | the patched player (`/bin/pmplayer=...` is replaced before `--diag` renames it); the wrapper is the committed one | yes |
+
+Other build changes: `scripts/build-pfw.sh` gained `mkdir:/path` (directory, mode 755, owner of the parent) and
+`=/path=file` (new data file, mode 644). The recipe finds the gitignored `work/` and `vendor/` by walking up from the
+checkout (override `DATA=`), so it runs from a worktree without copying firmware into the repo. The licence files and
+the stock Legal text are generated into `work/build/074/licenses/` at build time, not committed (they are derived from
+the vendor image / the OS licence files).
+
+Tests: `PM_WORK=<dir with fw-180096069> python3 scripts/test-patch-about.py` (14 tests, runs patch-about.py on the
+stock binary and checks: size, determinism, every string reads back through its pointer, only the planned ranges
+changed, strings that must survive are intact, refuses an already-patched or modified input, non-ASCII/NUL legal text,
+lang files equal stock + intended edits only). Image checks done on the built .pfw: e2fsck clean, `/bin/pmplayer.real`
+byte-identical to the patched output, the wrapper identical to 073's, notices/GPL-2/LGPL-2.1 byte-identical to their
+sources, and a file-level diff against the 073 image shows only pmplayer.real, the three lang files, system.xml (x2),
+cramfs.little and the new licenses directory.
