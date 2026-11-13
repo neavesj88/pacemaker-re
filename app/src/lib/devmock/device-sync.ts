@@ -59,6 +59,10 @@ function send(): Item[] {
     track(3, LIGHTS.label, 7.7, { type: "copy" }),
     track(4, MOON.label, 10.3, { type: "copy" }),
     track(5, "Demo Duo - Evening Train", 0.01, { type: "update" }),
+    track(10, "Demo Duo - Dusk", 6.4, { type: "repair" }, { target_id: 110, detail: "the audio file is missing on the target" }),
+    track(11, "Sample Band - Lantern", 0.01, { type: "repair" }, { target_id: 111, detail: "the beat grid file (.str) is missing on the target" }),
+    track(12, "Sample Band - Harbour Lights", 0, { type: "update_plays" }, { target_id: 112, detail: "played more on the sending side" }),
+    track(13, "Sample Band - Quiet Hours", 0, { type: "skip", reason: "the beat grid file (.str) is missing on both sides" }, { target_id: 113 }),
     track(9, MISSING.label, 0, { type: "skip", reason: "its audio file is missing" }),
     track(6, "Demo Duo - Tidal", 0, { type: "skip", reason: SAME }),
     track(7, "Demo Duo - Morning Light", 0, { type: "skip", reason: SAME }),
@@ -164,6 +168,9 @@ export const handlers: Handlers = {
       parts.push(`Copied ${what.join(", ")}`);
     }
     if (copied("track", "update")) parts.push(`Updated ${plural(copied("track", "update"), "track")}`);
+    if (copied("track", "repair")) parts.push(`Repaired the missing files of ${plural(copied("track", "repair"), "track")}`);
+    const playsN = run.filter((i) => i.action.type === "update_plays").length;
+    if (playsN) parts.push(`Updated the play counts of ${plural(playsN, "item")}`);
     if (copied("mix", "replace")) parts.push(`Replaced ${plural(copied("mix", "replace"), "mix")}`);
     if (copied("case", "merge")) parts.push(`Merged ${plural(copied("case", "merge"), "case")}`);
     const removed = run.filter((i) => i.action.type === "remove").length;

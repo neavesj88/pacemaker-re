@@ -166,7 +166,7 @@ pub fn plan_selection(
         let picked = sel_locs.contains(loc);
         let mut item = match s_rows.get(loc) {
             Some(s) => {
-                let mut it = track_item(source, s, t_rows.get(loc), settings);
+                let mut it = track_item(source, target, s, t_rows.get(loc), settings);
                 if matches!(&it.action, SyncAction::Skip { reason } if reason == LEAVE_TRACK) {
                     it.action = skip("it is already there, and a drag never changes a track on the target");
                 }

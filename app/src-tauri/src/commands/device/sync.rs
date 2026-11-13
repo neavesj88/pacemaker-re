@@ -172,6 +172,10 @@ pub fn summarise(rep: &SyncReport) -> String {
     if n > 0 {
         parts.push(format!("Updated {}", plural(n, "track")));
     }
+    let n = count(ItemKind::Track, |a| *a == SyncAction::Repair);
+    if n > 0 {
+        parts.push(format!("Repaired the missing files of {}", plural(n, "track")));
+    }
     let n = rep.items.iter().filter(|i| i.outcome == Outcome::Done && i.action == SyncAction::UpdatePlays).count();
     if n > 0 {
         parts.push(format!("Updated the play counts of {}", plural(n, "item")));
@@ -407,6 +411,7 @@ mod tests {
             done(ItemKind::Track, SyncAction::Copy, "A - One"),
             done(ItemKind::Track, SyncAction::Copy, "B - Two"),
             done(ItemKind::Track, SyncAction::Update, "C - Three"),
+            done(ItemKind::Track, SyncAction::Repair, "E - Five"),
             done(ItemKind::Mix, SyncAction::Copy, "Set"),
             done(ItemKind::Case, SyncAction::UpdatePlays, "Crate"),
             done(ItemKind::Mix, SyncAction::Replace, "Old set"),
@@ -417,6 +422,7 @@ mod tests {
         rep.cancelled = true;
         let s = summarise(&rep);
         assert!(s.starts_with("Copied 2 tracks (5.0 MB), 1 mix"), "{s}");
+        assert!(s.contains("Repaired the missing files of 1 track"), "{s}");
         assert!(s.contains("Updated the play counts of 1 item"), "{s}");
         assert!(s.contains("Updated 1 track") && s.contains("Replaced 1 mix") && s.contains("Merged 1 case"), "{s}");
         assert!(s.contains("Stopped at your request"), "{s}");

@@ -256,6 +256,7 @@ const ACTION: Record<string, string> = {
   copy: "Copy",
   update: "Update",
   update_plays: "Update play counts",
+  repair: "Repair",
   replace: "Replace",
   merge: "Merge",
   remove: "Remove",
@@ -302,13 +303,14 @@ const lowerFirst = (s: string) => s.charAt(0).toLowerCase() + s.slice(1);
 
 /** What the copy will do, in one sentence: "Will copy 3 tracks, bring 1 mix, add 3 tracks to case X." */
 export function copySummary(plan: SyncPlan): string {
-  let copy = 0, update = 0, plays = 0, mixes = 0, cases = 0;
+  let copy = 0, update = 0, repair = 0, plays = 0, mixes = 0, cases = 0;
   const into: string[] = [];
   for (const i of plan.items) {
     if (i.action.type === "skip") continue;
     if (i.into_case !== null) {
       into.push(i.action.type === "copy" ? `make ${lowerFirst(i.label)}` : lowerFirst(i.label));
     } else if (i.action.type === "update_plays") plays++;
+    else if (i.action.type === "repair") repair++;
     else if (i.kind === "track") i.action.type === "copy" ? copy++ : update++;
     else if (i.kind === "mix") mixes++;
     else cases++;
@@ -316,6 +318,7 @@ export function copySummary(plan: SyncPlan): string {
   const p: string[] = [];
   if (copy) p.push(`copy ${plural(copy, "track")}`);
   if (update) p.push(`update ${plural(update, "track")}`);
+  if (repair) p.push(`copy the missing files of ${plural(repair, "track")}`);
   if (plays) p.push(`update the play counts of ${plural(plays, "item")}`);
   if (mixes) p.push(`bring ${plural(mixes, "mix", "mixes")}`);
   if (cases) p.push(`bring ${plural(cases, "case")}`);

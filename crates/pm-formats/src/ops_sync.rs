@@ -123,6 +123,10 @@ pub enum SyncAction {
     /// Only the play counts and last-played time are brought over (the row is otherwise the same,
     /// or the target's is newer); no file is copied.
     UpdatePlays,
+    /// The target's row is the same as the source's but its audio file and/or its `.str` file is
+    /// missing on the target: only the missing file(s) are copied from the source. The row, its
+    /// grid and its plays are not touched. The item's `detail` names what is missing.
+    Repair,
     Skip { reason: String },
     Remove,
 }
@@ -474,7 +478,7 @@ pub fn plan_with_free(source: &Library, target: &Library, settings: &SyncSetting
             items.push(item);
             continue;
         }
-        items.push(track_item(source, s, t_by_loc.get(s.location.as_str()).copied(), settings));
+        items.push(track_item(source, target, s, t_by_loc.get(s.location.as_str()).copied(), settings));
     }
 
     // mixes
@@ -633,7 +637,7 @@ fn first_by_name<T: Named>(rows: &[T]) -> HashMap<String, &T> {
 
 /// What a sync does about one source track, given the target's row at the same place (if any).
 /// Shared by the full plan and the selection plan.
-fn track_item(source: &Library, s: &TrackRow, t: Option<&TrackRow>, settings: &SyncSettings) -> SyncItem {
+fn track_item(source: &Library, target: &Library, s: &TrackRow, t: Option<&TrackRow>, settings: &SyncSettings) -> SyncItem {
     let mut item = blank_item(format!("track:{}", s.location), ItemKind::Track, s.label(), SyncAction::Copy);
     item.global_id = Some(s.global_id.clone()).filter(|g| !g.is_empty());
     item.location = Some(s.location.clone());
@@ -661,6 +665,9 @@ fn track_item(source: &Library, s: &TrackRow, t: Option<&TrackRow>, settings: &S
                 item.action = skip("a different file is stored at the same place");
             } else if same_columns(s, t) {
                 item.action = skip(SAME);
+                if let Some(tp) = paths_of(target, &s.location) {
+                    repair_check(&mut item, &audio, &side, &tp.0, &tp.1);
+                }
             } else {
                 let want_update = match settings.tracks_on_both {
                     TracksOnBoth::Leave => Err(LEAVE_TRACK),
@@ -686,7 +693,7 @@ fn track_item(source: &Library, s: &TrackRow, t: Option<&TrackRow>, settings: &S
             }
             // plays counted on the sending side come over even when nothing else changes
             if settings.play_counts == PlayCounts::Higher
-                && matches!(&item.action, SyncAction::Skip { reason } if reason == SAME || reason == TARGET_NEWER_TRACK)
+                && matches!(&item.action, SyncAction::Skip { reason } if reason == SAME || reason == TARGET_NEWER_TRACK || reason.ends_with(LACK_SUFFIX))
                 && plays_ahead(s.int("times_played"), s.int("last_played"), t.int("times_played"), t.int("last_played"))
             {
                 item.action = SyncAction::UpdatePlays;
@@ -695,6 +702,45 @@ fn track_item(source: &Library, s: &TrackRow, t: Option<&TrackRow>, settings: &S
         }
     }
     item
+}
+
+const LACK_SUFFIX: &str = "is missing on both sides";
+const AUDIO_MISSING: &str = "the audio file is missing on the target";
+const SIDE_MISSING: &str = "the beat grid file (.str) is missing on the target";
+
+/// For a track whose row is the same on both sides: when the target lacks the audio and/or the
+/// `.str`, plans a [`SyncAction::Repair`] that copies the missing file(s) the source has. When the
+/// source lacks a file the target also lacks, that file stays missing and the reason says both
+/// sides lack it (a skip when nothing can be copied).
+fn repair_check(item: &mut SyncItem, s_audio: &Path, s_side: &Path, t_audio: &Path, t_side: &Path) {
+    let mut bytes = 0u64;
+    let mut will: Vec<&str> = Vec::new();
+    let mut both: Vec<&str> = Vec::new();
+    for (src, dest, what) in [(s_audio, t_audio, AUDIO_MISSING), (s_side, t_side, SIDE_MISSING)] {
+        if file_len(dest).is_some() {
+            continue;
+        }
+        match file_len(src) {
+            Some(n) => {
+                bytes += n;
+                will.push(what);
+            }
+            None => both.push(if what == AUDIO_MISSING { "the audio file" } else { "the beat grid file (.str)" }),
+        }
+    }
+    let lack = if both.is_empty() { String::new() } else { format!("{} {LACK_SUFFIX}", both.join(" and ")) };
+    if will.is_empty() {
+        if !lack.is_empty() {
+            item.action = skip(lack);
+        }
+        return;
+    }
+    item.action = SyncAction::Repair;
+    item.bytes = bytes;
+    item.detail = will.join("; ");
+    if !lack.is_empty() {
+        item.detail.push_str(&format!("; {lack}, so that one cannot be repaired"));
+    }
 }
 
 /// The target's mixes as the mix planning needs them: by name, and the names a copy would take.
@@ -1053,6 +1099,7 @@ fn run_plan(
         let res = match (it.kind, &it.action) {
             (ItemKind::Track, SyncAction::Remove) => remove_track(target, it),
             (_, SyncAction::UpdatePlays) => update_plays(source, target, it, &s_rows),
+            (ItemKind::Track, SyncAction::Repair) => repair_track(source, target, it),
             (ItemKind::Track, _) => match s_rows.get(it.location.as_deref().unwrap_or("")) {
                 Some(row) => copy_track(source, target, row, it, &settings),
                 None => Err(Error::Invalid("the source track is gone".into())),
@@ -1137,6 +1184,32 @@ fn copy_track(source: &Library, target: &mut Library, row: &TrackRow, it: &SyncI
             let _ = std::fs::remove_file(&t_side);
         }
         return Err(e.into());
+    }
+    Ok(Outcome::Done)
+}
+
+/// Copies the audio and/or `.str` the target lacks and the source has; nothing else changes (no
+/// row, no grid already there, no plays). Re-checks the files now, so a file that appeared since
+/// the plan is not overwritten. A failure removes what this item created.
+fn repair_track(source: &Library, target: &Library, it: &SyncItem) -> Result<Outcome, Error> {
+    let loc = it.location.as_deref().unwrap_or("");
+    let (s_audio, s_side) = paths_of(source, loc).ok_or_else(|| bad("the track is not stored under /pmdb_tracks/"))?;
+    let (t_audio, t_side) = paths_of(target, loc).ok_or_else(|| bad("the track is not stored under /pmdb_tracks/"))?;
+    if let Some(parent) = t_audio.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let mut made: Vec<&Path> = Vec::new();
+    for (src, dest) in [(&s_audio, &t_audio), (&s_side, &t_side)] {
+        if file_len(dest).is_some() || file_len(src).is_none() {
+            continue;
+        }
+        if let Err(e) = copy_checked(src, dest) {
+            for p in made {
+                let _ = std::fs::remove_file(p);
+            }
+            return Err(e);
+        }
+        made.push(dest);
     }
     Ok(Outcome::Done)
 }

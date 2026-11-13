@@ -87,6 +87,7 @@ test("action words", () => {
   assert.equal(actionText({ type: "copy" }), "Copy");
   assert.equal(actionText({ type: "update" }), "Update");
   assert.equal(actionText({ type: "update_plays" }), "Update play counts");
+  assert.equal(actionText({ type: "repair" }), "Repair");
   assert.equal(actionText({ type: "replace" }), "Replace");
   assert.equal(actionText({ type: "copy_as_new", name: "Warm-up (2)" }), 'Copy as "Warm-up (2)"');
   assert.equal(actionText({ type: "merge" }), "Merge");
@@ -135,6 +136,16 @@ test("totals follow the boxes", () => {
   assert.equal(tallyText(pt), "Will update the play counts of 3 items.");
   assert.equal(isStale("stale plan: a library changed since the plan was made; plan again"), true);
   assert.deepEqual(excludedKeys(items, new Set(["track:/t/1", "track:/t/3", "gone"])), ["track:/t/1"]);
+});
+
+test("a repair is its own count, copies bytes, and is not an update", () => {
+  const r = [trk(1, { type: "repair" }, 3 * MB), trk(2, { type: "copy" }, MB)];
+  const t = tally(r, new Set());
+  assert.deepEqual([t.repairTracks, t.updateTracks, t.copyTracks, t.bytes], [1, 0, 1, 4 * MB]);
+  assert.equal(tallyText(t), "Will copy 1 track, copy the missing files of 1 track.");
+  assert.equal(tallyText(tally(r, new Set(["track:/t/2"]))), "Will copy the missing files of 1 track.");
+  assert.equal(tally([trk(1, { type: "repair" }, 5)], new Set()).bytes, 5);
+  assert.deepEqual(resultParts("Copied 1 track. Repaired the missing files of 2 tracks. Updated 1 track").map((p) => p.heading || p.items.join()), ["Copied 1 track", "Repaired the missing files of 2 tracks", "Updated 1 track"]);
 });
 
 test("space line", () => {

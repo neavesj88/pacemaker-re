@@ -12,16 +12,16 @@ impl Fx {
         self.dst = d;
     }
 
-    fn plan_sel(&self, sel: &Selection, settings: &SyncSettings) -> SyncPlan {
+    pub(super) fn plan_sel(&self, sel: &Selection, settings: &SyncSettings) -> SyncPlan {
         plan_selection(&self.src, &self.dst, settings, "computer", sel, None).unwrap()
     }
 
-    fn run_sel(&mut self, p: &SyncPlan, sel: &Selection) -> Result<SyncReport, Error> {
+    pub(super) fn run_sel(&mut self, p: &SyncPlan, sel: &Selection) -> Result<SyncReport, Error> {
         apply_selection(&self.src, &mut self.dst, p, sel, &mut |_| {}, &|| false)
     }
 }
 
-fn sel(tracks: &[String], mixes: &[&str], cases: &[&str]) -> Selection {
+pub(super) fn sel(tracks: &[String], mixes: &[&str], cases: &[&str]) -> Selection {
     Selection { tracks: tracks.to_vec(), mixes: mixes.iter().map(|s| s.to_string()).collect(), cases: cases.iter().map(|s| s.to_string()).collect(), into_case: None }
 }
 
