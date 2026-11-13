@@ -36,10 +36,10 @@ export function edgeScroll(y: number, top: number, bottom: number, zone = 36, ma
 
 export type DragScope = "cases" | "mix";
 
-/** The scope a track drag named `from` has: the mix picker's drags ("mix:...") only reach the
- * timeline's lanes, every other drag only reaches case targets. */
 /** Whether a target declared with scope `target` (default cases) takes a drag of scope `drag`. */
 export const scopeMatches = (target: DragScope | undefined, drag: DragScope | undefined): boolean =>
   (target ?? "cases") === (drag ?? "cases");
 
+/** The scope a track drag named `from` has: the mix picker's drags ("mix:...") only reach the
+ * timeline's lanes, every other drag only reaches case targets. */
 export const scopeOf = (from: string): DragScope => (from.startsWith("mix:") ? "mix" : "cases");

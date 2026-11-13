@@ -10,7 +10,10 @@
 // A press that never moves DRAG_THRESHOLD pixels stays a click. Once it does, `begin(i)` says which
 // rows move (or null to refuse), `over` follows the pointer, release calls `drop` with the insert
 // position, Escape, a cancelled pointer, the window losing focus or a move with no button down
-// calls only `end`. Mouse only for rows without `touch-action: none`; the case grip has it. The scroller scrolls near its edges.
+// calls only `end`. The scroller scrolls near its edges.
+//
+// Touch and pen: an element with `touch-action: none` (the case and set builder grips) drags; on
+// the rest of a row the browser pans the list instead and the drag ends as a cancelled pointer.
 
 import { DRAG_THRESHOLD } from "./trackDrag.svelte";
 import { edgeScroll, rowDropAt } from "./dragLogic";

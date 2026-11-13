@@ -41,7 +41,8 @@
 
   onDestroy(() => {
     endReorder();
-    endTrackDrag();
+    // only a drag this case started: one from the Tracks table must survive the case closing
+    if (trackDrag.from.startsWith("case:")) endTrackDrag();
   });
 
   // ---- rows -------------------------------------------------------------------------------

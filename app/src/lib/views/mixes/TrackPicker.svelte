@@ -155,7 +155,6 @@
     border-bottom: 1px solid var(--line);
     cursor: grab;
     user-select: none;
-    touch-action: none;
     display: grid;
     grid-template-columns: 1fr;
     align-content: center;

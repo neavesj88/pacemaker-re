@@ -465,6 +465,8 @@
   .grip {
     width: 56px;
     user-select: none;
+    /* touch and pen drag from the grip; the rest of the row still pans the list */
+    touch-action: none;
   }
   .lock {
     width: 56px;
@@ -474,7 +476,6 @@
     user-select: none;
     background: var(--row);
     cursor: grab;
-    touch-action: none;
   }
   tr.track:hover {
     background: var(--hover);
