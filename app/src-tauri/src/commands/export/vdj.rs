@@ -620,17 +620,6 @@ fn copy_atomic(src: &Path, music: &Path, dst: &Path, expect: u64, keep_going: &d
     res
 }
 
-fn write_atomic(dest: &Path, bytes: &[u8]) -> std::io::Result<()> {
-    let mut tmp = dest.as_os_str().to_owned();
-    tmp.push(".part");
-    let tmp = PathBuf::from(tmp);
-    let res = File::create(&tmp).and_then(|mut f| f.write_all(bytes).and_then(|_| f.sync_all())).and_then(|_| fs::rename(&tmp, dest));
-    if res.is_err() {
-        let _ = fs::remove_file(&tmp);
-    }
-    res
-}
-
 /// Does what `plan` says: copies the audio, then writes the list (last, so a stopped export
 /// leaves no list that points at files that are not there). `progress` returns false to stop.
 /// A track that cannot be copied is left out of the list and reported; a full disk stops the run.
@@ -712,7 +701,7 @@ pub fn run_export(plan: &Plan, opts: &Options, replace_list: bool, progress: &mu
         return Err("No track could be copied, so no list was written.".into());
     }
     fin.listed = listed.len();
-    write_atomic(Path::new(&plan.list_file), list_xml(&listed, opts).as_bytes()).map_err(|e| format!("Cannot write {}: {e}", plan.list_file))?;
+    crate::store::write_file(Path::new(&plan.list_file), list_xml(&listed, opts).as_bytes()).map_err(|e| format!("Cannot write {}: {e}", plan.list_file))?;
     Ok(fin)
 }
 

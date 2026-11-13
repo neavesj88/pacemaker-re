@@ -29,6 +29,7 @@ use serde::Serialize;
 use tauri::{AppHandle, Manager, State};
 
 use crate::error::{AppError, AppResult};
+use crate::store::config_dir;
 use crate::events::{self, JOB_PROGRESS};
 use crate::jobs::{JobOutcome, Progress, spawn_job};
 use crate::state::JobLock;
@@ -56,10 +57,6 @@ pub fn setup(app: &mut tauri::App) {
 }
 
 // ---- where things live ----------------------------------------------------------------------
-
-fn config_dir(app: &AppHandle) -> AppResult<PathBuf> {
-    Ok(app.path().app_config_dir()?)
-}
 
 fn data_dir(app: &AppHandle) -> AppResult<PathBuf> {
     Ok(app.path().app_local_data_dir()?.join("stems"))

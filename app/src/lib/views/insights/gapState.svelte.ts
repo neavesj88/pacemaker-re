@@ -3,17 +3,13 @@
 // cell is kept by bin ids, so it survives a re-bin after a setting changes (and goes away if its
 // row or column no longer exists).
 import { session } from "$lib/state/session.svelte";
+import { loadPref, savePref } from "$lib/state/prefStore";
 import { DEFAULT_SETTINGS, mergeSettings, settingNotice, type GapSettings, type MatrixId } from "./gapLogic";
 
 const STORAGE_KEY = "pm.insights.gap.v1";
 
 function load(): GapSettings {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    return mergeSettings(raw ? JSON.parse(raw) : null);
-  } catch {
-    return { ...DEFAULT_SETTINGS };
-  }
+  return loadPref(STORAGE_KEY, mergeSettings, () => ({ ...DEFAULT_SETTINGS }));
 }
 
 class GapState {
@@ -43,11 +39,7 @@ class GapState {
   }
 
   private save() {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify($state.snapshot(this.settings)));
-    } catch {
-      /* private mode or full storage: the settings just last for this session */
-    }
+    savePref(STORAGE_KEY, $state.snapshot(this.settings));
   }
 
   /** A different library was opened. */

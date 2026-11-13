@@ -72,21 +72,7 @@ pub fn load(dir: &Path) -> (EnergySource, Option<String>) {
 /// Writes the choice (temp file, then rename). A file that could not be read is copied to
 /// `energy-source.json.bad` first, once.
 pub fn save(dir: &Path, source: EnergySource) -> Result<(), String> {
-    std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
-    let p = path(dir);
-    if p.exists() && load(dir).1.is_some() {
-        let bad = p.with_extension("json.bad");
-        if !bad.exists() {
-            std::fs::copy(&p, &bad).map_err(|e| e.to_string())?;
-        }
-    }
-    let tmp = p.with_extension("json.tmp");
-    let text = serde_json::to_string_pretty(&File { source }).map_err(|e| e.to_string())?;
-    std::fs::write(&tmp, text).map_err(|e| e.to_string())?;
-    std::fs::rename(&tmp, &p).inspect_err(|_| {
-        let _ = std::fs::remove_file(&tmp);
-    })
-    .map_err(|e| e.to_string())
+    crate::store::save_keeping_bad(&path(dir), &File { source }, load(dir).1.is_some())
 }
 
 #[cfg(test)]

@@ -4,17 +4,12 @@
 // the app window, like the matcher's); the notes and header text of each setlist go through
 // api/setlist.ts into the app's config folder.
 import { type Options, cleanOptions } from "./setlistLogic";
+import { loadPref, savePref } from "$lib/state/prefStore";
 
 const STORAGE_KEY = "pacemaker-revival.setlist.v1";
 
 function loadOptions(): Options {
-  try {
-    const s = localStorage.getItem(STORAGE_KEY);
-    if (s) return cleanOptions(JSON.parse(s));
-  } catch {
-    // blocked or damaged storage: the defaults are used
-  }
-  return cleanOptions(undefined);
+  return loadPref(STORAGE_KEY, (raw) => cleanOptions(raw ?? undefined), () => cleanOptions(undefined));
 }
 
 export type SetlistRequest = { kind: "case" | "mix"; id: number };
@@ -35,11 +30,7 @@ class SetlistUi {
 
   /** Remembers the options for the next time. */
   persist() {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify($state.snapshot(this.options)));
-    } catch {
-      // storage blocked: the options last until the window closes
-    }
+    savePref(STORAGE_KEY, $state.snapshot(this.options));
   }
 }
 

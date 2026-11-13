@@ -3,16 +3,12 @@
 // not anything on the device, and the dialog says so. The pure parts are in tracklistprefs.ts.
 import type { TracklistFormat, TracklistOptions } from "$lib/api/export";
 import { defaultPrefs, mergePrefs, type CueIfExists, type TracklistPrefs } from "./tracklistprefs";
+import { loadPref, savePref } from "./prefStore";
 
 const STORAGE_KEY = "pacemaker-revival.tracklist";
 
 function load(): TracklistPrefs {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    return mergePrefs(raw ? JSON.parse(raw) : null);
-  } catch {
-    return defaultPrefs();
-  }
+  return loadPref(STORAGE_KEY, mergePrefs, () => defaultPrefs());
 }
 
 class Tracklist {
@@ -43,11 +39,7 @@ class Tracklist {
   }
 
   save() {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify({ options: this.options, writeCue: this.writeCue, cueIfExists: this.cueIfExists, format: this.format }));
-    } catch {
-      // private window, blocked or full storage: the settings still apply, they are just forgotten
-    }
+    savePref(STORAGE_KEY, { options: this.options, writeCue: this.writeCue, cueIfExists: this.cueIfExists, format: this.format });
   }
 }
 

@@ -336,12 +336,7 @@ pub fn export_many_in(lib: &Library, plan: &[ExportPlanItem], dir: &Path) -> App
         let result = (|| -> AppResult<()> {
             let mix = lib.read_mix(it.id)?;
             let bytes = mix.to_pmk().map_err(|e| AppError::from(e.to_string()))?;
-            let tmp = dir.join(format!("{}.part", it.file_name));
-            let written = std::fs::write(&tmp, &bytes).and_then(|()| std::fs::rename(&tmp, &dest));
-            if let Err(e) = written {
-                let _ = std::fs::remove_file(&tmp);
-                return Err(e.into());
-            }
+            crate::store::write_file(&dest, &bytes)?;
             Ok(())
         })();
         match result {

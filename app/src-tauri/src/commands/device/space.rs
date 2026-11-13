@@ -16,9 +16,10 @@ use pm_formats::library::Library;
 use pm_formats::ops_device::{self, SNAPSHOTS_KEPT};
 use pm_formats::ops_space::{self, Goal, Plan, Rules, RunOptions, RunPlan, GIB};
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, State};
 
 use crate::error::AppResult;
+use crate::store::config_dir;
 use crate::events::{self, JOB_PROGRESS};
 use crate::jobs::{JobOutcome, Progress, spawn_job};
 use crate::state::{JobLock, snapshots_dir};
@@ -112,21 +113,10 @@ pub fn load_settings(dir: &Path) -> (SpaceSettings, Option<String>) {
     }
 }
 
-/// Writes the settings atomically (temp file, then rename).
+/// Writes the settings atomically (see `crate::store::write_atomic`).
 pub fn save_settings(dir: &Path, s: &SpaceSettings) -> std::io::Result<()> {
-    std::fs::create_dir_all(dir)?;
-    let p = dir.join(SETTINGS_FILE);
-    let tmp = p.with_extension("json.tmp");
     let text = serde_json::to_string_pretty(s).map_err(std::io::Error::other)?;
-    if let Err(e) = std::fs::write(&tmp, text).and_then(|()| std::fs::rename(&tmp, &p)) {
-        let _ = std::fs::remove_file(&tmp);
-        return Err(e);
-    }
-    Ok(())
-}
-
-fn config_dir(app: &AppHandle) -> AppResult<PathBuf> {
-    Ok(app.path().app_config_dir()?)
+    crate::store::write_atomic(&dir.join(SETTINGS_FILE), text.as_bytes())
 }
 
 #[derive(Serialize)]

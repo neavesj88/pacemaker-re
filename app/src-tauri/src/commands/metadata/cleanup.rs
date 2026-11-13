@@ -1106,23 +1106,8 @@ pub fn load_settings(dir: &Path) -> (CleanupSettings, Option<String>) {
 
 /// Saves temp + fsync + rename so a crash never leaves half a file.
 pub fn save_settings(dir: &Path, s: CleanupSettings) -> Result<CleanupSettings, String> {
-    use std::io::Write;
     let s = s.sanitised();
-    std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
-    let p = settings_path(dir);
-    let tmp = p.with_extension("json.tmp");
-    let text = serde_json::to_string_pretty(&s).map_err(|e| e.to_string())?;
-    let res = (|| {
-        let mut f = std::fs::File::create(&tmp)?;
-        f.write_all(text.as_bytes())?;
-        f.sync_all()?;
-        drop(f);
-        std::fs::rename(&tmp, &p)
-    })();
-    if let Err(e) = res {
-        let _ = std::fs::remove_file(&tmp);
-        return Err(e.to_string());
-    }
+    crate::store::write_json(&settings_path(dir), &s)?;
     Ok(s)
 }
 
@@ -1130,17 +1115,13 @@ pub fn save_settings(dir: &Path, s: CleanupSettings) -> Result<CleanupSettings, 
 
 use pm_formats::library::Library;
 use pm_formats::ops_metadata::TrackEdit;
-use tauri::Manager;
 
 use crate::error::AppResult;
+use crate::store::config_dir;
 
 /// The rows of the tracks that still exist (an id removed since the caller looked is skipped, not an error).
 fn details_of(lib: &Library, ids: &[i64]) -> Vec<TrackDetail> {
     ids.iter().filter_map(|id| lib.track_details(&[*id]).ok().and_then(|mut v| v.pop())).collect()
-}
-
-fn config_dir(app: &tauri::AppHandle) -> AppResult<PathBuf> {
-    Ok(app.path().app_config_dir()?)
 }
 
 #[derive(Serialize)]

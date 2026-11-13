@@ -2,6 +2,7 @@
 // in the way). A per-person preference of the app, so it lives in the browser storage like the
 // Tracks columns do (try/catch-guarded: the app works the same when storage is unavailable).
 import { DEFAULT_RECIPE_PREFS, mergeRecipePrefs, type RecipeId, type RecipePrefs } from "$lib/state/transitionRecipes";
+import { loadPref, savePref } from "$lib/state/prefStore";
 
 const STORAGE_KEY = "pm.mixes.recipes.v1";
 
@@ -12,21 +13,13 @@ class RecipeSettings {
   readonly built = new Map<string, { recipe: RecipeId; bars: number }>();
 
   constructor() {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) this.value = mergeRecipePrefs(JSON.parse(raw));
-    } catch {
-      // unavailable or corrupt: keep the defaults
-    }
+    // nothing saved, unreadable or corrupt: the defaults stay
+    this.value = loadPref(STORAGE_KEY, (raw) => (raw === null ? this.value : mergeRecipePrefs(raw)), () => this.value);
   }
 
   set(patch: Partial<RecipePrefs>) {
     this.value = mergeRecipePrefs({ ...this.value, ...patch });
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(this.value));
-    } catch {
-      // not remembered this time
-    }
+    savePref(STORAGE_KEY, this.value);
   }
 
   reset() {

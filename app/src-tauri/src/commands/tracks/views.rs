@@ -13,7 +13,6 @@
 //! aside (never overwritten) before the next save; a file written by a newer build, or one that
 //! could not be read at all, is never saved over.
 
-use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
@@ -167,11 +166,7 @@ pub fn fresh_id(existing: &[Preset]) -> String {
 /// The file for a library, named by a hash of its normalised root path so nothing about the
 /// device is written next to the presets.
 pub fn store_path(dir: &Path, volume_key: &str) -> PathBuf {
-    let mut h: u64 = 0xcbf2_9ce4_8422_2325; // FNV-1a, as the tag store
-    for b in volume_key.bytes() {
-        h = (h ^ u64::from(b)).wrapping_mul(0x0100_0000_01b3);
-    }
-    dir.join(format!("views-{h:016x}.json"))
+    dir.join(format!("views-{:016x}.json", crate::store::fnv1a(volume_key)))
 }
 
 /// What reading the file found.
@@ -226,50 +221,13 @@ pub fn load(dir: &Path, volume_key: &str) -> Loaded {
     }
 }
 
-/// `<name>.corrupt`, or `<name>.corrupt.1`, `.2`, ... when that is taken, so a second bad file
-/// never replaces the only copy of the first.
-fn aside_path(bad: &Path) -> PathBuf {
-    let mut base = bad.as_os_str().to_owned();
-    base.push(".corrupt");
-    let first = PathBuf::from(&base);
-    if !first.exists() {
-        return first;
-    }
-    (1..10_000)
-        .map(|n| {
-            let mut name = base.clone();
-            name.push(format!(".{n}"));
-            PathBuf::from(name)
-        })
-        .find(|p| !p.exists())
-        .unwrap_or(first)
-}
-
-/// Writes the file: temp, fsync, rename; the temp file is removed on any failure. A corrupt file
+/// Writes the file (`crate::store::write_atomic`). A corrupt file
 /// found by [`load`] is moved aside first; if that fails nothing is saved.
 pub fn save(dir: &Path, volume_key: &str, views: &Views, corrupt: Option<&Path>) -> Result<(), String> {
-    std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
     if let Some(bad) = corrupt {
-        match std::fs::rename(bad, aside_path(bad)) {
-            Ok(()) => {}
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-            Err(e) => return Err(format!("Could not set the unreadable saved-filters file aside ({e}); nothing was saved.")),
-        }
+        crate::store::set_aside(bad).map_err(|e| format!("Could not set the unreadable saved-filters file aside ({e}); nothing was saved."))?;
     }
-    let p = store_path(dir, volume_key);
-    let tmp = p.with_extension("json.tmp");
-    let text = serde_json::to_string_pretty(views).map_err(|e| e.to_string())?;
-    let write = || -> std::io::Result<()> {
-        let mut f = std::fs::File::create(&tmp)?;
-        f.write_all(text.as_bytes())?;
-        f.sync_all()?;
-        drop(f);
-        std::fs::rename(&tmp, &p)
-    };
-    write().map_err(|e| {
-        let _ = std::fs::remove_file(&tmp);
-        format!("Could not save the filters: {e}")
-    })
+    crate::store::write_json(&store_path(dir, volume_key), views).map_err(|e| format!("Could not save the filters: {e}"))
 }
 
 #[cfg(test)]

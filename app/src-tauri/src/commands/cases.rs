@@ -26,6 +26,7 @@ use serde::Serialize;
 use tauri::{Manager, State};
 
 use crate::error::AppResult;
+use crate::store::config_dir;
 use crate::events::{self, JOB_PROGRESS};
 use crate::jobs::{spawn_job, JobOutcome, Progress};
 use crate::state::JobLock;
@@ -234,10 +235,6 @@ pub async fn cases_export(root: String, case_id: i64, format: String, dest: Stri
 }
 
 // ---- smart cases -----------------------------------------------------------------------------
-
-fn config_dir(app: &tauri::AppHandle) -> AppResult<PathBuf> {
-    Ok(app.path().app_config_dir()?)
-}
 
 /// What the query matches right now in `lib`: the one evaluation behind the live preview, the
 /// sidebar counts and the device copy.

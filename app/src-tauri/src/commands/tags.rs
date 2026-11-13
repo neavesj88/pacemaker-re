@@ -25,7 +25,7 @@ pub mod energy_source;
 mod store;
 
 pub use energy_source::EnergySource;
-pub use store::{normalise_tag, tag_key, Labels, COLOURS, MAX_ENERGY};
+pub use store::{build_keys, normalise_tag, tag_key, Labels, COLOURS, MAX_ENERGY};
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -33,9 +33,9 @@ use std::sync::Mutex;
 
 use pm_formats::library::Library;
 use serde::{Deserialize, Serialize};
-use tauri::Manager;
 
 use crate::error::AppResult;
+use crate::store::config_dir;
 use store::{Kind, Loaded, Op, Store};
 
 pub fn setup(_app: &mut tauri::App) {}
@@ -46,10 +46,6 @@ static STORE_LOCK: Mutex<()> = Mutex::new(());
 /// The normalised volume name the store file is keyed by (`E:` and `E:\` are one library).
 fn volume(root: &str) -> String {
     crate::state::volume_key(Path::new(root))
-}
-
-fn config_dir(app: &tauri::AppHandle) -> AppResult<PathBuf> {
-    Ok(app.path().app_config_dir()?)
 }
 
 /// The labels of one track as the UI gets them.
@@ -83,29 +79,6 @@ pub struct TagsView {
 }
 
 // ---- track identity ----------------------------------------------------------------------
-
-/// `(track_id, store key)` for each track row `(track_id, global_id, location)`.
-pub fn build_keys(rows: &[(i64, String, String)]) -> Vec<(i64, String)> {
-    let mut used: HashSet<String> = HashSet::new();
-    rows.iter()
-        .map(|(id, global_id, location)| {
-            let global_id = global_id.trim();
-            let location = location.trim();
-            let mut key = if !global_id.is_empty() {
-                format!("g:{global_id}")
-            } else if !location.is_empty() {
-                format!("l:{location}")
-            } else {
-                format!("t:{id}")
-            };
-            if !used.insert(key.clone()) {
-                key = format!("t:{id}");
-                used.insert(key.clone());
-            }
-            (*id, key)
-        })
-        .collect()
-}
 
 fn read_keys(root: &str) -> AppResult<Vec<(i64, String)>> {
     let lib = Library::open_read_only(&PathBuf::from(root))?;

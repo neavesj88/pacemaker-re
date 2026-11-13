@@ -238,7 +238,7 @@ pub fn export_mix_audio(
             }
         }
         if let Some((path, bytes)) = &cue_sheet {
-            match tracklist::write_atomic(path, bytes) {
+            match crate::store::write_file(path, bytes) {
                 Ok(()) => summary.push_str(&format!(" and {}", file_name(path))),
                 Err(e) => {
                     skipped += 1;
@@ -322,7 +322,7 @@ pub async fn export_tracklist_save(root: String, mix: MixDoc, options: Option<Tr
         {
             return Err(format!("Cannot write a CUE sheet: {why}.").into());
         }
-        tracklist::write_atomic(&dest, &out.file_bytes(fmt, &opts))?;
+        crate::store::write_file(&dest, &out.file_bytes(fmt, &opts))?;
         Ok(dest.to_string_lossy().into_owned())
     })
     .await?

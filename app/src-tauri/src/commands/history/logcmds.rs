@@ -13,6 +13,7 @@ use tauri::Manager;
 
 use super::playlog::{self, Candidate, Hit, Outcome, PlayLog, Reading, Settings};
 use crate::error::AppResult;
+use crate::store::config_dir;
 
 pub fn setup(app: &mut tauri::App) {
     app.manage(PlayLogGuard::default());
@@ -25,10 +26,6 @@ struct PlayLogGuard(Mutex<()>);
 
 fn now_ms() -> i64 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as i64).unwrap_or(0)
-}
-
-fn log_dir(app: &tauri::AppHandle) -> AppResult<PathBuf> {
-    Ok(app.path().app_config_dir()?)
 }
 
 fn readings_of(root: &str) -> AppResult<Vec<Reading>> {
@@ -127,7 +124,7 @@ fn plural(n: usize) -> &'static str {
 }
 
 async fn run_record(app: tauri::AppHandle, root: String, mode: Mode) -> AppResult<RecordReport> {
-    let dir = log_dir(&app)?;
+    let dir = config_dir(&app)?;
     tauri::async_runtime::spawn_blocking(move || -> AppResult<RecordReport> {
         // Off is checked before the volume is touched, so a disabled log never reads the card.
         if !playlog::load_settings(&dir).enabled {
@@ -144,14 +141,14 @@ async fn run_record(app: tauri::AppHandle, root: String, mode: Mode) -> AppResul
 /// Saved settings of the play log (on by default, 730 days kept, four hour session gap).
 #[tauri::command]
 pub async fn playlog_settings_get(app: tauri::AppHandle) -> AppResult<Settings> {
-    let dir = log_dir(&app)?;
+    let dir = config_dir(&app)?;
     Ok(tauri::async_runtime::spawn_blocking(move || playlog::load_settings(&dir)).await?)
 }
 
 /// Saves the settings (clamped to sensible bounds) and returns them as stored.
 #[tauri::command]
 pub async fn playlog_settings_set(app: tauri::AppHandle, settings: Settings) -> AppResult<Settings> {
-    let dir = log_dir(&app)?;
+    let dir = config_dir(&app)?;
     tauri::async_runtime::spawn_blocking(move || -> AppResult<Settings> {
         let s = settings.sanitised();
         playlog::save_settings(&dir, &s)?;
@@ -186,7 +183,7 @@ pub async fn playlog_start_new(app: tauri::AppHandle, root: String) -> AppResult
 /// this library. Nothing is deleted or copied; refused if this library already has a log.
 #[tauri::command]
 pub async fn playlog_adopt_log(app: tauri::AppHandle, root: String, file: String) -> AppResult<()> {
-    let dir = log_dir(&app)?;
+    let dir = config_dir(&app)?;
     tauri::async_runtime::spawn_blocking(move || -> AppResult<()> {
         let guard = app.state::<PlayLogGuard>();
         let _held = guard.0.lock().unwrap_or_else(|p| p.into_inner());
@@ -374,7 +371,7 @@ pub async fn playlog_overview(
     session_limit: Option<usize>,
     rank_limit: Option<usize>,
 ) -> AppResult<PlayLogOverview> {
-    let dir = log_dir(&app)?;
+    let dir = config_dir(&app)?;
     tauri::async_runtime::spawn_blocking(move || -> AppResult<PlayLogOverview> {
         let settings = playlog::load_settings(&dir);
         let bytes = playlog::file_size(&dir, &root);
@@ -445,7 +442,7 @@ fn track_log_of(log: &PlayLog, readings: &[Reading], track_id: i64) -> Option<Tr
 /// `None` when there is no log or the track is not in the library.
 #[tauri::command]
 pub async fn playlog_track(app: tauri::AppHandle, root: String, track_id: i64) -> AppResult<Option<TrackLog>> {
-    let dir = log_dir(&app)?;
+    let dir = config_dir(&app)?;
     tauri::async_runtime::spawn_blocking(move || -> AppResult<Option<TrackLog>> {
         let guard = app.state::<PlayLogGuard>();
         let log = {
@@ -464,7 +461,7 @@ pub async fn playlog_track(app: tauri::AppHandle, root: String, track_id: i64) -
 /// only after the user confirmed in the UI. Returns whether a file was removed.
 #[tauri::command]
 pub async fn playlog_clear(app: tauri::AppHandle, root: String) -> AppResult<bool> {
-    let dir = log_dir(&app)?;
+    let dir = config_dir(&app)?;
     tauri::async_runtime::spawn_blocking(move || -> AppResult<bool> {
         let guard = app.state::<PlayLogGuard>();
         let _held = guard.0.lock().unwrap_or_else(|p| p.into_inner());

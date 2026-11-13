@@ -169,14 +169,7 @@ impl WriteGate {
     }
 }
 
-/// One name for one volume however the frontend spells it: `E:` and `E:\` are the same library,
-/// so are `/mnt/usb` and `/mnt/usb/`. Separators are unified, trailing ones dropped, and on
-/// Windows (case-insensitive paths) the case folded.
-pub fn volume_key(root: &Path) -> String {
-    let s = root.to_string_lossy().replace('\\', "/");
-    let s = s.trim_end_matches('/');
-    if cfg!(windows) { s.to_lowercase() } else { s.to_string() }
-}
+pub use pm_formats::appfile::volume_key;
 
 /// The folder holding the automatic snapshots of the library at `root`:
 /// `<app data dir>/snapshots/<root made filename-safe>-<hash>`. Never on the device. Making a
@@ -192,12 +185,7 @@ fn snapshot_folder_name(root: &Path) -> String {
     let readable = readable.trim_matches('_');
     let readable = if readable.is_empty() { "library" } else { readable };
     // FNV-1a: stable across Rust versions and runs, unlike the std hasher
-    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
-    for b in norm.bytes() {
-        h ^= u64::from(b);
-        h = h.wrapping_mul(0x0100_0000_01b3);
-    }
-    format!("{readable}-{:08x}", h as u32)
+    format!("{readable}-{:08x}", crate::store::fnv1a(&norm) as u32)
 }
 
 /// Starts a write to the library at `root` (snapshot first, once per session; see

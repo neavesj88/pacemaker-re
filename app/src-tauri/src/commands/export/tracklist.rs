@@ -11,7 +11,6 @@
 //!
 //! Nothing here touches Tauri or the device; the commands are in `export.rs`.
 
-use std::path::Path;
 
 use pm_mixer::RATE;
 use pm_mixer::engine::{audible_clips, export_span};
@@ -556,25 +555,6 @@ pub fn render_all_in(doc: &MixDoc, opts: &TracklistOptions, audio_file_name: &st
     })
 }
 
-/// Writes `bytes` to `dest` through a temporary file in the same folder, so an interrupted write
-/// never leaves a truncated file under the real name.
-pub fn write_atomic(dest: &Path, bytes: &[u8]) -> std::io::Result<()> {
-    use std::io::Write;
-    let name = dest.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-    let tmp = dest.with_file_name(format!(".{name}.{}.tmp", std::process::id()));
-    let result = (|| {
-        let mut f = std::fs::File::create(&tmp)?;
-        f.write_all(bytes)?;
-        f.sync_all()?;
-        drop(f);
-        std::fs::rename(&tmp, dest)
-    })();
-    if result.is_err() {
-        let _ = std::fs::remove_file(&tmp);
-    }
-    result
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -887,19 +867,5 @@ mod tests {
         assert_eq!(o, TracklistOptions { stamp_at: StampAt::CrossfadeMid, rounding: Rounding::Nearest, ..TracklistOptions::default() });
         let o: TracklistOptions = serde_json::from_str("{}").unwrap();
         assert_eq!(o, TracklistOptions::default());
-    }
-
-    #[test]
-    fn atomic_write_replaces_the_file_and_leaves_no_temp() {
-        let d = std::env::temp_dir().join(format!("pmrev-tracklist-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&d);
-        std::fs::create_dir_all(&d).unwrap();
-        let f = d.join("list.txt");
-        write_atomic(&f, b"one").unwrap();
-        write_atomic(&f, b"two").unwrap();
-        assert_eq!(std::fs::read(&f).unwrap(), b"two");
-        assert_eq!(std::fs::read_dir(&d).unwrap().count(), 1);
-        assert!(write_atomic(&d.join("missing").join("x.txt"), b"x").is_err());
-        std::fs::remove_dir_all(d).unwrap();
     }
 }

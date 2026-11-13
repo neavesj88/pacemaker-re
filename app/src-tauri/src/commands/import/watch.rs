@@ -21,8 +21,6 @@
 //! library is only compared with, never read through.
 
 use std::collections::{HashMap, HashSet};
-use std::fs::File;
-use std::io::Write as _;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
@@ -33,10 +31,10 @@ use lofty::tag::Accessor;
 use pm_formats::library::{Library, Track};
 use pm_formats::naming;
 use serde::{Deserialize, Serialize};
-use tauri::Manager;
 
 use super::is_audio;
 use crate::error::AppResult;
+use crate::store::config_dir;
 
 /// Serialises the read-modify-write of the settings and state files (a scan and an "ignore"
 /// click must not both rewrite a file from the same starting point).
@@ -159,9 +157,7 @@ pub struct SettingsView {
 /// A path in one comparable spelling: forward slashes, no trailing slash, folded to lower case
 /// where the file system ignores case (Windows).
 pub fn norm_path(p: &str) -> String {
-    let s = p.replace('\\', "/");
-    let s = s.trim_end_matches('/');
-    if cfg!(windows) { s.to_lowercase() } else { s.to_string() }
+    crate::state::volume_key(Path::new(p))
 }
 
 fn is_under(path: &str, dir: &str) -> bool {
@@ -550,12 +546,7 @@ pub struct StateView {
 }
 
 fn key_of(root: &str) -> String {
-    let norm = root.replace('\\', "/").trim_end_matches('/').to_lowercase();
-    let mut h: u64 = 0xcbf2_9ce4_8422_2325; // FNV-1a, as the smart-case store
-    for b in norm.bytes() {
-        h = (h ^ u64::from(b)).wrapping_mul(0x0100_0000_01b3);
-    }
-    format!("{h:016x}")
+    format!("{:016x}", crate::store::root_hash(root))
 }
 
 fn settings_path(dir: &Path) -> PathBuf {
@@ -564,24 +555,6 @@ fn settings_path(dir: &Path) -> PathBuf {
 
 fn state_path(dir: &Path, root: &str) -> PathBuf {
     dir.join(format!("watch-state-{}.json", key_of(root)))
-}
-
-/// Temp file, fsync, rename: a crash leaves the old file or the new one, never half of either.
-fn write_atomic(path: &Path, text: &str) -> Result<(), String> {
-    if let Some(dir) = path.parent() {
-        std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
-    }
-    let tmp = path.with_extension("json.tmp");
-    let res = (|| -> std::io::Result<()> {
-        let mut f = File::create(&tmp)?;
-        f.write_all(text.as_bytes())?;
-        f.sync_all()?;
-        std::fs::rename(&tmp, path)
-    })();
-    res.map_err(|e| {
-        let _ = std::fs::remove_file(&tmp);
-        format!("{}: {e}", path.display())
-    })
 }
 
 /// Reads and parses a JSON file. `Ok(None)` when it does not exist; a file that does not parse
@@ -609,7 +582,7 @@ pub fn load_settings(dir: &Path, now_ms: i64) -> Result<SettingsView, String> {
 
 pub fn save_settings(dir: &Path, s: &Settings) -> Result<(), String> {
     let text = serde_json::to_string_pretty(s).map_err(|e| e.to_string())?;
-    write_atomic(&settings_path(dir), &text)
+    crate::store::write_bytes(&settings_path(dir), text.as_bytes())
 }
 
 pub fn load_state(dir: &Path, root: &str, now_ms: i64) -> Result<StateView, String> {
@@ -619,7 +592,7 @@ pub fn load_state(dir: &Path, root: &str, now_ms: i64) -> Result<StateView, Stri
 
 pub fn save_state(dir: &Path, root: &str, s: &WatchState) -> Result<(), String> {
     let text = serde_json::to_string_pretty(s).map_err(|e| e.to_string())?;
-    write_atomic(&state_path(dir, root), &text)
+    crate::store::write_bytes(&state_path(dir, root), text.as_bytes())
 }
 
 /// Adds files to the ignore list (a file already on it is not added twice).
@@ -658,10 +631,6 @@ pub fn push_log(state: &mut WatchState, mut e: LogEntry) {
 
 fn now_ms() -> i64 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as i64).unwrap_or(0)
-}
-
-fn config_dir(app: &tauri::AppHandle) -> AppResult<PathBuf> {
-    Ok(app.path().app_config_dir()?)
 }
 
 /// The watch-folder settings (defaults until saved: no folders, ask first, scan on open, no timer).

@@ -32,10 +32,11 @@ use pm_analysis::sections::{self as core, Detection, NoStructure, Params, Row, S
 use pm_formats::library::Library;
 use pm_formats::{naming, strfile};
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, State};
 
-use super::energy::{atomic_write, root_hash};
+use crate::store::{root_hash, write_bytes};
 use crate::error::{AppError, AppResult, IntoApp};
+use crate::store::config_dir;
 use crate::events::{self, JOB_PROGRESS};
 use crate::jobs::{spawn_job, JobOutcome, Progress};
 use crate::state::JobLock;
@@ -135,7 +136,7 @@ pub fn load_settings(dir: &Path) -> Settings {
 pub fn save_settings(dir: &Path, s: &Settings) -> Result<(), String> {
     s.validate()?;
     let text = serde_json::to_string_pretty(s).map_err(|e| e.to_string())?;
-    atomic_write(&settings_path(dir), text.as_bytes())
+    write_bytes(&settings_path(dir), text.as_bytes())
 }
 
 // ---- cache -----------------------------------------------------------------------------------
@@ -204,7 +205,7 @@ fn load_cache(dir: &Path, root: &str) -> (CacheFile, Option<String>) {
 
 fn save_cache(dir: &Path, root: &str, cache: &CacheFile) -> Result<(), String> {
     let text = serde_json::to_string(&CacheFile { version: core::VERSION, tracks: cache.tracks.clone() }).map_err(|e| e.to_string())?;
-    atomic_write(&cache_path(dir, root), text.as_bytes())
+    write_bytes(&cache_path(dir, root), text.as_bytes())
 }
 
 // ---- reading the cache -----------------------------------------------------------------------
@@ -564,10 +565,6 @@ fn run_analysis(dir: &Path, root: &str, targets: &[TrackRef], settings: &Setting
 }
 
 // ---- commands --------------------------------------------------------------------------------
-
-fn config_dir(app: &AppHandle) -> AppResult<PathBuf> {
-    Ok(app.path().app_config_dir()?)
-}
 
 /// Every track's sections under the saved settings, with the counts for the UI. Read-only: it
 /// opens the library read-only and reads the app-side cache; nothing on the device is touched.

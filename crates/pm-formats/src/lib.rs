@@ -4,6 +4,7 @@
 //! notes/FINDINGS.md) and is tested byte-exact against files the original Editor wrote, where
 //! those are available locally (tests/editor_fixtures.rs).
 
+pub mod appfile;
 pub mod db;
 pub mod interop;
 pub mod juce_b64;
@@ -16,7 +17,9 @@ pub mod ops_device;
 pub mod ops_fix;
 pub mod ops_grid;
 pub mod ops_vtempo;
+pub mod ops_dupes;
 pub mod ops_history;
+pub mod ops_labels;
 pub mod ops_metadata;
 pub mod ops_tagfile;
 pub mod ops_preset;

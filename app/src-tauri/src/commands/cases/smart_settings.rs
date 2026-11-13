@@ -90,21 +90,7 @@ pub fn load(dir: &Path) -> (SmartSettings, Option<String>) {
 /// Writes the settings (temp file, then rename). A file that could not be read is copied to
 /// `smart-settings.json.bad` first, once, so a hand edit is never silently lost.
 pub fn save(dir: &Path, s: &SmartSettings) -> Result<(), String> {
-    std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
-    let p = path(dir);
-    if load(dir).1.is_some() && p.exists() {
-        let bad = p.with_extension("json.bad");
-        if !bad.exists() {
-            std::fs::copy(&p, &bad).map_err(|e| e.to_string())?;
-        }
-    }
-    let tmp = p.with_extension("json.tmp");
-    let text = serde_json::to_string_pretty(s).map_err(|e| e.to_string())?;
-    std::fs::write(&tmp, text).map_err(|e| e.to_string())?;
-    std::fs::rename(&tmp, &p).inspect_err(|_| {
-        let _ = std::fs::remove_file(&tmp);
-    })
-    .map_err(|e| e.to_string())
+    crate::store::save_keeping_bad(&path(dir), s, load(dir).1.is_some())
 }
 
 #[cfg(test)]

@@ -2,16 +2,12 @@
 // "delete the source cases" choice. Remembered in the browser (per viewer, not per library, and
 // never on the device). Storage may be blocked or full; the view then just forgets.
 import { CASE_COLUMNS, type CaseColKey, type CasePrefs, type CaseSortKey, defaultCasePrefs, mergeCasePrefs } from "./caseLogic";
+import { loadPref, savePref } from "$lib/state/prefStore";
 
 const STORAGE_KEY = "pm.cases.view.v1";
 
 function load(): CasePrefs {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    return mergeCasePrefs(raw ? JSON.parse(raw) : null);
-  } catch {
-    return defaultCasePrefs();
-  }
+  return loadPref(STORAGE_KEY, mergeCasePrefs, () => defaultCasePrefs());
 }
 
 class CaseView {
@@ -48,11 +44,7 @@ class CaseView {
   }
 
   save() {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify($state.snapshot(this.prefs)));
-    } catch {
-      // private window, blocked or full storage
-    }
+    savePref(STORAGE_KEY, $state.snapshot(this.prefs));
   }
 }
 

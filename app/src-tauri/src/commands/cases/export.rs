@@ -124,10 +124,7 @@ pub fn export_case(root: &Path, case_id: i64, format: &str, dest: &str) -> AppRe
 /// Writes `text` beside `dest` and renames it: a failed write never leaves half a file under
 /// the name.
 pub(super) fn write_out(dest: &str, text: &str) -> AppResult<()> {
-    let tmp = format!("{dest}.part");
-    std::fs::write(&tmp, text).and_then(|_| std::fs::rename(&tmp, dest)).inspect_err(|_| {
-        let _ = std::fs::remove_file(&tmp);
-    })?;
+    crate::store::write_file(Path::new(dest), text.as_bytes())?;
     Ok(())
 }
 

@@ -7,6 +7,11 @@
   import Button from "$lib/ui/Button.svelte";
   import Modal from "$lib/ui/Modal.svelte";
 
+  // `onclose` is given when another view hosts the dialog (the Settings view); the finder's own
+  // view leaves it out and the dialog closes through the store flag it opened with.
+  let { onclose }: { onclose?: () => void } = $props();
+  const close = () => (onclose ? onclose() : (duplicates.settingsOpen = false));
+
   let draft = $state<DupSettings>({ ...duplicates.settings });
 
   const num = (e: Event & { currentTarget: HTMLInputElement }, min: number, max: number, fallback: number) => {
@@ -16,11 +21,11 @@
 
   async function save() {
     await duplicates.saveSettings({ ...draft });
-    duplicates.settingsOpen = false;
+    close();
   }
 </script>
 
-<Modal title="Duplicate finder settings" onclose={() => (duplicates.settingsOpen = false)}>
+<Modal title="Duplicate finder settings" onclose={close}>
   <div class="body">
     {#if duplicates.settingsWarning}<p class="warn" role="alert">{duplicates.settingsWarning}</p>{/if}
 
@@ -112,7 +117,7 @@
 
   {#snippet actions()}
     <Button onclick={() => (draft = { ...DEFAULT_SETTINGS })}>Defaults</Button>
-    <Button data-autofocus onclick={() => (duplicates.settingsOpen = false)}>Cancel</Button>
+    <Button data-autofocus onclick={close}>Cancel</Button>
     <Button variant="primary" onclick={save}>Save</Button>
   {/snippet}
 </Modal>

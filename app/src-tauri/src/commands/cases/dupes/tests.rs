@@ -98,7 +98,7 @@ fn tags_and_size_find_groups_with_cases_files_and_the_suggested_keeper() {
     assert_eq!(by_size.members[1].file, FileState::Missing);
 
     // the keeper rule is a setting
-    let plays = find_in(&f.vol, &f.fp_file(), &DupSettings { keeper_rule: super::super::dupes_settings::KeeperRule::Newest, ..s.clone() }).unwrap();
+    let plays = find_in(&f.vol, &f.fp_file(), &DupSettings { keeper_rule: pm_formats::ops_dupes::KeeperRule::Newest, ..s.clone() }).unwrap();
     assert_eq!(plays.groups.iter().find(|g| g.id == a1).unwrap().suggested_keeper, a2, "added later");
     // each way can be turned off
     assert_eq!(find_in(&f.vol, &f.fp_file(), &only(&s, false, true, false)).unwrap().groups.len(), 1);

@@ -81,12 +81,7 @@ pub fn refers_to_case(q: &Query, case_id: i64) -> bool {
 /// The file for a library: named by a hash of its root path (a drive letter or mount point),
 /// so nothing about the device is written next to the rules.
 pub fn store_path(dir: &Path, root: &str) -> PathBuf {
-    let norm = root.replace('\\', "/").trim_end_matches('/').to_lowercase();
-    let mut h: u64 = 0xcbf2_9ce4_8422_2325; // FNV-1a
-    for b in norm.bytes() {
-        h = (h ^ u64::from(b)).wrapping_mul(0x0100_0000_01b3);
-    }
-    dir.join(format!("smart-cases-{h:016x}.json"))
+    dir.join(format!("smart-cases-{:016x}.json", crate::store::root_hash(root)))
 }
 
 pub fn load(dir: &Path, root: &str) -> Result<Vec<SmartCase>, String> {
@@ -108,10 +103,7 @@ fn save_all(dir: &Path, root: &str, list: Vec<SmartCase>) -> Result<(), String> 
     std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
     let p = store_path(dir, root);
     keep_old_version(&p)?;
-    let tmp = p.with_extension("json.tmp");
-    let text = serde_json::to_string_pretty(&SmartFile { version: STORE_VERSION, smart_cases: list }).map_err(|e| e.to_string())?;
-    std::fs::write(&tmp, text).map_err(|e| e.to_string())?;
-    std::fs::rename(&tmp, &p).map_err(|e| e.to_string())
+    crate::store::write_json(&p, &SmartFile { version: STORE_VERSION, smart_cases: list })
 }
 
 /// Before the first write over a file an older version of the app wrote, keeps a copy of it

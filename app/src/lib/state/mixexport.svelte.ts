@@ -38,6 +38,7 @@ import {
 import { mixes } from "./mixes.svelte";
 import { sameAudio } from "./sameaudio";
 import { session } from "./session.svelte";
+import { loadPref, savePref } from "./prefStore";
 import { toast } from "./toast.svelte";
 import { tracklist } from "./tracklist.svelte";
 import { vocal } from "./vocal.svelte";
@@ -45,12 +46,7 @@ import { vocal } from "./vocal.svelte";
 const STORAGE_KEY = "pacemaker-revival.mixexport";
 
 function load(): ExportPrefs {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    return mergePrefs(raw ? JSON.parse(raw) : null);
-  } catch {
-    return defaultPrefs();
-  }
+  return loadPref(STORAGE_KEY, mergePrefs, () => defaultPrefs());
 }
 
 const errText = (e: unknown) => (typeof e === "string" ? e : e instanceof Error ? e.message : String(e));
@@ -97,11 +93,7 @@ class MixExport {
   }
 
   save() {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(this.prefs));
-    } catch {
-      // private window, blocked or full storage: the settings still apply, they are just forgotten
-    }
+    savePref(STORAGE_KEY, this.prefs);
   }
 
   /** A fresh dialog for a mix that was not the last one: the whole mix, nothing carried over. */

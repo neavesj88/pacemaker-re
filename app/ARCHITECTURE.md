@@ -43,6 +43,8 @@ files.
 | `lib/views/matcher/` (`MatcherView`, `PickTrackModal`, `SaveCaseModal`, `matcher.svelte.ts`, pure `matchLogic.ts`, `parseList.ts`), `commands/import/request.rs` | Track matcher (sidebar tools, "Track matcher"): matches a request list (text, CSV or playlist file) against the library, saves the owned tracks as a case and exports the missing list. Matching runs in the UI; the two backend commands (`matcher_read_list`, `matcher_save_text`) only move text, and a save refuses a destination inside the library volume. Wrappers `lib/api/matcher.ts` | import |
 | `lib/views/setlist/` (`SetlistModal`, `Overlays.svelte`, `setlist.svelte.ts`, pure `setlistLogic.ts`), `commands/export/setlist.rs` | Printable setlist of a case or a mix (buttons "Setlist..." in the case page, mix list and mix editor): print-ready HTML built by the UI so preview, print and saved file are one text; event details, a note and an energy rating per track live app-side in one JSON file per library (nothing on the device). Wrappers `lib/api/setlist.ts`. The mix track list / CUE sheet is a separate feature in `commands/export/tracklist.rs` | export |
 | `lib/views/vdj/` (`VdjExportModal`, `Overlays.svelte`, `init.ts`, `vdj.svelte.ts`, pure `vdjLogic.ts`), `commands/export/vdj.rs` | VirtualDJ list export of a case ("VirtualDJ..." in the case page), optionally with copies of the audio in a folder the user picks; one plan computation behind the preview and the run, nothing written to the device, audio found by the plain-names-only rule rather than `Library::track_paths`. Why this format and not OneLibrary: `notes/onelibrary-export.md`. Wrappers `lib/api/vdj.ts` | export |
+| `lib/views/settings/` (`SettingsView`, `registry.ts`, `types.ts`, `areas.ts`, pure `settingsLogic.ts`), `views/<area>/settings.ts` | Settings view (sidebar tools, "Settings"): every feature setting grouped by area, with a search box. It owns no control: each area adds a `views/<area>/settings.ts` (a list of entries, found by glob like `view.ts`) that points at the feature's own component or state, and the control stays where it is used as well. An entry is `inline` (the feature's own settings component, shown in place), `dialog` (its own dialog, which takes `onclose`), `open` (its always-mounted panel or dialog, opened through its own opener) or `view` (the choices belong to a flow that needs a selection or a run, so the entry says what they are and goes there). A new feature's settings appear by adding that file. `settingsLogic.test.mjs` (in `npm test`) checks every `settings.ts` is well formed and that every settings file the backend keeps (`*-settings.json`, `energy-source.json`, ...) has an entry, so a new settings file without one fails the test | settings |
+| `lib/state/prefStore.ts` | `loadPref` / `savePref`: the one way a view keeps a per-viewer preference in browser storage (reading never throws and always gives defaults at worst; a failed write loses only the memory of the choice). Settings that code outside the browser reads (smart-case rules) go through the backend instead, see "App-side files" below | integration |
 | `lib/state/labels.ts`, `labels.svelte.ts` | Tags, colour labels (8 named, `--label-*` tokens) and energy 1-10, app-side only (nothing on the device). `labels.ts` is pure (types, ops mirror, filter predicate `matchesLabels` / `filterByLabels`, drafts) and safe for any area to reuse; `labels.svelte.ts` holds `labels` (by track id) and `labelEditor` (`edit(ids)`, `manage()`). Parity vectors `labels.parity.json` run against both this and the Rust store. UI in `views/metadata/` (`TagEditor`, `TagManager`, `LabelFields`, also a section of the metadata editor) and the Tracks columns / filter (`views/tracks/LabelFilterBar`) | metadata |
 | `lib/views/<area>/Overlays.svelte`, `init.ts` | Optional: always-mounted overlays / startup subscriptions of that area | that area |
 | `lib/player/Player.svelte` (+ optional `Overlays.svelte`, `init.ts`) | Bottom player bar and engine | playback |
@@ -77,14 +79,46 @@ Tags and colour labels also belong to **cases and mixes** (not energy: a case or
 | `lib.rs` | Registration only: plugins, `setup`, `register_handlers!()` | integration |
 | `commands/mod.rs` | Module list, `setup` chain, `register_handlers!` chain (all twelve areas are already in it) | integration |
 | `commands/library.rs` | `list_volumes`, `open_library`, `LibraryView` | integration |
-| `commands/tags.rs`, `commands/tags/store.rs`, `commands/tags/energy_source.rs` | Label store: one JSON file per library volume in the app config dir, atomic writes, generic over kind (track, case, mix) and a stable key; tracks are keyed by `global_id` (fallbacks in the file header), cases and mixes by `<id>:<date_created>`. The Energy source setting and its resolver, and the label snapshot the smart-case rules read. Not a device write, so no write gate | metadata |
+| `commands/tags.rs`, `commands/tags/store.rs` (re-exports `pm_formats::ops_labels`), `commands/tags/energy_source.rs` | Label store (the store itself is `pm_formats::ops_labels`, shared with `pm tags`): one JSON file per library volume in the app config dir, atomic writes, generic over kind (track, case, mix) and a stable key; tracks are keyed by `global_id` (fallbacks in the file header), cases and mixes by `<id>:<date_created>`. The Energy source setting and its resolver, and the label snapshot the smart-case rules read. Not a device write, so no write gate | metadata |
 | `commands/<area>.rs` | Commands of that area: `tracks` (`reanalyse_tracks`), `mixes` (`mix_list`), `cases` (`case_tracks`), `import` (`expand_audio_paths`, `add_tracks`); `history`, `grid`, `device`, `playback`, `metadata`, `analysis`, `export` are empty | that area |
 | `state.rs` | State shared by several areas (`JobLock`); `setup` | integration |
+| `store.rs` | Only what needs Tauri: `config_dir`. The rest of the app-side file plumbing is `pm_formats::appfile`, re-exported here: see "App-side files" below | integration |
 | `jobs.rs` | Generic `spawn_job`, `Progress`, `JobOutcome`, `JobDone` | integration |
 | `events.rs` | Shared event names (jobs) and `emit` | integration |
 | `error.rs` | `AppError` (serialises to a string), `AppResult`, `.app()` | integration |
 
 `commands/stems.rs` plus `commands/stems/{manifest,download,settings,plan,run}.rs` are the `stems` area: consented downloads of the model and engine into the app data folder, settings and consent records in the app config folder, a plan that the run recomputes with the same function, and a job that writes only into a folder on this computer (the card is reached through the ordinary add-tracks step, which asks first).
+
+#### App-side files
+
+Everything the app keeps for itself (labels, saved filters, play log, watch state, smart cases,
+setlist notes, presets, settings, caches) is a JSON file in the app config folder, one per library
+or one per setting, never on the device. The plumbing they share is `pm_formats::appfile`
+(`crates/pm-formats/src/appfile.rs`), used by the app and by `pm`, so one file is read and written
+one way everywhere:
+
+- **Names.** `fnv1a` is the hash in every `<kind>-<16 hex>.json` name; `root_hash` is the hash of a
+  library root spelled one way (case, slashes) and `volume_key` the key the label and saved-filter
+  files use. Changing either orphans files already on users' disks; the tests pin them.
+- **Writes.** `write_atomic` (an app-side file: `<name>.tmp`, fsync, rename, folder created) and
+  `write_file` (a file the user chose: `<name>.part`, fsync, rename, the folder must exist), both
+  removing the temp file on failure. `write_json` / `write_bytes` are the same with the error as text.
+- **Unreadable files** are never overwritten or deleted: `set_aside` moves a damaged one to
+  `<name>.corrupt` (then `.corrupt.1`, ...), `save_keeping_bad` copies a settings file once to
+  `<name>.bad` before replacing it. A store keeps its own format, version check and wording.
+
+Two stores live in `pm_formats` entirely so `pm` can read what the app saved: the label store
+(`ops_labels`, with `build_keys`, which keys a track by `global_id`) and the duplicate finder's
+settings and matching rules that need no audio (`ops_dupes`; the sound check stays in the app,
+`commands/cases/dupes_logic.rs`). `pm tags` and `pm duplicates` read them from the app's config
+folder (`--config-dir`) and never write. Not merged on purpose: the two ways of copying a file
+(`cases/export_bulk.rs` and `export/vdj.rs`; the VirtualDJ one re-checks that the source still lies
+under the music folder), the tag writers (`commands/metadata/tagwrite.rs` rewrites tags in place
+through lofty; `pm-mixer/src/tags.rs` builds the tag bytes of a file being rendered, with chapters),
+the free-space planner's byte-identical duplicate check (`ops_space`, which decides what is safe to
+remove) and the finder's looser matching, and the two "feat." readers (`dupes` strips them to
+compare, `cleanup` rewrites them): each answers a different question, and merging them would change
+what they find.
 
 Crates in `crates/` are not part of the app layout; the app only calls them.
 

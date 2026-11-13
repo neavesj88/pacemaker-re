@@ -10,9 +10,10 @@ use pm_analysis::ingest::{self, Existing};
 use pm_formats::library::Library;
 use serde::Serialize;
 use serde_json::Value;
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, State};
 
 use crate::error::AppResult;
+use crate::store::config_dir;
 use crate::events::{self, JOB_PROGRESS};
 use crate::jobs::{progress_of, spawn_write_job};
 use crate::state::JobLock;
@@ -152,10 +153,6 @@ fn views_payload(l: views::Loaded) -> ViewsPayload {
     ViewsPayload { presets: l.views.presets, state: l.views.state, notice: l.notice }
 }
 
-fn views_dir(app: &AppHandle) -> AppResult<PathBuf> {
-    Ok(app.path().app_config_dir()?)
-}
-
 /// Loads the views file, runs `f` on it and saves it when `f` changed it. A file that could not
 /// be read, or a newer build wrote, is never saved over.
 fn views_mutate<T>(dir: &Path, root: &str, f: impl FnOnce(&mut views::Views) -> Result<T, String>) -> Result<(T, views::Loaded), String> {
@@ -178,7 +175,7 @@ fn views_mutate<T>(dir: &Path, root: &str, f: impl FnOnce(&mut views::Views) -> 
 /// The saved filter presets and the remembered view of this library. Nothing is written.
 #[tauri::command]
 pub async fn tracks_views_load(app: AppHandle, root: String) -> AppResult<ViewsPayload> {
-    let dir = views_dir(&app)?;
+    let dir = config_dir(&app)?;
     tauri::async_runtime::spawn_blocking(move || -> AppResult<ViewsPayload> {
         let _guard = VIEWS_LOCK.lock().unwrap_or_else(|p| p.into_inner());
         Ok(views_payload(views::load(&dir, &crate::state::volume_key(Path::new(&root)))))
@@ -190,7 +187,7 @@ pub async fn tracks_views_load(app: AppHandle, root: String) -> AppResult<ViewsP
 /// is set. Returns the fresh list.
 #[tauri::command]
 pub async fn tracks_views_save_preset(app: AppHandle, root: String, name: String, state: Value, replace: bool) -> AppResult<ViewsPayload> {
-    let dir = views_dir(&app)?;
+    let dir = config_dir(&app)?;
     tauri::async_runtime::spawn_blocking(move || -> AppResult<ViewsPayload> {
         let (_, loaded) = views_mutate(&dir, &root, |v| v.save_preset(&name, state, replace, views::fresh_id))?;
         Ok(views_payload(loaded))
@@ -201,7 +198,7 @@ pub async fn tracks_views_save_preset(app: AppHandle, root: String, name: String
 /// Deletes one preset by id. Returns the fresh list.
 #[tauri::command]
 pub async fn tracks_views_delete_preset(app: AppHandle, root: String, id: String) -> AppResult<ViewsPayload> {
-    let dir = views_dir(&app)?;
+    let dir = config_dir(&app)?;
     tauri::async_runtime::spawn_blocking(move || -> AppResult<ViewsPayload> {
         let (_, loaded) = views_mutate(&dir, &root, |v| {
             if v.delete_preset(&id) { Ok(()) } else { Err("That preset no longer exists.".to_string()) }
@@ -214,7 +211,7 @@ pub async fn tracks_views_delete_preset(app: AppHandle, root: String, id: String
 /// Remembers the view the table was left in (`None` forgets it).
 #[tauri::command]
 pub async fn tracks_views_set_state(app: AppHandle, root: String, state: Option<Value>) -> AppResult<()> {
-    let dir = views_dir(&app)?;
+    let dir = config_dir(&app)?;
     tauri::async_runtime::spawn_blocking(move || -> AppResult<()> {
         views_mutate(&dir, &root, |v| {
             if let Some(s) = &state {

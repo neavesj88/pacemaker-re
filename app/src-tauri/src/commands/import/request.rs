@@ -100,13 +100,7 @@ pub fn save_text(root: &Path, dest: &Path, text: &str) -> Result<SavedText, Stri
         return Err(format!("The list is larger than {} MB.", MAX_LIST_BYTES / (1024 * 1024)));
     }
     check_dest(root, dest)?;
-    let mut tmp = dest.as_os_str().to_owned();
-    tmp.push(".part");
-    let tmp = std::path::PathBuf::from(tmp);
-    std::fs::write(&tmp, text).and_then(|_| std::fs::rename(&tmp, dest)).map_err(|e| {
-        let _ = std::fs::remove_file(&tmp);
-        format!("Cannot write {}: {e}", dest.display())
-    })?;
+    crate::store::write_file(dest, text.as_bytes()).map_err(|e| format!("Cannot write {}: {e}", dest.display()))?;
     Ok(SavedText { path: dest.to_string_lossy().into_owned(), bytes: text.len() as u64 })
 }
 

@@ -10,14 +10,13 @@
 //! this side only writes it, never inside the device volume.
 
 use std::collections::BTreeMap;
-use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use serde::{Deserialize, Serialize};
-use tauri::Manager;
 
 use crate::error::{AppError, AppResult};
+use crate::store::config_dir;
 
 /// Most characters in a one-line field (title, event, venue, DJ, date).
 pub const MAX_LINE: usize = 200;
@@ -163,12 +162,7 @@ pub fn sanitize(s: Sheet) -> Result<Sheet, String> {
 /// nothing about the device is written next to the setlists. The hash is the one the smart
 /// cases use, so the two files of a library sit together under matching names.
 pub fn store_path(dir: &Path, root: &str) -> PathBuf {
-    let norm = root.replace('\\', "/").trim_end_matches('/').to_lowercase();
-    let mut h: u64 = 0xcbf2_9ce4_8422_2325; // FNV-1a
-    for b in norm.bytes() {
-        h = (h ^ u64::from(b)).wrapping_mul(0x0100_0000_01b3);
-    }
-    dir.join(format!("setlists-{h:016x}.json"))
+    dir.join(format!("setlists-{:016x}.json", crate::store::root_hash(root)))
 }
 
 /// Serialises read-modify-write of the store: the UI saves while the user types.
@@ -222,23 +216,13 @@ pub fn save(dir: &Path, root: &str, key: &str, sheet: Sheet) -> Result<Sheet, St
     }
     std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
     let text = serde_json::to_string_pretty(&file).map_err(|e| e.to_string())?;
-    write_atomic(&p, text.as_bytes())?;
+    crate::store::write_atomic(&p, text.as_bytes()).map_err(|e| format!("Cannot write {}: {e}", p.display()))?;
     Ok(sheet)
 }
 
-/// Writes `bytes` to a sibling temp file, flushes it to disk, then renames it over `dest`; the
-/// temp file is removed on any failure, so a crash leaves the old file or the new one.
-fn write_atomic(dest: &Path, bytes: &[u8]) -> Result<(), String> {
-    let mut tmp = dest.as_os_str().to_owned();
-    tmp.push(".part");
-    let tmp = PathBuf::from(tmp);
-    let res = std::fs::File::create(&tmp)
-        .and_then(|mut f| f.write_all(bytes).and_then(|_| f.sync_all()))
-        .and_then(|_| std::fs::rename(&tmp, dest));
-    res.map_err(|e| {
-        let _ = std::fs::remove_file(&tmp);
-        format!("Cannot write {}: {e}", dest.display())
-    })
+/// Writes the page the user saves (see `crate::store::write_file`).
+fn write_page(dest: &Path, bytes: &[u8]) -> Result<(), String> {
+    crate::store::write_file(dest, bytes).map_err(|e| format!("Cannot write {}: {e}", dest.display()))
 }
 
 // ---- saving the page ---------------------------------------------------------------------
@@ -268,15 +252,11 @@ pub fn save_html(root: &Path, dest: &Path, html: &str) -> Result<SavedHtml, Stri
         return Err(format!("The page is larger than {} MB.", MAX_HTML_BYTES / (1024 * 1024)));
     }
     check_dest(root, dest)?;
-    write_atomic(dest, html.as_bytes())?;
+    write_page(dest, html.as_bytes())?;
     Ok(SavedHtml { path: dest.to_string_lossy().into_owned(), bytes: html.len() as u64 })
 }
 
 // ---- commands ----------------------------------------------------------------------------
-
-fn config_dir(app: &tauri::AppHandle) -> AppResult<PathBuf> {
-    Ok(app.path().app_config_dir()?)
-}
 
 async fn blocking<T: Send + 'static>(f: impl FnOnce() -> Result<T, String> + Send + 'static) -> AppResult<T> {
     tauri::async_runtime::spawn_blocking(move || f().map_err(AppError::from))
@@ -387,7 +367,7 @@ mod tests {
         assert_eq!(load(&dir, "p:/", "case:1").unwrap().sheet, want, "same volume under another spelling");
         assert_eq!(load(&dir, "P:\\", "mix:1").unwrap().sheet.dj, "Example DJ");
         assert_eq!(load(&dir, "Q:\\", "case:1").unwrap().sheet, Sheet::default(), "another library has its own file");
-        assert!(!store_path(&dir, "P:\\").with_extension("json.part").exists(), "no temp file is left");
+        assert!(!store_path(&dir, "P:\\").with_extension("json.tmp").exists(), "no temp file is left");
 
         save(&dir, "P:\\", "case:1", Sheet::default()).unwrap();
         assert_eq!(load(&dir, "P:\\", "case:1").unwrap().sheet, Sheet::default());

@@ -1,18 +1,24 @@
-//! The JSON-output subcommands of `pm`: health, backup, verify and export-playlists. Each prints
+//! The JSON-output subcommands of `pm`: health, backup, verify, export-playlists, tags and
+//! duplicates. Each prints
 //! one JSON document on stdout and nothing else there (errors go to stderr), so a script can pipe
 //! it into `jq`. They call the same `pm_formats` functions the desktop app does, so a result here
 //! is the result the app shows.
 //!
 //! Exit codes: 0 done, 1 an error (message on stderr), 2 wrong usage, 3 done but a check found
 //! problems (only where the command says so). All of them only read the volume; `backup` writes
-//! to the folder it is given, never to the volume.
+//! to the folder it is given, never to the volume. `tags` and `duplicates` run the same
+//! `pm_formats` code as the app's Tags and Duplicates features and read the app's own files (the
+//! label store, the duplicate settings) from a config folder; they never change them.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt;
 use std::path::Path;
 
+use pm_formats::appfile;
 use pm_formats::interop::{self, Scope};
-use pm_formats::library::{Library, Track};
+use pm_formats::library::{DupRow, Library, Track};
+use pm_formats::ops_dupes::{self, DupSettings};
+use pm_formats::ops_labels::{self, Kind};
 use pm_formats::ops_device::{self, VerifyReport};
 use pm_formats::ops_fix;
 use serde_json::{json, Value};
@@ -45,8 +51,12 @@ usage:
   pm backup <volume> <dest-folder> [--audio] [--verify]
   pm verify <backup-folder> [--problems-only]
   pm export-playlists <volume> [--out <file>]
-JSON on stdout for health, backup, verify and export-playlists; errors on stderr.
-exit: 0 ok, 1 error, 2 usage, 3 a check found problems (health --strict, backup --verify, verify)";
+  pm tags <volume> --config-dir <dir> [--tag <name>] [--tracks] [--strict]
+  pm duplicates <volume> [--config-dir <dir>] [--by tags|size] [--strict]
+JSON on stdout for health, backup, verify, export-playlists, tags and duplicates; errors on stderr.
+--config-dir is the app's config folder (the one holding labels-*.json and duplicate-settings.json).
+exit: 0 ok, 1 error, 2 usage, 3 a check found problems (health --strict, backup --verify, verify,
+      tags --strict when the label file cannot be used, duplicates --strict when copies are found)";
 
 /// Arguments split into positional words, switches and `--name value` options. Anything starting
 /// with `--` that the command does not list is a usage error, so a typo never runs silently.
@@ -235,14 +245,176 @@ pub fn export_playlists(args: &[String]) -> Res<Done> {
         None => print_json(&doc)?,
         Some(out) => {
             // beside the destination and renamed, so a failed write never leaves half a file
-            let tmp = format!("{out}.part");
             let text = serde_json::to_string_pretty(&doc)? + "\n";
-            std::fs::write(&tmp, text).and_then(|()| std::fs::rename(&tmp, out)).inspect_err(|_| {
-                let _ = std::fs::remove_file(&tmp);
-            })?;
+            appfile::write_file(Path::new(out), text.as_bytes())?;
         }
     }
     Ok(Done::Clean)
+}
+
+// ---- tags -----------------------------------------------------------------------------------
+
+/// The app's tags, colour labels and energy ratings for the tracks on `volume`: how many tracks
+/// carry each tag and colour, and (with `list_tracks` or a `tag`) which tracks. Read-only: the
+/// label file in `config_dir` is read, never written or set aside. The second value is true when
+/// the file could not be used (damaged, unreadable or written by a newer app), in which case the
+/// counts are of what could be read and `notice` says why.
+pub fn tags_json(volume: &Path, config_dir: &Path, tag: Option<&str>, list_tracks: bool) -> Res<(Value, bool)> {
+    let lib = Library::open_read_only(volume)?;
+    let idents = ops_labels::build_keys(&lib.track_identities()?);
+    let volume_key = appfile::volume_key(volume);
+    let loaded = ops_labels::load(config_dir, &volume_key);
+    let by_id: HashMap<i64, Track> = lib.tracks()?.into_iter().map(|t| (t.track_id, t)).collect();
+    let want = match tag {
+        Some(t) => Some(ops_labels::tag_key(&ops_labels::normalise_tag(t)?)),
+        None => None,
+    };
+    let listing = list_tracks || want.is_some();
+
+    let mut tag_counts: BTreeMap<String, (String, usize)> = BTreeMap::new();
+    let mut colours: BTreeMap<&str, usize> = ops_labels::COLOURS.iter().map(|c| (*c, 0)).collect();
+    let mut energy: BTreeMap<u8, usize> = BTreeMap::new();
+    let mut rows = Vec::new();
+    let mut labelled = 0usize;
+    for (id, key) in &idents {
+        let Some(l) = loaded.store.get(Kind::Track, key) else { continue };
+        labelled += 1;
+        for t in &l.tags {
+            tag_counts.entry(ops_labels::tag_key(t)).or_insert_with(|| (t.clone(), 0)).1 += 1;
+        }
+        if let Some(c) = l.colour.as_deref().and_then(|c| colours.get_mut(c)) {
+            *c += 1;
+        }
+        if let Some(e) = l.energy {
+            *energy.entry(e).or_default() += 1;
+        }
+        let matches = want.as_ref().map_or(true, |w| l.tags.iter().any(|t| &ops_labels::tag_key(t) == w));
+        if listing && matches {
+            let t = by_id.get(id);
+            rows.push(json!({
+                "track_id": id,
+                "title": t.map(|t| t.title.as_str()).unwrap_or(""),
+                "artist": t.map(|t| t.artist.as_str()).unwrap_or(""),
+                "tags": l.tags,
+                "colour": l.colour,
+                "energy": l.energy,
+            }));
+        }
+    }
+    let live: HashSet<&str> = idents.iter().map(|(_, k)| k.as_str()).collect();
+    let orphans = loaded.store.unattached(Kind::Track, &live).len();
+    let mut tags: Vec<(String, usize)> = tag_counts.into_values().collect();
+    tags.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.to_lowercase().cmp(&b.0.to_lowercase())));
+    let mut doc = json!({
+        "volume": volume.display().to_string(),
+        "label_file": ops_labels::store_path(config_dir, &volume_key).display().to_string(),
+        "problems": loaded.notice.is_some(),
+        "notice": loaded.notice,
+        "read_only": loaded.read_only.is_some(),
+        "tracks": by_id.len(),
+        "tracks_labelled": labelled,
+        "tags": tags.iter().map(|(t, n)| json!({ "tag": t, "tracks": n })).collect::<Vec<_>>(),
+        "colours": colours,
+        "energy": energy,
+        "labels_without_a_track": orphans,
+    });
+    if listing {
+        doc["track_labels"] = Value::Array(rows);
+    }
+    Ok((doc, loaded.notice.is_some()))
+}
+
+pub fn tags(args: &[String]) -> Res<Done> {
+    let p = parse(args, &["--tracks", "--strict"], &["--config-dir", "--tag"])?;
+    let v = p.exactly(1, "pm tags <volume> --config-dir <dir> [--tag <name>] [--tracks] [--strict]")?;
+    let dir = p.values.get("--config-dir").ok_or_else(|| Usage("pm tags needs --config-dir <the app's config folder>".into()))?;
+    let (doc, problems) = tags_json(Path::new(&v[0]), Path::new(dir), p.values.get("--tag").map(String::as_str), p.has("--tracks"))?;
+    print_json(&doc)?;
+    Ok(if problems && p.has("--strict") { Done::Problems } else { Done::Clean })
+}
+
+// ---- duplicates -----------------------------------------------------------------------------
+
+/// The ways of finding copies that need no audio decoding (tags, size and length), with the
+/// finder's settings (`duplicate-settings.json` in `config_dir` when given, else the defaults) and
+/// the copy it would suggest keeping. The sound check is not run here: it needs the app's
+/// fingerprint job. `by` limits the run to one way. The second value is true when copies were found.
+pub fn duplicates_json(volume: &Path, config_dir: Option<&Path>, by: Option<&str>) -> Res<(Value, bool)> {
+    let (mut s, settings_warning) = match config_dir {
+        Some(d) => ops_dupes::load(d),
+        None => (DupSettings::default(), None),
+    };
+    match by {
+        None => {}
+        Some("tags") => (s.by_tags, s.by_size) = (true, false),
+        Some("size") => (s.by_tags, s.by_size) = (false, true),
+        Some(other) => return Err(Usage(format!("--by takes tags or size, not {other}")).into()),
+    }
+    let lib = Library::open_read_only(volume)?;
+    let all = lib.dup_rows()?;
+    let rows: Vec<&DupRow> = all.iter().collect();
+    let (mut links, mut warnings) = (Vec::new(), Vec::new());
+    if s.by_tags {
+        let (l, unusable) = ops_dupes::tag_links(&rows, &s);
+        links.extend(l);
+        if unusable > 0 {
+            warnings.push(format!("{unusable} track(s) had no artist or no title, so the tag check could not compare them."));
+        }
+    }
+    if s.by_size {
+        links.extend(ops_dupes::size_links(&rows, &s));
+    }
+    let by_id: HashMap<i64, &DupRow> = all.iter().map(|r| (r.track_id, r)).collect();
+    // the file is looked for only at a location that is plain names under Music
+    let file_state = |id: i64| match ops_fix::checked_track_paths(volume, &by_id[&id].location) {
+        None => "outside",
+        Some((audio, _)) if audio.is_file() => "present",
+        Some(_) => "missing",
+    };
+    let groups: Vec<Value> = ops_dupes::group(links)
+        .into_iter()
+        .map(|g| {
+            let members: Vec<&DupRow> = g.ids.iter().map(|id| by_id[id]).collect();
+            let keeper = ops_dupes::pick_keeper(&members, s.keeper_rule, &|id| file_state(id) == "present");
+            let mut modes: Vec<ops_dupes::Mode> = g.links.iter().map(|l| l.mode).collect();
+            modes.sort();
+            modes.dedup();
+            json!({
+                "id": g.ids[0],
+                "suggested_keeper": keeper,
+                "modes": modes,
+                "members": members.iter().map(|r| json!({
+                    "track_id": r.track_id, "title": r.title, "artist": r.artist,
+                    "duration_secs": r.play_time_secs, "bit_rate_kbps": r.bit_rate_kbps,
+                    "file_size": r.file_size, "times_played": r.times_played,
+                    "location": r.location, "file": file_state(r.track_id),
+                })).collect::<Vec<_>>(),
+                "links": g.links.iter().map(|l| json!({ "a": l.a, "b": l.b, "mode": l.mode })).collect::<Vec<_>>(),
+            })
+        })
+        .collect();
+    let found = !groups.is_empty();
+    Ok((
+        json!({
+            "volume": volume.display().to_string(),
+            "tracks": all.len(),
+            "settings": s,
+            "settings_warning": settings_warning,
+            "sound_check": "not run by pm; the app's Duplicates view runs it",
+            "warnings": warnings,
+            "groups": groups,
+        }),
+        found,
+    ))
+}
+
+pub fn duplicates(args: &[String]) -> Res<Done> {
+    let p = parse(args, &["--strict"], &["--config-dir", "--by"])?;
+    let v = p.exactly(1, "pm duplicates <volume> [--config-dir <dir>] [--by tags|size] [--strict]")?;
+    let dir = p.values.get("--config-dir").map(Path::new);
+    let (doc, found) = duplicates_json(Path::new(&v[0]), dir, p.values.get("--by").map(String::as_str))?;
+    print_json(&doc)?;
+    Ok(if found && p.has("--strict") { Done::Problems } else { Done::Clean })
 }
 
 #[cfg(test)]
@@ -437,6 +609,147 @@ mod tests {
         let _ = std::fs::remove_dir_all(vol);
     }
 
+    /// A volume whose tracks are given as `(title, artist, seconds, bytes)`.
+    fn volume_of(tag: &str, tracks: &[(&str, &str, i64, usize)]) -> (PathBuf, Vec<i64>) {
+        let vol = scratch(&format!("{tag}-vol"));
+        let src = scratch(&format!("{tag}-src"));
+        let analysis = Analysis { normalize_factor: 1.0, beat_start_offset: 0, beats: (0..8).map(|i| Beat { pos: i * 20000, bpm: 128.0 }).collect(), first_downbeat: Some(0) };
+        let mut lib = Library::create(&vol).unwrap();
+        let mut ids = Vec::new();
+        for (i, (title, artist, secs, bytes)) in tracks.iter().enumerate() {
+            let f = src.join(format!("synthetic {i}.mp3"));
+            std::fs::write(&f, vec![i as u8; *bytes]).unwrap();
+            let meta = TrackMeta { title: title.to_string(), artist: artist.to_string(), format: "MP3".into(), play_time_secs: *secs, ..Default::default() };
+            ids.push(lib.add_track(&f, &meta, &analysis).unwrap());
+        }
+        (vol, ids)
+    }
+
+    fn label(vol: &Path, cfg: &Path, ids: &[i64], ops: &[ops_labels::Op]) {
+        let lib = Library::open_read_only(vol).unwrap();
+        let keys = ops_labels::build_keys(&lib.track_identities().unwrap());
+        let keys: Vec<String> = keys.into_iter().filter(|(id, _)| ids.contains(id)).map(|(_, k)| k).collect();
+        let key = appfile::volume_key(vol);
+        let mut loaded = ops_labels::load(cfg, &key);
+        loaded.store.apply(Kind::Track, &keys, ops).unwrap();
+        ops_labels::save(cfg, &key, &loaded.store, None).unwrap();
+    }
+
+    #[test]
+    fn tags_count_what_the_app_stored_and_filter_by_tag_ignoring_case() {
+        let (vol, ids) = volume_of("tags", &[("Title A", "Artist A", 100, 3000), ("Title B", "Artist B", 110, 3001), ("Title C", "Artist C", 120, 3002)]);
+        let cfg = scratch("tags-cfg");
+        label(&vol, &cfg, &ids[..2], &[ops_labels::Op::AddTags { tags: vec!["Warm-up".into()] }, ops_labels::Op::SetColour { colour: Some("red".into()) }]);
+        label(&vol, &cfg, &ids[1..2], &[ops_labels::Op::AddTags { tags: vec!["peak".into()] }, ops_labels::Op::SetEnergy { energy: Some(8) }]);
+
+        let (doc, problems) = tags_json(&vol, &cfg, None, false).unwrap();
+        assert!(!problems);
+        assert_eq!((doc["tracks"].as_u64(), doc["tracks_labelled"].as_u64(), doc["labels_without_a_track"].as_u64()), (Some(3), Some(2), Some(0)));
+        assert_eq!(doc["tags"], json!([{ "tag": "Warm-up", "tracks": 2 }, { "tag": "peak", "tracks": 1 }]));
+        assert_eq!(doc["colours"]["red"], 2);
+        assert_eq!(doc["colours"]["blue"], 0, "every colour is listed, so the shape never changes");
+        assert_eq!(doc["energy"], json!({ "8": 1 }));
+        assert!(doc.get("track_labels").is_none(), "tracks are listed only when asked for");
+
+        let (doc, _) = tags_json(&vol, &cfg, Some("PEAK"), false).unwrap();
+        let rows = doc["track_labels"].as_array().unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!((rows[0]["track_id"].as_i64(), rows[0]["title"].as_str(), rows[0]["energy"].as_u64()), (Some(ids[1]), Some("Title B"), Some(8)));
+        let (doc, _) = tags_json(&vol, &cfg, None, true).unwrap();
+        assert_eq!(doc["track_labels"].as_array().unwrap().len(), 2);
+        assert!(tags_json(&vol, &cfg, Some("   "), false).is_err(), "an empty tag is an error, not 'every track'");
+        let _ = std::fs::remove_dir_all(vol);
+    }
+
+    #[test]
+    fn tags_with_no_label_file_are_an_empty_report_and_a_damaged_file_is_reported_not_changed() {
+        let (vol, _) = volume_of("tags-bad", &[("Title A", "Artist A", 100, 3000)]);
+        let cfg = scratch("tags-bad-cfg");
+        let (doc, problems) = tags_json(&vol, &cfg, None, false).unwrap();
+        assert!(!problems && doc["tracks_labelled"] == 0 && doc["notice"].is_null());
+
+        let file = ops_labels::store_path(&cfg, &appfile::volume_key(&vol));
+        std::fs::write(&file, "{ not json").unwrap();
+        let (doc, problems) = tags_json(&vol, &cfg, None, false).unwrap();
+        assert!(problems && doc["problems"] == true && doc["notice"].is_string());
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), "{ not json", "pm only reads: the file is neither replaced nor set aside");
+        assert_eq!(std::fs::read_dir(&cfg).unwrap().count(), 1);
+
+        let args = |s: &[&str]| s.iter().map(|x| x.to_string()).collect::<Vec<_>>();
+        let v = vol.to_string_lossy().to_string();
+        let c = cfg.to_string_lossy().to_string();
+        assert_eq!(tags(&args(&[&v, "--config-dir", &c])).unwrap(), Done::Clean);
+        assert_eq!(tags(&args(&[&v, "--config-dir", &c, "--strict"])).unwrap(), Done::Problems);
+        let _ = std::fs::remove_dir_all(vol);
+    }
+
+    #[test]
+    fn duplicates_find_copies_by_tags_and_by_size_and_suggest_the_one_with_a_file() {
+        let (vol, ids) = volume_of(
+            "dups",
+            &[
+                ("Same Title", "Same Artist", 200, 5000),
+                ("same title (feat. Guest)", "SAME ARTIST", 202, 5001), // tags match after normalising
+                ("Other One", "Other Artist", 300, 7000),
+                ("Different Name", "Someone", 300, 7000), // same size and length as the one above
+                ("Unrelated", "Nobody", 90, 1234),
+            ],
+        );
+        let (doc, found) = duplicates_json(&vol, None, None).unwrap();
+        assert!(found);
+        assert_eq!(doc["tracks"], 5);
+        assert_eq!(doc["settings_warning"], Value::Null);
+        let groups = doc["groups"].as_array().unwrap();
+        let ids_of = |g: &Value| g["members"].as_array().unwrap().iter().map(|m| m["track_id"].as_i64().unwrap()).collect::<Vec<_>>();
+        assert_eq!(groups.iter().map(ids_of).collect::<Vec<_>>(), vec![vec![ids[0], ids[1]], vec![ids[2], ids[3]]]);
+        assert_eq!(groups[0]["modes"], json!(["tags"]));
+        assert_eq!(groups[1]["modes"], json!(["size"]));
+        assert!(groups[0]["members"][0]["file"] == "present");
+
+        // one way at a time
+        assert_eq!(duplicates_json(&vol, None, Some("tags")).unwrap().0["groups"].as_array().unwrap().len(), 1);
+        assert_eq!(duplicates_json(&vol, None, Some("size")).unwrap().0["groups"][0]["modes"], json!(["size"]));
+        assert!(duplicates_json(&vol, None, Some("sound")).unwrap_err().downcast_ref::<Usage>().is_some());
+
+        // the suggested keeper never has its file missing while another copy has one
+        let music = vol.join(".Pacemaker").join("Music");
+        let keeper = groups[0]["suggested_keeper"].as_i64().unwrap();
+        let lib = Library::open_read_only(&vol).unwrap();
+        let loc = lib.tracks().unwrap().into_iter().find(|t| t.track_id == keeper).unwrap().location;
+        let (audio, _) = ops_fix::checked_track_paths(&vol, &loc).unwrap();
+        assert!(audio.starts_with(&music));
+        std::fs::remove_file(&audio).unwrap();
+        let (doc, _) = duplicates_json(&vol, None, Some("tags")).unwrap();
+        let g = &doc["groups"][0];
+        assert_ne!(g["suggested_keeper"].as_i64().unwrap(), keeper);
+        assert!(g["members"].as_array().unwrap().iter().any(|m| m["track_id"].as_i64() == Some(keeper) && m["file"] == "missing"));
+        let _ = std::fs::remove_dir_all(vol);
+    }
+
+    #[test]
+    fn duplicates_use_the_apps_saved_settings_and_strict_exits_3_only_when_copies_exist() {
+        let (vol, _) = volume_of("dups-cfg", &[("Same Title", "Same Artist", 200, 5000), ("Same Title", "Same Artist", 300, 5001), ("Alone", "Solo", 50, 10)]);
+        let cfg = scratch("dups-cfg-dir");
+        let args = |s: &[&str]| s.iter().map(|x| x.to_string()).collect::<Vec<_>>();
+        let v = vol.to_string_lossy().to_string();
+        let c = cfg.to_string_lossy().to_string();
+        // 100 s apart: not copies under the default 10 s tolerance
+        assert!(!duplicates_json(&vol, Some(&cfg), None).unwrap().1);
+        assert_eq!(duplicates(&args(&[&v, "--config-dir", &c, "--strict"])).unwrap(), Done::Clean);
+        // the app's setting "length check off" (0) makes them copies; pm reads the app's file
+        ops_dupes::save(&cfg, &DupSettings { tag_duration_secs: 0, ..Default::default() }).unwrap();
+        let (doc, found) = duplicates_json(&vol, Some(&cfg), None).unwrap();
+        assert!(found && doc["settings"]["tag_duration_secs"] == 0);
+        assert_eq!(duplicates(&args(&[&v, "--config-dir", &c])).unwrap(), Done::Clean);
+        assert_eq!(duplicates(&args(&[&v, "--config-dir", &c, "--strict"])).unwrap(), Done::Problems);
+        // an unreadable settings file is the defaults plus a warning, and is left alone
+        std::fs::write(cfg.join("duplicate-settings.json"), "nope").unwrap();
+        let (doc, found) = duplicates_json(&vol, Some(&cfg), None).unwrap();
+        assert!(!found && doc["settings_warning"].is_string());
+        assert_eq!(std::fs::read_to_string(cfg.join("duplicate-settings.json")).unwrap(), "nope");
+        let _ = std::fs::remove_dir_all(vol);
+    }
+
     #[test]
     fn bad_command_lines_are_usage_errors() {
         let a = |s: &[&str]| s.iter().map(|x| x.to_string()).collect::<Vec<_>>();
@@ -448,6 +761,10 @@ mod tests {
             (backup, a(&["v", "d", "--audio", "extra"])),
             (verify, a(&[])),
             (export_playlists, a(&["v", "--out"])),
+            (tags, a(&["v"])),
+            (tags, a(&["v", "--config-dir"])),
+            (duplicates, a(&["v", "--by"])),
+            (duplicates, a(&["v", "--bogus"])),
         ] {
             let e = f(&args).unwrap_err();
             assert!(e.downcast_ref::<Usage>().is_some(), "{args:?}: {e}");

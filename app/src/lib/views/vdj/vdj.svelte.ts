@@ -5,20 +5,19 @@
 // whose events `init.ts` feeds into `progress` / `finish` here.
 import { type VdjOptions } from "$lib/api/vdj";
 import { cleanOptions } from "./vdjLogic";
+import { loadPref, savePref } from "$lib/state/prefStore";
 
 const STORAGE_KEY = "pacemaker-revival.vdj.v1";
 
 function load(): { options: VdjOptions; dest: string } {
-  try {
-    const s = localStorage.getItem(STORAGE_KEY);
-    if (s) {
-      const o = JSON.parse(s) as { options?: unknown; dest?: unknown };
+  return loadPref(
+    STORAGE_KEY,
+    (raw) => {
+      const o = (raw ?? {}) as { options?: unknown; dest?: unknown };
       return { options: cleanOptions(o.options), dest: typeof o.dest === "string" ? o.dest.slice(0, 1000) : "" };
-    }
-  } catch {
-    // blocked or damaged storage: the defaults are used
-  }
-  return { options: cleanOptions(undefined), dest: "" };
+    },
+    () => ({ options: cleanOptions(undefined), dest: "" }),
+  );
 }
 
 export type Result = { text: string; bad: boolean };
@@ -69,11 +68,7 @@ class VdjUi {
 
   /** Remembers the options and the folder for the next time. */
   persist() {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify({ options: $state.snapshot(this.options), dest: this.dest }));
-    } catch {
-      // storage blocked: the choices last until the window closes
-    }
+    savePref(STORAGE_KEY, { options: $state.snapshot(this.options), dest: this.dest });
   }
 }
 

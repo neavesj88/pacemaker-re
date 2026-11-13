@@ -6,6 +6,7 @@
   import { detectionPlan } from "$lib/state/keyLogic";
   import Button from "$lib/ui/Button.svelte";
   import Modal from "$lib/ui/Modal.svelte";
+  import KeySettingsFields from "./KeySettingsFields.svelte";
 
   let { ids }: { ids: number[] } = $props();
 
@@ -21,27 +22,7 @@
     remembered for the next run.
   </p>
 
-  <label class="opt">
-    <input type="checkbox" bind:checked={analysis.settings.overwrite} />
-    <span>
-      Replace keys that are already set
-      <small class="muted">
-        Off: a track that has a key, including one you set by hand, is left alone.
-        {#if withKey > 0}{noun(withKey)} of these {withKey === 1 ? "has" : "have"} one.{/if}
-      </small>
-    </span>
-  </label>
-
-  <label class="opt">
-    <input type="number" min="0" max="100" step="5" bind:value={analysis.settings.minConfidencePct} aria-label="Confidence floor in per cent" />
-    <span>
-      Confidence floor, per cent
-      <small class="muted">
-        A result below this is skipped and listed when the job ends, not written. 0 writes every result. The score is a
-        fit measure, not a probability.
-      </small>
-    </span>
-  </label>
+  <KeySettingsFields {withKey} />
 
   <p class="count" role="status">
     {#if plan.targets.length === 0}
@@ -60,24 +41,6 @@
 <style>
   p {
     margin: 0 0 12px;
-  }
-  .opt {
-    display: flex;
-    gap: 10px;
-    align-items: flex-start;
-    margin-bottom: 12px;
-  }
-  .opt input[type="number"] {
-    width: 64px;
-    flex: none;
-  }
-  .opt input[type="checkbox"] {
-    flex: none;
-    margin-top: 3px;
-  }
-  small {
-    display: block;
-    margin-top: 2px;
   }
   .count {
     color: var(--text);

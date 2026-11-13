@@ -14,7 +14,6 @@
 //! the card.
 
 use std::collections::{BTreeMap, HashMap};
-use std::io::Write;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -23,9 +22,10 @@ use std::sync::mpsc;
 use pm_analysis::energy::{self, Anchors, Features, Skip};
 use pm_formats::library::Library;
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, State};
 
 use crate::error::{AppError, AppResult, IntoApp};
+use crate::store::config_dir;
 use crate::events::{self, JOB_PROGRESS};
 use crate::jobs::{spawn_job, JobOutcome, Progress};
 use crate::state::JobLock;
@@ -102,7 +102,7 @@ pub fn load_settings(dir: &Path) -> Settings {
 pub fn save_settings(dir: &Path, s: &Settings) -> Result<(), String> {
     s.validate()?;
     let text = serde_json::to_string_pretty(s).map_err(|e| e.to_string())?;
-    atomic_write(&settings_path(dir), text.as_bytes())
+    crate::store::write_bytes(&settings_path(dir), text.as_bytes())
 }
 
 // ---- cache -----------------------------------------------------------------------------------
@@ -151,35 +151,7 @@ struct CacheFile {
 /// The file for a library, named by a hash of its root (same normalisation as the smart-case
 /// store: case and slash style do not matter), so nothing about the device is written next to it.
 pub fn cache_path(dir: &Path, root: &str) -> PathBuf {
-    dir.join(format!("energy-{:016x}.json", root_hash(root)))
-}
-
-/// FNV-1a of the normalised library root: the per-library part of every app-side file name of
-/// the analysis area (energy, sections).
-pub(super) fn root_hash(root: &str) -> u64 {
-    let norm = root.replace('\\', "/").trim_end_matches('/').to_lowercase();
-    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
-    for b in norm.bytes() {
-        h = (h ^ u64::from(b)).wrapping_mul(0x0100_0000_01b3);
-    }
-    h
-}
-
-pub(super) fn atomic_write(path: &Path, bytes: &[u8]) -> Result<(), String> {
-    let dir = path.parent().ok_or("no folder")?;
-    std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
-    let tmp = path.with_extension("json.tmp");
-    let result = (|| {
-        let mut f = std::fs::File::create(&tmp)?;
-        f.write_all(bytes)?;
-        f.sync_all()?;
-        std::fs::rename(&tmp, path)
-    })();
-    if let Err(e) = result {
-        let _ = std::fs::remove_file(&tmp);
-        return Err(format!("{}: {e}", path.display()));
-    }
-    Ok(())
+    dir.join(format!("energy-{:016x}.json", crate::store::root_hash(root)))
 }
 
 /// The cache for a library. A missing file is an empty cache; an unreadable or other-version
@@ -199,7 +171,7 @@ fn load_cache(dir: &Path, root: &str) -> (CacheFile, Option<String>) {
 
 fn save_cache(dir: &Path, root: &str, cache: &CacheFile) -> Result<(), String> {
     let text = serde_json::to_string(&CacheFile { version: energy::VERSION, tracks: cache.tracks.clone() }).map_err(|e| e.to_string())?;
-    atomic_write(&cache_path(dir, root), text.as_bytes())
+    crate::store::write_bytes(&cache_path(dir, root), text.as_bytes())
 }
 
 // ---- reading the cache -----------------------------------------------------------------------
@@ -479,10 +451,6 @@ fn run_analysis(dir: &Path, root: &str, targets: &[TrackRef], settings: &Setting
 }
 
 // ---- commands --------------------------------------------------------------------------------
-
-fn config_dir(app: &AppHandle) -> AppResult<PathBuf> {
-    Ok(app.path().app_config_dir()?)
-}
 
 /// Every track's auto energy under the saved settings, with the counts for the UI (analysed,
 /// no estimate, changed since, never analysed). Read-only: it opens the library read-only and

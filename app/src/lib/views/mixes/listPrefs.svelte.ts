@@ -2,6 +2,7 @@
 // exists) and of the tool menu. Per-person preferences of the app, kept in the browser storage
 // like the recipe settings are (try/catch-guarded: everything works without storage).
 import { DEFAULT_LIST_PREFS, mergeListPrefs, type ListPrefs } from "./mixlist";
+import { loadPref, savePref } from "$lib/state/prefStore";
 
 const LIST_KEY = "pm.mixes.list.v1";
 const TOOLS_KEY = "pm.mixes.tools.v1";
@@ -10,21 +11,13 @@ class ListSettings {
   value = $state<ListPrefs>({ ...DEFAULT_LIST_PREFS });
 
   constructor() {
-    try {
-      const raw = localStorage.getItem(LIST_KEY);
-      if (raw) this.value = mergeListPrefs(JSON.parse(raw));
-    } catch {
-      // unavailable or corrupt: keep the defaults
-    }
+    // nothing saved, unreadable or corrupt: the defaults stay
+    this.value = loadPref(LIST_KEY, (raw) => (raw === null ? this.value : mergeListPrefs(raw)), () => this.value);
   }
 
   set(patch: Partial<ListPrefs>) {
     this.value = mergeListPrefs({ ...this.value, ...patch });
-    try {
-      localStorage.setItem(LIST_KEY, JSON.stringify(this.value));
-    } catch {
-      // not remembered this time
-    }
+    savePref(LIST_KEY, this.value);
   }
 }
 
@@ -37,21 +30,12 @@ class ToolSettings {
   showTrans = $state(false);
 
   constructor() {
-    try {
-      const raw = JSON.parse(localStorage.getItem(TOOLS_KEY) ?? "null");
-      if (raw && typeof raw.showTrans === "boolean") this.showTrans = raw.showTrans;
-    } catch {
-      // keep the default
-    }
+    this.showTrans = loadPref(TOOLS_KEY, (raw) => ((raw as { showTrans?: unknown } | null)?.showTrans === true ? true : this.showTrans), () => this.showTrans);
   }
 
   setShowTrans(on: boolean) {
     this.showTrans = on;
-    try {
-      localStorage.setItem(TOOLS_KEY, JSON.stringify({ showTrans: on }));
-    } catch {
-      // not remembered this time
-    }
+    savePref(TOOLS_KEY, { showTrans: on });
   }
 }
 

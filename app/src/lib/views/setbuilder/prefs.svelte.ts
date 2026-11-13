@@ -2,6 +2,7 @@
 // storage like the mix editor's auto-transition settings do (try/catch-guarded: the view works the
 // same when storage is unavailable, it just forgets).
 import { clampPref, DEFAULT_PREFS, mergePrefs, type NumberPref, type SetPrefs } from "./solver";
+import { loadPref, savePref } from "$lib/state/prefStore";
 
 const STORAGE_KEY = "pm.setbuilder.prefs.v1";
 
@@ -9,21 +10,13 @@ class SetBuilderPrefs {
   value = $state<SetPrefs>({ ...DEFAULT_PREFS, allowedMoves: [...DEFAULT_PREFS.allowedMoves] });
 
   constructor() {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) this.value = mergePrefs(JSON.parse(raw));
-    } catch {
-      // unavailable or corrupt: keep the defaults
-    }
+    // nothing saved, unreadable or corrupt: the defaults stay
+    this.value = loadPref(STORAGE_KEY, (raw) => (raw === null ? this.value : mergePrefs(raw)), () => this.value);
   }
 
   set(patch: Partial<SetPrefs>) {
     this.value = mergePrefs({ ...this.value, ...patch }, this.value);
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(this.value));
-    } catch {
-      // not remembered this time
-    }
+    savePref(STORAGE_KEY, this.value);
   }
 
   /** Applies what was typed into a number box: clamped into the setting's range; a blank box sets

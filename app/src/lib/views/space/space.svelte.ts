@@ -15,6 +15,7 @@ import {
   type SpaceRunPlan,
   type SpaceSettings,
 } from "$lib/api/device";
+import { nav } from "$lib/state/nav.svelte";
 import { session } from "$lib/state/session.svelte";
 import { filterItems, keepTicks, runFlags, sortItems, suggestedIds, tickTotals, type RunMode, type SortKey } from "./spaceLogic";
 
@@ -123,6 +124,9 @@ class SpaceStore {
 
   replanSoon() {
     clearTimeout(this.#planTimer);
+    // The plan reads and may hash audio on the card: it is made when the planner is on screen
+    // (it plans when it opens), not because a setting was changed from the Settings view.
+    if (nav.view !== "space") return;
     this.#planTimer = setTimeout(() => void this.refresh(), 500);
   }
 

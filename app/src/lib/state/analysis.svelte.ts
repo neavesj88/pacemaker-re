@@ -16,16 +16,12 @@ import {
   type KeySettings,
 } from "./keyLogic";
 import { jobs } from "./jobs.svelte";
+import { loadPref, savePref } from "./prefStore";
 import { session } from "./session.svelte";
 import { toast } from "./toast.svelte";
 
 function loadSettings(): KeySettings {
-  try {
-    const raw = localStorage.getItem(KEY_SETTINGS_STORAGE);
-    return normaliseKeySettings(raw ? JSON.parse(raw) : null);
-  } catch {
-    return { ...DEFAULT_KEY_SETTINGS };
-  }
+  return loadPref(KEY_SETTINGS_STORAGE, normaliseKeySettings, () => ({ ...DEFAULT_KEY_SETTINGS }));
 }
 
 /** Which dialog is open and for which tracks. */
@@ -42,11 +38,7 @@ class Analysis {
 
   saveSettings() {
     this.settings = normaliseKeySettings($state.snapshot(this.settings));
-    try {
-      localStorage.setItem(KEY_SETTINGS_STORAGE, JSON.stringify(this.settings));
-    } catch {
-      // blocked or full storage: the settings still apply to this run, they are just forgotten
-    }
+    savePref(KEY_SETTINGS_STORAGE, this.settings);
   }
 
   /** The tracks of the open library with these ids, in library order. */

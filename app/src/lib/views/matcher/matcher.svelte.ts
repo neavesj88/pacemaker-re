@@ -27,25 +27,22 @@ import { type LineOrder, type ParsedList, type RequestItem, parseRequestList } f
 import { cases } from "$lib/state/cases.svelte";
 import { session } from "$lib/state/session.svelte";
 import { toast } from "$lib/state/toast.svelte";
+import { loadPref, savePref } from "$lib/state/prefStore";
 
 const STORAGE_KEY = "pacemaker-revival.matcher.v1";
 
 type Stored = { options: MatchOptions; lineOrder: LineOrder; includeUndecided: boolean };
 
-function loadStored(): Stored {
-  let raw: Record<string, unknown> = {};
-  try {
-    const s = localStorage.getItem(STORAGE_KEY);
-    if (s) raw = JSON.parse(s);
-  } catch {
-    // blocked or damaged storage: the defaults are used
-  }
+function stored(raw: unknown): Stored {
+  const o = (raw ?? {}) as Record<string, unknown>;
   return {
-    options: cleanOptions(raw.options),
-    lineOrder: raw.lineOrder === "title-artist" ? "title-artist" : "artist-title",
-    includeUndecided: raw.includeUndecided === true,
+    options: cleanOptions(o.options),
+    lineOrder: o.lineOrder === "title-artist" ? "title-artist" : "artist-title",
+    includeUndecided: o.includeUndecided === true,
   };
 }
+
+const loadStored = (): Stored => loadPref(STORAGE_KEY, stored, () => stored(null));
 
 /** One request with its match and the user's decision, as the table shows it. */
 export type Line = { item: RequestItem; row: MatchRow; choice: Choice | undefined; resolved: Resolved };
@@ -98,11 +95,7 @@ class Matcher {
   stale = $derived(this.rows.length > 0 && this.matchedFor !== null && this.matchedFor !== session.library);
 
   #persist() {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify({ options: this.options, lineOrder: this.lineOrder, includeUndecided: this.includeUndecided }));
-    } catch {
-      // private window or full storage: the settings last for this session only
-    }
+    savePref(STORAGE_KEY, { options: this.options, lineOrder: this.lineOrder, includeUndecided: this.includeUndecided });
   }
 
   /** Changes matching settings. Matches are worked out again (decisions are kept). */

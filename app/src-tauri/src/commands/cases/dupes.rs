@@ -61,10 +61,6 @@ fn plural(n: usize, one: &str, many: &str) -> String {
     format!("{n} {}", if n == 1 { one } else { many })
 }
 
-fn fnv1a(text: &str) -> u64 {
-    text.bytes().fold(0xcbf2_9ce4_8422_2325u64, |h, b| (h ^ u64::from(b)).wrapping_mul(0x0000_0100_0000_01b3))
-}
-
 /// The label a track goes by in lists and progress lines.
 fn label_of(r: &DupRow) -> String {
     match (r.artist.trim().is_empty(), r.title.trim().is_empty()) {
@@ -156,7 +152,7 @@ struct FpItem {
 
 /// Where the sound-check cache of a library lives: one file per volume in the app cache dir.
 fn fingerprint_file(cache_dir: &Path, root: &str) -> PathBuf {
-    cache_dir.join("fingerprints").join(format!("{:016x}.fp", fnv1a(&crate::state::volume_key(Path::new(root)))))
+    cache_dir.join("fingerprints").join(format!("{:016x}.fp", crate::store::fnv1a(&crate::state::volume_key(Path::new(root)))))
 }
 
 /// The cached fingerprints the sound check can use, and the candidate tracks that still need one.
@@ -565,7 +561,7 @@ fn build_plan(lib: &Library, req: &MergeRequest) -> AppResult<Plan> {
         files_deleted: deleted.len(),
         bytes: deleted.iter().map(|f| f.size).sum(),
     };
-    let digest = format!("{:016x}", fnv1a(&serde_json::to_string(&(&plans, &files, &warnings)).map_err(|e| e.to_string())?));
+    let digest = format!("{:016x}", crate::store::fnv1a(&serde_json::to_string(&(&plans, &files, &warnings)).map_err(|e| e.to_string())?));
     Ok(Plan { groups: plans, labels, files, notes, warnings, totals, digest })
 }
 

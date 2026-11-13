@@ -17,6 +17,7 @@ import {
   type TempoEdit,
 } from "$lib/api/grid";
 import { editor } from "./editor.svelte";
+import { loadPref, savePref } from "$lib/state/prefStore";
 import {
   addTap,
   DEFAULT_VTEMPO,
@@ -30,13 +31,14 @@ import {
 } from "./vtempoLogic";
 
 function load(): VTempoSettings {
-  try {
-    const raw = localStorage.getItem(VTEMPO_STORAGE);
-    const s = normaliseVTempo(raw ? JSON.parse(raw) : null);
-    return validateVTempo(s) ? { ...DEFAULT_VTEMPO } : s;
-  } catch {
-    return { ...DEFAULT_VTEMPO };
-  }
+  return loadPref(
+    VTEMPO_STORAGE,
+    (raw) => {
+      const s = normaliseVTempo(raw);
+      return validateVTempo(s) ? { ...DEFAULT_VTEMPO } : s;
+    },
+    () => ({ ...DEFAULT_VTEMPO }),
+  );
 }
 
 class VTempo {
@@ -73,11 +75,7 @@ class VTempo {
   /** Saves new settings (the caller has checked them with `validateVTempo`). */
   save(next: VTempoSettings) {
     this.settings = { ...next };
-    try {
-      localStorage.setItem(VTEMPO_STORAGE, JSON.stringify(next));
-    } catch {
-      // storage blocked or full: the settings still apply to this run, they are just forgotten
-    }
+    savePref(VTEMPO_STORAGE, next);
   }
 
   resetSettings() {

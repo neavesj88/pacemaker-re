@@ -2,6 +2,7 @@
 // are shown, their order and widths, the sort, and two view settings. Pure apart from the
 // storage calls, so the merge rules run under plain node (columns.test.mjs).
 import type { SortField, SortSpec } from "./trackLogic.ts";
+import { loadPref, savePref } from "../../state/prefStore.ts";
 
 export type ColKey =
   | "fav" | "colour" | "title" | "artist" | "album" | "wave" | "bpm" | "key" | "energy" | "autoenergy" | "rating" | "plays" | "time" | "genre" | "tags"
@@ -168,18 +169,9 @@ export function stepTarget(shown: readonly ColKey[], key: ColKey, step: -1 | 1):
 }
 
 export function loadPrefs(): ViewPrefs {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    return mergePrefs(raw ? JSON.parse(raw) : null);
-  } catch {
-    return defaultPrefs();
-  }
+  return loadPref(STORAGE_KEY, mergePrefs, () => defaultPrefs());
 }
 
 export function savePrefs(prefs: ViewPrefs) {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(prefs));
-  } catch {
-    // private window, blocked or full storage: the table still works, it just forgets
-  }
+  savePref(STORAGE_KEY, prefs); // a failed save: the table still works, it just forgets
 }

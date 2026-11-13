@@ -171,15 +171,7 @@ pub fn load(dir: &Path) -> (StemSettings, Option<String>) {
 }
 
 fn write(dir: &Path, s: &StemSettings) -> Result<(), String> {
-    std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
-    let p = path(dir);
-    let tmp = p.with_extension("json.tmp");
-    let text = serde_json::to_string_pretty(s).map_err(|e| e.to_string())?;
-    std::fs::write(&tmp, text).map_err(|e| e.to_string())?;
-    std::fs::rename(&tmp, &p).inspect_err(|_| {
-        let _ = std::fs::remove_file(&tmp);
-    })
-    .map_err(|e| e.to_string())
+    crate::store::write_json(&path(dir), s)
 }
 
 /// Saves settings from the UI. Consents are kept from the stored file: they change only through

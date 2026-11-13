@@ -546,44 +546,12 @@ pub fn ranking(hits: &[Hit]) -> Vec<Rank> {
 
 // ---- storage ----------------------------------------------------------------------------
 
-/// FNV-1a of the volume root with separators unified, trailing ones dropped and case folded, so
-/// `E:` and `e:/` are one library (the same spelling rule as the smart-case store).
-fn root_hash(root: &str) -> u64 {
-    let norm = root.replace('\\', "/").trim_end_matches('/').to_lowercase();
-    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
-    for b in norm.bytes() {
-        h = (h ^ u64::from(b)).wrapping_mul(0x0100_0000_01b3);
-    }
-    h
-}
-
 pub fn store_path(dir: &Path, root: &str) -> PathBuf {
-    dir.join(format!("playlog-{:016x}.json", root_hash(root)))
+    dir.join(format!("playlog-{:016x}.json", crate::store::root_hash(root)))
 }
 
 pub fn settings_path(dir: &Path) -> PathBuf {
     dir.join("playlog-settings.json")
-}
-
-/// Writes `bytes` to `path` through a temp file in the same folder, so a crash leaves the old
-/// file or the new one, never half of either.
-fn atomic_write(path: &Path, bytes: &[u8]) -> Result<(), String> {
-    use std::io::Write;
-    if let Some(dir) = path.parent() {
-        std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
-    }
-    let tmp = path.with_extension("json.tmp");
-    let res = (|| -> std::io::Result<()> {
-        let mut f = std::fs::File::create(&tmp)?;
-        f.write_all(bytes)?;
-        f.sync_all()?;
-        std::fs::rename(&tmp, path)
-    })();
-    if let Err(e) = res {
-        let _ = std::fs::remove_file(&tmp);
-        return Err(format!("{}: {e}", path.display()));
-    }
-    Ok(())
 }
 
 /// Why a saved log could not be used. Only a damaged file is ever moved aside; a file that merely
@@ -726,7 +694,7 @@ pub fn adopt_file(dir: &Path, file: &str, root: &str) -> Result<(), String> {
 
 pub fn save(dir: &Path, root: &str, log: &PlayLog) -> Result<(), String> {
     let bytes = serde_json::to_vec(log).map_err(|e| e.to_string())?;
-    atomic_write(&store_path(dir, root), &bytes)
+    crate::store::write_bytes(&store_path(dir, root), &bytes)
 }
 
 /// Deletes the saved log; true if there was one.
@@ -764,7 +732,7 @@ pub fn load_settings(dir: &Path) -> Settings {
 
 pub fn save_settings(dir: &Path, s: &Settings) -> Result<(), String> {
     let bytes = serde_json::to_vec_pretty(s).map_err(|e| e.to_string())?;
-    atomic_write(&settings_path(dir), &bytes)
+    crate::store::write_bytes(&settings_path(dir), &bytes)
 }
 
 // ---- tests ------------------------------------------------------------------------------

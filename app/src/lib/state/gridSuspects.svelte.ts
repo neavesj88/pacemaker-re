@@ -7,14 +7,10 @@ import { gridSuspects, type Suspect, type SuspectReport, type SuspectSettings } 
 import type { LibraryView } from "$lib/api/types";
 import { DEFAULT_SUSPECT_SETTINGS, normaliseSuspect, SUSPECT_STORAGE, validateSettings, type StoredSuspect } from "./batchLogic";
 import { session } from "./session.svelte";
+import { loadPref, savePref } from "./prefStore";
 
 function load(): StoredSuspect {
-  try {
-    const raw = localStorage.getItem(SUSPECT_STORAGE);
-    return normaliseSuspect(raw ? JSON.parse(raw) : null);
-  } catch {
-    return normaliseSuspect(null);
-  }
+  return loadPref(SUSPECT_STORAGE, normaliseSuspect, () => normaliseSuspect(null));
 }
 
 class GridSuspectsStore {
@@ -43,11 +39,7 @@ class GridSuspectsStore {
   save(rules: SuspectSettings, auto: boolean) {
     this.rules = rules;
     this.auto = auto;
-    try {
-      localStorage.setItem(SUSPECT_STORAGE, JSON.stringify({ rules: $state.snapshot(rules), auto }));
-    } catch {
-      // storage blocked or full: the rules still apply to this run, they are just forgotten
-    }
+    savePref(SUSPECT_STORAGE, { rules: $state.snapshot(rules), auto });
     void this.check();
   }
 

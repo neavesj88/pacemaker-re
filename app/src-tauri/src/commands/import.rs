@@ -175,10 +175,7 @@ pub async fn interop_export(app: AppHandle, root: String, format: String, scope:
             (text, tracks.len())
         };
         // write beside the destination and rename, so a failed write never leaves half a file
-        let tmp = format!("{dest}.part");
-        std::fs::write(&tmp, text).and_then(|_| std::fs::rename(&tmp, &dest)).inspect_err(|_| {
-            let _ = std::fs::remove_file(&tmp);
-        })?;
+        crate::store::write_file(Path::new(&dest), text.as_bytes())?;
         Ok(ExportDone { path: dest, tracks, notes })
     })
     .await

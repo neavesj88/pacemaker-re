@@ -7,6 +7,8 @@
 //!   pm backup <volume> <folder>    JSON: back the library up into a new folder (--audio, --verify)
 //!   pm verify <backup-folder>      JSON: check a backup against its manifest (exit 3 on problems)
 //!   pm export-playlists <volume>   JSON: every case and mix with its tracks (--out <file>)
+//!   pm tags <volume>               JSON: the app's tags, colour labels, energy (--config-dir <dir>)
+//!   pm duplicates <volume>         JSON: copies by tags / size and length (--config-dir <dir>)
 //!
 //! `<volume>` is the volume root (the folder that contains `.Pacemaker`).
 
@@ -37,6 +39,8 @@ fn main() -> ExitCode {
         Some("backup") => json_cmds::backup(&args[1..]),
         Some("verify") => json_cmds::verify(&args[1..]),
         Some("export-playlists") => json_cmds::export_playlists(&args[1..]),
+        Some("tags") => json_cmds::tags(&args[1..]),
+        Some("duplicates") => json_cmds::duplicates(&args[1..]),
         _ => {
             eprintln!("{}", json_cmds::USAGE);
             return ExitCode::from(2);
