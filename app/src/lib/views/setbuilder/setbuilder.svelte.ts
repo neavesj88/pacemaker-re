@@ -29,7 +29,7 @@ type Snapshot = { order: number[]; out: Out[]; pinned: number[]; short: boolean;
 const MAX_HISTORY = 50;
 
 /** A library track as the solver sees it. A track that needs analysis has no trustworthy tempo. */
-export function toSetTrack(t: Track, needsAnalysis: boolean): SetTrack {
+export function toSetTrack(t: Track, needsAnalysis: boolean, minSectionBars: number = setPrefs.value.sectionMinBars): SetTrack {
   const key = parseKey(t.key);
   return {
     id: t.track_id,
@@ -37,13 +37,13 @@ export function toSetTrack(t: Track, needsAnalysis: boolean): SetTrack {
     key: key ? { num: key.num, letter: key.letter } : null,
     secs: t.play_time_secs,
     energy: energyOf(t.track_id),
-    ...sideFlags(t.track_id),
+    ...sideFlags(t.track_id, minSectionBars),
   };
 }
 
 /** Whether a track has an intro / outro to mix over; nothing (not false) when it has no sections. */
-function sideFlags(trackId: number): { intro?: boolean; outro?: boolean } {
-  const s = mixSides(sections.of(trackId));
+function sideFlags(trackId: number, minBars: number): { intro?: boolean; outro?: boolean } {
+  const s = mixSides(sections.of(trackId), minBars);
   return s ? { intro: s.intro, outro: s.outro } : {};
 }
 
@@ -75,7 +75,7 @@ class SetBuilder {
     const m = new Map<number, SetTrack>();
     if (!lib) return m;
     const want = new Set([...this.order, ...this.out.map((o) => o.id)]);
-    for (const t of lib.tracks) if (want.has(t.track_id)) m.set(t.track_id, toSetTrack(t, session.needs.has(t.track_id)));
+    for (const t of lib.tracks) if (want.has(t.track_id)) m.set(t.track_id, toSetTrack(t, session.needs.has(t.track_id), setPrefs.value.sectionMinBars));
     return m;
   });
 

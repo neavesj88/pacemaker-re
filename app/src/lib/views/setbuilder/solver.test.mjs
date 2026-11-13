@@ -10,6 +10,7 @@ import * as E from "../../state/mixedit.ts";
 import * as R from "../../state/transitionRecipes.ts";
 import * as B from "./buildMix.ts";
 import * as S from "./solver.ts";
+import { MIN_MIX_BARS } from "../analysis/sectionLogic.ts";
 
 let n = 0;
 const test = async (name, fn) => {
@@ -754,6 +755,13 @@ const withSides = (t, sides) => (sides ? { ...t, intro: sides.intro, outro: side
 await test("section preference: off by default, never changes a score, says what a hop does", () => {
   assert.equal(S.DEFAULT_SOLVER.sectionPref, false);
   assert.equal(S.DEFAULT_PREFS.preferSections, false);
+  assert.equal(S.DEFAULT_PREFS.sectionMinBars, MIN_MIX_BARS, "the setting's default is the one mixSides uses");
+  // the minimum length is a setting: kept when valid, clamped by the input, ignored when out of range
+  assert.equal(S.mergePrefs({ sectionMinBars: 16 }).sectionMinBars, 16);
+  assert.equal(S.mergePrefs({ sectionMinBars: 2 }).sectionMinBars, 8);
+  assert.equal(S.mergePrefs({ sectionMinBars: "16" }).sectionMinBars, 8);
+  assert.equal(S.clampPref("sectionMinBars", 2), 4);
+  assert.equal(S.clampPref("sectionMinBars", 500), 64);
   const none = { intro: false, outro: false };
   const a = withSides(tr(1, 124, "8A"), { intro: false, outro: true });
   const b = withSides(tr(2, 124, "8A"), { intro: true, outro: false });

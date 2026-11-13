@@ -128,7 +128,9 @@ export type SolverOptions = {
 
 /** What a side of a hop that sits on an outro (leaving) or an intro (arriving) takes off its search
  * cost. Two points a side keeps it below the 5-point step between key moves, so it chooses between
- * hops that are otherwise alike and never trades a key or tempo limit for sections. */
+ * hops that are otherwise alike and never trades a key or tempo limit for sections. Deliberately
+ * not a setting: it is the safety bound on how far sections may outweigh the key and tempo limits,
+ * not a taste, so letting it be raised would let a section override a limit the user set. */
 export const SECTION_BONUS = 2;
 
 export const DEFAULT_SOLVER: SolverOptions = {
@@ -754,6 +756,8 @@ export type SetPrefs = {
   lockOnDrag: boolean;
   /** Prefer mixing out at an outro and into an intro where tracks have detected sections. */
   preferSections: boolean;
+  /** Shortest intro or outro, in bars, that counts as something to mix over (with `preferSections`). */
+  sectionMinBars: number;
   /** Creating a mix: beat-match each track to the one before it. */
   beatmatch: boolean;
   /** Creating a mix: the tempo it runs at, BPM; null = the middle tempo of the set. */
@@ -780,6 +784,7 @@ export const DEFAULT_PREFS: SetPrefs = {
   solveOnLoad: true,
   lockOnDrag: true,
   preferSections: false,
+  sectionMinBars: 8,
   beatmatch: true,
   mixTempo: null,
   blendJumpPct: null,
@@ -795,6 +800,7 @@ export const PREF_RANGES = {
   mixTempo: [40, 250],
   blendJumpPct: [0, 50],
   overlapCapPct: [5, 50],
+  sectionMinBars: [4, 64],
 } as const;
 export type NumberPref = keyof typeof PREF_RANGES;
 
@@ -828,6 +834,7 @@ export function mergePrefs(saved: unknown, base: SetPrefs = DEFAULT_PREFS): SetP
   if (typeof s.solveOnLoad === "boolean") out.solveOnLoad = s.solveOnLoad;
   if (typeof s.lockOnDrag === "boolean") out.lockOnDrag = s.lockOnDrag;
   if (typeof s.preferSections === "boolean") out.preferSections = s.preferSections;
+  out.sectionMinBars = inRange(s.sectionMinBars, "sectionMinBars") ?? out.sectionMinBars;
   if (typeof s.beatmatch === "boolean") out.beatmatch = s.beatmatch;
   out.mixTempo = s.mixTempo === null ? null : (inRange(s.mixTempo, "mixTempo") ?? out.mixTempo);
   out.blendJumpPct = s.blendJumpPct === null ? null : (inRange(s.blendJumpPct, "blendJumpPct") ?? out.blendJumpPct);

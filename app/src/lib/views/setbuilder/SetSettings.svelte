@@ -100,6 +100,10 @@
     <legend>Behaviour</legend>
     <label class="check"><input type="checkbox" checked={p.solveOnLoad} onchange={(e) => patch({ solveOnLoad: e.currentTarget.checked })} /><span>Order the set as soon as tracks are loaded</span></label>
     <label class="check" title="Needs sections: Tracks, Sections panel. Only a tie-breaker between hops that are otherwise alike; tracks without sections are not penalised."><input type="checkbox" checked={p.preferSections} onchange={(e) => patch({ preferSections: e.currentTarget.checked })} /><span>Prefer leaving a track on its outro and arriving on an intro, where sections are detected</span></label>
+    <label class="row" title="Only counts with the preference above: how long an intro or outro must be to count as something to mix over.">
+      <span>Shortest intro or outro that counts (bars)</span>
+      <input type="number" min="4" max="64" step="4" disabled={!p.preferSections} value={p.sectionMinBars} onchange={(e) => typed(e, "sectionMinBars")} />
+    </label>
     <label class="check"><input type="checkbox" checked={p.lockOnDrag} onchange={(e) => patch({ lockOnDrag: e.currentTarget.checked })} /><span>Lock a track where I drop it</span></label>
   </fieldset>
 
