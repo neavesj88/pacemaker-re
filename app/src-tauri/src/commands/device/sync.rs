@@ -103,25 +103,8 @@ pub fn sync_settings_set(app: AppHandle, settings: SyncPrefs) -> AppResult<SyncS
 /// removable-media folders), otherwise "computer". Names the copies "keep both" makes
 /// ("<name> (from computer)") and the words of the preview.
 pub fn label_of(root: &Path) -> &'static str {
-    if is_volume_root(root) { "Pacemaker" } else { "computer" }
-}
-
-fn is_volume_root(root: &Path) -> bool {
-    use std::path::Component;
-    let comps: Vec<Component> = root.components().collect();
-    if cfg!(windows) {
-        matches!(comps.as_slice(), [Component::Prefix(_), Component::RootDir] | [Component::Prefix(_)])
-    } else {
-        let s = root.to_string_lossy();
-        let s = s.trim_end_matches('/');
-        // the folders find_volumes() scans, and one level below them (/media/<user>/<volume>)
-        ["/Volumes/", "/media/", "/run/media/", "/mnt/"].iter().any(|base| {
-            s.strip_prefix(base).is_some_and(|rest| {
-                let parts: Vec<&str> = rest.split('/').collect();
-                (1..=2).contains(&parts.len()) && parts.iter().all(|p| !p.is_empty())
-            })
-        })
-    }
+    // one rule for "Pacemaker or computer" in the whole app (library/kind.rs)
+    if crate::commands::library::kind::library_kind(&root.to_string_lossy()) == crate::commands::library::kind::PACEMAKER { "Pacemaker" } else { "computer" }
 }
 
 // ---- plan -----------------------------------------------------------------------------------

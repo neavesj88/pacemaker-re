@@ -2,7 +2,7 @@
 //! `computer::computer_library_create` makes the empty library on this computer.
 
 pub mod computer;
-mod kind;
+pub(crate) mod kind;
 
 use std::path::PathBuf;
 

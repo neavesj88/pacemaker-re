@@ -7,10 +7,13 @@
 // Picked up automatically by devmock/index.ts.
 //
 // Switches in a library root's name: "full" has too little free room.
+import { libraryKind } from "../state/place";
+import { DEFAULT as COMPUTER_DEFAULT } from "./computerLibrary";
 import { runSteps } from "./device";
 import type { Handlers } from "./types";
 
-export const COMPUTER_ROOT = "C:\\Users\\Example\\Music\\Pacemaker Revival";
+/** The same library Settings and Welcome create (computerLibrary.ts): one computer library in the preview. */
+export const COMPUTER_ROOT = COMPUTER_DEFAULT;
 export const DEVICE_ROOT = "P:\\";
 
 const MB = 1024 * 1024;
@@ -104,7 +107,7 @@ function removals(): Item[] {
   ];
 }
 
-const isSend = (a: Record<string, any>) => String(a.source) === COMPUTER_ROOT;
+const isSend = (a: Record<string, any>) => libraryKind(String(a.source)) === "computer";
 
 function currentPlan(a: Record<string, any>) {
   const dir = isSend(a) ? "send" : "get";
@@ -120,7 +123,7 @@ function currentPlan(a: Record<string, any>) {
   }
   const bytes = items.filter((i) => i.kind === "track" && i.action.type !== "skip").reduce((n, i) => n + i.bytes, 0);
   const full = String(a.target).toLowerCase().includes("full");
-  const free = full ? 5 * MB : String(a.target) === COMPUTER_ROOT ? 212_000 * MB : 11_400 * MB;
+  const free = full ? 5 * MB : libraryKind(String(a.target)) === "computer" ? 212_000 * MB : 11_400 * MB;
   const { labels_follow: _l, ...engine } = settings;
   const digest = `mock-${dir}-${JSON.stringify(engine)}-${[...handled].sort().join("|")}`;
   return {

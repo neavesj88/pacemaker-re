@@ -3,7 +3,8 @@
 import { libraryKind } from "../state/place";
 import type { Handlers } from "./types";
 
-const DEFAULT = "C:\\Users\\demo\\Music\\Pacemaker Revival";
+/** Also the "This computer" library of the sync mock (device-sync.ts), so there is one computer library in the preview. */
+export const DEFAULT = "C:\\Users\\demo\\Music\\Pacemaker Revival";
 const none = typeof location !== "undefined" && new URLSearchParams(location.search).get("computer") === "none";
 
 let settings = { path: "", open_at_start: true };
