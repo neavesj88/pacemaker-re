@@ -41,6 +41,13 @@ pub const MAX_CRATES: usize = 5000;
 /// be read. Crates past the budget are skipped with a note.
 pub const MAX_TOTAL_CRATE_BYTES: u64 = 256 << 20;
 
+/// Distinct tracks in one library read. Each becomes a `ForeignTrack` and costs up to two file
+/// system lookups, so the per-crate and byte caps alone would still let a crafted folder (millions
+/// of short distinct paths in 256 MB) build gigabytes of model and stat for minutes.
+pub const MAX_TRACKS: usize = 500_000;
+/// Crate entries looked at in one library read, repeats included.
+pub const MAX_ENTRIES: usize = 2_000_000;
+
 /// One record: its tag and its data.
 type Record<'a> = ([u8; 4], &'a [u8]);
 
@@ -163,6 +170,14 @@ fn resolve_rel(rel: &str, bases: &[String]) -> String {
 /// Builds the library model from `(crate file stem, parsed relative paths, crate file path)` triples.
 /// Each crate is parsed as soon as it is read (see [`read_path`]) so its bytes are not kept.
 fn build(crates: Vec<(String, Vec<String>, std::path::PathBuf)>, notes: Vec<String>) -> Result<ForeignLibrary, Error> {
+    build_capped(crates, notes, MAX_TRACKS, MAX_ENTRIES)
+}
+
+/// [`build`] with the caps given, so a test can use small ones. Past either cap the remaining
+/// entries are not looked at (no file system lookup is made for them) and one note says so.
+fn build_capped(crates: Vec<(String, Vec<String>, std::path::PathBuf)>, mut notes: Vec<String>, max_tracks: usize, max_entries: usize) -> Result<ForeignLibrary, Error> {
+    let mut looked_at = 0usize;
+    let mut left_out = 0usize;
     let mut tracks: Vec<ForeignTrack> = Vec::new();
     let mut by_path: HashMap<String, usize> = HashMap::new();
     let mut playlists = Vec::new();
@@ -170,6 +185,11 @@ fn build(crates: Vec<(String, Vec<String>, std::path::PathBuf)>, notes: Vec<Stri
         let bases = bases_for(&file);
         let mut pl = ForeignPlaylist { name: crate_display_name(&stem), ..Default::default() };
         for rel in rels {
+            if tracks.len() >= max_tracks || looked_at >= max_entries {
+                left_out += 1;
+                continue;
+            }
+            looked_at += 1;
             let path = resolve_rel(&rel, &bases);
             if path.is_empty() {
                 pl.dangling += 1;
@@ -184,6 +204,12 @@ fn build(crates: Vec<(String, Vec<String>, std::path::PathBuf)>, notes: Vec<Stri
             pl.tracks.push(idx);
         }
         playlists.push(pl);
+    }
+    if left_out > 0 {
+        notes.push(format!(
+            "{left_out} crate entr{} not read: one import takes at most {max_tracks} different tracks and {max_entries} crate entries.",
+            if left_out == 1 { "y was" } else { "ies were" }
+        ));
     }
     if playlists.is_empty() {
         return Err(bad(match notes.first() {
@@ -248,7 +274,8 @@ pub fn read_path(path: &Path) -> Result<ForeignLibrary, Error> {
 
 /// Reads and parses each crate in turn, dropping its bytes before the next is read, so memory is
 /// bounded by one crate (`MAX_CRATE_BYTES`) plus the parsed paths. `budget` caps the bytes read in
-/// total; a crate that would pass it, and every later one, is skipped with one note.
+/// total; a crate that would pass what is left is skipped (a later, smaller one that still fits is
+/// read) and the skipped ones are counted in one note.
 fn read_crates(files: Vec<std::path::PathBuf>, budget: u64, notes: &mut Vec<String>) -> Vec<(String, Vec<String>, std::path::PathBuf)> {
     let mut out = Vec::new();
     let mut left = budget;
@@ -343,6 +370,23 @@ mod tests {
         // an unpaired surrogate is not valid UTF-16: it falls back instead of panicking
         let _ = decode_path(&[0x00, 0x41, 0xD8, 0x00, 0x00, 0x2E]);
         assert_eq!(decode_path(b""), "");
+    }
+
+    #[test]
+    fn the_number_of_distinct_tracks_and_entries_is_capped_and_says_so() {
+        let f = std::path::PathBuf::from("c.crate");
+        let rels = |n: usize| (0..n).map(|i| format!("Music/t{i}.mp3")).collect::<Vec<_>>();
+        let lib = build_capped(vec![("A".into(), rels(10), f.clone())], Vec::new(), 4, 1000).unwrap();
+        assert_eq!(lib.tracks.len(), 4);
+        assert_eq!(lib.playlists[0].tracks.len(), 4);
+        assert!(lib.notes.iter().any(|n| n.starts_with("6 crate entries were not read")), "{:?}", lib.notes);
+        // repeats count against the entry cap even though they add no track
+        let same = vec!["Music/a.mp3".to_string(); 10];
+        let lib = build_capped(vec![("A".into(), same, f.clone())], Vec::new(), 100, 3).unwrap();
+        assert_eq!((lib.tracks.len(), lib.playlists[0].tracks.len()), (1, 3));
+        assert!(lib.notes.iter().any(|n| n.starts_with("7 crate entries")), "{:?}", lib.notes);
+        // under the caps there is no note
+        assert!(build_capped(vec![("A".into(), rels(3), f)], Vec::new(), 4, 1000).unwrap().notes.is_empty());
     }
 
     #[test]

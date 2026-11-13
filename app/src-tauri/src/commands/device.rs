@@ -192,7 +192,7 @@ pub async fn device_backup(app: AppHandle, lock: State<'_, JobLock>, root: Strin
             ok: rep.files,
             failed: 0,
             summary: format!(
-                "Backed up {} files ({}) to {}. Every file was read back and checked; checksums are in {}.",
+                "Backed up {} files ({}) to {}. Every file was copied and its checksum compared after writing (through the system's cache: use Check on the backup later to read it from the disk again); checksums are in {}.",
                 rep.files,
                 mb(rep.bytes),
                 rep.folder,

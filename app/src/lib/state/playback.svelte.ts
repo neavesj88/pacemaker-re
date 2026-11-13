@@ -2,7 +2,7 @@
 // area (the engine in lib/player reads and drives these fields); every other area, the mix
 // editor and the grid editor included, only calls the methods and reads the fields. This is
 // the one place the "now playing" state lives, so views never talk to the engine directly.
-import { tracksViewRows } from "$lib/views/tracks/trackFilter";
+import { tableRows } from "$lib/views/tracks/tableRows.svelte";
 import { session } from "./session.svelte";
 
 /** A rendered mix being previewed instead of a single track. `path` is the rendered audio file
@@ -56,11 +56,6 @@ class Playback {
     this.playing = autoplay;
   }
 
-  /** Sets the list that next/previous walk through (the table the user is playing from). */
-  setQueue(ids: number[]) {
-    this.queue = ids;
-  }
-
   play() {
     this.playing = this.trackId !== null || this.mixPreview !== null;
   }
@@ -108,8 +103,9 @@ class Playback {
   #order(): number[] {
     if (this.queue.length) return this.queue;
     // no list was given: the library as the Tracks table shows it right now (search, filters and
-    // every sort key), worked out when asked so that a change made while a track plays counts
-    return session.library ? tracksViewRows(session.library.tracks).map((t) => t.track_id) : [];
+    // every sort key). It is the table's own cached list, recomputed only when something it
+    // reads changed, so a change made while a track plays still counts
+    return session.library ? tableRows.ids : [];
   }
 
   /** The track after the loaded one in the list, or null at the end / when nothing is loaded. */

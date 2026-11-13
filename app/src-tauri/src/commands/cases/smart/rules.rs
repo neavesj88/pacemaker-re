@@ -650,7 +650,8 @@ fn value_label(field: SortField, t: &Track, x: &TrackExtra) -> Option<String> {
         SortField::Year => if x.year > 0 { x.year.to_string() } else { dash() },
         SortField::DateAdded => date_label(x.date_added),
         SortField::LastPlayed => if t.last_played > 0 { date_label(t.last_played) } else { "never".into() },
-        SortField::Rating => if t.rating > 0 { "\u{2605}".repeat(t.rating as usize) } else { dash() },
+        // the stored value is read raw, and a damaged or foreign music.db can hold any number
+        SortField::Rating => if t.rating > 0 { "\u{2605}".repeat(t.rating.min(i64::from(MAX_RATING)) as usize) } else { dash() },
         SortField::Plays => t.times_played.to_string(),
         SortField::FileSize => format!("{:.1} MB", t.file_size as f64 / 1_048_576.0),
         // title, artist, album, genre, BPM, key and length are columns of the table already
@@ -661,34 +662,7 @@ fn value_label(field: SortField, t: &Track, x: &TrackExtra) -> Option<String> {
 /// The tracks `q` matches, in order, cut to its limit. Refuses a query whose rules name a case
 /// that no longer exists (an "is not in" rule would otherwise quietly match everything).
 pub fn evaluate(q: &Query, d: &Data) -> Result<Eval, String> {
-    let mut wanted = HashSet::new();
-    referenced_cases(&q.rules, &mut wanted);
-    let mut missing: Vec<i64> = wanted.into_iter().filter(|id| !matches!(d.cases.get(id), Some(Some(_)))).collect();
-    if !missing.is_empty() {
-        missing.sort_unstable();
-        return Err(format!("A rule refers to a case that no longer exists (case {}). Pick another case.", missing[0]));
-    }
-    // a labels source that could not be read is not "no labels": refuse, so "tags: none of X"
-    // never matches everything and a smart case's device copy is never rewritten from it
-    if uses_labels(&q.rules) {
-        if let Some(why) = &d.labels.problem {
-            return Err(format!("Tags, colours and energy cannot be read right now, so this smart case was not worked out. {why}"));
-        }
-    }
-    if uses_energy(&q.rules) {
-        if let Some(why) = &d.labels.energy_problem {
-            return Err(format!("Energy cannot be read right now, so this smart case was not worked out. {why}"));
-        }
-    }
-    let cx = Context { favourites: &d.favourites, cases: &d.cases, labels: &d.labels, now_ms: d.now_ms };
-    let no_extra = TrackExtra::default();
-    let mut hits: Vec<(&Track, &TrackExtra)> = d
-        .tracks
-        .iter()
-        .map(|t| (t, d.extras.get(&t.track_id).unwrap_or(&no_extra)))
-        // no rules at all (only possible with a limit) takes the whole library
-        .filter(|(t, x)| q.rules.is_empty() || group_matches(q.mode, &q.rules, t, x, &cx))
-        .collect();
+    let mut hits = matching(q, d, None)?;
     let matched = hits.len();
     // the default order, and the tie-break of every other
     let tie = |t: &Track| -> TieKey { (t.artist.to_lowercase(), t.title.to_lowercase(), t.track_id) };
@@ -709,4 +683,61 @@ pub fn evaluate(q: &Query, d: &Data) -> Result<Eval, String> {
     };
     let ids = hits.into_iter().map(|(t, _)| t.track_id).collect();
     Ok(Eval { ids, matched, values })
+}
+
+/// How many tracks `q` holds after its limit: `evaluate(q, d).ids.len()` without ordering the
+/// tracks or labelling the sort (the sidebar counts every smart case on each change of the
+/// library, and neither the order nor the labels are shown there). Same refusals as [`evaluate`].
+pub fn count(q: &Query, d: &Data) -> Result<usize, String> {
+    let matched = matching(q, d, None)?.len();
+    Ok(q.limit.map_or(matched, |n| matched.min(n as usize)))
+}
+
+/// Which of `ids` `q` holds: the answer to "which smart cases does this track belong to". Without
+/// a limit that is the rules alone, tried on those tracks only (a limit makes membership depend
+/// on the whole ordered list, so then the full [`evaluate`] is the answer). Same refusals as
+/// [`evaluate`].
+pub fn holds_among(q: &Query, d: &Data, ids: &[i64]) -> Result<HashSet<i64>, String> {
+    if q.limit.is_some() {
+        let all = evaluate(q, d)?;
+        let wanted: HashSet<i64> = ids.iter().copied().collect();
+        return Ok(all.ids.into_iter().filter(|id| wanted.contains(id)).collect());
+    }
+    let only: HashSet<i64> = ids.iter().copied().collect();
+    Ok(matching(q, d, Some(&only))?.into_iter().map(|(t, _)| t.track_id).collect())
+}
+
+/// The tracks the rules of `q` match, unordered, after the checks [`evaluate`] makes; with `only`,
+/// just those among them.
+fn matching<'a>(q: &Query, d: &'a Data, only: Option<&HashSet<i64>>) -> Result<Vec<(&'a Track, &'a TrackExtra)>, String> {
+    let mut wanted = HashSet::new();
+    referenced_cases(&q.rules, &mut wanted);
+    let mut missing: Vec<i64> = wanted.into_iter().filter(|id| !matches!(d.cases.get(id), Some(Some(_)))).collect();
+    if !missing.is_empty() {
+        missing.sort_unstable();
+        return Err(format!("A rule refers to a case that no longer exists (case {}). Pick another case.", missing[0]));
+    }
+    // a labels source that could not be read is not "no labels": refuse, so "tags: none of X"
+    // never matches everything and a smart case's device copy is never rewritten from it
+    if uses_labels(&q.rules) {
+        if let Some(why) = &d.labels.problem {
+            return Err(format!("Tags, colours and energy cannot be read right now, so this smart case was not worked out. {why}"));
+        }
+    }
+    if uses_energy(&q.rules) {
+        if let Some(why) = &d.labels.energy_problem {
+            return Err(format!("Energy cannot be read right now, so this smart case was not worked out. {why}"));
+        }
+    }
+    let cx = Context { favourites: &d.favourites, cases: &d.cases, labels: &d.labels, now_ms: d.now_ms };
+    static NO_EXTRA: std::sync::OnceLock<TrackExtra> = std::sync::OnceLock::new();
+    let no_extra = NO_EXTRA.get_or_init(TrackExtra::default);
+    Ok(d
+        .tracks
+        .iter()
+        .filter(|t| only.is_none_or(|set| set.contains(&t.track_id)))
+        .map(|t| (t, d.extras.get(&t.track_id).unwrap_or(no_extra)))
+        // no rules at all (only possible with a limit) takes the whole library
+        .filter(|(t, x)| q.rules.is_empty() || group_matches(q.mode, &q.rules, t, x, &cx))
+        .collect())
 }

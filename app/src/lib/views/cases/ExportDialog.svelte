@@ -12,6 +12,7 @@
   import { cases } from "$lib/state/cases.svelte";
   import { confirmLabel, EXT, FORMAT_LABEL, fmtBytes, listRank, plural, planSummary, replaceList, rows, totals } from "$lib/state/exportLogic";
   import Button from "$lib/ui/Button.svelte";
+  import { focusFirst } from "$lib/ui/focus";
   import ExportOptionsFields from "./ExportOptionsFields.svelte";
 
   const ex = caseExport;
@@ -54,7 +55,7 @@
 {#if ex.open}
   <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
   <div class="scrim" onclick={() => ex.close()}>
-    <div class="modal" role="dialog" aria-modal="true" aria-label="Export cases to a folder" tabindex="-1" onclick={(e) => e.stopPropagation()}>
+    <div class="modal" role="dialog" aria-modal="true" aria-label="Export cases to a folder" tabindex="-1" use:focusFirst onclick={(e) => e.stopPropagation()}>
       {#if ex.stage === "setup"}
         <h2>Export cases to a folder</h2>
         {#if ex.warning}<p class="warn" role="alert">{ex.warning}</p>{/if}
@@ -202,7 +203,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    background: rgba(0, 0, 0, 0.6);
+    background: var(--scrim);
   }
   .modal {
     width: 780px;

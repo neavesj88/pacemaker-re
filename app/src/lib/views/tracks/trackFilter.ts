@@ -32,7 +32,7 @@ export function queryContext(): QueryContext {
 
 /** The header search and the "needs analysis" filter, in the list's own order. */
 export function searchTracks(list: Track[]): Track[] {
-  const q = compileQuery(filters.query);
+  const q = compileQuery(filters.applied);
   const cx = queryContext();
   return list.filter((t) => (!filters.onlyNeeds || session.needs.has(t.track_id)) && (q.empty || q.test(t, cx)));
 }

@@ -57,7 +57,8 @@
 <Card title="Backup">
   <p class="muted">
     A snapshot of the library: the database (tracks, mixes, cases), the device settings, the system file and every
-    beat grid. Audio is left out unless you tick the box. Each file is read back and checked, and a SHA-256 list is
+    beat grid. Audio is left out unless you tick the box. Each file is compared with its source right after it is written (the system may
+    answer that from its cache, so run Check on the backup later to read it from the disk again), and a SHA-256 list is
     saved beside the copy.
   </p>
   <label class="check">

@@ -65,7 +65,9 @@ fn decode_entities(s: &str) -> String {
     while let Some(p) = rest.find('&') {
         out.push_str(&rest[..p]);
         rest = &rest[p..];
-        match rest.find(';').filter(|e| *e <= 12) {
+        // only the next 13 bytes can hold the end of an entity: searching the whole rest made a
+        // value of many '&' without a ';' quadratic
+        match rest.as_bytes().iter().take(13).position(|b| *b == b';') {
             Some(e) => {
                 let ent = &rest[1..e];
                 let ch = match ent {
@@ -1868,6 +1870,19 @@ mod tests {
   </array>
 </dict>
 </plist>"#;
+
+    #[test]
+    fn entity_decoding_is_linear_on_a_value_of_ampersands() {
+        let big = "&".repeat(2_000_000);
+        let t = std::time::Instant::now();
+        assert_eq!(decode_entities(&big), big, "an '&' with no ';' within reach stays as written");
+        assert!(t.elapsed() < std::time::Duration::from_secs(5), "took {:?}", t.elapsed());
+        assert_eq!(decode_entities("a &amp; b &#65; &nope; &lt"), "a & b A &nope; &lt");
+        // an entity just inside and just outside the 12-byte reach
+        assert_eq!(decode_entities("&#x1F600;"), "\u{1F600}");
+        assert_eq!(decode_entities("&#0000000065;"), "A", "the ; is the 13th byte: in reach");
+        assert_eq!(decode_entities("&#00000000065;"), "&#00000000065;", "one byte further: not an entity");
+    }
 
     #[test]
     fn xml_reader_handles_entities_cdata_comments_and_doctype() {

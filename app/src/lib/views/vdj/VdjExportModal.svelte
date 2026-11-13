@@ -5,6 +5,7 @@
   import { selection } from "$lib/state/selection.svelte";
   import { session } from "$lib/state/session.svelte";
   import Button from "$lib/ui/Button.svelte";
+  import { focusFirst } from "$lib/ui/focus";
   import VdjOptionsFields from "./VdjOptionsFields.svelte";
   import { vdj } from "./vdj.svelte";
   import { buildRequest, entryWords, formatBytes, planLine, selectedInCase, startGate, startLabel, suggestListName } from "./vdjLogic";
@@ -142,7 +143,7 @@
 
 <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
 <div class="scrim" onclick={() => !vdj.running && onclose()}>
-  <div class="dlg" role="dialog" aria-modal="true" aria-label="Export to VirtualDJ" tabindex="-1" onclick={(e) => e.stopPropagation()}>
+  <div class="dlg" role="dialog" aria-modal="true" aria-label="Export to VirtualDJ" tabindex="-1" use:focusFirst onclick={(e) => e.stopPropagation()}>
     <header>
       <h2>Export to VirtualDJ</h2>
       <span class="muted">case · {caseName}</span>

@@ -7,6 +7,8 @@ import type { LibraryView } from "./types";
 export const listVolumes = () => invoke<string[]>("list_volumes");
 
 /** Reads a library read-only. */
+/** The licences of everything the app contains (bundled `THIRD-PARTY-NOTICES.md`). */
+export const appNotices = () => invoke<string>("app_notices");
 export const openLibrary = (root: string) => invoke<LibraryView>("open_library", { root });
 
 /** Folder picker for the drive (the folder that contains .Pacemaker); null if cancelled. */

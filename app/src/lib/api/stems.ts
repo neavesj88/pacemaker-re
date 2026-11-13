@@ -113,6 +113,8 @@ export type Plan = {
   minutes: number;
   /** Existing files a run would overwrite, by full path. */
   replaced_files: string[];
+  /** Fingerprint of this plan; `stemsRun` sends it back and the run is refused if the plan differs now. */
+  digest: string;
 };
 
 export type StemsProgress = {
@@ -163,8 +165,8 @@ export const stemsPlan = (root: string, trackIds: number[], dest: string) => inv
 /** Makes the stems. Resolves at once with the number of tracks that will run; `stems-progress`
  *  events follow, then `stems-result`, then `job-done` (job "stems"). `confirmReplace` must be
  *  true when the plan replaces existing files. */
-export const stemsRun = (root: string, trackIds: number[], dest: string, confirmReplace: boolean) =>
-  invoke<{ tracks: number }>("stems_run", { root, trackIds, dest, confirmReplace });
+export const stemsRun = (root: string, trackIds: number[], dest: string, confirmReplace: boolean, digest: string) =>
+  invoke<{ tracks: number }>("stems_run", { root, trackIds, dest, confirmReplace, digest });
 
 export const onStemsProgress = (cb: (e: StemsProgress) => void) => listen<StemsProgress>("stems-progress", (e) => cb(e.payload));
 export const onStemsResult = (cb: (e: StemsResult) => void) => listen<StemsResult>("stems-result", (e) => cb(e.payload));

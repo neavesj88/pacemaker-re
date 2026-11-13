@@ -8,6 +8,7 @@
   import { jobs } from "$lib/state/jobs.svelte";
   import { session } from "$lib/state/session.svelte";
   import Button from "$lib/ui/Button.svelte";
+  import { focusFirst } from "$lib/ui/focus";
   import GridDiff from "./GridDiff.svelte";
 
   const KINDS: { kind: BatchKind; hint: string }[] = [
@@ -40,7 +41,7 @@
 
 <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
 <div class="scrim" onclick={() => gridBatch.close()}>
-  <div class="dlg" role="dialog" aria-modal="true" aria-label="Batch beat grid tools" tabindex="-1" onclick={(e) => e.stopPropagation()}>
+  <div class="dlg" role="dialog" aria-modal="true" aria-label="Batch beat grid tools" tabindex="-1" use:focusFirst onclick={(e) => e.stopPropagation()}>
     <header>
       <h2>Batch beat grid tools</h2>
       <span class="muted">{n(gridBatch.ids.length, "track")} on {lib?.root ?? ""}</span>
@@ -201,7 +202,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    background: rgba(0, 0, 0, 0.6);
+    background: var(--scrim);
   }
   .dlg {
     display: flex;

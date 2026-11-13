@@ -759,7 +759,39 @@ pub fn plan_run(lib: &Library, ids: &[i64], opts: &RunOptions) -> Result<RunPlan
     if plan.items.is_empty() && !ids.is_empty() {
         plan.problems.push("none of the ticked tracks can be acted on".into());
     }
+    if opts.remove && opts.archive_dir.is_none() {
+        plan.problems.extend(last_copy_problems(root, &tracks, &plan.items)?);
+    }
     Ok(plan)
+}
+
+/// Removing without an archive must not take every copy of the same audio: when the tracks about
+/// to go include all the members of a byte-identical group (the kept original ticked together with
+/// its copies), the sound would be gone from the card. One sentence per such group, naming them.
+/// Only files the size of a removed track are looked at, and hashed only when another file has
+/// that size, so it costs little unless the same audio really is on the card more than once.
+fn last_copy_problems(root: &Path, tracks: &HashMap<i64, Track>, items: &[RunItem]) -> Result<Vec<String>, Error> {
+    let removed: HashSet<i64> = items.iter().filter(|i| i.remove).map(|i| i.track_id).collect();
+    if removed.len() < 2 {
+        return Ok(Vec::new());
+    }
+    let sizes: HashSet<u64> = items.iter().filter(|i| i.remove).filter_map(|i| fs::metadata(&i.audio).ok().map(|m| m.len())).collect();
+    let mut rows: Vec<Row> = Vec::new();
+    for t in tracks.values() {
+        let Some((audio, _)) = checked_track_paths(root, &t.location) else { continue };
+        let Some(audio_len) = fs::metadata(&audio).ok().filter(|m| m.is_file()).map(|m| m.len()).filter(|n| sizes.contains(n)) else { continue };
+        rows.push(Row { t, audio_len, grid_len: 0, added_ms: 0 });
+    }
+    rows.sort_by_key(|r| r.t.track_id);
+    let mut unused = Vec::new();
+    let mut out = Vec::new();
+    for g in duplicate_groups(&rows, root, &mut unused, &|| false)? {
+        if g.iter().all(|&i| removed.contains(&rows[i].t.track_id)) {
+            let names: Vec<String> = g.iter().map(|&i| track_label(&rows[i].t.artist, &rows[i].t.title, &rows[i].t.location)).collect();
+            out.push(format!("no copy of this audio would be left on the card: {} are the same file and all of them are ticked for removal; untick the one to keep, or make an archive first", names.join(", ")));
+        }
+    }
+    Ok(out)
 }
 
 /// "12.3 GB", "4.5 MB": binary units, the same wording the storage card uses.
@@ -1764,6 +1796,30 @@ mod tests {
         assert!(rep.skipped.iter().any(|s| s.contains("Late set")), "{:?}", rep.skipped);
         assert!(fx.paths(ids[0]).0.is_file());
         assert_eq!(fx.lib.tracks().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn removing_every_copy_of_the_same_audio_without_an_archive_is_a_problem_of_the_plan() {
+        let fx = fixture("lastcopy", 4);
+        let ids = fx.ids.clone();
+        // tracks 0 and 1 are the same file twice; 2 and 3 are different
+        for id in [ids[0], ids[1]] {
+            fs::write(fx.paths(id).0, vec![7u8; 12_345]).unwrap();
+        }
+        let remove_only = RunOptions { remove: true, ..RunOptions::default() };
+        // the original and its copy are both ticked: nothing would be left
+        let p = plan_run(&fx.lib, &[ids[0], ids[1], ids[2]], &remove_only).unwrap();
+        assert_eq!(p.problems.len(), 1, "{:?}", p.problems);
+        assert!(p.problems[0].contains("no copy of this audio would be left") && p.problems[0].contains("Title 0") && p.problems[0].contains("Title 1"), "{:?}", p.problems);
+        // only the copy is ticked: the original stays, so nothing to say
+        assert!(plan_run(&fx.lib, &[ids[1], ids[2]], &remove_only).unwrap().problems.is_empty());
+        // two different tracks: removing both is what was asked for
+        assert!(plan_run(&fx.lib, &[ids[2], ids[3]], &remove_only).unwrap().problems.is_empty());
+        // with an archive the sound is kept there
+        let dest = fx.base.join("archive");
+        fs::create_dir_all(&dest).unwrap();
+        let with_archive = RunOptions { archive_dir: Some(dest), remove: true, ..RunOptions::default() };
+        assert!(plan_run(&fx.lib, &[ids[0], ids[1]], &with_archive).unwrap().problems.is_empty());
     }
 
     #[test]

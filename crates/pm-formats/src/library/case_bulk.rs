@@ -11,7 +11,7 @@
 
 use std::collections::HashSet;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use super::*;
 
@@ -357,4 +357,61 @@ impl Library {
         tx.commit()?;
         Ok(gone)
     }
+
+    /// Deletes the listed cases, but only those that are still the case the user confirmed:
+    /// case ids are reused after a deletion, so an id alone can name another case by now. A case
+    /// whose name or creation time differs, or that is gone, is kept and reported. One
+    /// transaction; a case listed twice is handled once.
+    pub fn delete_cases_confirmed(&mut self, items: &[ConfirmedCase]) -> Result<CaseDeleteReport, Error> {
+        let tx = self.con.transaction()?;
+        let mut report = CaseDeleteReport::default();
+        let mut seen = HashSet::new();
+        for it in items {
+            if !seen.insert(it.id) {
+                continue;
+            }
+            let now: Option<(String, i64)> = tx
+                .query_row("SELECT IFNULL(name,''), IFNULL(date_created,0) FROM cases WHERE case_id = ?1 AND case_id >= 0", [it.id], |r| {
+                    Ok((r.get(0)?, r.get(1)?))
+                })
+                .optional()?;
+            let why = match now {
+                None => Some("the case is no longer in the library".to_string()),
+                Some((name, created)) if name != it.name || created != it.date_created => {
+                    Some(format!("kept: the case with this id is now {name:?}, not the one you confirmed"))
+                }
+                Some(_) => None,
+            };
+            match why {
+                Some(error) => report.kept.push(CaseKept { id: it.id, name: it.name.clone(), error }),
+                None if delete_case_rows(&tx, it.id)? => report.deleted += 1,
+                None => report.kept.push(CaseKept { id: it.id, name: it.name.clone(), error: "the case is no longer in the library".into() }),
+            }
+        }
+        tx.commit()?;
+        Ok(report)
+    }
+}
+
+/// A case as the user saw it in the confirmation list.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct ConfirmedCase {
+    pub id: i64,
+    pub name: String,
+    pub date_created: i64,
+}
+
+/// A case a bulk delete left alone, and why.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct CaseKept {
+    pub id: i64,
+    pub name: String,
+    pub error: String,
+}
+
+/// What a confirmed bulk delete did.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize)]
+pub struct CaseDeleteReport {
+    pub deleted: usize,
+    pub kept: Vec<CaseKept>,
 }

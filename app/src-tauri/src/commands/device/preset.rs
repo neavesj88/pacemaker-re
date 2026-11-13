@@ -179,7 +179,11 @@ mod tests {
     const BASE: &str = "22 serialization::archive 4 0 16 0 0 6 0 1 1 0\n0 0 0 2004 604 0 1 1\n1 2003 604 9 0 3 1 0\n2 2000 604 0 2 4 1 0\n3 604 5 0 2 1 0\n4 1400 200 0 0.021000000000000001 5 1 0\n5 1100 4 0 4983";
 
     fn scratch(tag: &str) -> PathBuf {
-        let p = std::env::temp_dir().join(format!("pm-app-preset-{tag}-{}-{}", std::process::id(), now_secs()));
+        // a counter, not the clock: tests run in parallel and several use the same tag within one
+        // second, which made two of them share (and wipe) one folder
+        static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+        let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        let p = std::env::temp_dir().join(format!("pm-app-preset-{tag}-{}-{n}", std::process::id()));
         std::fs::create_dir_all(&p).unwrap();
         p
     }

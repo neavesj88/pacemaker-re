@@ -186,10 +186,12 @@
   }
 
   async function confirmDelete(list: CaseInfo[]) {
-    const n = await cases.removeMany(list.map((c) => c.id));
-    if (n !== undefined) {
+    const done = await cases.removeMany(list.map((c) => ({ id: c.id, name: c.name, date_created: c.date_created })));
+    if (done !== undefined) {
       picked = new Set();
-      toast.show(`Deleted ${plural(n, "case")}`, "ok");
+      toast.show(`Deleted ${plural(done.deleted, "case")}`, "ok");
+      // a case that changed while the dialog was open is not deleted: name each one
+      if (done.kept.length > 0) session.error = done.kept.map((k) => `“${k.name}”: ${k.error}`).join("; ");
     }
   }
 </script>

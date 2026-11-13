@@ -292,7 +292,11 @@ export const transferToNewCase = (root: string, from: number | null, newName: st
   invoke<TransferNewDone>("cases_transfer_new", { root, from, newName, trackIds, removeFromSource });
 
 /** Deletes several cases in one transaction (the tracks stay); returns how many went. */
-export const deleteCases = (root: string, caseIds: number[]) => invoke<number>("cases_delete_many", { root, caseIds });
+/** A case as the confirmation listed it. The backend deletes a case only while it still has this
+ * name and creation time (case ids are reused), and reports the rest as kept. */
+export type ConfirmedCase = { id: number; name: string; date_created: number };
+export type CaseDeleteReport = { deleted: number; kept: { id: number; name: string; error: string }[] };
+export const deleteCases = (root: string, cases: ConfirmedCase[]) => invoke<CaseDeleteReport>("cases_delete_many", { root, cases });
 
 export type CaseExportFormat = "m3u8" | "csv" | "rekordbox";
 

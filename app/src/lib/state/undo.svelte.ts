@@ -100,8 +100,9 @@ class UndoStore {
   }
 
   /** What undoing the newest `count` edits would do, line by line. */
-  preview(count: number) {
+  async preview(count: number) {
     const root = session.library?.root;
+    // async, so "no library" is a rejection the caller's handler sees, not a throw from the call
     if (!root) throw "No library is open.";
     return deviceUndoPreview(root, count);
   }

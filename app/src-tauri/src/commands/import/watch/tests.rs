@@ -169,6 +169,30 @@ fn the_length_tolerance_is_a_setting() {
 }
 
 #[test]
+fn a_full_tag_cache_drops_half_so_a_set_over_the_cap_still_gets_hits() {
+    use std::cell::Cell;
+    let d = dir("cache-cap");
+    let files: Vec<PathBuf> = (0..8).map(|i| file(&d, &format!("s{i}.mp3"), 10 + i)).collect();
+    let reads = Cell::new(0);
+    let reader = |_: &Path| {
+        reads.set(reads.get() + 1);
+        FileTags::default()
+    };
+    let mut c = TagCache { cap: 6, ..TagCache::default() };
+    for f in &files {
+        c.get_or_read(f, &reader);
+    }
+    assert_eq!(reads.get(), 8);
+    assert!(c.map.len() <= 6 && c.map.len() >= 3, "half were dropped at the cap, not all: {}", c.map.len());
+    // a second pass over the same files in the same order is not all misses
+    let before = reads.get();
+    for f in &files {
+        c.get_or_read(f, &reader);
+    }
+    assert!(reads.get() - before < 8, "read {} of 8 again", reads.get() - before);
+}
+
+#[test]
 fn the_tag_cache_reads_a_file_once_and_again_when_it_changes() {
     use std::cell::{Cell, RefCell};
     let d = dir("cache");

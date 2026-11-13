@@ -109,7 +109,11 @@
       }
       raf = requestAnimationFrame(loop);
     };
-    loop();
+    // The first frame runs here, inside the effect. It writes `head` and reads it back (and
+    // `viewStart`, `follow`, `viewSpan`), so tracked it made the effect depend on what it writes
+    // and Svelte stopped it with effect_update_depth_exceeded as soon as the track played. Later
+    // frames run from requestAnimationFrame, outside any effect.
+    untrack(loop);
     return () => cancelAnimationFrame(raf);
   });
 

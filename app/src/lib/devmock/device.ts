@@ -198,7 +198,7 @@ export const handlers: Handlers = {
   device_backup: (a) => {
     const labels = [".Pacemaker/music.db", ".Pacemaker/settings.dat", ".Pacemaker/system.xml", ".Pacemaker/Music/0/1/demo1.str", ".Pacemaker/Music/2/3/demo2.str"];
     runSteps("device-backup", labels, "copied",
-      `Backed up ${labels.length} files (4.0 MB) to ${a.dest}\\pacemaker-backup-20261111T101320Z. Every file was read back and checked; checksums are in MANIFEST.sha256.`);
+      `Backed up ${labels.length} files (4.0 MB) to ${a.dest}\\pacemaker-backup-20261111T101320Z. Every file was copied and its checksum compared after writing (through the system's cache: use Check on the backup later to read it from the disk again); checksums are in MANIFEST.sha256.`);
   },
 
   device_cleanup: (a) => {

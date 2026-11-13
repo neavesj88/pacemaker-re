@@ -474,9 +474,25 @@ impl PlayLog {
     /// Every play the log can derive, oldest first (ties by key). See the module docs for what
     /// each field means and where it is inferred.
     pub fn hits(&self) -> Vec<Hit> {
+        self.derive(None)
+    }
+
+    /// [`PlayLog::hits`] of one track only: the same hits, without walking or labelling the
+    /// events of every other track (a track's history is asked for one track at a time).
+    pub fn hits_of(&self, key: &str) -> Vec<Hit> {
+        match self.keys.iter().position(|k| k == key) {
+            Some(k) => self.derive(Some(k as u32)),
+            None => Vec::new(),
+        }
+    }
+
+    fn derive(&self, only: Option<u32>) -> Vec<Hit> {
         let mut state = self.baseline_state();
         let mut out = Vec::new();
         for &(observed_at, k, p, l) in &self.events {
+            if only.is_some_and(|o| o != k) {
+                continue;
+            }
             let new = Counter::new(p, l);
             let prev = state.get(&k).copied().unwrap_or(Counter::ZERO);
             apply(&mut state, k, new);
@@ -800,6 +816,19 @@ mod tests {
         assert_eq!(h.len(), 1);
         assert_eq!((h[0].key.as_str(), h[0].at, h[0].plays, h[0].approx, h[0].time_known, h[0].reset), ("a", T0 + 2 * H, 1, false, true, false));
         assert_eq!(h[0].observed_at, T0 + 5 * H);
+    }
+
+    #[test]
+    fn one_tracks_hits_are_the_same_as_its_share_of_all_hits() {
+        let mut log = started(&[r(1, "a", 4, T0 - H), r(2, "b", 1, T0 - H)]);
+        log.rec(T0 + 5 * H, &[r(1, "a", 5, T0 + 2 * H), r(2, "b", 3, T0 + 3 * H)]);
+        log.rec(T0 + 9 * H, &[r(1, "a", 6, T0 + 8 * H), r(2, "b", 3, T0 + 3 * H)]);
+        for key in ["a", "b"] {
+            let want: Vec<Hit> = log.hits().into_iter().filter(|h| h.key == key).collect();
+            assert!(!want.is_empty());
+            assert_eq!(log.hits_of(key), want, "{key}");
+        }
+        assert!(log.hits_of("never seen").is_empty());
     }
 
     #[test]

@@ -198,7 +198,7 @@ export const handlers: Handlers = {
     const removed = p.items.filter((i) => i.remove);
     const labels = [...archived.map((i) => `Archiving ${i.label}`), ...removed.map((i) => `Removing ${i.label}`)];
     const parts: string[] = [];
-    if (archived.length) parts.push(`Archived ${archived.length} track${archived.length === 1 ? "" : "s"} (${(p.archive_bytes / MB).toFixed(1)} MB) to ${a.archive_dir}\\pacemaker-archive-20261111T101320Z. Every file was read back and checked; checksums are in MANIFEST.sha256`);
+    if (archived.length) parts.push(`Archived ${archived.length} track${archived.length === 1 ? "" : "s"} (${(p.archive_bytes / MB).toFixed(1)} MB) to ${a.archive_dir}\\pacemaker-archive-20261111T101320Z. Every file was copied and its checksum compared after writing (through the system's cache, so a later 'Check' of the archive is the real test); checksums are in MANIFEST.sha256`);
     if (removed.length) parts.push(`Removed ${removed.length} track${removed.length === 1 ? "" : "s"} from the card, freeing ${(p.remove_bytes / MB).toFixed(1)} MB`);
     const stay = p.items.filter((i) => !i.remove && a.remove);
     if (stay.length) parts.push(`${stay.length} item${stay.length === 1 ? "" : "s"} left alone: ${stay.map((i) => `${i.label}: ${i.note}`).join("; ")}`);

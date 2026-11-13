@@ -26,7 +26,7 @@
   // `energy` is not on the Track wire type: it is the energy under the "Energy source" setting
   // (your rating, the audio estimate, or yours else the estimate; state/energySource.svelte.ts), so a
   // track is placed on the energy axis only once it has one
-  const tracks = $derived((library?.tracks ?? []).map((t): GapTrack => ({ ...t, energy: energySource.level(t.track_id) })));
+  const tracks = $derived((library?.tracks ?? []).map((t): GapTrack => ({ track_id: t.track_id, bpm: t.bpm, key: t.key, genre: t.genre, energy: energySource.level(t.track_id) })));
   const hasEnergy = $derived(anyEnergy(tracks));
   const tabs = $derived(MATRIX_IDS.filter((id) => id !== "key-energy" || hasEnergy));
   const active = $derived(tabs.includes(gap.matrix) ? gap.matrix : tabs[0]);
@@ -43,8 +43,14 @@
     const col = matrix.cols.findIndex((b) => b.id === p.col);
     return row >= 0 && col >= 0 ? { row, col } : null;
   });
-  const byId = $derived(new Map(tracks.map((t) => [t.track_id, t])));
-  const cellTracks = $derived(picked ? matrix.cells[picked.row][picked.col].flatMap((id) => byId.get(id) ?? []) : []);
+  // the full rows of the picked cell only, in the cell's order
+  const cellTracks = $derived.by(() => {
+    if (!picked) return [];
+    const ids = matrix.cells[picked.row][picked.col];
+    const wanted = new Set(ids);
+    const byId = new Map((library?.tracks ?? []).filter((t) => wanted.has(t.track_id)).map((t) => [t.track_id, t]));
+    return ids.flatMap((id) => byId.get(id) ?? []);
+  });
   const filter = $derived(picked ? cellFilter(matrix, picked.row, picked.col, tracks, session.needs) : null);
 
   const whyNot = $derived.by(() => {

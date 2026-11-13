@@ -310,6 +310,26 @@ fn default_order_is_artist_then_title_then_id() {
 }
 
 #[test]
+fn counting_and_membership_agree_with_a_full_evaluation_without_ordering_anything() {
+    let d = lib_data();
+    let fav = q(vec![Rule::Favourite { value: true }]);
+    let limited = Query { limit: Some(2), ..fav.clone() };
+    let sorted = Query { sort: Some(Sort { field: SortField::Bpm, descending: true }), ..fav.clone() };
+    for query in [&fav, &limited, &sorted] {
+        let full = evaluate(query, &d).unwrap();
+        assert_eq!(count(query, &d).unwrap(), full.ids.len(), "{query:?}");
+        let held = holds_among(query, &d, &[1, 2, 3, 4, 5]).unwrap();
+        assert_eq!(held, full.ids.iter().copied().collect::<HashSet<_>>(), "{query:?}");
+    }
+    // a question about some tracks only: the rules without a limit, the ordered list with one
+    assert_eq!(holds_among(&fav, &d, &[3, 4]).unwrap(), HashSet::from([3]));
+    assert_eq!(holds_among(&limited, &d, &[1, 2, 3]).unwrap(), HashSet::from([3, 2]), "only the first two of the default order are in");
+    // the same refusals as evaluate
+    let gone = q(vec![Rule::InCase { case_id: 1234, value: false, case_name: None }]);
+    assert!(count(&gone, &d).is_err() && holds_among(&gone, &d, &[1]).is_err());
+}
+
+#[test]
 fn top_level_mode_and_case_membership() {
     let d = lib_data();
     let rules = vec![Rule::InCase { case_id: 9, value: true, case_name: None }, Rule::RatingMin { stars: 4 }];

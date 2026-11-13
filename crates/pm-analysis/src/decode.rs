@@ -25,11 +25,18 @@ pub enum Error {
     Decode(SymErr),
     NoAudioTrack,
     NoSampleRate,
+    /// Longer than the limit given to [`decode_limited`]; nothing was analysed.
+    TooLong { limit_minutes: u32 },
 }
 
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{self:?}")
+        match self {
+            Error::TooLong { limit_minutes } => {
+                write!(f, "longer than {limit_minutes} minutes, so it is not analysed (the whole track is held in memory)")
+            }
+            _ => write!(f, "{self:?}"),
+        }
     }
 }
 
@@ -72,7 +79,21 @@ fn bpm_from(rev: &MetadataRevision) -> Option<f64> {
     })
 }
 
+/// How long a track the background analyses (energy, sections, sound check) take in: the decoded
+/// track is one mono `f32` buffer (about 635 MB an hour at 44.1 kHz) and several run at once.
+pub const ANALYSIS_MAX_MINUTES: u32 = 60;
+
 pub fn decode(path: &Path) -> Result<Decoded, Error> {
+    decode_inner(path, None)
+}
+
+/// [`decode`] that stops, before the memory is spent, once the track is longer than
+/// `limit_minutes` (the container's length is not trusted: some files do not state one).
+pub fn decode_limited(path: &Path, limit_minutes: u32) -> Result<Decoded, Error> {
+    decode_inner(path, Some(limit_minutes))
+}
+
+fn decode_inner(path: &Path, limit_minutes: Option<u32>) -> Result<Decoded, Error> {
     let file = std::fs::File::open(path).map_err(Error::Io)?;
     let mss = MediaSourceStream::new(Box::new(file), Default::default());
     let mut hint = Hint::new();
@@ -133,6 +154,9 @@ pub fn decode(path: &Path) -> Result<Decoded, Error> {
                 interleaved.resize(buf.samples_interleaved(), 0.0);
                 buf.copy_to_slice_interleaved(&mut interleaved);
                 mono.extend(interleaved.chunks_exact(ch).map(|f| f.iter().sum::<f32>() / ch as f32));
+                if limit_minutes.is_some_and(|m| mono.len() as u64 > u64::from(m) * 60 * u64::from(sample_rate)) {
+                    return Err(Error::TooLong { limit_minutes: limit_minutes.unwrap_or_default() });
+                }
             }
             // a corrupt frame in a real-world file should cost one frame, not the track
             Err(SymErr::DecodeError(_)) => continue,
@@ -150,4 +174,44 @@ pub fn decode(path: &Path) -> Result<Decoded, Error> {
         meta.title = path.file_stem().and_then(|s| s.to_str()).unwrap_or("").to_string();
     }
     Ok(Decoded { mono, sample_rate, tag_bpm, meta })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A 16-bit mono PCM WAV of `secs` seconds of silence at 8 kHz.
+    fn wav(secs: u32) -> Vec<u8> {
+        let rate = 8000u32;
+        let data = rate * 2 * secs;
+        let mut v = Vec::new();
+        v.extend_from_slice(b"RIFF");
+        v.extend_from_slice(&(36 + data).to_le_bytes());
+        v.extend_from_slice(b"WAVEfmt ");
+        v.extend_from_slice(&16u32.to_le_bytes());
+        v.extend_from_slice(&1u16.to_le_bytes());
+        v.extend_from_slice(&1u16.to_le_bytes());
+        v.extend_from_slice(&rate.to_le_bytes());
+        v.extend_from_slice(&(rate * 2).to_le_bytes());
+        v.extend_from_slice(&2u16.to_le_bytes());
+        v.extend_from_slice(&16u16.to_le_bytes());
+        v.extend_from_slice(b"data");
+        v.extend_from_slice(&data.to_le_bytes());
+        v.resize(v.len() + data as usize, 0);
+        v
+    }
+
+    #[test]
+    fn a_track_over_the_limit_is_refused_before_it_is_all_in_memory() {
+        let dir = std::env::temp_dir().join(format!("pm-decode-limit-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let p = dir.join("synthetic.wav");
+        std::fs::write(&p, wav(70)).unwrap();
+        let short = decode_limited(&p, 1).err().unwrap();
+        assert!(matches!(short, Error::TooLong { limit_minutes: 1 }), "{short:?}");
+        assert!(short.to_string().contains("longer than 1 minutes"), "{short}");
+        assert_eq!(decode_limited(&p, 2).unwrap().mono.len(), 70 * 8000, "under the limit it is the same as decode");
+        assert_eq!(decode(&p).unwrap().mono.len(), 70 * 8000);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
 }

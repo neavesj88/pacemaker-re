@@ -200,7 +200,9 @@ function buildPlan(ids: number[], dest: string): Plan {
   }
   const count = (a: PlanAction) => items.filter((i) => i.action === a).length;
   const runs = items.filter((i) => ["make", "replace", "partial"].includes(i.action));
+  const replaced_files = items.filter((i) => i.action === "replace").flatMap((i) => [i.vocals_exists ? i.vocals_path : "", i.instrumental_exists ? i.instrumental_path : ""].filter(Boolean));
   return {
+    digest: JSON.stringify([items.map((i) => [i.track_id, i.action, i.vocals_path, i.vocals_exists, i.instrumental_path, i.instrumental_exists]), replaced_files, dest]),
     dest,
     format_label: formatLabel(),
     items,
@@ -210,7 +212,7 @@ function buildPlan(ids: number[], dest: string): Plan {
     skip: count("skip"),
     refuse: count("refuse"),
     minutes: runs.reduce((a, i) => a + i.minutes, 0),
-    replaced_files: items.filter((i) => i.action === "replace").flatMap((i) => [i.vocals_exists ? i.vocals_path : "", i.instrumental_exists ? i.instrumental_path : ""].filter(Boolean)),
+    replaced_files,
   };
 }
 
@@ -301,6 +303,7 @@ export const handlers: Handlers = {
     const plan = buildPlan(a.trackIds as number[], String(a.dest));
     const runs = plan.items.filter((i) => ["make", "replace", "partial"].includes(i.action));
     if (!runs.length) throw `Nothing to do: ${plan.skip} left alone, ${plan.refuse} cannot be done.`;
+    if (plan.digest !== a.digest) throw "The files at the destination changed since you reviewed the plan. Review it again.";
     if (plan.replace > 0 && !a.confirmReplace) throw `This would replace ${plan.replaced_files.length} existing file(s); confirm that first.`;
     jobLock.running = true;
     cancelled = false;

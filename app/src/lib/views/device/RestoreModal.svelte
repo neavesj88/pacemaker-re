@@ -19,10 +19,12 @@
   const root = session.library?.root ?? "";
 
   $effect(() => {
+    let current = true;
     deviceSnapshotPreview(root, row.name).then(
-      (d) => (diff = d),
-      (e) => (error = String(e)),
+      (d) => current && (diff = d),
+      (e) => current && (error = String(e)),
     );
+    return () => (current = false);
   });
 
   const sentences = $derived(diff ? diffSentences(diff.counts) : []);
@@ -102,7 +104,9 @@
     {/if}
     <p class="muted fine">
       Only music.db is replaced. Audio files, beat grids and settings.dat stay as they are, so tracks added since the
-      snapshot keep their files (the health scan will list them as unused). Before anything changes, the card's current
+      snapshot keep their files (the health scan will list them as unused). Beat grids that a bulk tempo or grid edit
+      changed since then are not rolled back, so those tracks will show the snapshot's BPM next to the new grid; the
+      grids as they were before each bulk edit are in the grids-… folders next to the snapshots. Before anything changes, the card's current
       music.db is saved as a new snapshot here, so this restore can itself be undone. The edit history of this session is
       cleared.
     </p>

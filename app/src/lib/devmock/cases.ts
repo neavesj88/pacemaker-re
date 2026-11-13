@@ -345,11 +345,14 @@ export const handlers: Handlers = {
   },
   cases_delete_many: (a) => {
     let n = 0;
-    for (const id of new Set<number>(a.caseIds)) {
-      const i = cases.findIndex((c) => c.id === id);
-      if (i >= 0) (cases.splice(i, 1), n++);
+    const kept: { id: number; name: string; error: string }[] = [];
+    for (const it of a.cases as { id: number; name: string }[]) {
+      const i = cases.findIndex((c) => c.id === it.id);
+      if (i < 0) kept.push({ id: it.id, name: it.name, error: "the case is no longer in the library" });
+      else if (cases[i].name !== it.name) kept.push({ id: it.id, name: it.name, error: "kept: the case with this id is now another case" });
+      else (cases.splice(i, 1), n++);
     }
-    return n;
+    return { deleted: n, kept };
   },
   cases_export: (a) => {
     const c = find(a.caseId);

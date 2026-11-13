@@ -15,11 +15,14 @@
   let pv = $state<UndoPreview | null>(null);
   let error = $state("");
 
+  // an answer that arrives after the dialog was closed or `count` changed is dropped
   $effect(() => {
+    let current = true;
     undo.preview(count).then(
-      (p) => (pv = p),
-      (e) => (error = String(e)),
+      (p) => current && (pv = p),
+      (e) => current && (error = String(e)),
     );
+    return () => (current = false);
   });
 
   // the edits as they stood when the dialog opened; a newer edit made meanwhile makes the apply refuse

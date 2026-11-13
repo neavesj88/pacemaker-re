@@ -44,7 +44,8 @@ export function opTitle(op: TempoOp, n: number, root: string): string {
 }
 
 export function opDescription(op: TempoOp): string {
-  const both = "The beat grid (.str) and the BPM of each track are rewritten together, so they always agree.";
+  const both =
+    "The beat grid (.str) and the BPM of each track are rewritten together, so they always agree. Each track's previous beat grid is first copied off the device (the app's data folder, next to the music.db snapshots), because Restore from a snapshot does not bring beat grids back.";
   switch (op.kind) {
     case "halve":
       return `Halves the tempo the way the grid editor's ½ BPM does: every second beat line is kept and the bar lines stay on the same beats. ${both}`;

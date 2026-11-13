@@ -186,7 +186,7 @@ pub fn analyze(mono: &[f32], sample_rate: u32) -> Result<Features, Skip> {
 /// Decodes `path` and measures it. The outer error is a file that cannot be decoded; the inner
 /// one is audio that decoded but gives no estimate.
 pub fn analyze_file(path: &Path) -> Result<Result<Features, Skip>, decode::Error> {
-    let d = decode::decode(path)?;
+    let d = decode::decode_limited(path, decode::ANALYSIS_MAX_MINUTES)?;
     Ok(analyze(&d.mono, d.sample_rate))
 }
 

@@ -126,7 +126,7 @@ function plan(req: MergeRequest): MergePlan {
     };
   });
   const gone = files.filter((f) => f.exists && !f.kept_because);
-  const warnings = req.delete_files
+  const problems = req.delete_files
     ? out.flatMap((g) => {
         const keeperGone = byId(g.keeper).file !== "present";
         const loses = g.remove.some((r) => files.some((f) => f.track_id === r.track_id && f.kind === "audio" && f.exists && !f.kept_because));
@@ -139,7 +139,7 @@ function plan(req: MergeRequest): MergePlan {
     labels,
     files,
     notes: out.flatMap((g) => g.blocked.map((b) => `“${labels.find((l) => l.track_id === b.track_id)?.label}” stays in the library: the mix ${b.mixes.map((m) => `“${m}”`).join(", ")} uses it. Its case places still move.`)),
-    warnings,
+    problems,
     totals: {
       groups: out.length,
       case_entries: out.reduce((s, g) => s + g.case_edits.reduce((n, e) => n + e.others.length, 0), 0),
@@ -149,7 +149,7 @@ function plan(req: MergeRequest): MergePlan {
     },
     digest: "",
   };
-  p.digest = String([...JSON.stringify([out, files, warnings])].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7));
+  p.digest = String([...JSON.stringify([out, files, problems])].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7));
   return p;
 }
 

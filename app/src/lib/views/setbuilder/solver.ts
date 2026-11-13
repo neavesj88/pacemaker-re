@@ -752,6 +752,10 @@ export type SetPrefs = {
   targetMins: number | null;
   /** Order the set as soon as a source is loaded. */
   solveOnLoad: boolean;
+  /** ...but only a source of at most this many tracks: the search compares every pair of tracks and
+   *  runs on the window's own thread, so a few thousand tracks would freeze it for seconds. A bigger
+   *  source waits for Re-solve. */
+  solveLimit: number;
   /** Dragging a track to a new place also locks it there. */
   lockOnDrag: boolean;
   /** Prefer mixing out at an outro and into an intro where tracks have detected sections. */
@@ -782,6 +786,7 @@ export const DEFAULT_PREFS: SetPrefs = {
   maxTrackMins: null,
   targetMins: null,
   solveOnLoad: true,
+  solveLimit: 600,
   lockOnDrag: true,
   preferSections: false,
   sectionMinBars: 8,
@@ -801,7 +806,12 @@ export const PREF_RANGES = {
   blendJumpPct: [0, 50],
   overlapCapPct: [5, 50],
   sectionMinBars: [4, 64],
+  solveLimit: [50, 2500],
 } as const;
+
+/** The most tracks one solve takes, whoever asks: it holds a table of the cost of every pair
+ *  (n x n numbers) and compares them all, so the memory and the time grow with the square. */
+export const MAX_SOLVE_TRACKS = 2500;
 export type NumberPref = keyof typeof PREF_RANGES;
 
 /** `v` pulled into the range of setting `key`. */
@@ -832,6 +842,7 @@ export function mergePrefs(saved: unknown, base: SetPrefs = DEFAULT_PREFS): SetP
   out.maxTrackMins = s.maxTrackMins === null ? null : (inRange(s.maxTrackMins, "maxTrackMins") ?? out.maxTrackMins);
   out.targetMins = s.targetMins === null ? null : (inRange(s.targetMins, "targetMins") ?? out.targetMins);
   if (typeof s.solveOnLoad === "boolean") out.solveOnLoad = s.solveOnLoad;
+  out.solveLimit = inRange(s.solveLimit, "solveLimit") ?? out.solveLimit;
   if (typeof s.lockOnDrag === "boolean") out.lockOnDrag = s.lockOnDrag;
   if (typeof s.preferSections === "boolean") out.preferSections = s.preferSections;
   out.sectionMinBars = inRange(s.sectionMinBars, "sectionMinBars") ?? out.sectionMinBars;

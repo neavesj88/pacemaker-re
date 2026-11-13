@@ -159,7 +159,7 @@ pub struct ExportStarted {
 /// (more than 99 tracks) is refused up front instead of after minutes of rendering.
 #[tauri::command]
 #[allow(clippy::too_many_arguments)]
-pub fn export_mix_audio(
+pub async fn export_mix_audio(
     app: AppHandle,
     lock: State<'_, JobLock>,
     root: String,
@@ -181,13 +181,20 @@ pub fn export_mix_audio(
         encoding: encoding.unwrap_or_default(),
         tags,
     };
-    let plan = render::plan_export_with(Path::new(&root), &mix, &dest, &format, &request)?;
-    let cue_sheet = match &cue {
-        Some(opts) => Some(plan_cue(&plan, &mix, opts, replace_cue.unwrap_or(false))?),
-        None => None,
-    };
-    let total = (plan.span_secs().ceil() as usize).max(1);
     let label = if mix.name.trim().is_empty() { "mix".to_string() } else { mix.name.clone() };
+    // Planning opens the library on the device, reads the cover file and builds the track list and
+    // the CUE sheet: on a slow or stalled card that must not freeze the window (a synchronous
+    // command runs on the main thread), so it runs on a blocking thread.
+    let (plan, cue_sheet) = tauri::async_runtime::spawn_blocking(move || -> AppResult<_> {
+        let plan = render::plan_export_with(Path::new(&root), &mix, &dest, &format, &request)?;
+        let cue_sheet = match &cue {
+            Some(opts) => Some(plan_cue(&plan, &mix, opts, replace_cue.unwrap_or(false))?),
+            None => None,
+        };
+        Ok((plan, cue_sheet))
+    })
+    .await??;
+    let total = (plan.span_secs().ceil() as usize).max(1);
     let out_path = plan.dest.to_string_lossy().into_owned();
     let (cue_path, cue_replaces) = match &cue_sheet {
         Some((p, _)) => (Some(p.to_string_lossy().into_owned()), p.exists()),
@@ -343,19 +350,25 @@ pub fn export_range_resolve(mix: MixDoc, range: RangeSpec, range_prefs: Option<R
 /// takes to play at that level) followed by `job-done` for the job `mix-loudness`. Progress is
 /// `job-progress` (`done` / `total` in seconds of audio). Cancel with `export_cancel`.
 #[tauri::command]
-pub fn export_loudness_analyse(app: AppHandle, lock: State<'_, JobLock>, root: String, mix: MixDoc, range: Option<RangeSpec>, range_prefs: Option<RangePrefs>, levels: Option<LevelSettings>) -> AppResult<()> {
+pub async fn export_loudness_analyse(app: AppHandle, lock: State<'_, JobLock>, root: String, mix: MixDoc, range: Option<RangeSpec>, range_prefs: Option<RangePrefs>, levels: Option<LevelSettings>) -> AppResult<()> {
     let levels = levels.unwrap_or_default();
     levels.validate()?;
     let prefs = range_prefs.unwrap_or_default();
     let spec = range.unwrap_or_default();
-    let resolved = range::resolve(&mix, &spec, &prefs)?;
-    let parsed = mix.to_mix()?;
-    let res = render::LibResolver::open(Path::new(&root), &parsed)?;
-    let peq = render::peq_mode(Path::new(&root));
-    let (from, to) = pm_mixer::engine::export_span(&parsed).ok_or("The mix has no audible clips.")?;
-    let rate = f64::from(pm_mixer::RATE);
-    let total = (resolved.as_ref().map_or((to - from) as f64 / rate, |r| (r.to.min(to) - r.from).max(0) as f64 / rate).ceil() as usize).max(1);
     let label = if mix.name.trim().is_empty() { "mix".to_string() } else { mix.name.clone() };
+    // opening the library on the device and reading the settings belong on a blocking thread (see
+    // `export_mix_audio`)
+    let (mix, resolved, parsed, res, peq, total) = tauri::async_runtime::spawn_blocking(move || -> AppResult<_> {
+        let resolved = range::resolve(&mix, &spec, &prefs)?;
+        let parsed = mix.to_mix()?;
+        let res = render::LibResolver::open(Path::new(&root), &parsed)?;
+        let peq = render::peq_mode(Path::new(&root));
+        let (from, to) = pm_mixer::engine::export_span(&parsed).ok_or("The mix has no audible clips.")?;
+        let rate = f64::from(pm_mixer::RATE);
+        let total = (resolved.as_ref().map_or((to - from) as f64 / rate, |r| (r.to.min(to) - r.from).max(0) as f64 / rate).ceil() as usize).max(1);
+        Ok((mix, resolved, parsed, res, peq, total))
+    })
+    .await??;
     spawn_job(app, &lock, JOB_MIX_LOUDNESS, move |app| {
         let mut last = Instant::now() - Duration::from_secs(1);
         let cancel = &app.state::<ExportCancel>().0;

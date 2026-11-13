@@ -714,7 +714,11 @@ pub fn utc_stamp(unix_secs: u64) -> String {
     format!("{y:04}{m:02}{d:02}T{:02}{:02}{:02}Z", rem / 3600, rem % 3600 / 60, rem % 60)
 }
 
-/// Copies `src` to `dst` hashing the bytes read, then reads `dst` back and checks the hash.
+/// Copies `src` to `dst` hashing the bytes read, then reads `dst` back and checks the hash. The
+/// read-back goes through the operating system, which will usually serve it from its cache right
+/// after the write: it proves the bytes were handed to the OS correctly (and the data synced), not
+/// that they can be read from the medium later. `verify_manifest` on the finished folder is the
+/// check to repeat later, when the cache no longer holds them.
 pub(crate) fn copy_hashed(src: &Path, dst: &Path) -> Result<(String, u64), Error> {
     if let Some(parent) = dst.parent() {
         fs::create_dir_all(parent)?;
@@ -987,6 +991,16 @@ pub const SNAPSHOT_PREFIX: &str = "music-db-";
 /// How many automatic snapshots of one library the app keeps.
 pub const SNAPSHOTS_KEPT: usize = 10;
 
+/// How many pinned snapshots are kept besides the newest [`SNAPSHOTS_KEPT`] ordinary ones. A
+/// pinned snapshot is the session's first-write copy ("before anything changed") or the safety
+/// copy a restore makes; bulk operations take ordinary snapshots of their own, and ten of those
+/// must not push the pinned ones out.
+pub const SNAPSHOTS_PINNED_KEPT: usize = 10;
+
+/// File inside a snapshot folder that marks it as pinned (see [`SNAPSHOTS_PINNED_KEPT`]). It is
+/// not listed in [`SnapshotEntry::files`].
+const PINNED_MARKER: &str = "pinned";
+
 /// One automatic snapshot on disk.
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct SnapshotEntry {
@@ -1023,8 +1037,13 @@ pub fn list_snapshots(dest_dir: &Path) -> Vec<SnapshotEntry> {
             if !is_snapshot_dir(&name) {
                 return None;
             }
-            let mut files: Vec<String> =
-                fs::read_dir(e.path()).into_iter().flatten().flatten().map(|f| f.file_name().to_string_lossy().into_owned()).collect();
+            let mut files: Vec<String> = fs::read_dir(e.path())
+                .into_iter()
+                .flatten()
+                .flatten()
+                .map(|f| f.file_name().to_string_lossy().into_owned())
+                .filter(|f| f != PINNED_MARKER)
+                .collect();
             files.sort();
             Some(SnapshotEntry { folder: e.path().display().to_string(), name, files })
         })
@@ -1048,6 +1067,18 @@ pub fn snapshot_library(root: &Path, dest_dir: &Path, keep: usize) -> Result<Sna
 /// restore reads from one of them while it makes the safety copy of what it is about to
 /// replace, and the newest-`keep` rule must not delete its source from under it).
 pub fn snapshot_library_protecting(root: &Path, dest_dir: &Path, keep: usize, protect: &[&str]) -> Result<SnapshotEntry, Error> {
+    snapshot_library_impl(root, dest_dir, keep, protect, false)
+}
+
+/// [`snapshot_library_protecting`] for a snapshot that must outlast the ordinary ones: the first
+/// write of a session, or the safety copy of a restore. It is marked pinned and counted against
+/// [`SNAPSHOTS_PINNED_KEPT`] instead of `keep`, so later snapshots of bulk operations cannot push
+/// it out.
+pub fn snapshot_library_pinned(root: &Path, dest_dir: &Path, keep: usize, protect: &[&str]) -> Result<SnapshotEntry, Error> {
+    snapshot_library_impl(root, dest_dir, keep, protect, true)
+}
+
+fn snapshot_library_impl(root: &Path, dest_dir: &Path, keep: usize, protect: &[&str], pinned: bool) -> Result<SnapshotEntry, Error> {
     let pm = pacemaker_dir(root);
     if !pm.join("music.db").is_file() {
         return Err(Error::NotALibrary(root.to_path_buf()));
@@ -1077,6 +1108,9 @@ pub fn snapshot_library_protecting(root: &Path, dest_dir: &Path, keep: usize, pr
                 files.push(f.to_string());
             }
         }
+        if pinned {
+            fs::write(partial.join(PINNED_MARKER), b"first write of a session, or the safety copy of a restore\n")?;
+        }
         fs::rename(&partial, &folder)?;
         Ok(files)
     })();
@@ -1087,9 +1121,12 @@ pub fn snapshot_library_protecting(root: &Path, dest_dir: &Path, keep: usize, pr
             return Err(e);
         }
     };
-    // retention: oldest first out, never the one just made; stale half-built folders go too
-    let all = list_snapshots(dest_dir);
-    for old in all.iter().skip(keep.max(1)) {
+    // retention: oldest first out, never the one just made; stale half-built folders go too.
+    // Ordinary and pinned snapshots are counted apart, so one kind cannot push out the other.
+    let (kept_pinned, ordinary): (Vec<_>, Vec<_>) =
+        list_snapshots(dest_dir).into_iter().partition(|s| Path::new(&s.folder).join(PINNED_MARKER).is_file());
+    let doomed = ordinary.iter().skip(keep.max(1)).chain(kept_pinned.iter().skip(SNAPSHOTS_PINNED_KEPT.max(1)));
+    for old in doomed {
         if !protect.contains(&old.name.as_str()) {
             let _ = fs::remove_dir_all(&old.folder);
         }
@@ -2272,6 +2309,32 @@ mod tests {
         let _ = fs::remove_dir_all(&root);
         let _ = fs::remove_dir_all(dest.parent().unwrap());
         let _ = fs::remove_dir_all(&empty);
+    }
+
+    #[test]
+    fn bulk_operation_snapshots_cannot_push_out_the_pinned_ones() {
+        let root = scratch("snap-pin-root");
+        let dest = scratch("snap-pin-dest").join("snaps");
+        let pm = root.join(".Pacemaker");
+        fs::create_dir_all(&pm).unwrap();
+        fs::write(pm.join("music.db"), b"database bytes").unwrap();
+
+        let first = snapshot_library_pinned(&root, &dest, 3, &[]).unwrap();
+        assert_eq!(first.files, ["music.db"], "the marker is not a snapshot file");
+        for _ in 0..6 {
+            snapshot_library(&root, &dest, 3).unwrap();
+        }
+        let left = list_snapshots(&dest);
+        assert!(left.iter().any(|e| e.name == first.name), "the first-write copy is still there");
+        assert_eq!(left.len(), 4, "3 ordinary + the pinned one");
+        // the pinned ones have a cap of their own
+        for _ in 0..SNAPSHOTS_PINNED_KEPT + 2 {
+            snapshot_library_pinned(&root, &dest, 3, &[]).unwrap();
+        }
+        let pinned = list_snapshots(&dest).into_iter().filter(|e| Path::new(&e.folder).join(PINNED_MARKER).is_file()).count();
+        assert_eq!(pinned, SNAPSHOTS_PINNED_KEPT);
+        let _ = fs::remove_dir_all(&root);
+        let _ = fs::remove_dir_all(dest.parent().unwrap());
     }
 
     #[test]

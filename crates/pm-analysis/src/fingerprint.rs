@@ -145,7 +145,7 @@ pub fn compute(mono: &[f32], sample_rate: u32) -> Option<Fingerprint> {
 
 /// Decodes the file and fingerprints it. `Ok(None)`: too short, silent or a steady tone.
 pub fn fingerprint_file(path: &Path) -> Result<Option<Fingerprint>, decode::Error> {
-    let d = decode::decode(path)?;
+    let d = decode::decode_limited(path, decode::ANALYSIS_MAX_MINUTES)?;
     Ok(compute(&d.mono, d.sample_rate))
 }
 
@@ -255,14 +255,7 @@ impl Store {
         out.extend_from_slice(&(keys.len() as u32).to_le_bytes());
         for k in keys {
             let (stamp, fp) = &self.entries[k];
-            out.extend_from_slice(&(k.len() as u32).to_le_bytes());
-            out.extend_from_slice(k.as_bytes());
-            out.extend_from_slice(&stamp.size.to_le_bytes());
-            out.extend_from_slice(&stamp.mtime_ns.to_le_bytes());
-            out.extend_from_slice(&(fp.frames.len() as u32).to_le_bytes());
-            for f in &fp.frames {
-                out.extend(f.iter().map(|&v| v as u8));
-            }
+            encode_entry(&mut out, k, *stamp, fp);
         }
         out
     }
@@ -291,17 +284,7 @@ impl Store {
             return (store, Some("the fingerprint cache is from another version or damaged and was ignored".into()));
         };
         for _ in 0..count {
-            let entry = (|| -> Option<(String, Stamp, Fingerprint)> {
-                let klen = u32::from_le_bytes(take(4)?.try_into().ok()?) as usize;
-                let key = String::from_utf8(take(klen)?.to_vec()).ok()?;
-                let size = u64::from_le_bytes(take(8)?.try_into().ok()?);
-                let mtime_ns = u128::from_le_bytes(take(16)?.try_into().ok()?);
-                let n = u32::from_le_bytes(take(4)?.try_into().ok()?) as usize;
-                let raw = take(n.checked_mul(BANDS)?)?;
-                let frames = raw.as_chunks::<BANDS>().0.iter().map(|c| c.map(|v| v as i8)).collect();
-                Some((key, Stamp { size, mtime_ns }, Fingerprint { frames }))
-            })();
-            match entry {
+            match read_entry(bytes, &mut at) {
                 Some((k, s, f)) => store.put(k, s, f),
                 None => return (store, Some("the fingerprint cache was cut off; the part that could be read is used".into())),
             }
@@ -309,19 +292,114 @@ impl Store {
         (store, None)
     }
 
-    /// The store in `path`; missing is empty and silent.
+    /// The store in `path`, plus the entries a running job appended to its journal
+    /// ([`Store::append`]) since the file was last written in full. Missing is empty and silent.
     pub fn load(path: &Path) -> (Store, Option<String>) {
-        match std::fs::read(path) {
+        let (mut store, mut warning) = match std::fs::read(path) {
             Ok(b) => Store::decode(&b),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => (Store::default(), None),
             Err(e) => (Store::default(), Some(format!("{} could not be read ({e})", path.display()))),
+        };
+        if let Ok(log) = std::fs::read(journal_path(path)) {
+            // a journal cut off by a crash keeps the entries before the cut, silently: that is the
+            // normal end of a stopped job
+            let head = JOURNAL_HEADER.len() + 4;
+            let valid = log.len() >= head && log[..JOURNAL_HEADER.len()] == JOURNAL_HEADER[..] && log[JOURNAL_HEADER.len()..head] == (BANDS as u32).to_le_bytes();
+            if valid {
+                let mut at = head;
+                while let Some((k, s, f)) = read_entry(&log, &mut at) {
+                    store.put(k, s, f);
+                }
+            } else if warning.is_none() {
+                warning = Some("the fingerprint journal is from another version or damaged and was ignored".into());
+            }
+        }
+        (store, warning)
+    }
+
+    /// Writes the whole store through [`pm_formats::appfile::write_atomic`], so a crash leaves the
+    /// old file, and then drops the journal, which the file now contains.
+    pub fn save(&self, path: &Path) -> std::io::Result<()> {
+        pm_formats::appfile::write_atomic(path, &self.encode())?;
+        match std::fs::remove_file(journal_path(path)) {
+            Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e),
+            _ => Ok(()),
         }
     }
 
-    /// Writes the store through [`pm_formats::appfile::write_atomic`], so a crash leaves the old file.
-    pub fn save(&self, path: &Path) -> std::io::Result<()> {
-        pm_formats::appfile::write_atomic(path, &self.encode())
+    /// Adds the entries under `keys` to the journal next to `path`, without rewriting anything
+    /// already saved. A job that saves as it goes calls this every few tracks and [`Store::save`]
+    /// once at the end, so the bytes written grow with the work done, not with the size of the
+    /// whole store times the number of saves. A crash leaves at worst a cut-off last entry, which
+    /// [`Store::load`] ignores.
+    pub fn append(&self, path: &Path, keys: &[String]) -> std::io::Result<()> {
+        use std::io::Write;
+        let mut out = Vec::new();
+        for k in keys {
+            if let Some((stamp, fp)) = self.entries.get(k) {
+                encode_entry(&mut out, k, *stamp, fp);
+            }
+        }
+        if out.is_empty() {
+            return Ok(());
+        }
+        if let Some(dir) = path.parent().filter(|d| !d.as_os_str().is_empty()) {
+            std::fs::create_dir_all(dir)?;
+        }
+        let mut f = std::fs::OpenOptions::new().create(true).append(true).open(journal_path(path))?;
+        if f.metadata()?.len() == 0 {
+            f.write_all(JOURNAL_HEADER)?;
+            f.write_all(&(BANDS as u32).to_le_bytes())?;
+        }
+        f.write_all(&out)?;
+        f.sync_data()
     }
+}
+
+/// Magic of the journal file (`<cache>.log`): entries as in the cache file, with no count.
+const JOURNAL_HEADER: &[u8; 5] = b"PMFL\x01";
+
+fn journal_path(path: &Path) -> std::path::PathBuf {
+    let mut p = path.as_os_str().to_owned();
+    p.push(".log");
+    std::path::PathBuf::from(p)
+}
+
+fn encode_entry(out: &mut Vec<u8>, key: &str, stamp: Stamp, fp: &Fingerprint) {
+    out.extend_from_slice(&(key.len() as u32).to_le_bytes());
+    out.extend_from_slice(key.as_bytes());
+    out.extend_from_slice(&stamp.size.to_le_bytes());
+    out.extend_from_slice(&stamp.mtime_ns.to_le_bytes());
+    out.extend_from_slice(&(fp.frames.len() as u32).to_le_bytes());
+    for f in &fp.frames {
+        out.extend(f.iter().map(|&v| v as u8));
+    }
+}
+
+/// One entry at `*at`, advancing it; `None` at the end or where the data is cut off or malformed
+/// (`*at` is then left where it was).
+fn read_entry(bytes: &[u8], at: &mut usize) -> Option<(String, Stamp, Fingerprint)> {
+    let start = *at;
+    let mut pos = start;
+    let mut take = |n: usize| -> Option<&[u8]> {
+        let s = bytes.get(pos..pos.checked_add(n)?)?;
+        pos += n;
+        Some(s)
+    };
+    let entry = (|| {
+        let klen = u32::from_le_bytes(take(4)?.try_into().ok()?) as usize;
+        let key = String::from_utf8(take(klen)?.to_vec()).ok()?;
+        let size = u64::from_le_bytes(take(8)?.try_into().ok()?);
+        let mtime_ns = u128::from_le_bytes(take(16)?.try_into().ok()?);
+        let n = u32::from_le_bytes(take(4)?.try_into().ok()?) as usize;
+        let raw = take(n.checked_mul(BANDS)?)?;
+        let frames = raw.as_chunks::<BANDS>().0.iter().map(|c| c.map(|v| v as i8)).collect();
+        Some((key, Stamp { size, mtime_ns }, Fingerprint { frames }))
+    })();
+    if entry.is_some() {
+        *at = pos;
+    }
+    entry
 }
 
 #[cfg(test)]
@@ -474,6 +552,51 @@ mod tests {
         let mut kept = back;
         kept.retain_keys(|k| k.ends_with('b'));
         assert_eq!(kept.len(), 1);
+    }
+
+    #[test]
+    fn a_job_appends_to_a_journal_and_the_full_save_absorbs_it() {
+        let dir = std::env::temp_dir().join(format!("pm-fp-journal-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("lib.fp");
+        let st = |n: u64| Stamp { size: n, mtime_ns: n as u128 };
+        let (a, b, c) = (fp(&song(1, 30.0, 44100), 44100), fp(&song(2, 30.0, 44100), 44100), fp(&song(3, 30.0, 44100), 44100));
+        let mut s = Store::default();
+        s.put("a".into(), st(1), a.clone());
+        s.save(&path).unwrap();
+        let main_len = std::fs::metadata(&path).unwrap().len();
+
+        // two appends: the main file is not rewritten, and a load sees all three entries
+        s.put("b".into(), st(2), b.clone());
+        s.append(&path, &["b".to_string()]).unwrap();
+        s.put("c".into(), st(3), c.clone());
+        s.append(&path, &["c".to_string(), "not stored".to_string()]).unwrap();
+        s.append(&path, &[]).unwrap();
+        assert_eq!(std::fs::metadata(&path).unwrap().len(), main_len, "the full file is untouched by appends");
+        let (back, warn) = Store::load(&path);
+        assert!(warn.is_none(), "{warn:?}");
+        assert_eq!((back.len(), back.get("b", st(2)), back.get("c", st(3))), (3, Some(&b), Some(&c)));
+
+        // a journal cut off in its last entry keeps the entries before it, without a warning
+        let log = journal_path(&path);
+        let bytes = std::fs::read(&log).unwrap();
+        std::fs::write(&log, &bytes[..bytes.len() - 10]).unwrap();
+        let (cut, warn) = Store::load(&path);
+        assert!(warn.is_none());
+        assert_eq!((cut.len(), cut.get("b", st(2)).is_some(), cut.get("c", st(3)).is_some()), (2, true, false));
+
+        // a journal of another version is ignored with a word, never trusted
+        std::fs::write(&log, b"junk junk junk").unwrap();
+        let (ign, warn) = Store::load(&path);
+        assert_eq!(ign.len(), 1);
+        assert!(warn.unwrap().contains("journal"));
+
+        // the full save writes everything and removes the journal
+        s.save(&path).unwrap();
+        assert!(!log.exists());
+        assert_eq!(Store::load(&path).0.len(), 3);
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

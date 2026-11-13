@@ -185,7 +185,7 @@ class Stems {
     this.cancelling = false;
     this.running = true;
     try {
-      await stemsRun(lib.root, this.trackIds, this.plan.dest, confirmReplace);
+      await stemsRun(lib.root, this.trackIds, this.plan.dest, confirmReplace, this.plan.digest);
       this.plan = null;
       void this.rememberFolder(this.dest.trim());
     } catch (e) {

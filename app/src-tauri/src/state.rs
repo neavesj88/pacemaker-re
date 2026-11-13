@@ -131,7 +131,7 @@ impl WriteGate {
 
     /// [`begin_write_with`](Self::begin_write_with) with the real snapshot into `snap_dir`.
     pub fn begin_write(&self, root: &Path, snap_dir: &Path) -> Result<WriteTicket, String> {
-        self.begin_write_with(root, || ops_device::snapshot_library(root, snap_dir, SNAPSHOTS_KEPT).map(|_| ()).map_err(|e| e.to_string()))
+        self.begin_write_with(root, || ops_device::snapshot_library_pinned(root, snap_dir, SNAPSHOTS_KEPT, &[]).map(|_| ()).map_err(|e| e.to_string()))
     }
 
     /// Takes the gate for an operation that must not overlap any write. New writes are refused

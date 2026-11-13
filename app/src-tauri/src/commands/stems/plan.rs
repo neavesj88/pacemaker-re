@@ -3,7 +3,7 @@
 //! destination folder, writes nothing), so it is unit-tested without Tauri.
 
 use std::collections::{HashMap, HashSet};
-use std::path::{Component, Path, PathBuf};
+use std::path::{Path, PathBuf};
 
 use pm_formats::library::{Library, Track};
 use serde::Serialize;
@@ -62,6 +62,10 @@ pub struct Plan {
     pub minutes: f64,
     /// Existing files that would be overwritten, by full path: the confirmation lists each.
     pub replaced_files: Vec<String>,
+    /// Fingerprint of everything the confirmation showed (the items with their paths and what is
+    /// there now, the replaced files). `stems_run` refuses a plan with another digest, so what is
+    /// replaced is what the user confirmed.
+    pub digest: String,
 }
 
 impl Plan {
@@ -72,15 +76,10 @@ impl Plan {
 }
 
 /// The audio file for a stored `location`, which must lie inside the volume's music folder: a
-/// location that is absolute, has a drive prefix or climbs with `..` is refused (the same rule
-/// as `tracks.rs::audio_in_volume`, kept separate so this area does not edit another's file).
+/// location that is absolute, has a drive prefix or climbs with `..` is refused. The rule is
+/// `analysis::audio_path`'s, so a change to it lands in one place.
 pub fn audio_in_volume(lib: &Library, location: &str) -> Result<PathBuf, String> {
-    let (audio, _) = lib.track_paths(location).ok_or("This track has no file on the device.")?;
-    let music = lib.root().join(pm_formats::naming::MUSIC_DIR);
-    let inside = audio.strip_prefix(&music).is_ok_and(|rel| rel.components().all(|c| matches!(c, Component::Normal(_))));
-    if !inside {
-        return Err("The track's location points outside the device.".into());
-    }
+    let audio = crate::commands::analysis::audio_path(lib.root(), location).map_err(|_| "The track's location points outside the device.".to_string())?;
     if !audio.is_file() {
         return Err("The audio file is missing from the device.".into());
     }
@@ -242,7 +241,9 @@ pub fn build_plan(lib: &Library, track_ids: &[i64], dest: &Path, s: &StemSetting
         })
         .collect();
     let minutes = items.iter().filter(|i| matches!(i.action, Action::Make | Action::Replace | Action::Partial)).map(|i| i.minutes).sum();
+    let digest = format!("{:016x}", crate::store::fnv1a(&serde_json::to_string(&(&items, &replaced_files, dest)).map_err(|e| e.to_string())?));
     Ok(Plan {
+        digest,
         dest: dest.to_string_lossy().into_owned(),
         format_label: format_label(s),
         make: count(Action::Make),
@@ -412,6 +413,12 @@ mod tests {
         assert!(p.items[0].what.contains("REPLACES 2 existing files") && p.items[1].what.contains("REPLACES 1 existing file."));
         assert_eq!(p.replaced_files.len(), 3, "the confirmation can list every file by path");
         assert!(p.replaced_files.contains(&p.items[1].vocals_path) && !p.replaced_files.contains(&p.items[1].instrumental_path));
+
+        // the digest follows what is on disk: a file that appears or goes changes it
+        let before = p.digest.clone();
+        assert_eq!(before, build_plan(&lib, &ids, &dest, &rep).unwrap().digest, "the same plan has the same digest");
+        std::fs::write(&p.items[2].vocals_path, b"x").unwrap();
+        assert_ne!(before, build_plan(&lib, &ids, &dest, &rep).unwrap().digest);
     }
 
     #[test]

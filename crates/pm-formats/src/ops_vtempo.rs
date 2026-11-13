@@ -629,11 +629,15 @@ pub fn apply(doc: &GridDoc, edit: &TempoEdit, ctx: EditCtx) -> Result<GridDoc, E
                 let frames = (corr[k].unwrap_or(0.0) / 1000.0 * f64::from(sr)).round() as i64;
                 beats[i].pos = (beats[i].pos + frames).max(0);
             }
-            // never let two lines swap or touch
-            for i in 1..n {
+            // never let two moved lines swap or touch. Only the range is looked at: a gap outside it
+            // is not this edit's to change, and the beats after the range stay where they are
+            for i in from.max(1)..to {
                 if beats[i].pos < beats[i - 1].pos + min_gap {
                     beats[i].pos = beats[i - 1].pos + min_gap;
                 }
+            }
+            if to < n && beats[to].pos < beats[to - 1].pos + min_gap {
+                return invalid(format!("following the onsets would push beat {} onto beat {}, which stays where it is; end the range earlier", to, to + 1));
             }
             if let Some(t) = ctx.total_frames {
                 beats.retain(|b| b.pos <= t);
@@ -1032,6 +1036,20 @@ mod tests {
         assert!(apply(&g, &none, ctx(60)).unwrap_err().to_string().contains("nothing to follow"));
         let bad_range = TempoEdit::FollowOnsets { from_beat: 5, to_beat: Some(5), onsets: vec![], options: opts, smooth_beats: 5 };
         assert!(apply(&g, &bad_range, ctx(60)).is_err());
+    }
+
+    #[test]
+    fn following_stops_short_of_pushing_a_beat_onto_one_that_stays() {
+        // 390 BPM leaves only ~170 frames of room above the 400 BPM floor between two lines
+        let g = map(2000, &[(390.0, 40)], Some(0));
+        let on = onsets_of(&g, |i| if (10..20).contains(&i) { 300 } else { 0 });
+        let opts = DriftOptions::default();
+        let to_20 = TempoEdit::FollowOnsets { from_beat: 10, to_beat: Some(20), onsets: on.clone(), options: opts, smooth_beats: 1 };
+        let e = apply(&g, &to_20, ctx(60)).unwrap_err().to_string();
+        assert!(e.contains("stays where it is"), "{e}");
+        // a range that runs to the end has no beat after it to run into
+        let to_end = TempoEdit::FollowOnsets { from_beat: 10, to_beat: None, onsets: on, options: opts, smooth_beats: 1 };
+        assert!(apply(&g, &to_end, ctx(60)).is_ok());
     }
 
     #[test]

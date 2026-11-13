@@ -88,6 +88,41 @@ fn check_suffix(label: &str, s: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// The library chosen under "Engine library" is loaded into this process as native code, so the
+/// setting is held to what an onnxruntime library looks like: an absolute path on a local drive
+/// (no network share, no device path), a shared-library extension and a file name that starts
+/// with `onnxruntime` (or `libonnxruntime`). It is still a file the user chose; this keeps a
+/// stray setting from pointing at an unrelated library.
+pub fn check_runtime_path(p: &str) -> Result<(), String> {
+    use std::path::{Component, Path, Prefix};
+    let bad = |why: &str| Err(format!("The engine library must be a local onnxruntime library ({why})."));
+    if p.contains('\0') {
+        return bad("the path is not valid");
+    }
+    // network and device paths, whatever the platform the app runs on
+    if p.starts_with("\\\\") || p.starts_with("//") {
+        return bad("network and device paths are not accepted");
+    }
+    let path = Path::new(p);
+    if !path.is_absolute() {
+        return bad("give the full path");
+    }
+    if let Some(Component::Prefix(pre)) = path.components().next()
+        && !matches!(pre.kind(), Prefix::Disk(_))
+    {
+        return bad("network and device paths are not accepted");
+    }
+    let name = path.file_name().and_then(|n| n.to_str()).unwrap_or_default().to_ascii_lowercase();
+    let ext_ok = ["dll", "so", "dylib"].iter().any(|e| path.extension().is_some_and(|x| x.eq_ignore_ascii_case(e)) || name.contains(&format!(".{e}.")));
+    if !ext_ok {
+        return bad("it must be a .dll, .so or .dylib file");
+    }
+    if !(name.starts_with("onnxruntime") || name.starts_with("libonnxruntime")) {
+        return bad("the file name must start with onnxruntime");
+    }
+    Ok(())
+}
+
 impl StemSettings {
     /// Checks every field and trims the text ones. The caller's consents are not trusted: the
     /// stored ones are kept by [`save`] regardless of what a client sends.
@@ -122,6 +157,9 @@ impl StemSettings {
             return Err("The two suffixes must differ, or both results would get the same file name.".into());
         }
         self.runtime_path = self.runtime_path.trim().to_string();
+        if !self.runtime_path.is_empty() {
+            check_runtime_path(&self.runtime_path)?;
+        }
         self.last_folder = self.last_folder.trim().to_string();
         Ok(self)
     }
@@ -232,6 +270,27 @@ mod tests {
         assert!(bad(|s| s.vocals_suffix = "x".repeat(41)).contains("1 to 40"));
         assert!(bad(|s| s.instrumental_suffix = "(acapella)".into()).contains("must differ"));
         assert!(bad(|s| s.existing = "ask".into()).contains("Existing"));
+    }
+
+    #[test]
+    fn the_engine_library_must_be_a_local_onnxruntime_library() {
+        let good: &[&str] =
+            if cfg!(windows) { &[r"C:\tools\ort\onnxruntime.dll", r"D:\x\OnnxRuntime_gpu.DLL"] } else { &["/opt/ort/libonnxruntime.so", "/opt/ort/libonnxruntime.so.1.20.0", "/opt/ort/libonnxruntime.dylib"] };
+        for p in good {
+            assert!(check_runtime_path(p).is_ok(), "{p}");
+        }
+        for p in ["onnxruntime.dll", "relative/onnxruntime.dll", r"\\server\share\onnxruntime.dll", "//server/share/onnxruntime.dll", r"\\?\C:\onnxruntime.dll", r"\\.\C:\onnxruntime.dll", "/opt/onnx\0runtime.so"] {
+            assert!(check_runtime_path(p).is_err(), "{p:?}");
+        }
+        if cfg!(windows) {
+            assert!(check_runtime_path(r"C:\tools\evil.dll").is_err(), "not named onnxruntime");
+            assert!(check_runtime_path(r"C:\tools\onnxruntime.exe").is_err(), "not a library");
+        } else {
+            assert!(check_runtime_path("/opt/evil.so").is_err());
+            assert!(check_runtime_path("/opt/onnxruntime.txt").is_err());
+        }
+        let s = StemSettings { runtime_path: "  //host/x/onnxruntime.dll ".into(), ..Default::default() };
+        assert!(s.validated().is_err(), "the setting itself is checked, so a hand-edited file is too");
     }
 
     #[test]

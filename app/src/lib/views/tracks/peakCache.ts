@@ -9,12 +9,13 @@ const MAX_ACTIVE = 3;
 const RETRY_AFTER_MS = 10_000;
 
 type Done = (peaks: Peak[] | null) => void;
-type Job = { key: string; root: string; location: string; width: number; waiters: Set<Done>; started: boolean };
+type Job = { key: string; root: string; location: string; width: number; waiters: Set<Done>; started: boolean; cancelled: boolean };
 
 const cache = new Map<string, Peak[] | null>();
 // A failed fetch is not cached as "no waveform"; it is only not retried for a few seconds so a
 // broken backend is not hammered by every redraw.
 const failed = new Map<string, number>();
+const FAILED_KEPT = 2000;
 const jobs = new Map<string, Job>();
 const queue: Job[] = [];
 let active = 0;
@@ -29,6 +30,9 @@ function pump() {
   while (active < MAX_ACTIVE) {
     const job = queue.pop(); // newest first
     if (!job) return;
+    // withdrawn while it waited: skipped here instead of searched for in the queue when it was
+    // withdrawn (a case of thousands of rows withdraws them all when the view closes)
+    if (job.cancelled) continue;
     job.started = true;
     active++;
     fetchPeaks(job.root, job.location, job.width)
@@ -38,6 +42,8 @@ function pump() {
       })
       .catch((): Peak[] | null => {
         failed.set(job.key, Date.now());
+        // oldest first out, so a library full of unreadable files cannot grow the map for ever
+        if (failed.size > FAILED_KEPT) failed.delete(failed.keys().next().value!);
         return null;
       })
       .then((p) => {
@@ -77,7 +83,7 @@ export function requestPeaks(root: string, location: string, width: number, done
   }
   let job = jobs.get(key);
   if (!job) {
-    job = { key, root, location, width, waiters: new Set(), started: false };
+    job = { key, root, location, width, waiters: new Set(), started: false, cancelled: false };
     jobs.set(key, job);
     queue.push(job);
   }
@@ -87,8 +93,7 @@ export function requestPeaks(root: string, location: string, width: number, done
   return () => {
     mine.waiters.delete(done);
     if (!mine.started && mine.waiters.size === 0) {
-      const at = queue.indexOf(mine);
-      if (at >= 0) queue.splice(at, 1);
+      mine.cancelled = true;
       jobs.delete(key);
     }
   };

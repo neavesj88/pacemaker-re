@@ -11,17 +11,17 @@
   import FilterBar from "./FilterBar.svelte";
   import Inspector from "./Inspector.svelte";
   import TrackList from "./TrackList.svelte";
-  import { tracksViewRows } from "./trackFilter";
+  import { tableRows } from "./tableRows.svelte";
   import { parseKey, uniqueGenres } from "./trackLogic";
   import { tracksState } from "./tracksState.svelte";
 
   const library = $derived(session.library);
-  const all = $derived(library?.tracks ?? []);
+  const all = $derived(tableRows.all);
   const genres = $derived(uniqueGenres(all));
 
   // header search + needs filter, then the toolbar's filters, then the sort (every key); the
   // player's next / previous walk the same list (trackFilter.tracksViewRows)
-  const rows = $derived(tracksViewRows(all));
+  const rows = $derived(tableRows.rows);
 
   const byId = $derived(new Map(all.map((t) => [t.track_id, t])));
   const focus = $derived(tracksState.focusId === null ? null : (byId.get(tracksState.focusId) ?? null));

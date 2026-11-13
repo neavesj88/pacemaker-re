@@ -18,6 +18,7 @@ import {
   createCase,
   deleteCase,
   deleteCases,
+  type ConfirmedCase,
   deleteSmartCase,
   duplicateCase,
   exportCase,
@@ -256,9 +257,10 @@ class Cases {
     return done;
   }
 
-  /** Deletes several cases in one transaction; returns how many went. */
-  async removeMany(caseIds: number[]) {
-    return this.#write((root) => deleteCases(root, caseIds));
+  /** Deletes several cases in one transaction, each only while it is still the case that was
+   *  confirmed (name and creation time); says which were kept. */
+  async removeMany(list: ConfirmedCase[]) {
+    return this.#write((root) => deleteCases(root, list));
   }
 
   /** Tracks dropped on a case (from a table): appended, repeats skipped; says what happened. */
@@ -323,8 +325,22 @@ class Cases {
     await this.refreshSmartCounts();
   }
 
+  #countSeq = 0;
+  #countTimer: ReturnType<typeof setTimeout> | null = null;
+
+  /** `refreshSmartCounts` after a pause in the changes that call for it: every tag edit moves the
+   *  labels version, and each count run evaluates every smart case over the whole library. */
+  scheduleSmartCounts(ms = 500) {
+    if (this.#countTimer) clearTimeout(this.#countTimer);
+    this.#countTimer = setTimeout(() => {
+      this.#countTimer = null;
+      void this.refreshSmartCounts();
+    }, ms);
+  }
+
   async refreshSmartCounts() {
     const root = this.#root();
+    const seq = ++this.#countSeq;
     if (!root || this.smart.length === 0) {
       this.smartCounts = {};
       this.smartErrors = {};
@@ -332,7 +348,8 @@ class Cases {
     }
     try {
       const counts = await smartCaseCounts(root);
-      if (this.#root() === root) {
+      // an older answer that arrives after a newer request never overwrites it
+      if (this.#root() === root && seq === this.#countSeq) {
         this.smartCounts = Object.fromEntries(counts.filter((c) => !c.error).map((c) => [c.id, c.count]));
         this.smartErrors = Object.fromEntries(counts.filter((c) => c.error).map((c) => [c.id, c.error as string]));
       }

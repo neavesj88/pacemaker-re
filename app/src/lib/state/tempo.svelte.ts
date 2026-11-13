@@ -70,7 +70,14 @@ class Tempo {
       runningLabel: "Changing BPM",
       doneLabel: "BPM change finished",
       // only the tracks the confirmation names as changing, so a track shown as left alone stays alone
-      start: () => gridTempoApply(lib.root, todo.map((r) => r.track_id), op),
+      // and each one's tempo as confirmed, so a grid changed meanwhile is skipped, not changed again
+      start: () =>
+        gridTempoApply(
+          lib.root,
+          todo.map((r) => r.track_id),
+          op,
+          todo.map((r) => ({ track_id: r.track_id, before: r.before as number })),
+        ),
     });
   }
 }

@@ -18,7 +18,8 @@ import { session } from "./session.svelte";
 import { toast } from "./toast.svelte";
 
 class Sections {
-  state = $state<SectionsState | null>(null);
+  // raw: replaced as a whole, never edited in place; a deep proxy would wrap every entry and section list
+  state = $state.raw<SectionsState | null>(null);
   /** The "Sections" panel is open. */
   panelOpen = $state(false);
   busy = $state(false);

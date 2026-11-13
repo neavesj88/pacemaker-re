@@ -70,9 +70,10 @@ export const gridTempoPlan = (root: string, trackIds: number[], op: TempoOp) =>
 
 /** Starts the "tempo-edit" write job: each changed track's .str and BPM are rewritten together.
  * Returns once the job has started; progress arrives as job events with `job === "tempo-edit"`.
- * Normally started through `tempo.askHalve/askDouble/askSet` (views/grid/tempo.svelte.ts). */
-export const gridTempoApply = (root: string, trackIds: number[], op: TempoOp) =>
-  invoke<void>("grid_tempo_apply", { root, trackIds, op });
+ * `expected` is the tempo each track had in the confirmed preview; a track whose grid has another
+ * tempo when the job reaches it is skipped, not changed. Normally started through `tempo.askHalve/askDouble/askSet` (views/grid/tempo.svelte.ts). */
+export const gridTempoApply = (root: string, trackIds: number[], op: TempoOp, expected: { track_id: number; before: number }[]) =>
+  invoke<void>("grid_tempo_apply", { root, trackIds, op, expected });
 
 /** Names of the mixes that contain the track. A mix clip keeps the tempo the track had when the
  * mix was made, so saving a new grid leaves these mixes out of step until they are beatmatched

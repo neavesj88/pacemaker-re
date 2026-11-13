@@ -114,7 +114,14 @@ pub fn run_item(
         Err(e) => return Outcome::Failed(e.to_string()),
     };
 
-    // both results are complete: move them to their final names
+    // Both results are complete. A file the plan saw nothing at must still be absent: the
+    // separation takes minutes, and the rename below replaces whatever is there.
+    for (writes, existed, path) in [(item.write_vocals, item.vocals_exists, &item.vocals_path), (item.write_instrumental, item.instrumental_exists, &item.instrumental_path)] {
+        if writes && !existed && Path::new(path).exists() {
+            return Outcome::Failed(format!("a file appeared at {path} while this track was being separated; it was left alone"));
+        }
+    }
+    // move them to their final names
     let mut vocals = None;
     let mut instrumental = None;
     if let Some(k) = v_sink {
@@ -281,6 +288,20 @@ mod tests {
         let Outcome::Written { vocals, instrumental, .. } = &out[0] else { panic!("{out:?}") };
         assert!(vocals.is_none() && instrumental.is_some());
         assert_eq!(std::fs::read(&plan.items[0].vocals_path).unwrap(), b"keep me");
+    }
+
+    #[test]
+    fn a_file_that_appears_while_a_track_is_separated_is_not_overwritten() {
+        let s = StemSettings { format: "wav".into(), ..Default::default() };
+        let Fixture { plan, tracks, .. } = setup("race", 1, &s);
+        assert_eq!(plan.items[0].action, Action::Make);
+        // the plan saw nothing there; the user (or another program) saves a file during the run
+        std::fs::write(&plan.items[0].vocals_path, b"theirs").unwrap();
+        let out = run_batch(&plan, &tracks, &s, &mut IdentityModel::new(44_100), &AtomicBool::new(false), &mut |_| {});
+        assert!(matches!(&out[0], Outcome::Failed(e) if e.contains("appeared")), "{out:?}");
+        assert_eq!(std::fs::read(&plan.items[0].vocals_path).unwrap(), b"theirs");
+        assert!(!pm_stems::sink::partial_path(Path::new(&plan.items[0].vocals_path)).exists(), "no partial file is left");
+        assert!(!Path::new(&plan.items[0].instrumental_path).exists(), "nothing of the pair was finished");
     }
 
     #[test]

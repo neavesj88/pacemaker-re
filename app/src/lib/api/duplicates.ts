@@ -136,8 +136,8 @@ export type MergePlan = {
   labels: { track_id: number; label: string }[];
   files: FileItem[];
   notes: string[];
-  /** Things to read before confirming (shown in red), e.g. the kept track has no file while a deleted copy does. */
-  warnings: string[];
+  /** Things that stop the merge (shown in red, the Merge button stays off), e.g. the kept track has no file while a deleted copy does. */
+  problems: string[];
   totals: { groups: number; case_entries: number; rows_removed: number; files_deleted: number; bytes: number };
   digest: string;
 };

@@ -21,7 +21,7 @@ mod smart_sync;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use pm_formats::library::{CaseInfo, CaseMeta, Error, Library, MergeDest, MergeDone, MergePlan, TransferDone, TransferNewDone, TransferPlan};
+use pm_formats::library::{CaseDeleteReport, CaseInfo, ConfirmedCase, CaseMeta, Error, Library, MergeDest, MergeDone, MergePlan, TransferDone, TransferNewDone, TransferPlan};
 use serde::Serialize;
 use tauri::{Manager, State};
 
@@ -221,10 +221,12 @@ pub async fn cases_transfer_new(
 }
 
 /// Deletes several cases (and their membership rows) in one transaction; the tracks stay.
-/// Returns how many cases were deleted.
+/// Irreversible: the caller must have asked the user, listing every case. A case is deleted only while it is still the one the user confirmed (id, name and creation
+/// time as listed): case ids are reused, so a bare id could name another case by now. The rest
+/// are kept and reported.
 #[tauri::command]
-pub async fn cases_delete_many(app: tauri::AppHandle, root: String, case_ids: Vec<i64>) -> AppResult<usize> {
-    write(app, root, move |lib| lib.delete_cases(&case_ids)).await
+pub async fn cases_delete_many(app: tauri::AppHandle, root: String, cases: Vec<ConfirmedCase>) -> AppResult<CaseDeleteReport> {
+    write(app, root, move |lib| lib.delete_cases_confirmed(&cases)).await
 }
 
 /// Writes one case to `dest` as "m3u8", "csv" or "rekordbox" (XML). Reads the library, writes
@@ -275,8 +277,8 @@ pub async fn smart_cases_counts(app: tauri::AppHandle, root: String) -> AppResul
         let data = Data::load(&lib, &queries, now_ms(), Some(&dir))?;
         Ok(list
             .iter()
-            .map(|s| match smart::evaluate(&s.query, &data) {
-                Ok(e) => SmartCount { id: s.id, count: e.ids.len(), error: None },
+            .map(|s| match smart::count(&s.query, &data) {
+                Ok(count) => SmartCount { id: s.id, count, error: None },
                 Err(error) => SmartCount { id: s.id, count: 0, error: Some(error) },
             })
             .collect())

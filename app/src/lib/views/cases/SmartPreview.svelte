@@ -12,6 +12,10 @@
 
   type Row = { rank: number; t: Track; v: string };
 
+  /** Rows drawn. The table is not windowed, and a rule that matches a big library would otherwise
+   *  build a row of nine cells for every match on each edit of the rules. */
+  const SHOWN = 500;
+
   let rows = $derived.by(() => {
     const byId = new Map((session.library?.tracks ?? []).map((t) => [t.track_id, t]));
     const ranked: Row[] = [];
@@ -22,6 +26,8 @@
     const keep = new Set(searchTracks(ranked.map((r) => r.t)).map((t) => t.track_id));
     return ranked.filter((r) => keep.has(r.t.track_id));
   });
+
+  const shown = $derived(rows.length > SHOWN ? rows.slice(0, SHOWN) : rows);
 
   let columns = $derived<Column[]>([
     { key: "rank", label: "#", num: true },
@@ -36,7 +42,7 @@
   ]);
 </script>
 
-<Table {columns} {rows} rowKey={(r) => r.t.track_id} rowClass={(r) => (session.needs.has(r.t.track_id) ? "dim" : "")}>
+<Table {columns} rows={shown} rowKey={(r) => r.t.track_id} rowClass={(r) => (session.needs.has(r.t.track_id) ? "dim" : "")}>
   {#snippet cell(r, c)}
     {#if c.key === "rank"}
       <span class="muted">{r.rank}</span>
@@ -51,3 +57,12 @@
     {/if}
   {/snippet}
 </Table>
+{#if rows.length > SHOWN}
+  <p class="muted more">The first {SHOWN} of {rows.length} matching tracks are listed; the case holds all {rows.length}.</p>
+{/if}
+
+<style>
+  .more {
+    margin: 6px 2px 0;
+  }
+</style>

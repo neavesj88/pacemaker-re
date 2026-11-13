@@ -10,6 +10,7 @@
   import { session } from "$lib/state/session.svelte";
   import { vocal } from "$lib/state/vocal.svelte";
   import { addTracks } from "./actions";
+  import { openMix } from "./flow";
   import ConfirmDialog from "./ConfirmDialog.svelte";
   import ExportDialog from "./ExportDialog.svelte";
   import MixEditor from "./MixEditor.svelte";
@@ -30,6 +31,15 @@
     const root = session.library?.root;
     if (root) void vocal.load(root);
     else vocal.clear();
+  });
+
+  // Deep link: the History view opens a played mix with `nav.go("mixes", { "mixes.mixId": id })`.
+  $effect(() => {
+    const want = nav.params["mixes.mixId"];
+    if (typeof want !== "number" || !session.library) return;
+    const known = session.library.mixes.some((m) => m.id === want);
+    nav.take("mixes.mixId");
+    if (known) openMix(want);
   });
 
   // accept the key with or without the area prefix

@@ -51,9 +51,9 @@
 <Card title="Restore from a snapshot">
   <p class="muted">
     Before the first change to this library in each session the app copies music.db to its own data folder (never onto
-    the Pacemaker) and keeps the last {panel?.keep ?? 10}. If the copy fails, nothing is written. Restoring puts one of
+    the Pacemaker) and keeps the last {panel?.keep ?? 10} (the first copy of each session and the safety copies made by a restore are kept besides those, up to 10, so a run of bulk operations cannot push them out). If the copy fails, nothing is written. Restoring puts one of
     those copies back as the card's music.db: tracks, cases and mixes go back to how they were then. Audio files, beat
-    grids and the device settings are not touched.
+    grids and the device settings are not touched: a bulk tempo or grid edit is not undone by it (the previous grids of each such run are kept in a grids-… folder beside the snapshots).
   </p>
   {#if error}
     <p class="bad">{error}</p>

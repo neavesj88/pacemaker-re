@@ -105,7 +105,7 @@
       </div>
     </div>
     <p class="muted note">
-      The engine library is loaded once per run of the app: after a first run, changing it needs an app restart. The downloaded engine runs on the CPU. To use a graphics card, choose an onnxruntime library that was built with DirectML or CUDA. Which graphics cards a given library can use was not tested here.
+      A library chosen here is native code that runs inside this app, so choose only one you got from a source you trust: it must be a local file named onnxruntime… (.dll, .so or .dylib). The engine library is loaded once per run of the app: after a first run, changing it needs an app restart. The downloaded engine runs on the CPU. To use a graphics card, choose an onnxruntime library that was built with DirectML or CUDA. Which graphics cards a given library can use was not tested here.
     </p>
 
     {#if problem}<p class="warn" role="alert">{problem}</p>{/if}

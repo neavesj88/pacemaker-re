@@ -99,6 +99,10 @@
   <fieldset>
     <legend>Behaviour</legend>
     <label class="check"><input type="checkbox" checked={p.solveOnLoad} onchange={(e) => patch({ solveOnLoad: e.currentTarget.checked })} /><span>Order the set as soon as tracks are loaded</span></label>
+    <label class="row" title="Ordering compares every pair of tracks and runs while the window waits; a bigger source is loaded in its own order and waits for Re-solve.">
+      <span>...if it has at most this many tracks</span>
+      <input type="number" min="50" max="2500" step="50" disabled={!p.solveOnLoad} value={p.solveLimit} onchange={(e) => typed(e, "solveLimit")} />
+    </label>
     <label class="check" title="Needs sections: Tracks, Sections panel. Only a tie-breaker between hops that are otherwise alike; tracks without sections are not penalised."><input type="checkbox" checked={p.preferSections} onchange={(e) => patch({ preferSections: e.currentTarget.checked })} /><span>Prefer leaving a track on its outro and arriving on an intro, where sections are detected</span></label>
     <label class="row" title="Only counts with the preference above: how long an intro or outro must be to count as something to mix over.">
       <span>Shortest intro or outro that counts (bars)</span>

@@ -45,6 +45,14 @@ use crate::state::JobLock;
 pub const SECTIONS_JOB: &str = "sections";
 /// The cache is written to disk after this many finished tracks.
 const FLUSH_EVERY: usize = 25;
+
+/// How many new results a run collects before it saves the cache again: [`FLUSH_EVERY`] while the
+/// cache is small, then a twentieth of its size. The whole file is written each time, so a fixed
+/// count made the bytes written grow with the square of the library; this makes them grow with
+/// its size times about twenty.
+fn flush_after(cached: usize) -> usize {
+    FLUSH_EVERY.max(cached / 20)
+}
 /// A `.str` larger than this is not read (real ones are a few tens of kilobytes).
 const MAX_STR_BYTES: u64 = 16 * 1024 * 1024;
 
@@ -204,7 +212,13 @@ fn load_cache(dir: &Path, root: &str) -> (CacheFile, Option<String>) {
 }
 
 fn save_cache(dir: &Path, root: &str, cache: &CacheFile) -> Result<(), String> {
-    let text = serde_json::to_string(&CacheFile { version: core::VERSION, tracks: cache.tracks.clone() }).map_err(|e| e.to_string())?;
+    // serialised from a borrow: the cache can hold a record per track of a big library
+    #[derive(Serialize)]
+    struct CacheRef<'a> {
+        version: u32,
+        tracks: &'a BTreeMap<String, Entry>,
+    }
+    let text = serde_json::to_string(&CacheRef { version: core::VERSION, tracks: &cache.tracks }).map_err(|e| e.to_string())?;
     write_bytes(&cache_path(dir, root), text.as_bytes())
 }
 
@@ -455,7 +469,7 @@ fn measure(root: &Path, t: &TrackRef) -> Result<Measure, String> {
     if grid.first_downbeat.is_none() {
         return Ok(Measure::Skip(Skip::NoDownbeat, stamp));
     }
-    let decoded = match catch_unwind(AssertUnwindSafe(|| decode::decode(&audio))) {
+    let decoded = match catch_unwind(AssertUnwindSafe(|| decode::decode_limited(&audio, decode::ANALYSIS_MAX_MINUTES))) {
         Err(_) => return Err("the decoder crashed on this file".into()),
         Ok(Err(e)) => return Err(e.to_string()),
         Ok(Ok(d)) => d,
@@ -480,6 +494,18 @@ fn run_analysis(dir: &Path, root: &str, targets: &[TrackRef], settings: &Setting
     let (mut cache, _) = load_cache(dir, root);
     let total = targets.len();
     let (mut ok, mut failed, mut skipped, mut unsaved) = (0usize, 0usize, 0usize, 0usize);
+    // results of tracks that are no longer in the library are dropped (saved with the rest), so
+    // the file does not keep growing in a library that changes
+    if let Ok(lib) = Library::open_read_only(Path::new(root))
+        && let Ok(tracks) = lib.tracks()
+    {
+        let here: std::collections::HashSet<String> = tracks.into_iter().map(|t| t.location).collect();
+        let before = cache.tracks.len();
+        cache.tracks.retain(|location, _| here.contains(location));
+        if cache.tracks.len() != before {
+            unsaved += 1;
+        }
+    }
     let mut save_failed = false;
     let workers = settings.threads.clamp(1, 8).min(total.max(1));
     let next = AtomicUsize::new(0);
@@ -536,7 +562,7 @@ fn run_analysis(dir: &Path, root: &str, targets: &[TrackRef], settings: &Setting
                 }
             }
             progress(p);
-            if unsaved >= FLUSH_EVERY {
+            if unsaved >= flush_after(cache.tracks.len()) {
                 match save_cache(dir, root, &cache) {
                     Ok(()) => {
                         unsaved = 0;
@@ -1006,6 +1032,13 @@ mod tests {
         assert_eq!((out.ok, out.failed, out.summary.as_str()), (0, 0, "nothing to do"));
         assert!(!cache_path(&dir, "P:\\").exists());
         std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn the_flush_interval_grows_with_the_cache_so_saving_stays_near_linear() {
+        assert_eq!(flush_after(0), FLUSH_EVERY);
+        assert_eq!(flush_after(100), FLUSH_EVERY);
+        assert_eq!(flush_after(30_000), 1500);
     }
 
     #[test]

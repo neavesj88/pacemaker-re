@@ -414,8 +414,20 @@ function buildTerm(tok: Token): Test | string | null {
   }
 }
 
-/** Reads the text of the search box. */
+let lastText: string | null = null;
+let lastCompiled: CompiledQuery | null = null;
+
+/** Reads the text of the search box. The same text is read once: the table's search and the
+ *  filter bar's diagnostics ask for it on every change, and a compiled query holds no state. */
 export function compileQuery(text: string): CompiledQuery {
+  if (lastCompiled !== null && text === lastText) return lastCompiled;
+  const compiled = readQuery(text);
+  lastText = text;
+  lastCompiled = compiled;
+  return compiled;
+}
+
+function readQuery(text: string): CompiledQuery {
   const diagnostics: QueryDiagnostic[] = [];
   const groups: Term[][] = [[]];
   for (const tok of tokenize(text)) {

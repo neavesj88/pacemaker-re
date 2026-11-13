@@ -2,7 +2,7 @@
   // The tracks of the picked cell, and the way into the Tracks view with the same ones filtered.
   import Button from "$lib/ui/Button.svelte";
   import Table, { type Column } from "$lib/ui/Table.svelte";
-  import type { GapTrack } from "./gapLogic";
+  import type { Track } from "$lib/api/types";
   import { energyOf } from "./gapLogic";
 
   let {
@@ -15,7 +15,7 @@
     onclose,
   }: {
     title: string;
-    tracks: GapTrack[];
+    tracks: Track[];
     /** The Tracks view can show exactly these tracks. */
     canOpen: boolean;
     /** Said when it cannot. */
@@ -54,7 +54,7 @@
   {:else}
     <div class="scroll">
       <Table {columns} rows={shown} rowKey={(t) => t.track_id}>
-        {#snippet cell(t: GapTrack, c: Column)}
+        {#snippet cell(t: Track, c: Column)}
           {#if c.key === "title"}{t.title}
           {:else if c.key === "artist"}{t.artist}
           {:else if c.key === "bpm"}{t.bpm > 0 ? t.bpm.toFixed(1) : ""}

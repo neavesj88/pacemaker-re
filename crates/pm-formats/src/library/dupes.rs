@@ -168,10 +168,13 @@ impl Library {
             }
         }
         let mut out: Vec<TrackHolds> = wanted.iter().map(|&track_id| TrackHolds { track_id, cases: Vec::new() }).collect();
+        // a member of a big case is looked up by id, not searched for in the wanted list
+        let slot: HashMap<i64, usize> = wanted.iter().enumerate().map(|(i, &t)| (t, i)).collect();
         for (case, members) in &by_case {
             let Some(name) = names.get(case) else { continue };
             for (i, t) in members.iter().enumerate() {
-                if let Some(h) = out.iter_mut().find(|h| h.track_id == *t) {
+                if let Some(&at) = slot.get(t) {
+                    let h = &mut out[at];
                     h.cases.push(CaseHold { case_id: *case, name: name.clone(), position: i + 1, of: members.len() });
                 }
             }
@@ -504,6 +507,8 @@ impl Library {
         for r in &plan.remove {
             // memberships of a removed copy that were not moved or dropped above (a stale row)
             tx.execute("DELETE FROM casetracks WHERE track_id = ?1", [r.track_id])?;
+            // the foreign-id mapping row of a removed track (as `ops_fix::delete_track_rows` does)
+            tx.execute("DELETE FROM trackmap WHERE int_id = ?1", [r.track_id])?;
             tx.execute("DELETE FROM tracks WHERE track_id = ?1 AND track_id >= 0", [r.track_id])?;
         }
         for e in &plan.case_edits {
@@ -656,6 +661,9 @@ mod tests {
         lib.con.execute("UPDATE tracks SET times_played = 7, last_played = 900 WHERE track_id = ?1", [t[1]]).unwrap();
         let group = MergeGroup { keeper: t[0], others: vec![t[1], t[2]] };
         let o = MergeOptions { remove_rows: true, ..Default::default() };
+        // foreign-id mappings: one for a copy that goes, one for the keeper that stays
+        lib.con.execute("INSERT INTO trackmap (ext_db, ext_id, int_id) VALUES ('x', 1, ?1)", [t[1]]).unwrap();
+        lib.con.execute("INSERT INTO trackmap (ext_db, ext_id, int_id) VALUES ('x', 2, ?1)", [t[0]]).unwrap();
 
         let preview = lib.merge_plan_for(std::slice::from_ref(&group), &o).unwrap();
         let before = lib.dup_rows().unwrap();
@@ -673,6 +681,8 @@ mod tests {
         assert_eq!((k.rating, k.times_played, k.last_played), (5, 7, 900));
         assert_eq!(lib.case_info(a).unwrap().unwrap().play_time_secs, 150, "case sums follow the membership");
         assert_eq!(lib.case_info(c).unwrap().unwrap().track_count, 1);
+        let mapped: Vec<i64> = lib.con.prepare("SELECT int_id FROM trackmap").unwrap().query_map([], |r| r.get(0)).unwrap().map(|r| r.unwrap()).collect();
+        assert_eq!(mapped, vec![t[0]], "the removed copy's trackmap row went with it, the keeper's stayed");
         assert!(lib.compatibility_problems().unwrap().is_empty());
         cleanup(lib, dirs);
     }

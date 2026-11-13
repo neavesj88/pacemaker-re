@@ -78,8 +78,9 @@ fn installed(data: &Path, c: &Component) -> (bool, u64) {
             Ok(m) if m.is_file() && m.len() == c.size_bytes => (true, m.len()),
             _ => (false, 0),
         },
+        // an unpack that did not finish (no manifest, or a library missing) is not an install
         Kind::Runtime => match std::fs::metadata(dir.join(manifest::RUNTIME_LIB)) {
-            Ok(m) if m.is_file() => (true, m.len()),
+            Ok(m) if m.is_file() && download::unpacked_complete(&dir) => (true, m.len()),
             _ => (false, 0),
         },
     }
@@ -109,8 +110,9 @@ fn resolve_runtime(s: &StemSettings, data: &Path) -> Result<RuntimeChoice, Strin
         };
     }
     for c in manifest::all().into_iter().filter(|c| c.kind == Kind::Runtime && c.available_here) {
-        let p = component_dir(data, &c).join(manifest::RUNTIME_LIB);
-        if p.is_file() {
+        let dir = component_dir(data, &c);
+        let p = dir.join(manifest::RUNTIME_LIB);
+        if p.is_file() && download::unpacked_complete(&dir) {
             return Ok(RuntimeChoice { path: p, source: "downloaded" });
         }
     }
@@ -421,7 +423,7 @@ fn summarise(plan: &Plan, outcomes: &[Outcome], device: &str, dest: &str, elapse
 /// `stems-result`, then `job-done` (job `stems`). The plan is computed again here from the same
 /// function the preview used; if it would replace existing files, `confirm_replace` must be true.
 #[tauri::command]
-pub async fn stems_run(app: AppHandle, lock: State<'_, JobLock>, root: String, track_ids: Vec<i64>, dest: String, confirm_replace: bool) -> AppResult<StemsStarted> {
+pub async fn stems_run(app: AppHandle, lock: State<'_, JobLock>, root: String, track_ids: Vec<i64>, dest: String, confirm_replace: bool, digest: String) -> AppResult<StemsStarted> {
     let (cfg, data) = (config_dir(&app)?, data_dir(&app)?);
     let (s, _) = settings::load(&cfg);
     let status = status_of(&data, s.clone(), None, false);
@@ -444,6 +446,11 @@ pub async fn stems_run(app: AppHandle, lock: State<'_, JobLock>, root: String, t
     if runnable == 0 {
         return Err(format!("Nothing to do: {} left alone, {} cannot be done.", plan.skip, plan.refuse).into());
     }
+    // the run is bound to the plan the user was shown: a file that appeared or vanished at the
+    // destination since (or a changed selection) means a different list of replaced files
+    if plan.digest != digest {
+        return Err("The files at the destination changed since you reviewed the plan. Review it again.".into());
+    }
     if plan.replace > 0 && !confirm_replace {
         return Err(format!("This would replace {} existing file(s); confirm that first.", plan.replaced_files.len()).into());
     }
@@ -465,6 +472,13 @@ pub async fn stems_run(app: AppHandle, lock: State<'_, JobLock>, root: String, t
         let got = download::sha256_file(&model_file).map_err(|e| AppError::from(format!("Cannot read the model: {e}")))?;
         if got != model_component.sha256 {
             return Err(AppError::from("The downloaded model does not match its pinned SHA-256. Remove it in Settings and download it again."));
+        }
+        // the downloaded runtime is native code from a user-writable folder: hash it again against
+        // the record made when it was unpacked (a library chosen in Settings is the user's own)
+        if runtime.source == "downloaded"
+            && let Some(dir) = runtime.path.parent()
+        {
+            download::verify_unpacked(dir).map_err(AppError::from)?;
         }
         progress("loading-model", 0, "", 0, 0, None, "");
         let mut model = HtDemucs::load(&LoadOptions { runtime: &runtime.path, model: &model_file, device: device_of(&s), threads: s.threads as usize })
@@ -565,7 +579,13 @@ mod tests {
         let dir = component_dir(&data, &c);
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join(manifest::RUNTIME_LIB), b"x").unwrap();
+        assert!(!installed(&data, &c).0, "a library without the unpack record is a half-finished unpack, not an install");
+        assert!(resolve_runtime(&StemSettings::default(), &data).is_err());
+        let sum = download::sha256_file(&dir.join(manifest::RUNTIME_LIB)).unwrap();
+        std::fs::write(dir.join(download::UNPACK_MANIFEST), format!("{sum}  {}
+", manifest::RUNTIME_LIB)).unwrap();
         assert!(installed(&data, &c).0);
+        download::verify_unpacked(&dir).unwrap();
         let r = resolve_runtime(&StemSettings::default(), &data).unwrap();
         assert_eq!(r.source, "downloaded");
         std::fs::remove_dir_all(&data).unwrap();
@@ -613,6 +633,7 @@ mod tests {
             refuse: 0,
             minutes: 3.0,
             replaced_files: vec![],
+            digest: String::new(),
         };
         let rep = pm_stems::pipeline::Report { clipped_vocals: 2, ..Default::default() };
         let outcomes = vec![Outcome::Written { vocals: Some("v".into()), instrumental: Some("i".into()), seconds: 1.0, report: rep }, Outcome::Failed("boom".into()), Outcome::NotRun, Outcome::Cancelled];

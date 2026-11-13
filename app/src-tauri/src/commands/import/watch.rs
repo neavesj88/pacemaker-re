@@ -55,9 +55,11 @@ const MAX_LISTED_MATCHES: usize = 300;
 const MAX_IGNORED: usize = 50_000;
 const MAX_LOG: usize = 100;
 const MAX_LOG_NAMES: usize = 200;
-/// Tag results remembered between scans (path + size + modified time); the whole cache is
-/// dropped when it grows past this, so it cannot grow without bound over a long session.
-const MAX_TAG_CACHE: usize = 50_000;
+/// Tag results remembered between scans (path + size + modified time), about 100 bytes each. At
+/// this size half of them are dropped, so the cache cannot grow without bound over a long session
+/// and a watched set a little over the cap still gets most of its hits (dropping all of them made
+/// a set scanned in the same order every time miss on every file of every scan).
+const MAX_TAG_CACHE: usize = 200_000;
 /// A file dated further than this ahead of the clock is a clock mix-up, not a write in progress.
 const FUTURE_SLACK_MS: i64 = 60_000;
 
@@ -238,9 +240,16 @@ pub fn read_tags(path: &Path) -> FileTags {
 
 /// What was read from a file, remembered with the size and modified time it had then: a file that
 /// changed (or was replaced) is read again.
-#[derive(Default)]
 pub struct TagCache {
     map: HashMap<String, (u64, i64, FileTags)>,
+    /// Entries at which half are dropped; 0 (the default) means [`MAX_TAG_CACHE`].
+    cap: usize,
+}
+
+impl Default for TagCache {
+    fn default() -> Self {
+        Self { map: HashMap::new(), cap: MAX_TAG_CACHE }
+    }
 }
 
 impl TagCache {
@@ -256,8 +265,11 @@ impl TagCache {
             }
         }
         let tags = read(path);
-        if self.map.len() >= MAX_TAG_CACHE {
-            self.map.clear();
+        if self.map.len() >= self.cap {
+            let doomed: Vec<String> = self.map.keys().take(self.cap / 2).cloned().collect();
+            for k in doomed {
+                self.map.remove(&k);
+            }
         }
         self.map.insert(key, (size, mtime, tags.clone()));
         tags
@@ -400,7 +412,9 @@ fn walk(dir: &Path, folder: usize, subfolders: bool, skip: &str, visited: &mut u
                 return Ok(());
             }
             let p = e.path();
-            let Ok(m) = std::fs::symlink_metadata(&p) else { continue };
+            // the entry's own metadata, which does not follow a link (like `symlink_metadata`) and
+            // saves a second system call per file
+            let Ok(m) = e.metadata() else { continue };
             if m.is_dir() {
                 if subfolders && !is_under(&p.to_string_lossy(), skip) {
                     stack.push(p);

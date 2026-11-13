@@ -204,7 +204,8 @@ export function counts(rows: BatchRow[], ticked: ReadonlySet<number>): Counts {
 /** Identifies what a preview was computed for; a preview whose key differs from the controls' key is stale. */
 export const previewKey = (kind: BatchKind, nudgeMs: number, ids: readonly number[]) => `${kind}|${kind === "nudge" ? nudgeMs : ""}|${[...ids].sort((a, b) => a - b).join(",")}`;
 
-const BOTH = "The beat grid (.str) and the BPM of each track are rewritten together, so they always agree.";
+const BOTH =
+  "The beat grid (.str) and the BPM of each track are rewritten together, so they always agree. Each track's previous beat grid is first copied off the device (the app's data folder, next to the music.db snapshots), because Restore from a snapshot does not bring beat grids back.";
 
 /** The confirmation's question: "Halve the BPM of 3 tracks on P:\ ?". */
 export function opTitle(kind: BatchKind, n: number, root: string, nudgeMs = 0): string {

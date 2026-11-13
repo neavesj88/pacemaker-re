@@ -196,7 +196,7 @@ fn find_in(root: &Path, fp_file: &Path, s: &DupSettings) -> AppResult<FindResult
         warnings.extend(warn);
         let (have, todo) = audio_state(root, &store, &rows, &s);
         fingerprinted = have.values().filter(|f| !f.frames.is_empty()).count();
-        links.extend(logic::audio_links(&rows, &have, &s));
+        links.extend(logic::audio_links(&rows, &have, &s, thread_count(&s)));
         pending = todo.iter().map(|i| i.track_id).collect();
     }
 
@@ -302,15 +302,18 @@ impl FpOutcome {
     }
 }
 
-/// Fingerprints the items on `threads` workers, adds them to `store` and saves it every 25
-/// tracks and at the end (so cancelling or a crash keeps the work). A track that decodes but has
-/// nothing to fingerprint is stored as empty, so it is not tried again until the file changes.
+/// Fingerprints the items on `threads` workers, adds them to `store` and appends every 25 new
+/// entries to the cache's journal (so cancelling or a crash keeps the work without rewriting the
+/// whole cache each time: that grew with the store, 100+ GB over a big first run), then writes the
+/// whole store once at the end. A track that decodes but has nothing to fingerprint is stored as
+/// empty, so it is not tried again until the file changes.
 fn fingerprint_run(items: Vec<FpItem>, store: &mut Store, store_path: &Path, threads: usize, cancel: &AtomicBool, progress: &mut dyn FnMut(Progress)) -> FpOutcome {
     let total = items.len();
     let mut out = FpOutcome { done: 0, unusable: 0, failed: Vec::new(), cancelled: false, total, save_error: None };
     let next = AtomicUsize::new(0);
     let (tx, rx) = mpsc::channel::<(usize, Result<Option<Fingerprint>, String>)>();
     let mut finished = 0usize;
+    let mut unsaved: Vec<String> = Vec::new();
     std::thread::scope(|scope| {
         for _ in 0..threads.clamp(1, total.max(1)) {
             let tx = tx.clone();
@@ -341,10 +344,12 @@ fn fingerprint_run(items: Vec<FpItem>, store: &mut Store, store_path: &Path, thr
             match res {
                 Ok(Some(fp)) => {
                     store.put(item.location.clone(), item.stamp, fp);
+                    unsaved.push(item.location.clone());
                     out.done += 1;
                 }
                 Ok(None) => {
                     store.put(item.location.clone(), item.stamp, Fingerprint { frames: Vec::new() });
+                    unsaved.push(item.location.clone());
                     out.done += 1;
                     out.unusable += 1;
                     p.status = "skipped".into();
@@ -356,10 +361,12 @@ fn fingerprint_run(items: Vec<FpItem>, store: &mut Store, store_path: &Path, thr
                 }
             }
             progress(p);
-            if finished.is_multiple_of(25)
-                && let Err(e) = store.save(store_path)
-            {
-                out.save_error = Some(e.to_string());
+            if unsaved.len() >= 25 {
+                match store.append(store_path, &unsaved) {
+                    Ok(()) => unsaved.clear(),
+                    // keep them: the next append (or the full save) retries
+                    Err(e) => out.save_error = Some(e.to_string()),
+                }
             }
         }
     });
@@ -468,8 +475,10 @@ pub struct Plan {
     pub labels: Vec<Label>,
     pub files: Vec<FileItem>,
     pub notes: Vec<String>,
-    /// Things to read before confirming; the dialog shows them in red.
-    pub warnings: Vec<String>,
+    /// Things that stop the merge (the kept track has no usable file while a copy being deleted
+    /// does): the dialog shows them in red and its button stays off, and `dupes_merge_start`
+    /// refuses a plan that has any.
+    pub problems: Vec<String>,
     pub totals: Totals,
     /// Identifies this exact plan; the job runs only if the rebuilt plan has the same one.
     pub digest: String,
@@ -535,7 +544,7 @@ fn build_plan(lib: &Library, req: &MergeRequest) -> AppResult<Plan> {
             notes.push(format!("“{label}” stays in the library: {} {mixes} {} it.{tail}", if b.mixes.len() == 1 { "the mix" } else { "the mixes" }, if b.mixes.len() == 1 { "uses" } else { "use" }));
         }
     }
-    let mut warnings = Vec::new();
+    let mut problems = Vec::new();
     if req.delete_files {
         for p in &plans {
             let Some(keeper) = by_id.get(&p.keeper) else { continue };
@@ -543,7 +552,7 @@ fn build_plan(lib: &Library, req: &MergeRequest) -> AppResult<Plan> {
             let loses_a_file = files.iter().any(|f| f.kind == "audio" && f.exists && f.kept_because.is_none() && p.remove.iter().any(|r| r.track_id == f.track_id));
             if state != FileState::Present && loses_a_file {
                 let why = if state == FileState::Missing { "its audio file is not on the Pacemaker" } else { "its location is not a plain path in the music folder" };
-                warnings.push(format!("“{}”, the track you keep, has no usable audio file ({why}), but a copy you are deleting does: after this merge there would be no playable file. Choose another track to keep, or leave the files alone.", label_of(keeper)));
+                problems.push(format!("“{}”, the track you keep, has no usable audio file ({why}), but a copy you are deleting does: after this merge there would be no playable file. Choose another track to keep, or leave the files alone.", label_of(keeper)));
             }
         }
     }
@@ -560,13 +569,27 @@ fn build_plan(lib: &Library, req: &MergeRequest) -> AppResult<Plan> {
         files_deleted: deleted.len(),
         bytes: deleted.iter().map(|f| f.size).sum(),
     };
-    let digest = format!("{:016x}", crate::store::fnv1a(&serde_json::to_string(&(&plans, &files, &warnings)).map_err(|e| e.to_string())?));
-    Ok(Plan { groups: plans, labels, files, notes, warnings, totals, digest })
+    let digest = format!("{:016x}", crate::store::fnv1a(&serde_json::to_string(&(&plans, &files, &problems)).map_err(|e| e.to_string())?));
+    Ok(Plan { groups: plans, labels, files, notes, problems, totals, digest })
+}
+
+/// The request's settings, held to the stored ones where a setting is a gate rather than a
+/// preference: the frontend's copy can only make the rules stricter, never lift a switch the
+/// user left off (the same rule as the space planner's `require_archive`).
+fn held_to_stored(app: &AppHandle, request: MergeRequest) -> AppResult<MergeRequest> {
+    let (stored, _) = settings_store::load(&super::config_dir(app)?);
+    Ok(hold_gates(request, &stored))
+}
+
+fn hold_gates(mut request: MergeRequest, stored: &DupSettings) -> MergeRequest {
+    request.settings.allow_row_removal &= stored.allow_row_removal;
+    request
 }
 
 /// What merging these groups would do, file by file. Reads only.
 #[tauri::command]
-pub async fn dupes_merge_plan(root: String, request: MergeRequest) -> AppResult<Plan> {
+pub async fn dupes_merge_plan(app: AppHandle, root: String, request: MergeRequest) -> AppResult<Plan> {
+    let request = held_to_stored(&app, request)?;
     tauri::async_runtime::spawn_blocking(move || {
         let lib = Library::open_read_only(Path::new(&root))?;
         build_plan(&lib, &request)
@@ -685,10 +708,14 @@ fn merge_run(root: &Path, plan: &Plan, req: &MergeRequest, progress: &mut dyn Fn
 /// eject or backup refuses it).
 #[tauri::command]
 pub async fn dupes_merge_start(app: AppHandle, lock: State<'_, JobLock>, root: String, request: MergeRequest, digest: String) -> AppResult<()> {
+    let request = held_to_stored(&app, request)?;
     let (r, q) = (root.clone(), request.clone());
     let plan = tauri::async_runtime::spawn_blocking(move || -> AppResult<Plan> {
         let lib = Library::open_read_only(Path::new(&r))?;
         let plan = build_plan(&lib, &q)?;
+        if !plan.problems.is_empty() {
+            return Err(format!("Nothing was written: {}", plan.problems.join(" ")).into());
+        }
         if plan.digest != digest {
             return Err("The library changed after the preview was made, so nothing was written. The preview has been refreshed: check it and press Merge again.".into());
         }
@@ -743,12 +770,12 @@ fn holding_in(root: &str, dir: &Path, track_ids: &[i64], now: i64) -> AppResult<
     let holds = lib.cases_holding(track_ids)?;
     let smart_list = super::smart::load(dir, root)?;
     // a smart case that cannot be evaluated (a rule names a deleted case) simply matches nothing here
-    let matched: Vec<(usize, HashSet<i64>)> = if smart_list.is_empty() {
+    let matched: Vec<(usize, HashSet<i64>)> = if smart_list.is_empty() || track_ids.is_empty() {
         Vec::new()
     } else {
         let queries: Vec<&super::smart::Query> = smart_list.iter().map(|s| &s.query).collect();
         let data = super::smart::Data::load(&lib, &queries, now, Some(dir))?;
-        smart_list.iter().enumerate().filter_map(|(i, s)| super::smart::evaluate(&s.query, &data).ok().map(|e| (i, e.ids.into_iter().collect()))).collect()
+        smart_list.iter().enumerate().filter_map(|(i, s)| super::smart::holds_among(&s.query, &data, track_ids).ok().map(|ids| (i, ids))).collect()
     };
     Ok(holds
         .into_iter()

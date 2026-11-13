@@ -27,6 +27,15 @@ pub struct LibraryView {
 
 pub fn setup(_app: &mut tauri::App) {}
 
+/// The third-party notices (`THIRD-PARTY-NOTICES.md`, bundled with the app as a resource), for the
+/// About entry of the Settings view.
+#[tauri::command]
+pub fn app_notices(app: tauri::AppHandle) -> AppResult<String> {
+    use tauri::Manager;
+    let path = app.path().resolve("THIRD-PARTY-NOTICES.md", tauri::path::BaseDirectory::Resource)?;
+    std::fs::read_to_string(&path).map_err(|e| format!("The notices file is missing from this build ({}): {e}", path.display()).into())
+}
+
 /// Mounted volumes that hold a Pacemaker library.
 #[tauri::command]
 pub async fn list_volumes() -> Vec<String> {
@@ -66,6 +75,7 @@ macro_rules! library_commands {
                 $($acc)*
                 $crate::commands::library::list_volumes,
                 $crate::commands::library::open_library,
+                $crate::commands::library::app_notices,
             ];
             $($rest),*
         }

@@ -425,7 +425,7 @@ pub struct TrackLog {
 fn track_log_of(log: &PlayLog, readings: &[Reading], track_id: i64) -> Option<TrackLog> {
     let me = readings.iter().find(|r| r.track_id == track_id)?;
     let base = log.baseline_of(&me.key).unwrap_or(playlog::Counter::ZERO);
-    let mut hits: Vec<LogHit> = log.hits().iter().filter(|h| h.key == me.key).map(|h| to_log_hit(h, track_id)).collect();
+    let mut hits: Vec<LogHit> = log.hits_of(&me.key).iter().map(|h| to_log_hit(h, track_id)).collect();
     hits.reverse();
     Some(TrackLog {
         track_id,

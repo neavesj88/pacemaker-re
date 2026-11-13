@@ -70,7 +70,9 @@ pub fn all() -> Vec<Component> {
             kind: Kind::Model,
             name: "HTDemucs 4-stem model (ONNX Runtime format)",
             summary: "Vocals and instrumental from one model. About 210 MB.",
-            url: "https://huggingface.co/gentij/htdemucs-ort/resolve/main/htdemucs.ort",
+            // pinned to a commit, not to `main`: a push to the branch would otherwise change what is served
+            // and fail the size and SHA-256 checks for every user until the next release
+            url: "https://huggingface.co/gentij/htdemucs-ort/resolve/e658666494d741b77fdc0e95d223d541d3dc3a36/htdemucs.ort",
             page_url: "https://huggingface.co/gentij/htdemucs-ort",
             sha256: "09dc165512d8ef7480bcb2cacea9dda82d571f8dbf421d8c44a2ca5568bec729",
             size_bytes: 209_884_896,
@@ -125,6 +127,7 @@ mod tests {
         assert_eq!(all.iter().filter(|c| c.kind == Kind::Model).count(), 1);
         for c in &all {
             assert!(c.url.starts_with("https://"), "{}: only https sources", c.id);
+            assert!(!c.url.contains("/resolve/main/") && !c.url.contains("/latest/"), "{}: a moving branch is not a pin", c.id);
             assert!(c.page_url.starts_with("https://"));
             assert_eq!(c.sha256.len(), 64, "{}", c.id);
             assert!(c.sha256.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)));

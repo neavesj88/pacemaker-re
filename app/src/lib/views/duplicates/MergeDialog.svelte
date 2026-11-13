@@ -76,9 +76,9 @@
             </div>
           {/each}
         </div>
-        {#if plan.warnings.length > 0}
-          <ul class="warnings" role="alert" aria-label="Warnings">
-            {#each plan.warnings as w, i (i)}<li>{w}</li>{/each}
+        {#if plan.problems.length > 0}
+          <ul class="warnings" role="alert" aria-label="Problems">
+            {#each plan.problems as w, i (i)}<li>{w}</li>{/each}
           </ul>
         {/if}
         {#if plan.notes.length > 0}
@@ -93,7 +93,7 @@
       <div class="actions">
         <Button data-autofocus onclick={() => d.closeMerge()}>Cancel</Button>
         <span class="go" class:danger={destructive}>
-          <Button variant="primary" disabled={!plan || d.planning || d.starting || plan.totals.groups === 0} onclick={() => d.confirmMerge()}>
+          <Button variant="primary" disabled={!plan || d.planning || d.starting || plan.totals.groups === 0 || plan.problems.length > 0} onclick={() => d.confirmMerge()}>
             {mergeButtonLabel(plan, d.removeRows, d.deleteFiles)}
           </Button>
         </span>

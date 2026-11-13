@@ -319,17 +319,15 @@ pub fn relative_path(from_dir: &Path, to: &Path, ci: bool) -> Option<String> {
     (!parts.is_empty() && parts.last().is_some_and(|l| l != "..")).then(|| parts.join("/"))
 }
 
-/// The audio file for a stored `location`, which must lie inside the volume's music folder. The
-/// same rule as the player's and the tracks area's checks (a location that is rooted, has a drive
-/// prefix or climbs with `..` is refused), kept here so this area edits no other area's file.
+/// The audio file for a stored `location`, which must lie inside the volume's music folder.
+/// The rule itself is `analysis::audio_path`'s (a location that is rooted, has a drive prefix or
+/// climbs with `..` is refused), so a change to it lands in one place; `plain_location` is
+/// this area's extra, stricter check on the stored text.
 pub fn audio_source(lib: &Library, location: &str) -> Result<PathBuf, String> {
     if !plain_location(location) {
         return Err("the track's location points outside the device".into());
     }
-    let (audio, _) = lib.track_paths(location).ok_or("the track has no file on the device")?;
-    let music = lib.root().join(pm_formats::naming::MUSIC_DIR);
-    let inside = audio.strip_prefix(&music).is_ok_and(|rel| rel.components().all(|c| matches!(c, Component::Normal(_))));
-    if inside { Ok(audio) } else { Err("the track's location points outside the device".into()) }
+    crate::commands::analysis::audio_path(lib.root(), location).map_err(|_| "the track's location points outside the device".to_string())
 }
 
 fn rel_display(folder: &Path, p: &Path) -> String {
@@ -739,6 +737,39 @@ enum CopyEnd {
     Failed(String),
 }
 
+/// Moves the finished `tmp` to `dst`. Without `replace` nothing may be overwritten, and the copy
+/// can have taken minutes, so the check is made now, not only before the copy: a hard link fails
+/// if `dst` exists (no window at all); where the volume has no hard links (FAT, exFAT) the
+/// existence check is repeated just before the rename, which leaves a window of microseconds.
+fn place(tmp: &Path, dst: &Path, replace: bool) -> CopyEnd {
+    const APPEARED: &str = "a file of that name appeared while it was copied, so it was left alone";
+    let done = |r: std::io::Result<()>| match r {
+        Ok(()) => CopyEnd::Done,
+        Err(e) => {
+            let _ = std::fs::remove_file(tmp);
+            CopyEnd::Failed(e.to_string())
+        }
+    };
+    if replace {
+        return done(std::fs::rename(tmp, dst));
+    }
+    match std::fs::hard_link(tmp, dst) {
+        Ok(()) => {
+            let _ = std::fs::remove_file(tmp);
+            CopyEnd::Done
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+            let _ = std::fs::remove_file(tmp);
+            CopyEnd::Failed(APPEARED.into())
+        }
+        Err(_) if dst.exists() => {
+            let _ = std::fs::remove_file(tmp);
+            CopyEnd::Failed(APPEARED.into())
+        }
+        Err(_) => done(std::fs::rename(tmp, dst)),
+    }
+}
+
 /// Copies `src` to `dst` through `dst.part` and a rename; the copy is checked against the source's
 /// size. Without `replace` an existing `dst` is left alone. Stops (removing the partial file) when
 /// `cancel` is set.
@@ -782,13 +813,7 @@ fn copy_file(src: &Path, dst: &Path, replace: bool, cancel: &AtomicBool) -> Copy
         Ok(Some(()))
     };
     match attempt() {
-        Ok(Some(())) => match std::fs::rename(&tmp, dst) {
-            Ok(()) => CopyEnd::Done,
-            Err(e) => {
-                let _ = std::fs::remove_file(&tmp);
-                CopyEnd::Failed(e.to_string())
-            }
-        },
+        Ok(Some(())) => place(&tmp, dst, replace),
         Ok(None) => {
             let _ = std::fs::remove_file(&tmp);
             CopyEnd::Cancelled
@@ -1585,6 +1610,26 @@ mod tests {
         for d in [vol, cfg, out] {
             std::fs::remove_dir_all(d).unwrap();
         }
+    }
+
+    #[test]
+    fn a_file_that_appears_during_the_copy_is_not_replaced_without_replace() {
+        let dir = temp_dir("place");
+        let (tmp, dst) = (dir.join("x.bin.part"), dir.join("x.bin"));
+        std::fs::write(&tmp, b"new").unwrap();
+        std::fs::write(&dst, b"theirs").unwrap(); // arrived after the existence check at the top
+        assert!(matches!(place(&tmp, &dst, false), CopyEnd::Failed(_)));
+        assert_eq!(std::fs::read(&dst).unwrap(), b"theirs");
+        assert!(!tmp.exists(), "the partial file is cleaned up");
+        std::fs::write(&tmp, b"new").unwrap();
+        assert!(matches!(place(&tmp, &dst, true), CopyEnd::Done));
+        assert_eq!(std::fs::read(&dst).unwrap(), b"new");
+        std::fs::write(&tmp, b"again").unwrap();
+        std::fs::remove_file(&dst).unwrap();
+        assert!(matches!(place(&tmp, &dst, false), CopyEnd::Done));
+        assert_eq!(std::fs::read(&dst).unwrap(), b"again");
+        assert!(!tmp.exists());
+        std::fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]

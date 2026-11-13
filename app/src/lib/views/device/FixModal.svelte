@@ -25,10 +25,12 @@
   let acknowledged = $state(false);
 
   $effect(() => {
+    let current = true;
     deviceFixPlan(root).then(
-      (p) => (plan = p),
-      (e) => (error = String(e)),
+      (p) => current && (plan = p),
+      (e) => current && (error = String(e)),
     );
+    return () => (current = false);
   });
 
   const chosen = $derived((plan?.dead_rows ?? []).filter((r) => !unticked.has(r.track_id)));

@@ -29,6 +29,7 @@ use pm_formats::strfile::Analysis;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager, State};
 
+use super::backup::GridBackup;
 use super::suspect::{assess, Fix, SuspectSettings};
 use crate::commands::analysis::{audio_path, label_of};
 use crate::error::{AppResult, IntoApp};
@@ -546,14 +547,15 @@ pub fn grid_batch_apply(app: AppHandle, lock: State<'_, JobLock>, state: State<'
         return Err("No tracks to change.".into());
     }
     let plan = state.get(&root, Some(plan_id))?;
+    let backup = GridBackup::for_run(&app, Path::new(&root))?;
     spawn_write_job(app, &lock, BATCH_JOB, root.clone(), move |app| {
         let mut lib = Library::open(Path::new(&root))?;
-        run(&mut lib, &plan, &track_ids, |p| events::emit(app, JOB_PROGRESS, p))
+        run(&mut lib, &plan, &track_ids, backup, |p| events::emit(app, JOB_PROGRESS, p))
     })
 }
 
 /// The body of the write job, apart from Tauri so it can be tested on a temp library.
-fn run(lib: &mut Library, plan: &StoredPlan, ids: &[i64], mut progress: impl FnMut(Progress)) -> AppResult<JobOutcome> {
+fn run(lib: &mut Library, plan: &StoredPlan, ids: &[i64], mut backup: GridBackup, mut progress: impl FnMut(Progress)) -> AppResult<JobOutcome> {
     // refuse before touching anything: a library the device cannot read must not get new .str files
     let problems = lib.compatibility_problems()?;
     if !problems.is_empty() {
@@ -567,7 +569,7 @@ fn run(lib: &mut Library, plan: &StoredPlan, ids: &[i64], mut progress: impl FnM
     for (i, id) in wanted.into_iter().enumerate() {
         let label = labels.get(&id).map_or_else(|| format!("track {id}"), |l| (*l).to_string());
         let mut ev = Progress::new(BATCH_JOB, label, i + 1, total, "");
-        match save_one(lib, plan, id) {
+        match save_one(lib, plan, &mut backup, id) {
             Ok(Saved::Wrote(bpm)) => {
                 ev.status = "changed".into();
                 ev.bpm = Some(bpm);
@@ -600,7 +602,10 @@ fn run(lib: &mut Library, plan: &StoredPlan, ids: &[i64], mut progress: impl FnM
     if failed > 0 {
         parts.push(format!("{failed} failed"));
     }
-    let summary = if parts.is_empty() { "nothing to do".to_string() } else { parts.join(", ") };
+    let mut summary = if parts.is_empty() { "nothing to do".to_string() } else { parts.join(", ") };
+    if let Some(note) = backup.note() {
+        summary = format!("{summary}. {note}");
+    }
     Ok(JobOutcome { ok, failed, summary })
 }
 
@@ -609,7 +614,7 @@ enum Saved {
     Skipped(String),
 }
 
-fn save_one(lib: &mut Library, plan: &StoredPlan, id: i64) -> AppResult<Saved> {
+fn save_one(lib: &mut Library, plan: &StoredPlan, backup: &mut GridBackup, id: i64) -> AppResult<Saved> {
     let Some(prop) = plan.proposals.get(&id) else {
         let why = plan.rows.iter().find(|r| r.track_id == id).and_then(|r| r.skip.clone()).unwrap_or_else(|| "it is not part of this preview".into());
         return Ok(Saved::Skipped(why));
@@ -621,6 +626,8 @@ fn save_one(lib: &mut Library, plan: &StoredPlan, id: i64) -> AppResult<Saved> {
     if load.doc != prop.before {
         return Ok(Saved::Skipped("its beat grid changed since the preview; preview it again".into()));
     }
+    // the grid on the card is replaced in place and music.db snapshots do not hold it: keep it first
+    backup.keep(lib.root(), &load.location)?;
     lib.save_grid(id, &prop.after)?;
     Ok(Saved::Wrote(track_bpm(&Analysis::from(&prop.after))))
 }
@@ -712,7 +719,7 @@ mod tests {
             assert!(r.skip.is_none());
         }
         let before: Vec<GridDoc> = ids.iter().map(|&i| grid_of(&lib, i)).collect();
-        let out = run(&mut lib, &p, &ids, |_| {}).unwrap();
+        let out = run(&mut lib, &p, &ids, GridBackup::new_in(&base.join("snaps")), |_| {}).unwrap();
         assert_eq!((out.ok, out.failed), (2, 0), "{}", out.summary);
         for (id, old) in ids.iter().zip(&before) {
             let now = grid_of(&lib, *id);
@@ -720,7 +727,7 @@ mod tests {
         }
         // and back
         let back = stored(&lib, &state, &ids, &BatchOp::Nudge { ms: -20.0 });
-        run(&mut lib, &back, &ids, |_| {}).unwrap();
+        run(&mut lib, &back, &ids, GridBackup::new_in(&base.join("snaps")), |_| {}).unwrap();
         assert_eq!(grid_of(&lib, ids[0]).beats[0].pos, 3000);
         cleanup(lib, base);
     }
@@ -745,13 +752,13 @@ mod tests {
         let p = stored(&lib, &state, &ids[..1], &BatchOp::Halve);
         assert_eq!((p.rows[0].before_bpm, p.rows[0].after_bpm), (Some(250.0), Some(125.0)));
         assert!(p.rows[0].after_beats < p.rows[0].before_beats);
-        let out = run(&mut lib, &p, &ids[..1], |_| {}).unwrap();
+        let out = run(&mut lib, &p, &ids[..1], GridBackup::new_in(&base.join("snaps")), |_| {}).unwrap();
         assert_eq!((out.ok, out.failed), (1, 0), "{}", out.summary);
         assert_eq!(bpm_of(&lib, ids[0]), 125.0);
         assert_eq!(track_bpm(&Analysis::from(&grid_of(&lib, ids[0]))), 125.0);
         let p = stored(&lib, &state, &ids[1..], &BatchOp::Double);
         assert_eq!(p.rows[0].after_bpm, Some(174.0));
-        run(&mut lib, &p, &ids[1..], |_| {}).unwrap();
+        run(&mut lib, &p, &ids[1..], GridBackup::new_in(&base.join("snaps")), |_| {}).unwrap();
         assert_eq!(bpm_of(&lib, ids[1]), 174.0);
         assert!(lib.compatibility_problems().unwrap().is_empty());
         cleanup(lib, base);
@@ -770,7 +777,7 @@ mod tests {
         assert_eq!((p.rows[1].op.as_str(), p.rows[1].after_bpm), ("double", Some(174.0)));
         assert!(p.rows[2].skip.as_deref().unwrap().contains("does not flag"), "{:?}", p.rows[2]);
         assert!(p.rows[3].skip.as_deref().unwrap().contains("neither half nor double"), "{:?}", p.rows[3]);
-        let out = run(&mut lib, &p, &ids, |_| {}).unwrap();
+        let out = run(&mut lib, &p, &ids, GridBackup::new_in(&base.join("snaps")), |_| {}).unwrap();
         assert_eq!((out.ok, out.failed), (2, 0), "{}", out.summary);
         assert!(out.summary.contains("2 skipped"), "{}", out.summary);
         assert_eq!(bpm_of(&lib, ids[2]), 126.0);
@@ -791,7 +798,7 @@ mod tests {
         let want = p.proposals[&ids[0]].after.clone();
         let mut events = Vec::new();
         // only the first and a track that is not in the plan at all
-        let out = run(&mut lib, &p, &[ids[0], 987_654, ids[0]], |e| events.push((e.status, e.label))).unwrap();
+        let out = run(&mut lib, &p, &[ids[0], 987_654, ids[0]], GridBackup::new_in(&base.join("snaps")), |e| events.push((e.status, e.label))).unwrap();
         assert_eq!((out.ok, out.failed), (1, 0), "{}", out.summary);
         assert_eq!(events.len(), 2, "a repeated id is written once");
         assert_eq!(grid_of(&lib, ids[0]), want, "the saved grid is the previewed one");
@@ -810,7 +817,7 @@ mod tests {
         let mut other = grid_of(&lib, ids[0]);
         other.beats.iter_mut().for_each(|b| b.pos += 5);
         lib.save_grid(ids[0], &other).unwrap();
-        let out = run(&mut lib, &p, &ids, |_| {}).unwrap();
+        let out = run(&mut lib, &p, &ids, GridBackup::new_in(&base.join("snaps")), |_| {}).unwrap();
         assert_eq!((out.ok, out.failed), (1, 0), "{}", out.summary);
         assert_eq!(grid_of(&lib, ids[0]), other, "left as the other change made it");
         assert_eq!(bpm_of(&lib, ids[1]), 220.0);
@@ -933,7 +940,7 @@ mod tests {
         // nothing was written by the preview
         assert_eq!(bpm_of(&lib, id), 252.0);
         let want = stored.proposals[&id].after.clone();
-        let out = run(&mut lib, &stored, &[id], |_| {}).unwrap();
+        let out = run(&mut lib, &stored, &[id], GridBackup::new_in(&base.join("snaps")), |_| {}).unwrap();
         assert_eq!((out.ok, out.failed), (1, 0), "{}", out.summary);
         assert_eq!(grid_of(&lib, id), want, "the saved grid is the previewed one");
         assert_eq!(bpm_of(&lib, id), r.after_bpm.unwrap());

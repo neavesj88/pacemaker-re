@@ -622,7 +622,7 @@ pub use dupes::{check_disjoint, plan_group, Blocked, CaseEdit, CaseEditKind, Cas
 pub use track_extra::TrackExtra;
 
 mod case_bulk;
-pub use case_bulk::{plan_merge, plan_transfer, MergeDest, MergeDone, MergePlan, TransferDone, TransferNewDone, TransferPlan};
+pub use case_bulk::{plan_merge, CaseDeleteReport, CaseKept, ConfirmedCase, plan_transfer, MergeDest, MergeDone, MergePlan, TransferDone, TransferNewDone, TransferPlan};
 #[cfg(test)]
 mod case_bulk_tests;
 

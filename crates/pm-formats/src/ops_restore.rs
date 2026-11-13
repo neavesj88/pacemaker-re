@@ -455,7 +455,7 @@ pub fn restore_snapshot(
         }
     }
     let snap_db = folder.join("music.db");
-    let safety = ops_device::snapshot_library_protecting(root, snapshots_dir, keep, &[name])?;
+    let safety = ops_device::snapshot_library_pinned(root, snapshots_dir, keep, &[name])?;
     install_db(root, &snap_db)?;
     let verified = Library::open_read_only(root).map_err(|e| e.to_string()).and_then(|l| {
         let problems = l.compatibility_problems().map_err(|e| e.to_string())?;

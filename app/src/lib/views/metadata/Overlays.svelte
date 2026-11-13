@@ -43,7 +43,7 @@
     void labels.version;
     void energySource.source;
     void energy.state;
-    void untrack(() => cases.refreshSmartCounts());
+    untrack(() => cases.scheduleSmartCounts());
   });
 
   // the energy choice is the app's own, not per library: read once

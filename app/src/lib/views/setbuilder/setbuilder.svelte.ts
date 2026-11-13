@@ -13,7 +13,7 @@ import { mixSides } from "$lib/views/analysis/sectionLogic";
 import { parseKey } from "$lib/views/tracks/trackLogic";
 import { energyOf } from "./energy";
 import { setPrefs } from "./prefs.svelte";
-import { bestInsert, evaluate, moveBlock, pinPositions, solve, solverOptions, type SetSummary, type SetTrack } from "./solver";
+import { bestInsert, evaluate, MAX_SOLVE_TRACKS, moveBlock, pinPositions, solve, solverOptions, type SetSummary, type SetTrack } from "./solver";
 
 export type Source =
   | { kind: "case"; id: number; name: string }
@@ -62,6 +62,8 @@ class SetBuilder {
   loading = $state(false);
   /** Settings changed or the order was edited by hand since the last solve. */
   edited = $state(false);
+  /** Why the set was not (or could not be) ordered, in words; "" when there is nothing to say. */
+  notice = $state("");
   canUndo = $state(false);
   undoLabel = $state("");
 
@@ -121,7 +123,10 @@ class SetBuilder {
       this.edited = false;
       this.#history = [];
       this.#syncHistory();
-      if (setPrefs.value.solveOnLoad && this.order.length > 1) this.solve(false);
+      this.notice = "";
+      if (setPrefs.value.solveOnLoad && this.order.length > setPrefs.value.solveLimit) {
+        this.notice = `${this.order.length} tracks is more than the ${setPrefs.value.solveLimit} the set builder orders as it loads, so they are in the order of the source. Re-solve orders them anyway (it compares every pair of tracks and can take several seconds, while the window waits), or raise the limit in the settings.`;
+      } else if (setPrefs.value.solveOnLoad && this.order.length > 1) this.solve(false);
     } catch (e) {
       session.error = String(e);
     } finally {
@@ -162,6 +167,7 @@ class SetBuilder {
     this.gone = [];
     this.short = false;
     this.edited = false;
+    this.notice = "";
     this.#original = [];
     this.#history = [];
     this.#syncHistory();
@@ -201,6 +207,11 @@ class SetBuilder {
     const pool = [...this.order, ...this.out.filter((x) => x.why === "length").map((x) => x.id)]
       .map((id) => this.byId.get(id))
       .filter((t): t is SetTrack => !!t);
+    if (pool.length > MAX_SOLVE_TRACKS) {
+      this.notice = `${pool.length} tracks is too many to order in one go (the most is ${MAX_SOLVE_TRACKS}). Load part of it, a case or a selection, and the order stays as it is.`;
+      return;
+    }
+    this.notice = "";
     if (remember) this.#remember("Re-solve");
     // positions are counted over the tracks the solver is given (ids the library lost are not slots)
     const pins = pinPositions(this.order, this.pinned, (id) => this.byId.has(id));

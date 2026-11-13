@@ -229,6 +229,8 @@
         {#if setBuilder.pinned.size > 0}<span class="muted">{setBuilder.pinned.size} locked</span>{/if}
       </div>
 
+      {#if setBuilder.notice}<div class="warn" role="status">{setBuilder.notice}</div>{/if}
+
       {#if setBuilder.gone.length > 0 || setBuilder.missing.length > 0}
         <div class="warn">
           {#if setBuilder.gone.length > 0}

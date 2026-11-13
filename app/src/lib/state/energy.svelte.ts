@@ -10,7 +10,8 @@ import { session } from "./session.svelte";
 import { toast } from "./toast.svelte";
 
 class Energy {
-  state = $state<EnergyState | null>(null);
+  // raw: replaced as a whole, never edited in place; a deep proxy would wrap every entry of a big library
+  state = $state.raw<EnergyState | null>(null);
   /** The "Energy (auto)" panel is open. */
   panelOpen = $state(false);
   busy = $state(false);

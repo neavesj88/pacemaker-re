@@ -9,7 +9,9 @@ import type { TrackFilter } from "../tracks/trackLogic";
 
 /** A track as the gap map sees it. `energy` is the optional rating another analysis chain adds
  *  to the wire type later; until then it is simply absent. */
-export type GapTrack = Track & { energy?: number | null };
+/** What the matrices read of a track. Only these fields are copied per track (a spread of the
+ *  whole row for every track of a big library cost over a second on each recompute). */
+export type GapTrack = Pick<Track, "track_id" | "bpm" | "key" | "genre"> & { energy?: number | null };
 
 /** Camelot code ("8A") of a stored key text, or null when empty or not recognised. */
 export type KeyCode = (key: string) => string | null;
@@ -158,7 +160,7 @@ export const KEY_ORDER: string[] = [
 
 /** A track has a usable BPM when the Tracks table would show one (positive, and not flagged as
  *  needing analysis, whose stored BPM is not trusted). Same rule as the Tracks filter. */
-export const hasBpm = (t: Track, needs: ReadonlyMap<number, string>): boolean =>
+export const hasBpm = (t: Pick<Track, "bpm" | "track_id">, needs: ReadonlyMap<number, string>): boolean =>
   t.bpm > 0 && Number.isFinite(t.bpm) && !needs.has(t.track_id);
 
 /** Energy level of a track, or null when it has none. Rounded to a whole level, 1 or more. */

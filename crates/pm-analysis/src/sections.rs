@@ -97,6 +97,11 @@ pub fn bar_edges(beat_secs: &[f64], first_downbeat: Option<usize>, duration: f64
     // a grid is often cut short of the audio: continue it at the period of its last beats
     let tail = &beat_secs[beat_secs.len().saturating_sub(9)..];
     let period = (tail[tail.len() - 1] - tail[0]) / (tail.len() - 1) as f64;
+    // a tail of beats packed far tighter (or looser) than any tempo the device holds would make the
+    // continuation below run for millions of bars: such a grid is not usable for sections
+    if !(60.0 / pm_formats::ops_grid::MAX_BPM..=60.0 / pm_formats::ops_grid::MIN_BPM).contains(&period) {
+        return Err(Skip::NoGrid);
+    }
     if let Some(&first) = edges.last() {
         let bar = period * BEATS_PER_BAR as f64;
         let mut last = first;
@@ -722,6 +727,18 @@ mod tests {
     /// intro 16 | build 8 | drop 32 | breakdown 16 | build 8 | drop 16 | outro 8
     fn full_track() -> Vec<(usize, Layer)> {
         vec![(16, HATS), (8, BUILD), (32, DROP), (16, BREAK), (8, BUILD), (16, DROP), (8, HATS)]
+    }
+
+    #[test]
+    fn a_grid_whose_last_beats_are_packed_absurdly_tight_is_not_continued() {
+        // 22.7 microseconds apart over the tail: an hour-long file would need ~4e7 bars to fill
+        let mut beats: Vec<f64> = (0..64).map(|i| 0.5 * i as f64).collect();
+        let last = *beats.last().unwrap();
+        beats.extend((1..=9).map(|i| last + 0.0000227 * i as f64));
+        assert_eq!(bar_edges(&beats, Some(0), 3600.0), Err(Skip::NoGrid));
+        // an ordinary grid still continues to the end of the audio
+        let ok: Vec<f64> = (0..64).map(|i| 0.5 * i as f64).collect();
+        assert!(bar_edges(&ok, Some(0), 100.0).unwrap().len() > 30);
     }
 
     #[test]

@@ -15,7 +15,7 @@ use std::path::{Path, PathBuf};
 use pm_formats::library::{Error, Library, MAX_CASE_NAME_CHARS};
 use serde::{Deserialize, Serialize};
 
-pub use rules::{Data, Eval, Query, evaluate, migrate, referenced_cases, validate_query};
+pub use rules::{Data, Eval, Query, count, evaluate, holds_among, migrate, referenced_cases, validate_query};
 #[cfg(test)]
 pub use rules::{Mode, TagMatch};
 #[cfg(test)]

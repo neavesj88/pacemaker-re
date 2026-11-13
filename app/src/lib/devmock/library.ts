@@ -5,6 +5,7 @@ import type { Handlers } from "./types";
 
 export const handlers: Handlers = {
   list_volumes: () => ["P:\\"],
+  app_notices: () => "# Third-party notices\n\nThe licences of the software in this app are listed here in the installed app.\n",
   open_library: (a) => {
     const root = a.root ?? "P:\\";
     return {

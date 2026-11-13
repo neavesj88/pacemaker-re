@@ -269,7 +269,7 @@ pub fn device_space_run(app: AppHandle, lock: State<'_, JobLock>, root: String, 
         )?;
         let mut parts: Vec<String> = Vec::new();
         if let Some(f) = &rep.archive_folder {
-            parts.push(format!("Archived {} ({}) to {f}. Every file was read back and checked; checksums are in {}", plural(rep.archived, "track"), mb(rep.archived_bytes), ops_device::MANIFEST_NAME));
+            parts.push(format!("Archived {} ({}) to {f}. Every file was copied and its checksum compared after writing (through the system's cache, so a later 'Check' of the archive is the real test); checksums are in {}", plural(rep.archived, "track"), mb(rep.archived_bytes), ops_device::MANIFEST_NAME));
         }
         if rep.removed > 0 {
             parts.push(format!("Removed {} from the card, freeing {}", plural(rep.removed, "track"), mb(rep.freed_bytes)));

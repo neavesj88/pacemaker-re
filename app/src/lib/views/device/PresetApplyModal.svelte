@@ -22,13 +22,16 @@
   $effect(() => {
     const root = session.library?.root;
     if (!root) return;
+    let current = true;
     devicePresetDiff(root, name).then(
       (d) => {
+        if (!current) return;
         diff = d;
         ticked = new Set(defaultTicks(d.rows));
       },
-      (e) => (error = String(e)),
+      (e) => current && (error = String(e)),
     );
+    return () => (current = false);
   });
 
   const groups = $derived(groupRows(diff?.rows ?? []));

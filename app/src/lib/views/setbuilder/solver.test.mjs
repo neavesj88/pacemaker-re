@@ -832,4 +832,13 @@ await test("section preference: saved setting and the options built from it", ()
   assert.equal(S.solverOptions(S.DEFAULT_PREFS).sectionPref, false);
 });
 
+await test("solve limit: the size of a set that is ordered as it loads is a setting with a ceiling", () => {
+  assert.equal(S.DEFAULT_PREFS.solveLimit, 600);
+  assert.equal(S.mergePrefs({ solveLimit: 1200 }).solveLimit, 1200);
+  // out of range or not a number keeps the default; the setting can never ask for more than one solve takes
+  for (const v of [10, 100000, "many", null, NaN]) assert.equal(S.mergePrefs({ solveLimit: v }).solveLimit, 600, String(v));
+  assert.equal(S.PREF_RANGES.solveLimit[1], S.MAX_SOLVE_TRACKS);
+  assert.equal(S.clampPref("solveLimit", 99999), S.MAX_SOLVE_TRACKS);
+});
+
 console.log(`\n${n} set builder tests passed`);

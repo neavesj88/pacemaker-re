@@ -6,6 +6,7 @@
 
 use std::path::Path;
 
+pub mod backup;
 pub mod batch;
 pub mod suspect;
 pub mod tempo;

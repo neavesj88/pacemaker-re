@@ -19,6 +19,7 @@ use pm_formats::strfile::Analysis;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, State};
 
+use super::backup::GridBackup;
 use crate::commands::analysis::{audio_path, label_of};
 use crate::error::{AppResult, IntoApp};
 use crate::events::{self, JOB_PROGRESS};
@@ -48,6 +49,15 @@ impl TempoOp {
             TempoOp::Set { bpm } => GridEdit::SetBpm { bpm },
         }
     }
+}
+
+/// The tempo a track had in the confirmed preview. The job changes a track only while its grid
+/// still has that tempo, so a confirmation that has gone stale cannot halve or double a grid
+/// that was changed in between.
+#[derive(Debug, Clone, Copy, Deserialize)]
+pub struct TempoExpect {
+    pub track_id: i64,
+    pub before: f64,
 }
 
 /// What will happen to one track.
@@ -142,20 +152,38 @@ pub async fn grid_tempo_plan(root: String, track_ids: Vec<i64>, op: TempoOp) -> 
 
 /// Starts the "tempo-edit" write job: plans the edit again with the same code as the preview,
 /// then saves each changed grid (the `.str` and the row's BPM together). Tracks that are skipped
-/// are reported, not failed. One progress event per track; `bpm` carries the new tempo.
+/// are reported, not failed. `expected` is the tempo each track had in the confirmed preview; a
+/// track whose grid has another tempo now is skipped. The previous `.str` of every track that is
+/// overwritten is copied off the device first (see [`GridBackup`]). One progress event per track;
+/// `bpm` carries the new tempo.
 #[tauri::command]
-pub fn grid_tempo_apply(app: AppHandle, lock: State<'_, JobLock>, root: String, track_ids: Vec<i64>, op: TempoOp) -> AppResult<()> {
+pub fn grid_tempo_apply(
+    app: AppHandle,
+    lock: State<'_, JobLock>,
+    root: String,
+    track_ids: Vec<i64>,
+    op: TempoOp,
+    expected: Vec<TempoExpect>,
+) -> AppResult<()> {
     if track_ids.is_empty() {
         return Err("No tracks to change.".into());
     }
+    let backup = GridBackup::for_run(&app, Path::new(&root))?;
     spawn_write_job(app, &lock, TEMPO_JOB, root.clone(), move |app| {
         let mut lib = Library::open(Path::new(&root))?;
-        run(&mut lib, &track_ids, op, |p| events::emit(app, JOB_PROGRESS, p))
+        run(&mut lib, &track_ids, op, &expected, backup, |p| events::emit(app, JOB_PROGRESS, p))
     })
 }
 
 /// The body of the job, apart from Tauri so it can be tested on a temp library.
-fn run(lib: &mut Library, ids: &[i64], op: TempoOp, mut progress: impl FnMut(Progress)) -> AppResult<JobOutcome> {
+fn run(
+    lib: &mut Library,
+    ids: &[i64],
+    op: TempoOp,
+    expected: &[TempoExpect],
+    mut backup: GridBackup,
+    mut progress: impl FnMut(Progress),
+) -> AppResult<JobOutcome> {
     // refuse before touching anything: a library the device cannot read must not get new .str files
     let problems = lib.compatibility_problems()?;
     if !problems.is_empty() {
@@ -167,8 +195,20 @@ fn run(lib: &mut Library, ids: &[i64], op: TempoOp, mut progress: impl FnMut(Pro
     for (i, p) in planned.into_iter().enumerate() {
         let done = i + 1;
         let mut ev = Progress::new(TEMPO_JOB, p.row.label.clone(), done, total, "");
+        let stale = match (&p.doc, expected.iter().find(|e| e.track_id == p.row.track_id)) {
+            (Some(_), None) => Some("it was not part of the preview you confirmed"),
+            (Some(_), Some(e)) if p.row.before.is_none_or(|b| (b - e.before).abs() > 1e-6) => {
+                Some("its beat grid changed since the preview; preview it again")
+            }
+            _ => None,
+        };
         match (&p.doc, &p.row.skip) {
-            (Some(doc), None) => match lib.save_grid(p.row.track_id, doc) {
+            (Some(_), None) if stale.is_some() => {
+                ev.status = "skipped".into();
+                ev.detail = stale.map(str::to_string);
+                skipped_n += 1;
+            }
+            (Some(doc), None) => match save_kept(lib, &mut backup, p.row.track_id, doc) {
                 Ok(()) => {
                     ev.status = "retimed".into();
                     ev.bpm = p.row.after;
@@ -202,8 +242,20 @@ fn run(lib: &mut Library, ids: &[i64], op: TempoOp, mut progress: impl FnMut(Pro
     if failed > 0 {
         parts.push(format!("{failed} failed"));
     }
-    let summary = if parts.is_empty() { "nothing to do".to_string() } else { parts.join(", ") };
+    let mut summary = if parts.is_empty() { "nothing to do".to_string() } else { parts.join(", ") };
+    if let Some(note) = backup.note() {
+        summary = format!("{summary}. {note}");
+    }
     Ok(JobOutcome { ok, failed, summary })
+}
+
+/// Saves a grid after the track's current `.str` was copied off the device. If the copy fails the
+/// grid is not overwritten.
+fn save_kept(lib: &mut Library, backup: &mut GridBackup, track_id: i64, doc: &GridDoc) -> AppResult<()> {
+    let location = lib.load_grid(track_id)?.location;
+    backup.keep(lib.root(), &location)?;
+    lib.save_grid(track_id, doc)?;
+    Ok(())
 }
 
 #[cfg(test)]
@@ -253,6 +305,17 @@ mod tests {
         (lib, base, ids)
     }
 
+    /// What the confirmation would send with the ids, then the job body with a backup in the
+    /// scratch folder.
+    fn go(lib: &mut Library, base: &Path, ids: &[i64], op: TempoOp, progress: impl FnMut(Progress)) -> AppResult<JobOutcome> {
+        let expected: Vec<TempoExpect> = plan(lib, ids, op)
+            .unwrap()
+            .into_iter()
+            .filter_map(|p| p.row.before.map(|before| TempoExpect { track_id: p.row.track_id, before }))
+            .collect();
+        run(lib, ids, op, &expected, GridBackup::new_in(&base.join("snaps")), progress)
+    }
+
     fn bpm_of(lib: &Library, id: i64) -> f64 {
         lib.tracks().unwrap().into_iter().find(|t| t.track_id == id).unwrap().bpm
     }
@@ -277,7 +340,7 @@ mod tests {
     fn halve_and_double_keep_the_row_and_the_grid_in_step() {
         let (mut lib, base, ids) = library("halve", &[(172.0, 20), (90.0, 20)]);
         let mut events = Vec::new();
-        let out = run(&mut lib, &ids, TempoOp::Halve, |p| events.push((p.status.clone(), p.bpm))).unwrap();
+        let out = go(&mut lib, &base, &ids, TempoOp::Halve, |p| events.push((p.status.clone(), p.bpm))).unwrap();
         assert_eq!((out.ok, out.failed), (2, 0), "{}", out.summary);
         assert_eq!(events.len(), 2, "one event per track");
         for (id, want) in ids.iter().zip([86.0, 45.0]) {
@@ -289,10 +352,43 @@ mod tests {
         assert!(lib.compatibility_problems().unwrap().is_empty());
 
         // and back: the doubled grid has the original tempo again
-        let back = run(&mut lib, &ids, TempoOp::Double, |_| {}).unwrap();
+        let back = go(&mut lib, &base, &ids, TempoOp::Double, |_| {}).unwrap();
         assert_eq!((back.ok, back.failed), (2, 0), "{}", back.summary);
         assert!((bpm_of(&lib, ids[0]) - 172.0).abs() < 1e-9);
         assert!((bpm_of(&lib, ids[1]) - 90.0).abs() < 1e-9);
+        cleanup(lib, base);
+    }
+
+    #[test]
+    fn the_previous_grid_is_kept_off_the_device_before_it_is_overwritten() {
+        let (mut lib, base, ids) = library("kept", &[(172.0, 20)]);
+        let location = lib.tracks().unwrap().remove(0).location;
+        let (_, sidecar) = lib.track_paths(&location).unwrap();
+        let old_bytes = std::fs::read(&sidecar).unwrap();
+        let out = go(&mut lib, &base, &ids, TempoOp::Halve, |_| {}).unwrap();
+        assert_eq!(out.ok, 1, "{}", out.summary);
+        assert_ne!(std::fs::read(&sidecar).unwrap(), old_bytes, "the grid on the card changed");
+        assert!(out.summary.contains("previous beat grid is saved in"), "{}", out.summary);
+        let snaps = base.join("snaps");
+        let run_dir = std::fs::read_dir(&snaps).unwrap().flatten().next().expect("one grids- folder").path();
+        let rel = sidecar.strip_prefix(lib.root().join(pm_formats::naming::MUSIC_DIR)).unwrap();
+        assert_eq!(std::fs::read(run_dir.join(rel)).unwrap(), old_bytes, "the saved copy is the grid as it was");
+        cleanup(lib, base);
+    }
+
+    #[test]
+    fn a_track_whose_grid_changed_since_the_confirmed_preview_is_left_alone() {
+        let (mut lib, base, ids) = library("stale", &[(172.0, 20), (90.0, 20)]);
+        // the user confirmed 172 and 90, then the first track was re-timed elsewhere
+        let confirmed = [TempoExpect { track_id: ids[0], before: 160.0 }, TempoExpect { track_id: ids[1], before: 90.0 }];
+        let out = run(&mut lib, &ids, TempoOp::Halve, &confirmed, GridBackup::new_in(&base.join("snaps")), |_| {}).unwrap();
+        assert_eq!((out.ok, out.failed), (1, 0), "{}", out.summary);
+        assert!(out.summary.contains("1 skipped"), "{}", out.summary);
+        assert_eq!(bpm_of(&lib, ids[0]), 172.0, "not halved");
+        assert_eq!(bpm_of(&lib, ids[1]), 45.0);
+        // a track the preview did not list is not changed either
+        let out = run(&mut lib, &ids, TempoOp::Double, &confirmed[..1], GridBackup::new_in(&base.join("snaps")), |_| {}).unwrap();
+        assert_eq!(out.ok, 0, "{}", out.summary);
         cleanup(lib, base);
     }
 
@@ -305,7 +401,7 @@ mod tests {
         assert!(rows[1].skip.as_deref().unwrap().contains("above the maximum"), "{:?}", rows[1]);
         assert_eq!(rows[2].after, Some(60.0));
 
-        let out = run(&mut lib, &ids, TempoOp::Double, |_| {}).unwrap();
+        let out = go(&mut lib, &base, &ids, TempoOp::Double, |_| {}).unwrap();
         assert_eq!((out.ok, out.failed), (2, 0), "{}", out.summary);
         assert!(out.summary.contains("1 skipped"), "{}", out.summary);
         // the tempi in the rows are exactly the previewed ones, the skipped track is untouched
@@ -328,7 +424,7 @@ mod tests {
     fn set_replaces_the_grid_with_a_constant_one_from_the_first_beat() {
         let (mut lib, base, ids) = library("set", &[(120.0, 30)]);
         let before = grid_of(&lib, ids[0]);
-        let out = run(&mut lib, &ids, TempoOp::Set { bpm: 127.5 }, |_| {}).unwrap();
+        let out = go(&mut lib, &base, &ids, TempoOp::Set { bpm: 127.5 }, |_| {}).unwrap();
         assert_eq!((out.ok, out.failed), (1, 0), "{}", out.summary);
         let after = grid_of(&lib, ids[0]);
         assert_eq!(after.beats[0].pos, before.beats[0].pos, "the first beat does not move");
@@ -369,7 +465,7 @@ mod tests {
         assert_eq!(rows[1].skip.as_deref(), Some("not in the library"));
         assert!(rows[2].skip.as_deref().unwrap().contains("empty .str"), "{:?}", rows[2]);
 
-        let out = run(&mut lib, &asked, TempoOp::Double, |_| {}).unwrap();
+        let out = go(&mut lib, &base, &asked, TempoOp::Double, |_| {}).unwrap();
         assert_eq!((out.ok, out.failed), (1, 0), "{}", out.summary);
         assert!(out.summary.contains("2 skipped"), "{}", out.summary);
         cleanup(lib, base);
@@ -386,7 +482,7 @@ mod tests {
         lib.save_grid(ids[0], &doc).unwrap();
         let first = track_bpm(&Analysis::from(&doc));
         assert_eq!(bpm_of(&lib, ids[0]), first, "saving a grid stores its median tempo");
-        let out = run(&mut lib, &ids, TempoOp::Halve, |_| {}).unwrap();
+        let out = go(&mut lib, &base, &ids, TempoOp::Halve, |_| {}).unwrap();
         assert_eq!(out.ok, 1, "{}", out.summary);
         let after = grid_of(&lib, ids[0]);
         assert_eq!(bpm_of(&lib, ids[0]), track_bpm(&Analysis::from(&after)), "row and .str agree after the edit");

@@ -201,6 +201,28 @@ fn transfer_into_a_new_case_is_one_transaction() {
 }
 
 #[test]
+fn a_confirmed_delete_keeps_a_case_that_is_no_longer_the_one_confirmed() {
+    let (mut lib, dirs, _t) = library_with_tracks("delconfirmed", &[10]);
+    let a = lib.create_case("A").unwrap();
+    let b = lib.create_case("B").unwrap();
+    let infos = lib.case_infos().unwrap();
+    let seen = |id: i64| {
+        let i = infos.iter().find(|i| i.id == id).unwrap();
+        ConfirmedCase { id, name: i.name.clone(), date_created: i.date_created }
+    };
+    let (sa, sb) = (seen(a), seen(b));
+    // B was renamed on the card while the dialog was open
+    lib.con.execute("UPDATE cases SET name = 'Other' WHERE case_id = ?1", [b]).unwrap();
+    let r = lib.delete_cases_confirmed(&[sa.clone(), sb.clone(), sa, ConfirmedCase { id: 9999, name: "Gone".into(), date_created: 1 }]).unwrap();
+    assert_eq!(r.deleted, 1);
+    assert_eq!(r.kept.len(), 2, "{r:?}");
+    assert!(r.kept[0].error.contains("not the one you confirmed"), "{r:?}");
+    assert_eq!(lib.case_infos().unwrap().len(), 1);
+    assert_eq!(lib.case_infos().unwrap()[0].id, b, "the renamed case is still there");
+    cleanup(lib, dirs);
+}
+
+#[test]
 fn delete_several_cases_in_one_go() {
     let (mut lib, dirs, t) = library_with_tracks("delmany", &[10, 20]);
     let a = lib.create_case("A").unwrap();
