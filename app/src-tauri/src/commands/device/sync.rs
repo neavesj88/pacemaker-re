@@ -248,7 +248,8 @@ pub fn summarise_selection(rep: &SyncReport) -> String {
         }
     }
     if parts.is_empty() {
-        parts.push("Nothing to copy, all of it is there already".into());
+        let all_there = rep.items.iter().all(|i| matches!(&i.action, SyncAction::Skip { reason } if reason == ops_sync::SAME));
+        parts.push(if all_there { "Nothing to copy, all of it is there already" } else { "Nothing was copied" }.into());
     }
     parts.join(". ")
 }

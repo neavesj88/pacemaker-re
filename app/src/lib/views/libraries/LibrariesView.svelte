@@ -1,8 +1,8 @@
 <script lang="ts">
+  import { untrack } from "svelte";
   import { JOB_SYNC } from "$lib/api/sync";
   import { session } from "$lib/state/session.svelte";
   import Button from "$lib/ui/Button.svelte";
-  import { device } from "../device/device.svelte";
   import JobProgress from "../device/JobProgress.svelte";
   import CopyDialog from "./CopyDialog.svelte";
   import { libs } from "./libraries.svelte";
@@ -11,12 +11,15 @@
   // The Editor's two panes: the open library on the left, another library on the right. Pick tracks,
   // mixes or cases in one and drag them onto the other to copy them there (tracks dropped on a case
   // row of the Cases tab also go into that case). The Copy button and the row menu do the same by
-  // click. Before anything is written the dialog names every item and what is done to it; nothing is
-  // ever removed from either library.
+  // click. Before anything is written the dialog names every item and what is done to it. A copy only
+  // adds: nothing on the target is removed or overwritten (the engine clamps the Sync settings for it).
 
   const canSwap = $derived(!!session.library && !!libs.data("right") && !libs.busy);
 
+  // coming back to the view: what the right pane held may be out of date (a Sync run, an import, a
+  // drive plugged in or out), so it is dropped; a Pacemaker waits for its button again
   $effect(() => {
+    untrack(() => libs.invalidate());
     void session.refreshVolumes().catch(() => {});
   });
 </script>
@@ -25,7 +28,7 @@
   <div class="top">
     <h2>Libraries</h2>
     <p class="muted lead">
-      Drag tracks, mixes or cases from one side to the other to copy them. You see what will be copied before anything is written.
+      Drag tracks, mixes or cases across to copy them. You see the list before anything is written.
     </p>
   </div>
 
@@ -36,18 +39,18 @@
     </p>
   {/if}
 
-  {#if libs.planning}
-    <p class="muted" role="status">Checking what would be copied…</p>
-  {/if}
-
-  {#if libs.running || device.job?.kind === JOB_SYNC}
-    <section class="card" aria-label="Copy progress">
-      <h3>Copying…</h3>
-      <JobProgress kind={JOB_SYNC} />
-    </section>
-  {:else if libs.result}
-    <p class="result" role="status">{libs.result}</p>
-  {/if}
+  <!-- a strip of fixed height, so the panes do not move when a check, a copy or its result shows -->
+  <div class="strip">
+    {#if libs.running}
+      <section class="card" aria-label="Copy progress">
+        <JobProgress kind={JOB_SYNC} />
+      </section>
+    {:else if libs.planning}
+      <p class="muted" role="status">Checking what would be copied…</p>
+    {:else if libs.result}
+      <p class="result" role="status">{libs.result}</p>
+    {/if}
+  </div>
 
   <div class="panes">
     <LibraryPane side="left" />
@@ -79,9 +82,17 @@
   .top h2 {
     margin: 0;
   }
-  h3 {
+  .strip {
+    height: 52px;
+    flex: none;
+    display: flex;
+    align-items: center;
+    overflow: hidden;
+  }
+  .strip > * {
+    flex: 1;
     margin: 0;
-    font-size: 14px;
+    min-width: 0;
   }
   .lead {
     margin: 2px 0 0;
@@ -90,7 +101,7 @@
     border: 1px solid var(--line);
     border-radius: 6px;
     background: var(--panel);
-    padding: 10px 14px;
+    padding: 4px 14px 6px;
   }
   .result {
     margin: 0;

@@ -3,8 +3,8 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { libraryOptions } from "../sync/syncLogic.ts";
 import {
-  buildSelection, canCopy, clickSelect, clock, copyLabel, copySummary, defaultRight, dialogTitle, libraryNameFor, dragFrom, dragIds, dragLabel, emptySelected, linesOf,
-  num, onBoth, parseDragFrom, presenceOf, pruneTo, readButtonText, readsOnRequest, resolveDrop, rightOptions, rowsOf, selectionSize, statusText,
+  buildSelection, canCopy, clickSelect, clock, copyLabel, copySummary, defaultRight, readsAtOnce, footerText, sentenceName, dialogTitle, libraryNameFor, dragFrom, dragIds, dragLabel, emptySelected, linesOf,
+  num, onBoth, parseDragFrom, presenceOf, pruneTo, readButtonText, resolveDrop, rightOptions, rowsOf, selectionSize, statusText,
 } from "./librariesLogic.ts";
 
 const MB = 2 ** 20;
@@ -141,10 +141,15 @@ test("the right pane: not the open library, defaulting to the other kind, never 
   assert.equal(defaultRight(o2, pmOpen, ""), COMP, "a Pacemaker is open: the library on this computer");
   const o3 = libraryOptions({ path: COMP, exists: false }, ["G:\\"], pmOpen);
   assert.equal(defaultRight(o3, pmOpen, ""), "", "nothing else to show");
-  assert.equal(defaultRight(o, null, ""), "", "no library open");
-  assert.equal(readsOnRequest(o.find((x) => x.kind === "pacemaker")), true);
-  assert.equal(readsOnRequest(o.find((x) => x.kind === "computer")), false);
-  assert.equal(readsOnRequest(undefined), false);
+  assert.equal(defaultRight(o, null, ""), COMP, "no library open: the library on this computer, never a Pacemaker");
+  assert.equal(defaultRight(libraryOptions({ path: COMP, exists: false }, ["G:\\"], null), null, ""), "", "no library open and no computer library");
+  // the never-read-a-Pacemaker-on-its-own rule: this is the function the store asks
+  assert.equal(readsAtOnce("G:\\", ["G:\\"], [], false), false, "a detected Pacemaker waits for the button");
+  assert.equal(readsAtOnce("g:/", ["G:\\"], [], false), false, "however its root is spelt");
+  assert.equal(readsAtOnce("G:\\", ["G:\\"], [], true), true, "the button reads it");
+  assert.equal(readsAtOnce(COMP, ["G:\\"], [], false), true, "this computer is read when chosen");
+  assert.equal(readsAtOnce("G:\\", ["G:\\"], ["G:\\"], false), true, "a folder opened by hand is a deliberate choice");
+  assert.equal(readsAtOnce("", [], [], true), false, "nothing chosen, nothing read");
   assert.equal(readButtonText("G:\\"), "Read the Pacemaker (G:)");
 });
 
@@ -209,7 +214,15 @@ test("the summary sentence and whether the copy can run", () => {
   const nothing = plan([item("track:/t/1", "track", { type: "skip", reason: "already the same" })]);
   assert.equal(copySummary(nothing), "Nothing will be copied: all of it is there already.");
   assert.equal(canCopy(nothing), false);
+  const mixed = plan([item("track:/t/1", "track", { type: "skip", reason: "its analysis file (.str) is empty" }), item("track:/t/2", "track", { type: "skip", reason: "already the same" })]);
+  assert.equal(copySummary(mixed), "Nothing will be copied.", "no 'already there' when a row is skipped for another reason");
   assert.equal(canCopy(plan([])), false);
+  assert.equal(footerText(copyOnly, "This computer"), "Nothing on this computer is removed or overwritten. A copy of the database on this computer is saved before the first change.");
+  assert.match(footerText(plays, "Pacemaker (G:)"), /Play counts only go up/);
+  assert.match(footerText(plan([item("mix:a", "mix", { type: "replace" })]), "Pacemaker (G:)"), /changes mixes, cases or track details/, "never claims nothing changes when something would");
+  assert.equal(sentenceName("This computer"), "this computer");
+  const intoNames = plan([item("into-case:crate", "case", { type: "merge" }, { label: "Add 2 tracks to case Crate", into_case: "Crate", needs: [{ location: "/a", label: "A - One" }, { location: "/b", label: "B - Two" }] })]);
+  assert.deepEqual(linesOf(intoNames).acting[0].names, ["A - One", "B - Two"], "the into-case row names its tracks");
   const big = plan([item("track:/t/1", "track", { type: "copy" }, { bytes: 50 * MB })], { free_bytes: 10 * MB, fits: false });
   assert.equal(canCopy(big), false, "does not fit");
   assert.equal(dialogTitle("Pacemaker (G:)"), "Copy to Pacemaker (G:)?");

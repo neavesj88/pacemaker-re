@@ -18,7 +18,7 @@ import { session } from "$lib/state/session.svelte";
 import { device } from "../device/device.svelte";
 import { isStale, type LibOption } from "../sync/syncLogic";
 import {
-  buildSelection, canCopy, emptySelected, otherSide, selectionSize, STALE_COPY_TEXT,
+  buildSelection, canCopy, emptySelected, otherSide, readsAtOnce, selectionSize, STALE_COPY_TEXT,
   type PaneData, type Selected, type Side, type Tab,
 } from "./librariesLogic";
 
@@ -39,8 +39,9 @@ class LibrariesStore {
   rightRoot = $state("");
   /** Libraries chosen with "Open folder…", offered in the picker beside the detected ones. */
   folders = $state<LibOption[]>([]);
-  /** What was read for the right pane, by root. A Pacemaker read once is kept, so changing the
-   *  picker back and forth does not read it again. */
+  /** What was read for the right pane, by root. Kept while the picker moves back and forth, and
+   *  dropped (`invalidate`) when anything may have changed it: a job that wrote, a rescan, a
+   *  different open library, coming back to the view. A dropped Pacemaker waits for its button. */
   loaded = $state.raw<Map<string, PaneData>>(new Map());
   /** The root being read now, "" when none. */
   reading = $state("");
@@ -78,9 +79,10 @@ class LibrariesStore {
     return this.rightRoot ? (this.loaded.get(rootKey(this.rightRoot)) ?? null) : null;
   }
 
-  /** Clears what belongs to the library that was open: selections, searches, the dialog. What was read
-   *  for the right pane stays. */
+  /** Clears what belongs to the library that was open: selections, searches, the dialog, and what was
+   *  read for the right pane (it is read again on request). */
   reset() {
+    this.loaded = new Map();
     this.tab = { left: "tracks", right: "tracks" };
     this.search = { left: "", right: "" };
     this.selected = { left: emptySelected(), right: emptySelected() };
@@ -105,10 +107,23 @@ class LibrariesStore {
     this.readError = "";
     this.selected = { ...this.selected, right: emptySelected() };
     this.search = { ...this.search, right: "" };
-    if (root && !this.loaded.has(rootKey(root)) && (readNow || !this.#isPacemakerOption(root))) void this.read(root);
+    if (!this.loaded.has(rootKey(root)) && readsAtOnce(root, session.volumes, this.folders.map((f) => f.value), readNow)) void this.read(root);
   }
 
-  #isPacemakerOption = (root: string) => session.volumes.some((v) => sameRoot(v, root)) && !this.folders.some((f) => sameRoot(f.value, root));
+  /** Forgets everything read for the right pane because it may be out of date. A library on this
+   *  computer is read again at once; a Pacemaker only when the user presses its button. */
+  invalidate() {
+    this.loaded = new Map();
+    this.readError = "";
+    this.selected = { ...this.selected, right: emptySelected() };
+    if (this.rightRoot && readsAtOnce(this.rightRoot, session.volumes, this.folders.map((f) => f.value), false)) void this.read(this.rightRoot);
+  }
+
+  /** The Rescan button: looks for drives again and forgets what was read of the other library. */
+  async rescan() {
+    await session.refreshVolumes();
+    this.invalidate();
+  }
 
   /** Lists the library at `root` for the right pane (the button "Read the Pacemaker (G:)"). */
   async read(root: string) {
@@ -223,7 +238,11 @@ class LibrariesStore {
   /** job-done for "device-sync" (only the run this store started). The device store shows the
    *  toast; this keeps the sentence on screen and reads the library that was written again. */
   async onDone(ev: DoneEvent) {
-    if (ev.job !== JOB_SYNC || !this.running) return;
+    // any other job (a Sync-view run, an import) may have written the library the right pane shows
+    if (ev.job !== JOB_SYNC || !this.running) {
+      this.invalidate();
+      return;
+    }
     this.running = false;
     const cancelled = !!ev.error && ev.error.includes("Cancelled:");
     if (ev.error && !cancelled) this.fail(ev.error);
@@ -238,9 +257,7 @@ class LibrariesStore {
     const lib = session.library;
     if (lib && sameRoot(lib.root, t)) await session.load(lib.root, true);
     else if (this.rightRoot && sameRoot(this.rightRoot, t)) {
-      const keep = this.readError;
       await this.read(t);
-      if (!this.readError) this.readError = keep;
     }
     void session.refreshComputer();
   }

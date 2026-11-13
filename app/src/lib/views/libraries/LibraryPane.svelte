@@ -225,7 +225,10 @@
         {#each picker as o (o.value)}<option value={o.value}>{o.label}</option>{/each}
         <option value="__folder__">Open folder…</option>
       </select>
-      <Button small variant="ghost" title="Look for a connected Pacemaker" onclick={() => session.refreshVolumes()}>Rescan</Button>
+      <Button small variant="ghost" title="Look for a connected Pacemaker. What was read of the other library is forgotten" disabled={libs.busy} onclick={() => libs.rescan()}>Rescan</Button>
+      {#if data}
+        <Button small variant="ghost" title={`Read ${chosen?.label ?? "the library"} again`} disabled={libs.busy || !!libs.reading} onclick={() => libs.read(libs.rightRoot)}>Read again</Button>
+      {/if}
     {/if}
   </div>
 
@@ -236,10 +239,12 @@
         {#if session.computer?.exists}
           <Button variant="primary" onclick={() => session.computer && session.load(session.computer.path)}>Open the library on this computer</Button>
         {/if}
+      {:else if !libs.rightRoot && picker.length > 0}
+        <p>Choose a library above to see it here.</p>
       {:else if !libs.rightRoot}
         <p>There is no other library to show. Plug the Pacemaker into this computer (it appears as a drive) and press Rescan, or open a folder that holds a library.</p>
         <div class="row-actions">
-          <Button variant="primary" onclick={() => session.refreshVolumes()}>Rescan</Button>
+          <Button variant="primary" onclick={() => libs.rescan()}>Rescan</Button>
           <Button onclick={pickFolder}>Open folder…</Button>
         </div>
       {:else if libs.reading}
@@ -387,7 +392,10 @@
     gap: 6px;
     padding: 8px 10px;
     border-bottom: 1px solid var(--line);
-    min-height: 20px;
+    /* the same height whether it holds a name or the picker, so the two panes line up */
+    box-sizing: border-box;
+    height: 46px;
+    flex: none;
   }
   .who {
     display: flex;

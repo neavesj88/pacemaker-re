@@ -18,7 +18,8 @@
 //! [`plan_selection`] / [`apply_selection`] (in `selection`) do the same for only what the user
 //! picked (some tracks, mixes and cases, optionally tracks into a named case on the target): the
 //! picked items plus the tracks they need, found by indexed lookups instead of reading every row,
-//! decided by the same helpers, never removing anything.
+//! decided by the same helpers under settings that only add (see [`drag_settings`]): it never
+//! removes or overwrites anything on the target.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Component, Path, PathBuf};
@@ -33,6 +34,7 @@ use crate::{appfile, naming};
 /// Reason text of every item that needs nothing; planning again right after an apply gives only these.
 pub const SAME: &str = "already the same";
 /// Why a track or mix is not updated because the target's is the same age or newer.
+const LEAVE_TRACK: &str = "both have it and the setting leaves it as it is";
 const TARGET_NEWER_TRACK: &str = "the target's copy is the same age or newer";
 const TARGET_NEWER_MIX: &str = "the target's mix is newer";
 /// Detail of an item that only brings play counts over.
@@ -661,7 +663,7 @@ fn track_item(source: &Library, s: &TrackRow, t: Option<&TrackRow>, settings: &S
                 item.action = skip(SAME);
             } else {
                 let want_update = match settings.tracks_on_both {
-                    TracksOnBoth::Leave => Err("both have it and the setting leaves it as it is"),
+                    TracksOnBoth::Leave => Err(LEAVE_TRACK),
                     TracksOnBoth::Source => Ok(()),
                     TracksOnBoth::Newer => {
                         if s.int("date_modified").unwrap_or(0) > t.int("date_modified").unwrap_or(0) {
@@ -1032,6 +1034,7 @@ fn run_plan(
     let mut done_n = 0usize;
     let mut bytes_done = 0u64;
     let mut cancelled = false;
+    let mut failed_locs: HashSet<String> = HashSet::new();
     for idx in 0..items.len() {
         if !items[idx].action.acts() {
             continue;
@@ -1061,9 +1064,21 @@ fn run_plan(
             (ItemKind::Case, _) => copy_case(source, target, it, &settings),
         };
         results[idx].outcome = match res {
+            Ok(Outcome::Done) if it.kind == ItemKind::Case && it.action.acts() && it.action != SyncAction::Remove => {
+                // a case is made from the tracks that arrived: say so when a track it needs did not
+                let missing: Vec<String> = it.needs.iter().filter(|n| failed_locs.contains(&n.location)).map(|n| n.label.clone()).collect();
+                if missing.is_empty() {
+                    Outcome::Done
+                } else {
+                    Outcome::Failed { error: format!("the case was made without {}, which did not arrive on the target", names_list(&missing)) }
+                }
+            }
             Ok(o) => o,
             Err(e) => Outcome::Failed { error: e.to_string() },
         };
+        if it.kind == ItemKind::Track && matches!(results[idx].outcome, Outcome::Failed { .. }) {
+            failed_locs.extend(it.location.clone());
+        }
         if results[idx].outcome == Outcome::Done {
             bytes_done += it.bytes;
         }
@@ -1427,7 +1442,7 @@ fn copy_into_case(target: &mut Library, it: &SyncItem) -> Result<Outcome, Error>
 }
 
 mod selection;
-pub use selection::{plan_selection, IntoCase, Selection};
+pub use selection::{drag_settings, plan_selection, IntoCase, Selection};
 
 #[cfg(test)]
 mod tests;

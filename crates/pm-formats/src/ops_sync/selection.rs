@@ -2,8 +2,10 @@
 //! "put these tracks into this case on the target". The plan is a normal [`SyncPlan`] holding
 //! the picked items, the tracks the picked mixes and cases need (marked with
 //! [`SyncItem::needed_by`]), and at most one case item for the target case. It never removes
-//! anything. Every item is decided by the same rules as in the full plan (the track, mix and case
-//! helpers are shared, so the settings apply exactly alike).
+//! or overwrites anything on the target: the saved Sync settings are clamped by
+//! [`drag_settings`] so a drag only adds (a case is merged into, a same-named mix is kept beside
+//! the target's, a track already there is left as it is). The track, mix and case helpers are the
+//! full plan's, so every other rule is the same.
 //!
 //! The libraries are not walked: tracks are looked up by location and by id (both indexed) and
 //! the target by location, one query per few hundred picked items, so a drag of three tracks into
@@ -51,6 +53,19 @@ fn push_unique<T: Clone + Eq + std::hash::Hash>(out: &mut Vec<T>, seen: &mut Has
     }
 }
 
+/// The saved settings as a drag applies them. A drag adds to the target and never overwrites or
+/// takes out what is there, so the settings that would are replaced by their adding twin; the
+/// ones that already skip stay. (Plays are only ever raised, as in a full sync.)
+pub fn drag_settings(s: &SyncSettings) -> SyncSettings {
+    SyncSettings {
+        tracks_on_both: TracksOnBoth::Leave,
+        mixes_same_name: if s.mixes_same_name == MixesSameName::Skip { MixesSameName::Skip } else { MixesSameName::KeepBoth },
+        cases_same_name: if s.cases_same_name == CasesSameName::Skip { CasesSameName::Skip } else { CasesSameName::Merge },
+        remove_missing: false,
+        play_counts: s.play_counts,
+    }
+}
+
 /// Plans a sync of the `selection` of `source` into `target`. Reads only what the selection
 /// touches; writes nothing. `free` is the target's free space (the caller reads it).
 pub fn plan_selection(
@@ -62,6 +77,8 @@ pub fn plan_selection(
     free: Option<u64>,
 ) -> Result<SyncPlan, Error> {
     ensure_different(source, target)?;
+    let clamped = drag_settings(settings);
+    let settings = &clamped;
 
     // what was picked, once each, in the order given
     let (mut sel_locs, mut seen) = (Vec::new(), HashSet::new());
@@ -148,7 +165,13 @@ pub fn plan_selection(
     for loc in &all_locs {
         let picked = sel_locs.contains(loc);
         let mut item = match s_rows.get(loc) {
-            Some(s) => track_item(source, s, t_rows.get(loc), settings),
+            Some(s) => {
+                let mut it = track_item(source, s, t_rows.get(loc), settings);
+                if matches!(&it.action, SyncAction::Skip { reason } if reason == LEAVE_TRACK) {
+                    it.action = skip("it is already there, and a drag never changes a track on the target");
+                }
+                it
+            }
             None => {
                 let name = loc.rsplit('/').next().unwrap_or("").to_string();
                 let mut it = blank_item(format!("track:{loc}"), ItemKind::Track, name, skip(GONE));

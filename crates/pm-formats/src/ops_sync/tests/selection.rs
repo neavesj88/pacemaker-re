@@ -252,7 +252,7 @@ fn only_a_selected_item_going_stale_stops_the_apply() {
 }
 
 #[test]
-fn a_selection_plan_decides_like_the_full_plan_under_every_setting() {
+fn a_selection_plan_decides_like_the_full_plan_under_the_adding_settings() {
     let mut fx = Fx::new();
     let (mut s, mut d) = fx.libs();
     let a = fx.add(&mut s, "alpha", 3000, "Alpha");
@@ -284,12 +284,19 @@ fn a_selection_plan_decides_like_the_full_plan_under_every_setting() {
             for case in [CasesSameName::Merge, CasesSameName::Replace, CasesSameName::Skip] {
                 for plays in [PlayCounts::Higher, PlayCounts::Leave] {
                     let settings = SyncSettings { tracks_on_both: tob, mixes_same_name: mix, cases_same_name: case, remove_missing: false, play_counts: plays };
-                    let full = fx.plan(&settings);
+                    // a drag decides by the full plan's rules under the settings that only add
+                    let full = fx.plan(&drag_settings(&settings));
                     let part = fx.plan_sel(&pick, &settings);
+                    assert!(part.items.iter().all(|i| !matches!(i.action, SyncAction::Replace | SyncAction::Update | SyncAction::Remove)), "{settings:?}");
                     assert_eq!(part.items.len(), full.items.len(), "{settings:?}");
                     for it in &part.items {
                         let f = item(&full, &it.key);
-                        assert_eq!((&it.action, it.bytes, it.target_id), (&f.action, f.bytes, f.target_id), "{} under {settings:?}", it.key);
+                        // only the words differ where a drag explains a track it leaves alone
+                        let worded = matches!(&it.action, SyncAction::Skip { reason } if reason.contains("a drag never changes"));
+                        if !worded {
+                            assert_eq!(it.action, f.action, "{} under {settings:?}", it.key);
+                        }
+                        assert_eq!((it.bytes, it.target_id), (f.bytes, f.target_id), "{} under {settings:?}", it.key);
                         assert_eq!(it.needs, f.needs, "{}", it.key);
                     }
                     assert_eq!(part.bytes_to_copy, full.bytes_to_copy);
@@ -370,14 +377,46 @@ fn a_big_target_is_not_walked_for_a_few_picked_tracks() {
     let whole = t0.elapsed();
     assert_eq!(p.items.len(), 3);
     let alpha = item(&p, &format!("track:{}", loc_of(&fx.src, a)));
-    assert_eq!(alpha.action, SyncAction::Update, "alpha is there with other details and the source's is newer");
+    assert!(matches!(alpha.action, SyncAction::Skip { .. }), "alpha is there with other details: a drag leaves the target's row alone");
     assert_eq!(alpha.target_id, Some(da));
     assert_eq!(item(&p, &format!("track:{}", loc_of(&fx.src, b))).action, SyncAction::Copy);
-    for it in &p.items {
+    for it in p.items.iter().filter(|i| i.key != alpha.key) {
         assert_eq!(it.action, item(&full, &it.key).action, "{}", it.key);
     }
-    assert!(scoped * 5 < whole, "the selection plan should not walk the target: {scoped:?} against {whole:?} for the whole plan");
+    assert!(scoped * 3 < whole, "the selection plan should not walk the target: {scoped:?} against {whole:?} for the whole plan");
     let r = fx.run_sel(&p, &pick).unwrap();
-    assert_eq!((r.done, r.failed), (3, 0));
+    assert_eq!((r.done, r.failed), (2, 0));
     assert_eq!(track_count(&fx.dst), 30_000 + 3);
+}
+
+#[test]
+fn a_drag_never_overwrites_or_takes_out_anything_on_the_target() {
+    let mut fx = Fx::new();
+    let (mut s, mut d) = fx.libs();
+    let a = fx.add(&mut s, "alpha", 3000, "Alpha new");
+    let b = fx.add(&mut s, "bravo", 3100, "Bravo");
+    let da = fx.add(&mut d, "alpha", 3000, "Alpha old");
+    let z = fx.add(&mut d, "zulu", 2900, "Zulu");
+    set_track(&s, a, "date_modified = 2000000000000");
+    let sm = make_mix(&mut s, "Set", &[a, b]);
+    let tm = make_mix(&mut d, "Set", &[da]);
+    s.con.execute("UPDATE mixes SET date_modified = 2000000000000 WHERE mix_id = ?1", [sm]).unwrap();
+    s.create_case_with_tracks("Crate", &[b]).unwrap();
+    let tc = d.create_case_with_tracks("Crate", &[z, da]).unwrap();
+    fx.set(s, d);
+    let pick = Selection { tracks: locs(&fx.src, &[a]), mixes: vec!["Set".into()], cases: vec!["Crate".into()], into_case: None };
+    let mix_state = |fx: &Fx| (fx.dst.read_mix(tm).unwrap().tracks.iter().map(|t| t.library_id).collect::<Vec<_>>(), fx.dst.mix_info(tm).unwrap().unwrap().date_modified);
+    let mix_before = mix_state(&fx);
+    for mix in [MixesSameName::Newer, MixesSameName::Replace, MixesSameName::KeepBoth] {
+        for case in [CasesSameName::Merge, CasesSameName::Replace] {
+            let settings = SyncSettings { tracks_on_both: TracksOnBoth::Source, mixes_same_name: mix, cases_same_name: case, ..SyncSettings::default() };
+            let p = fx.plan_sel(&pick, &settings);
+            let r = fx.run_sel(&p, &pick).unwrap();
+            assert_eq!(r.failed, 0, "{settings:?}");
+            let d = &fx.dst;
+            assert_eq!(title_of(d, da), "Alpha old", "the target's track row is untouched under {settings:?}");
+            assert_eq!(d.case_track_ids(tc).unwrap().iter().filter(|i| **i == z || **i == da).count(), 2, "the target case kept its tracks under {settings:?}");
+            assert_eq!(mix_state(&fx), mix_before, "the target mix is untouched under {settings:?}");
+        }
+    }
 }

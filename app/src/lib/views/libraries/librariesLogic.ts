@@ -201,14 +201,22 @@ export const rightOptions = (options: LibOption[], open: { root: string } | null
 export function defaultRight(options: LibOption[], open: { root: string; kind: LibraryKind } | null, current: string): string {
   const cand = rightOptions(options, open);
   if (current && cand.some((o) => sameRoot(o.value, current))) return current;
-  if (!open) return "";
+  // nothing open: the library on this computer is safe to show; a Pacemaker waits for the user
+  if (!open) return cand.find((o) => o.kind === "computer")?.value ?? "";
   const want: LibraryKind = open.kind === "pacemaker" ? "computer" : "pacemaker";
   return (cand.find((o) => o.kind === want) ?? cand[0])?.value ?? "";
 }
 
-/** A detected Pacemaker is read only when the user presses the button; anything on this computer is
- *  read as soon as it is chosen. */
-export const readsOnRequest = (opt: LibOption | undefined) => opt?.kind === "pacemaker";
+/** Whether choosing `root` for the right pane reads it at once. A detected Pacemaker (a volume that was
+ *  not added by hand with "Open folder…") is read only when the user presses the button (`readNow`),
+ *  because its drive may be ageing; anything on this computer, and a folder chosen by hand, is read
+ *  as soon as it is chosen. */
+export function readsAtOnce(root: string, volumes: readonly string[], folders: readonly string[], readNow: boolean): boolean {
+  if (!root) return false;
+  if (readNow) return true;
+  const detected = volumes.some((v) => sameRoot(v, root)) && !folders.some((f) => sameRoot(f, root));
+  return !detected;
+}
 
 /** "Read the Pacemaker (G:)" for the Pacemaker whose root is given. */
 export const readButtonText = (root: string) => `Read the ${libraryLabel("pacemaker", root)}`;
@@ -233,6 +241,8 @@ export type Line = {
   name: string;
   /** "Copy", "Update", "Skip", "Add to case Crate", ... */
   action: string;
+  /** The tracks an "Add to case" row puts in the case (their names), else empty. */
+  names: string[];
   /** The reason: "Needed by mix "Set"", "already there", ... */
   why: string;
   /** Something happens to the target. */
@@ -254,7 +264,7 @@ const ACTION: Record<string, string> = {
 /** One row of the dialog: the item's name, what is done and why, each in words. */
 export function lineOf(i: SyncItem, plan: SyncPlan): Line {
   const a = i.action;
-  const base = { key: i.key, kind: i.kind, name: i.label, bytes: i.bytes };
+  const base = { key: i.key, kind: i.kind, name: i.label, bytes: i.bytes, names: [] as string[] };
   if (a.type === "skip") {
     const same = a.reason === SAME;
     return { ...base, action: "Skip", why: same ? "already there" : a.reason, acts: false, same };
@@ -262,7 +272,7 @@ export function lineOf(i: SyncItem, plan: SyncPlan): Line {
   if (i.into_case !== null) {
     // the label says it all ("Add 2 tracks to case X"); the row says the action first and the rest after it
     const rest = a.type === "copy" ? i.label.replace(/^New case /, "") : i.label.replace(/^Add (.*) to case .*$/s, "$1");
-    return { ...base, name: rest, action: a.type === "copy" ? "New case" : `Add to case ${i.into_case}`, why: i.detail, acts: true, same: false };
+    return { ...base, name: rest, names: i.needs.map((n) => n.label), action: a.type === "copy" ? "New case" : `Add to case ${i.into_case}`, why: i.detail, acts: true, same: false };
   }
   const action = a.type === "copy_as_new" ? `Copy as "${a.name}"` : (ACTION[a.type] ?? a.type);
   let why = "";
@@ -284,6 +294,9 @@ export function linesOf(plan: SyncPlan): Lines {
   }
   return out;
 }
+
+/** A library's name inside a sentence: "this computer", "Pacemaker (G:)". */
+export const sentenceName = (name: string) => name.replace(/^This computer/, "this computer");
 
 const lowerFirst = (s: string) => s.charAt(0).toLowerCase() + s.slice(1);
 
@@ -307,7 +320,23 @@ export function copySummary(plan: SyncPlan): string {
   if (mixes) p.push(`bring ${plural(mixes, "mix", "mixes")}`);
   if (cases) p.push(`bring ${plural(cases, "case")}`);
   p.push(...into);
-  return p.length === 0 ? "Nothing will be copied: all of it is there already." : `Will ${p.join(", ")}.`;
+  if (p.length > 0) return `Will ${p.join(", ")}.`;
+  // only say "already there" when that is the reason for every row; the rows give the others
+  const allThere = plan.items.every((i) => i.action.type === "skip" && i.action.reason === SAME);
+  return allThere ? "Nothing will be copied: all of it is there already." : "Nothing will be copied.";
+}
+
+/** The dialog's closing line: what a copy leaves alone on the target, said from the plan. A drag only
+ *  adds, so this is the usual line; if a plan ever did replace or update something it names that
+ *  instead of claiming nothing changes. */
+export function footerText(plan: SyncPlan, targetName: string): string {
+  const where = sentenceName(targetName);
+  const changes = plan.items.some((i) => i.action.type === "replace" || i.action.type === "update");
+  const plays = plan.items.some((i) => i.action.type === "update_plays");
+  const head = changes
+    ? `This changes mixes, cases or track details that are already on ${where}.`
+    : `Nothing on ${where} is removed or overwritten.${plays ? " Play counts only go up." : ""}`;
+  return `${head} A copy of the database on ${where} is saved before the first change.`;
 }
 
 /** Whether there is anything to run and it fits. */

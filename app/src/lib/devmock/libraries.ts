@@ -9,6 +9,9 @@
 // case pulls its tracks (marked needed-by), tracks dropped on a case go into it, and a track whose
 // .str is missing is skipped with the reason (the mock's "needs analysis" tracks 11 and 18).
 //
+// Opening P:\ (library.ts) gives this separate Pacemaker library, which has no needs-analysis
+// tracks, so the preview's Pacemaker cannot show the re-analyse states the computer library does.
+//
 // `?big=1` makes the Pacemaker 30 000 tracks long.
 // Picked up automatically by devmock/index.ts; library.ts reads `libraryFor` for open_library.
 import { libraryKind } from "../state/place";
@@ -61,7 +64,7 @@ const pm: MockLib = {
     { id: 3, name: "Crate A", play_time_secs: 0, track_count: 0, ids: [] },
   ],
 };
-// tracks the Pacemaker has with other details: copying them over is an update
+// tracks the Pacemaker has with other details: a drag leaves them as they are and says so
 const UPDATES = new Set([demoTracks[4].location, demoTracks[5].location]);
 
 export const libraryFor = (root: string): MockLib => (libraryKind(root) === "pacemaker" ? pm : computer);
@@ -144,10 +147,8 @@ function planOf(a: Record<string, any>) {
         else it.bytes = s.file_size + 4096;
       } else {
         it.target_id = t.track_id;
-        if (UPDATES.has(loc) && S === computer) {
-          it.action = { type: "update" };
-          it.bytes = 4096;
-        } else it.action = skip(SAME);
+        // the engine never changes a track the target has, even with other details (drag_settings)
+        it.action = UPDATES.has(loc) && S === computer ? skip("it is already there, and a drag never changes a track on the target") : skip(SAME);
       }
       if (!picked.includes(loc)) it.needed_by = needed.get(loc) ?? [];
     }

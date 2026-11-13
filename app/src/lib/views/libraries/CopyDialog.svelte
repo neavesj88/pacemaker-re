@@ -3,16 +3,23 @@
   import WideModal from "../device/WideModal.svelte";
   import { ROW_CAP, ROW_MORE, sizeText } from "../sync/syncLogic";
   import { libs } from "./libraries.svelte";
-  import { canCopy, copySummary, dialogSpace, dialogTitle, libraryNameFor, linesOf, type Line } from "./librariesLogic";
+  import { canCopy, copySummary, dialogSpace, dialogTitle, footerText, libraryNameFor, linesOf, type Line } from "./librariesLogic";
 
   // The question before a copy: every item the plan holds, with what is done to it and why, the size
-  // and the room on the other side. Copy runs exactly this plan. Nothing here can remove anything.
+  // and the room on the other side. Copy runs exactly this plan. A copy only adds to the target (the engine
+  // clamps the Sync settings for it), and the footer is worded from the plan.
   const p = $derived(libs.pending);
   const lines = $derived(p ? linesOf(p.plan) : { acting: [], skipped: [], same: [] });
   const space = $derived(p ? dialogSpace(p.plan) : null);
   const ok = $derived(!!p && canCopy(p.plan));
   const targetName = $derived(p ? libraryNameFor(p.target) : "");
   const sourceName = $derived(p ? libraryNameFor(p.source) : "");
+
+  // the tracks an "Add to case" row puts in, named (the first few, then how many more)
+  const NAMES_SHOWN = 4;
+  const namesText = (n: string[]) => n.slice(0, NAMES_SHOWN).join("; ") + (n.length > NAMES_SHOWN ? `; and ${n.length - NAMES_SHOWN} more` : "");
+  // the plan note is about smart cases: only worth saying when a case is part of the copy
+  const notes = $derived(p && p.plan.items.some((i) => i.kind === "case" && i.into_case === null) ? p.plan.notes : []);
 
   let showSame = $state(false);
   let extra = $state(0);
@@ -44,6 +51,7 @@
           <span class="name" title={l.name}>{l.name}</span>
           {#if l.acts && l.kind === "track" && l.bytes > 0}<span class="size muted">{sizeText(l.bytes)}</span>{/if}
           {#if l.why}<span class="why muted">{l.why}</span>{/if}
+          {#if l.names.length > 0}<span class="tracks muted" title={l.names.join(", ")}>{namesText(l.names)}</span>{/if}
         </li>
       {/each}
     </ul>
@@ -55,8 +63,8 @@
         <Button small variant="link" onclick={() => (showSame = !showSame)}>{showSame ? "Hide" : "Show"} the {lines.same.length} already there</Button>
       {/if}
     </div>
-    {#each p.plan.notes as n (n)}<p class="muted note">{n}</p>{/each}
-    <p class="muted note">Nothing is removed from either library. A copy of {targetName}'s database is saved before the first change.</p>
+    {#each notes as n (n)}<p class="muted note">{n}</p>{/each}
+    <p class="muted note">{footerText(p.plan, targetName)}</p>
 
     {#snippet actions()}
       <Button data-autofocus onclick={() => libs.cancelPending()}>Cancel</Button>
@@ -92,6 +100,7 @@
     border-radius: 4px;
   }
   li {
+    flex-wrap: wrap;
     display: flex;
     align-items: baseline;
     gap: 8px;
@@ -133,6 +142,11 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+  .tracks {
+    flex: 1 1 100%;
+    padding-left: 82px;
+    font-size: 12px;
   }
   .more {
     display: flex;

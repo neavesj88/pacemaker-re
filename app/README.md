@@ -16,7 +16,8 @@ Sync to merge it with a Pacemaker either way (a preview first; see `ops_sync` an
 The Libraries view puts two libraries side by side (the open one and another, a Pacemaker only read
 when you press its button): drag tracks, mixes or cases from one pane to the other to copy them
 (tracks dropped on a case row go into that case), or use "Copy to ..." and the row menu. A list
-names every item and what is done to it before anything is written; nothing is ever removed.
+names every item and what is done to it before anything is written; a copy only adds: nothing on
+the target is removed or overwritten.
 A folder opened by hand counts as a library on this computer; only a drive root or a mount point
 is a Pacemaker. Also: find a docked Pacemaker (or open a folder holding `.Pacemaker`), check the
 database against the device's rules, and browse tracks, mixes and cases (a case lists its
