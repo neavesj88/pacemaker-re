@@ -106,7 +106,8 @@ ipagui), and the stock lang files already contain it as `C2 A9`.
 Also found, outside About and not touched by this plan: `Tonium AB` in the `author=` strings of `evrout.ko` and `pmic_input.ko`
 (module metadata), `Tonium` as the USB manufacturer string in `boot/redboot.bin`, the DFU name `DFU Gadget`, and a second
 `english.lang` in the cramfs at `/usr/local/share/fonts/english.lang` (read by pwrApplication, not by the About screen). Those
-are not About-screen text; changing the first two means rebuilding kernel modules or the bootloader and is out of scope.
+are not About-screen text. This was the state when 074 first built; the "Tonium sweep" section at the end takes all of them
+(except the bootloader string) out of the same 074 image.
 
 ## Patch plan
 
@@ -152,7 +153,7 @@ Build notes for `scripts/build-pfw.sh`:
   (`/bin/resources` only has `fonts` and `symbols`), and `add()` refuses a missing parent. build-pfw.sh needs a
   small `mkdir` feature (debugfs `mkdir`, owner and mode copied from `/bin/resources`) before the licence files go in.
 - Image free space was not checked here (adds about 13 KB + 18 KB + 26 KB); `e2fsck -fn` at the end of build-pfw.sh will catch a full image.
-- The rootfs copy of english.lang (cramfs) is not read by the About screen; leave it.
+- The rootfs copy of english.lang (cramfs) is not read by the About screen; the first 074 build left it alone, the Tonium sweep changes its string 49.
 
 ## What must NOT be changed
 
@@ -226,3 +227,154 @@ If the Model value clips on the device, shorten `MODEL` in `scripts/patch-about.
 came out as 0777, so every replaced file was world-writable (073 had this for english/japanese.lang and the kernel modules too).
 It now builds the mode as `0100000 | 8#$m`, so replaced files keep the mode of the file they replace. Checked in the built
 074 image: pmplayer and pmplayer.real 0755, the three lang files 0644, zImage 0755, cramfs.little 0644.
+
+## Tonium sweep (firmware 180096074, same version number, not installed yet)
+
+Request: replace every remaining "Tonium" in the firmware with Pacemaker Revival wording, except the functional
+identifiers and the bootloader. Three independent read-only sweeps (Ghidra on pwrApplication and pmplayer, a raw scan
+of the unpacked image, the extracted cramfs and the decompressed kernel, narrow / UTF-16 / UTF-32, case-insensitive,
+file names too) found the same set; `scripts/sweep-tonium.py` repeats that scan on any unpacked tree and fails on
+anything outside its keep list. On the stock 180096069 tree it reports 22 unexpected hits (rows 1 to 7 below) and 10
+kept ones; on the built 074 image it reports 0 unexpected and 11 kept. Nothing below has run on hardware.
+
+| # | where (stock offsets) | text | who sees it | decision | patch |
+|---|---|---|---|---|---|
+| 1 | kernel (decompressed 0x24df14, gzip payload of boot/zImage) | `Tonium Pacemaker (MX31)` = `machine_desc.name` of MX31ADS | dmesg `Machine:` line and `Hardware` in /proc/cpuinfo only; nothing parses it | patched | `scripts/patch-kernel-name.py` -> `Pacemaker Revival` |
+| 2 | rootfs `evrout.ko` .modinfo | `author=Tonium AB.` | `modinfo` from a shell only | patched | `scripts/patch-modinfo.py` -> `author=Revival contributors` |
+| 3 | rootfs `pmic_input.ko` .modinfo | `author=Tonium AB` | same | patched | same script, same wording |
+| 4 | rootfs cramfs `/usr/local/share/fonts/english.lang` | `49 "(c) Tonium"` | nobody: pwrApplication never fetches string 49 | patched | `patch-about.py lang` -> `49 "(c) Revival contributors"`, passed to build-rootfs.sh; first asserted byte-identical to the image's stock english.lang |
+| 5 | image `/bin/libcontainer_{aiffc,flac,id3,mp3,mpeg4,ogg,snd,wav}.so`, UTF-32LE | `<FMT> container plugin by Tonium AB` (8) | nobody (dead data, see below) | patched | `scripts/patch-plugin-strings.py` -> `<FMT> container plugin (Revival)` |
+| 6 | same 8 libraries | `(C) 2007, Tonium AB. All rights reserved - all wrongs reversed` (8) | nobody | patched, see the attribution note | -> `Pacemaker Revival - all wrongs reversed` |
+| 7 | image `/bin/libdecoder_{aac,au,flac,mp3,pcm,vorbis}.so`, UTF-32LE | `<FMT> decoder plugin by Tonium` (6) | nobody | patched | -> `<FMT> decoder plugin (Revival)` (same length) |
+| 8 | image `boot/redboot.bin` 0x1ef3c | `Tonium` + pad = USB iManufacturer of the DFU gadget | Windows USB descriptor viewers in DFU mode only (not dfu-util; this PC's Device Manager shows no manufacturer for it) | **left byte-identical** | none (see below) |
+| 9 | `pwrApplication` 0x1b889c / 0x1b88ac, `pmplayer` 0x88a260 area | `com.tonium.peer`, `com.tonium.app_pid` | nobody; DirectFB window property keys (not X11), read back by the same process | kept: functional | none |
+| 10 | `pmplayer` | `toniumId` (boost tag, narrow + UTF-32), `Tonium;Device;` (UTF-32 creator id in music.db), C++ symbols `setToniumId` / `getToniumId` in the hash tables | nobody on screen; mixes, music.db and the Editor use them | kept: functional | none |
+| 11 | image `/bin/resources/licenses/THIRD-PARTY-NOTICES.txt` | `Tonium AB` x3 inside the verbatim original legal text and GPL source offer | nobody on the device; part of the image | kept verbatim: it is the original legal text that Legal notice points to | none |
+| 12 | USB mass-storage descriptors (g_file_storage.ko etc.) | no Tonium text at all (`Linux File-Stor Gadget`, VID 1D5E) | Windows | nothing to do; VID/PID untouched | none |
+
+Nothing else exists: no other .ko, no other binary, no Tonium in /etc, no file name, ext3 label or .pfw trailer text. The
+compressed `boot/zImage` and `boot/cramfs.little` are swept in their decompressed form (rows 1 to 4). The four-dot P logo
+bitmaps in the rootfs are a mark, not text, and FINDINGS 5c records them as unused; they are not touched.
+
+### Row 1: kernel machine name
+
+`MACHINE_START(MX31ADS, ...)` is a `struct machine_desc` at decompressed offset 0x1516c: `nr` 0x1bf at +0, `phys_io`
+0x43f00000, `io_pg_offst` 0x3500, `name` pointer at +12 (0x15178) = 0xC0255F14, `boot_params` 0x80000100. The name string
+is 24 bytes with `pm_keypad` right behind it, and that pointer is the only word that references it. RedBoot passes the
+machine type number (0x1bf) in r1 and the kernel picks the board by number, never by name; the name is only printed
+(`Machine: %s`, `Hardware : %s`). No userland reads it: pmplayer, pwrApplication, eventSequencer and pmptest contain
+`/proc/cpuinfo` only through their static libc and none contains `Hardware`.
+
+Patch: the 24-byte slot gets `Pacemaker Revival` + NUL fill (17 of the 23 usable characters). The type number and the
+pointer are asserted unchanged, so the board still matches; no other kernel byte changes. `Pacemaker Revival (MX31)`
+(24 chars) would not fit and needs the pointer moved, which was not worth it for a dmesg line. The script starts from
+the kernel 073 proved on hardware (`work/build/073/zImage-revival`, sha256 `547d8e1b...ac505`) and takes the gzip
+header and the compressed span from the stock zImage (sha256 `4d7ad831...a1df3`), recompresses with the same chooser
+as the logo step (zlib -9 or 7-Zip, whichever is smaller; zlib alone is about 1 435 900 bytes against a span of
+1 429 194 and does not fit, 7-Zip gives 1 370 584), zero-fills to the end of the span and keeps the CRC32/ISIZE trailer.
+Result: 1 442 000 bytes (same as stock), payload 1 370 601 of 1 429 194 (58 593 spare), 23 kernel bytes differ from the
+073 kernel, all inside the name slot; sha256 `1178c1310cab8956519d16f2a2a3c49b9d0a77209c98c904c0bfa9dfb7fca46b`.
+`--verify` re-checks that without 7-Zip (the 074 build script calls it, because WSL has no 7-Zip); the recompression
+itself runs on Windows:
+
+    tools/venv/Scripts/python scripts/patch-kernel-name.py work/fw-180096069/boot/zImage work/build/073/zImage-revival work/build/074/zImage-revival-name
+
+No Pillow is needed for it (`patch-kernel-logo.py` now imports it only inside its own main()).
+
+The kernel is flashed to NOR (mtd2/3) by the update, so a bad stream would not boot; DFU recovery exists. Mitigation: the
+decompressed result is asserted equal to the 073 kernel plus the name, every byte outside the payload span is asserted
+identical to stock, and the gzip CRC/length are checked. The boot itself needs a hardware test like 073 had.
+
+### Rows 2 and 3: module author tags
+
+`.modinfo` is a list of NUL-separated strings. The 2.6.19 loader (and module-init-tools) walks it for `vermagic`
+(modprobe also for `depends` and `alias`); `author` is never matched. Re-packing the strings tightly gives 176 bytes
+(evrout) and 133 bytes (pmic_input) against sections of 184 and 140 bytes, so `author=Revival contributors` (27 bytes with
+its NUL) does not fit in either. `patch-modinfo.py` therefore moves `.modinfo` to the end of the file (4-byte aligned),
+changes only that section's `sh_offset` and `sh_size` in the section header, and zeroes the old bytes so no Tonium is left.
+A relocatable .ko has no program headers, `.modinfo` has no relocations or symbols and nothing refers to it by offset, so
+no other byte changes (asserted: only the .modinfo header entry differs, all other bytes identical, alignment and bounds
+checked). evrout.ko 13 256 -> 13 444 bytes, pmic_input.ko 5 208 -> 5 352 bytes. If the new author did fit, the script
+writes it in place instead (tested with a short author).
+
+Checked on the built rootfs: readelf parses both files (21 sections, `.modinfo` at 0x33c8 and 0x1458) and the real
+module-init-tools `modinfo` from the device rootfs, run under qemu-arm-static in a chroot of the extracted cramfs, prints
+`author: Revival contributors` plus unchanged description, license, `vermagic: 2.6.19.2 preempt mod_unload ARMv6`,
+`depends` and `alias`. Not verified: that the 2.6.19.2 kernel's own `load_module` accepts the moved section. The kernel
+source is not in the GPL drop here; from memory it reads sections only through `sh_offset`/`sh_size`, checks
+`sh_offset + sh_size <= len` and clears SHF_ALLOC on `.modinfo`, but that was not re-read. A module that failed to load
+would cost the event router or the PMIC input driver (no buttons). The fallback is a short author that fits in place:
+`patch-modinfo.py IN OUT "Revival crew"` writes it without moving anything.
+
+### Row 4: cramfs english.lang
+
+`scripts/patch-about.py lang` on the stock cramfs file; the build script first asserts that file is byte-identical to the
+image's stock `/bin/resources/fonts/english.lang`. Only string 49 changes (UTF-8, `fromUTF8`, same as the image copies).
+build-rootfs.sh rebuilds the cramfs and re-verifies metadata and that exactly the intended files differ.
+
+### Rows 5 to 7: audio plugin libraries
+
+14 libraries, 22 UTF-32LE strings (the sweep's count matches a direct search: 8 x 2 + 6). They are filled into a plugin
+description by `<Fmt>Container::info` / `<Fmt>Decoder::info`; in pmplayer the only reader of a container description
+(`AudioPluginManager::getContainerPluginDescs`) has no caller, `getContainerPlugin` calls `info(NULL)` and the decoder
+path calls vtable slot +0xc, never +8. By static analysis nobody ever shows or logs them (not proven by execution).
+The strings are packed back to back, so nothing may grow: each is overwritten in place with the new text and zero fill
+(the terminating NUL cell stays). Per library: stock sha256 asserted, every string asserted at its exact offset, output
+differs from stock only inside those strings (container libs 70 bytes, decoder libs 9 bytes), no Tonium left. A scan of
+each library for absolute words pointing into the strings found pointers to the string starts (relocation and GOT words)
+plus one aligned word that may be an interior pointer (libdecoder_flac, to the tail ` plugin by Tonium`; not
+checked whether it is one). It would stay valid anyway, because the decoder replacement keeps the length and the tail text.
+
+Attribution note, stated once: row 6 is the copyright line of Tonium AB for the plugin code they wrote, and rows 5 and 7
+name them as the author. Following the request they are replaced, but the replacement for row 6 carries no `(C)` and no
+"all rights reserved", so it is a name tag and not a claim of copyright over Tonium's code. Row 11 (the verbatim legal
+notices that Legal notice points to, which also hold the GPL source offer) is kept as it is for the same reason; if the
+owner wants those three mentions edited too, say so.
+
+### Row 8: boot/redboot.bin stays byte-identical
+
+`boot/redboot.bin` (sha256 `636cea0b...d40db`, 144 116 bytes) holds `Tonium` at 0x1ef3c (8-byte slot, usb_string table
+entry at 0x227b4 -> 0x87f1ef3c). It is only the DFU gadget's iManufacturer string. Why it is not patched:
+
+- A `.pfw` flashes the bootloader only if its trailer `bootloaderver` differs from the number stored at byte 4 of
+  /dev/mtd/1 (decompiled `SWUpgrade::isBootLoaderVersionEqual` 0x6eea0 and `startFwUpgrade` 0x70630 in pwrApplication).
+  The content of redboot.bin is never compared. Every Revival image keeps 12838, so a changed redboot.bin inside it would
+  be silently ignored. To make it flash, `bootloaderver` would have to rise (any value above 12837 is accepted) and the two
+  12838 constants inside RedBoot (0x7488, 0x7904) would have to match, or the unit would reflash it on every later update.
+- The write path (`mtdWrite` 0x6f0dc: flash_eraseall /dev/mtd/0, write, read back and compare) has no backup, no
+  rollback and no A/B for mtd0. A power cut after the erase leaves no RedBoot, and RedBoot is the DFU recovery. The path
+  has never run on this device line (all seven shipped images carry 12838).
+- The benefit is one string in a USB descriptor that this PC's Device Manager does not even show.
+
+The build script asserts that the image's `/boot/redboot.bin` has the stock sha256 and that the trailer says
+`bootloaderver=12838`, so a later change cannot flash the bootloader by accident. The owner decides separately; if wanted,
+treat it as its own opt-in image with a proven hardware recovery path first. `Revival` (7 characters) is what fits the
+slot without moving the pointer.
+
+### Build, tests, result
+
+`scripts/build-180096074.sh` now also: verifies the kernel (`patch-kernel-name.py --verify`), builds `evrout.ko`,
+`pmic_input.ko`, the 14 plugin libraries and the cramfs english.lang, passes the first three to build-rootfs.sh
+(`/lib/modules/.../evrout.ko=`, `.../pmic_input.ko=`, `/usr/local/share/fonts/english.lang=`) and the libraries to
+build-pfw.sh (`/bin/<lib>=`), and after the build extracts the image and the cramfs and checks: redboot.bin stock,
+`/boot/zImage` equals the verified kernel, trailer `bootloaderver=12838`, `fwver=180096074`, md5 OK, then
+`sweep-tonium.py --zimage ...` over the image tree, the rootfs and the decompressed kernel (11 kept, 0 unexpected).
+
+Tests: `PM_WORK=<work dir> python scripts/test-tonium-sweep.py` (18 tests: name slot, type number and pointer; only the
+name differs from the 073 kernel; refusal of patched or wrong zImages; the built zImage re-verified and independently
+gunzipped; modinfo of both modules read back the way the loader walks it, in-place and moved variants, refusals, no other
+module mentions Tonium; all 14 libraries and 22 strings, wording, coverage of every stock Tonium string, refusals; cramfs
+english.lang equals stock plus string 49 only; build script wiring and no redboot replacement; sweep tokenizer and keep
+list) and `scripts/test-patch-about.py` (14 tests, unchanged), all passing.
+
+Built image `work/build/pacemaker-revival-180096074.pfw`, 51 200 512 bytes (the trailer uid is random per build, so the
+hash changes with every rebuild): sha256 `5925b2ccc7ce928122d48697a676bc376508893382f40c07d597dee6fec6f26f`; cramfs
+(deterministic) `work/build/cramfs-180096074.little`, 10 715 136 bytes, sha256
+`2b59737df7b7e2f866975fadc1a6c1dab8b4c08761080431c975490d263440e6`. e2fsck clean. A file-level diff against the first 074
+build (kept as `pacemaker-revival-180096074.pfw.prev-pre-sweep`, sha256 `62c9e21d...b2b15`) shows only the 14 plugin
+libraries, `boot/zImage`, `boot/cramfs.little` and, inside the cramfs, evrout.ko, pmic_input.ko and
+`/usr/local/share/fonts/english.lang`. The version stays 180096074 because it has not been installed yet.
+
+Unverified: everything on hardware (boot with the renamed kernel, loading the two modules with the moved `.modinfo`, music
+playback with the patched plugin libraries); the "dead data" verdict for the plugin strings is static analysis; whether
+the 2.6.19.2 loader treats the moved section as described above.

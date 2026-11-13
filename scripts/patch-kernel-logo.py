@@ -21,8 +21,6 @@ import sys
 import tempfile
 import zlib
 
-from PIL import Image
-
 BASE = 0xC0008000           # kernel virtual address of the decompressed image's first byte
 LOGO_OFF = 99072            # struct linux_logo of the 240x320 CLUT224 logo, verified for 180096069
 W, H, MAX_COLOURS = 240, 320, 81
@@ -71,6 +69,8 @@ def deflate(data: bytes) -> bytes:
 
 
 def main() -> None:
+    from PIL import Image  # only the logo step needs Pillow; patch-kernel-name.py imports gzip_parts/deflate from here
+
     stock_path, logo_path, out_path = sys.argv[1:4]
     z = open(stock_path, "rb").read()
     start, hdr_end, end, kernel = gzip_parts(z)
