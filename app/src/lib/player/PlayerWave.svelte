@@ -31,15 +31,18 @@
     onseek?: (fraction: number) => void;
   } = $props();
 
-  const HEIGHT = 48;
+  // The box fills whatever height the player bar gives it (48 px at the bar's default size); the
+  // canvas is redrawn at that size and the device pixel ratio, so a tall bar stays crisp.
   let canvas = $state<HTMLCanvasElement | null>(null);
   let width = $state(0);
+  let height = $state(0);
   let dragging = false;
 
   const css = (name: string) => (canvas ? getComputedStyle(canvas).getPropertyValue(name).trim() : "#888");
 
   $effect(() => {
-    if (!canvas || width === 0) return;
+    if (!canvas || width === 0 || height === 0) return;
+    const HEIGHT = height;
     const dpr = window.devicePixelRatio || 1;
     canvas.width = Math.round(width * dpr);
     canvas.height = Math.round(HEIGHT * dpr);
@@ -110,8 +113,9 @@
         g.fillRect(x, 0, 2, HEIGHT);
         g.beginPath();
         g.moveTo(x, 0);
-        g.lineTo(x + 10, 0);
-        g.lineTo(x, 10);
+        const flag = 10 * Math.max(1, HEIGHT / 48);
+        g.lineTo(x + flag, 0);
+        g.lineTo(x, flag);
         g.fill();
       }
     }
@@ -153,6 +157,7 @@
   class="wave"
   class:disabled
   bind:clientWidth={width}
+  bind:clientHeight={height}
   role="slider"
   tabindex={disabled ? -1 : 0}
   aria-label="Track position"
@@ -166,7 +171,7 @@
   onpointerup={up}
   onpointercancel={up}
 >
-  <canvas bind:this={canvas} style:width="{width}px" style:height="{HEIGHT}px"></canvas>
+  <canvas bind:this={canvas} style:width="{width}px" style:height="{height}px"></canvas>
   {#if !disabled}<div class="head" style:left="{Math.min(1, Math.max(0, progress)) * 100}%"></div>{/if}
   {#if busy}<div class="note">loading…</div>{/if}
 </div>
@@ -179,7 +184,8 @@
     --w-hi: var(--green);
     --w-cue: #ffd23b;
     position: relative;
-    height: 48px;
+    align-self: stretch;
+    min-height: 48px;
     background: var(--deep);
     border: 1px solid var(--line);
     border-radius: 4px;
@@ -192,7 +198,10 @@
     cursor: default;
     opacity: 0.6;
   }
+  /* out of the flow, so the box takes its height from the bar, not from the last drawing */
   canvas {
+    position: absolute;
+    inset: 0;
     display: block;
   }
   .head {
