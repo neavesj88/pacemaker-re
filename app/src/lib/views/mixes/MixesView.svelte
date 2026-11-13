@@ -29,7 +29,8 @@
   // Device view's setting updates the same store.
   $effect(() => {
     const root = session.library?.root;
-    if (root) void vocal.load(root);
+    // the Vocal filter flag lives on a Pacemaker's card; a library on this computer has none to read
+    if (root && !session.isComputer) void vocal.load(root);
     else vocal.clear();
   });
 

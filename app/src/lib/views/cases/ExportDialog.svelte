@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { session } from "$lib/state/session.svelte";
   // Export cases and smart cases to a folder: one file per case in the chosen format, optionally
   // with the audio copied beside the playlists and the M3U8 pointing at the copies.
   //
@@ -109,7 +110,7 @@
         <div class="row">
           <label class="grow">
             <span class="lbl">Folder</span>
-            <input class="path" bind:value={ex.prefs.folder} placeholder="Choose a folder outside the Pacemaker" aria-label="Export folder" spellcheck="false" />
+            <input class="path" bind:value={ex.prefs.folder} placeholder={`Choose a folder outside ${session.isComputer ? 'the library' : 'the Pacemaker'}`} aria-label="Export folder" spellcheck="false" />
           </label>
           <Button onclick={browse}>Browse…</Button>
         </div>

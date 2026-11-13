@@ -154,7 +154,9 @@ class Jobs {
       count: n,
       names: files.map(baseName),
       title: `Add ${n} track${n === 1 ? "" : "s"}${from} to ${lib.root} ?`,
-      description: "The files are analysed, copied onto the device and added to its library. Tracks already there are skipped.",
+      description: session.isComputer
+        ? "The files are analysed, copied into the library on this computer and added to it. Tracks already there are skipped."
+        : "The files are analysed, copied onto the device and added to its library. Tracks already there are skipped.",
       confirmLabel: `Add ${n}`,
       runningLabel: "Adding",
       doneLabel: "Add finished",
@@ -185,7 +187,9 @@ class Jobs {
       names: lib.tracks.filter((t) => wanted.has(t.track_id)).map((t) => t.title || baseName(t.location)),
       title: `Re-analyse ${n} track${n === 1 ? "" : "s"} on ${lib.root} ?`,
       description:
-        "Only the beat grid (.str) and BPM of these tracks are rewritten, from the audio already on the device. No audio is copied." + handNote + mixNote,
+        `Only the beat grid (.str) and BPM of these tracks are rewritten, from the audio already ${session.isComputer ? "in the library" : "on the device"}. No audio is copied.` +
+        handNote +
+        mixNote,
       confirmLabel: `Analyse ${n}`,
       runningLabel: "Analysing",
       doneLabel: "Analysis finished",

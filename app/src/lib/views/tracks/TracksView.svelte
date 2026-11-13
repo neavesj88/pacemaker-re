@@ -88,7 +88,7 @@
       {#if rows.length === 0}
         <p class="empty">
           {#if all.length === 0}
-            No tracks on this device yet. Use Add tracks… or drop audio files here.
+            No tracks {session.place.on} yet. Use Add tracks… or drop audio files here.
           {:else if filters.query}
             No tracks match the search. Clear the search box (or use Clear filters above) to see them all.
           {:else if tracksState.onlySuspect && suspects.checking}

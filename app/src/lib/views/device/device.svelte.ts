@@ -68,6 +68,8 @@ class DeviceStore {
       this.settings = undefined;
     }
     this.#root = root;
+    // a library on this computer has no storage, firmware or settings.dat to read: only its health
+    if (session.isComputer) return this.scan(root);
     const quick = Promise.all([
       deviceOverview(root).then((o) => (this.overview = o)),
       deviceSettings(root).then((s) => (this.settings = s)),

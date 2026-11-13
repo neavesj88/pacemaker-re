@@ -355,7 +355,7 @@
       <div class="notice">
         Showing the tracks sorted by {sortLabel || "a column"}{caseView.prefs.sortAsc ? "" : " (descending)"}; the case itself is unchanged and reordering is off.
         <Button small onclick={() => caseView.useCaseOrder()}>Back to case order</Button>
-        <Button small onclick={() => (savingOrder = true)} disabled={!canSaveOrder} title={canSaveOrder ? "Make this the case's order on the Pacemaker" : "Needs the whole case on screen with every track in the library"}>Save this order to the case…</Button>
+        <Button small onclick={() => (savingOrder = true)} disabled={!canSaveOrder} title={canSaveOrder ? `Make this the case's order ${session.place.on}` : "Needs the whole case on screen with every track in the library"}>Save this order to the case…</Button>
       </div>
     {/if}
 
@@ -478,7 +478,7 @@
       {/if}
     </div>
     <div class="hintbar muted">
-      Drag the ≡ number to reorder (in case order) · drag a row onto a case in the sidebar to copy it there · click a column to sort the view · the order is the order on the Pacemaker
+      Drag the ≡ number to reorder (in case order) · drag a row onto a case in the sidebar to copy it there · click a column to sort the view · the order is the order {session.place.on}
     </div>
   </div>
 
@@ -514,7 +514,7 @@
       <Button onclick={() => (merging = true)} disabled={!jobs.canWrite || cases.infos.length < 2} title="Merge this case with others, without repeats">Merge…</Button>
       <Button onclick={() => (deleting = true)} disabled={!jobs.canWrite}>Delete case…</Button>
     </div>
-    <div class="note muted">Cases are the Pacemaker's own playlists. Order here is the order on the device.</div>
+    <div class="note muted">Cases are {session.isComputer ? 'playlists that can be sent to a Pacemaker' : "the Pacemaker's own playlists"}. Order here is the order {session.isComputer ? 'in the library' : 'on the device'}.</div>
   </aside>
 </div>
 
@@ -561,7 +561,7 @@
 {#if savingOrder}
   <ConfirmDialog
     title="Save this order to the case?"
-    message={`Replace the order of the case “${open.name}” on the Pacemaker with the order shown (${plural(orderIds.length, "track")}). The tracks stay the same; only their order changes, and the old order is not kept.`}
+    message={`Replace the order of the case “${open.name}” ${session.place.on} with the order shown (${plural(orderIds.length, "track")}). The tracks stay the same; only their order changes, and the old order is not kept.`}
     items={rows.map((r, i) => `${i + 1}. ${label(r)}`)}
     confirmLabel="Save this order"
     onconfirm={async () => {
@@ -604,7 +604,7 @@
   {@const smartUsing = cases.smartCasesUsing([open.id])}
   <ConfirmDialog
     title="Delete this case?"
-    message={`Delete the case “${open.name}” (${all.length} track${all.length === 1 ? "" : "s"}) from the Pacemaker? The tracks stay in the library; only the case is removed.${open.name === "Favourites" ? " This is the case the heart on a track uses: deleting it clears every heart, and the next heart click starts a new, empty Favourites case." : ""}${smartUsing.length > 0 ? ` ${smartUsing.map((n) => `“${n}”`).join(", ")} ${smartUsing.length === 1 ? "is a smart case that has" : "are smart cases that have"} a rule about this case; ${smartUsing.length === 1 ? "it" : "they"} will report an error until you pick another case in the rule.` : ""}`}
+    message={`Delete the case “${open.name}” (${all.length} track${all.length === 1 ? "" : "s"})${session.isComputer ? "" : " from the Pacemaker"}? The tracks stay in the library; only the case is removed.${open.name === "Favourites" ? " This is the case the heart on a track uses: deleting it clears every heart, and the next heart click starts a new, empty Favourites case." : ""}${smartUsing.length > 0 ? ` ${smartUsing.map((n) => `“${n}”`).join(", ")} ${smartUsing.length === 1 ? "is a smart case that has" : "are smart cases that have"} a rule about this case; ${smartUsing.length === 1 ? "it" : "they"} will report an error until you pick another case in the rule.` : ""}`}
     confirmLabel="Delete case"
     onconfirm={() => cases.remove(open.id)}
     onclose={() => (deleting = false)}

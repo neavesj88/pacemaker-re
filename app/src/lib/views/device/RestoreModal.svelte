@@ -64,7 +64,7 @@
     <span>
       the snapshot: {row.snapshot ? holds(row.snapshot) : "unknown"}
       {#if diff?.current}
-        <br />the card now: {holds(diff.current)}
+        <br />{session.place.card} now: {holds(diff.current)}
       {/if}
     </span>
   </div>
@@ -72,16 +72,16 @@
   {#if error}
     <p class="err" role="alert">{error}</p>
   {:else if !diff}
-    <p class="muted">Comparing with the card…</p>
+    <p class="muted">Comparing with {session.place.card}…</p>
   {:else}
     {#if diff.current_problem}
       <p class="err">
-        The library on the card cannot be read now ({diff.current_problem}). Restoring replaces it entirely with the
+        The library cannot be read now ({diff.current_problem}). Restoring replaces it entirely with the
         snapshot's.
       </p>
     {/if}
     {#if same}
-      <p class="muted">This snapshot holds the same library as the card now. There is nothing to restore.</p>
+      <p class="muted">This snapshot holds the same library as {session.place.card} now. There is nothing to restore.</p>
     {:else if sentences.length}
       <p><b>What changes</b></p>
       <ul class="what">
@@ -106,7 +106,7 @@
       Only music.db is replaced. Audio files, beat grids and settings.dat stay as they are, so tracks added since the
       snapshot keep their files (the health scan will list them as unused). Beat grids that a bulk tempo or grid edit
       changed since then are not rolled back, so those tracks will show the snapshot's BPM next to the new grid; the
-      grids as they were before each bulk edit are in the grids-… folders next to the snapshots. Before anything changes, the card's current
+      grids as they were before each bulk edit are in the grids-… folders next to the snapshots. Before anything changes, the current
       music.db is saved as a new snapshot here, so this restore can itself be undone. The edit history of this session is
       cleared.
     </p>

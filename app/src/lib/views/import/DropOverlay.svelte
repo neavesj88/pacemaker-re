@@ -7,7 +7,7 @@
   <div class="dropzone">
     {session.library
       ? `Drop audio files to add them to ${session.library.root}`
-      : "Open a Pacemaker library first, then drop audio files here"}
+      : "Open a library first, then drop audio files here"}
   </div>
 {/if}
 

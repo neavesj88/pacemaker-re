@@ -52,7 +52,7 @@
     <input data-autofocus bind:value={name} maxlength="255" aria-label="Case name" placeholder="Case name" />
   </form>
   <p>
-    A new case with {ids.length} track{ids.length === 1 ? "" : "s"} ({clock(secs)}), in the order shown. It is written to the Pacemaker's library like any case.
+    A new case with {ids.length} track{ids.length === 1 ? "" : "s"} ({clock(secs)}), in the order shown. It is written to the library like any case.
     {#if setBuilder.source?.kind === "case"}The case “{setBuilder.source.name}” is not changed.{/if}
   </p>
   {#if setBuilder.out.length > 0}

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { session } from "$lib/state/session.svelte";
   // The print options of the setlist page, in parts so the setlist dialog and the Settings view show
   // the same controls on the same state (`setlist.options`, kept on this computer; whoever shows
   // these calls `setlist.persist()` when one changes). The dialog's per-setlist text (heading,
@@ -40,7 +41,7 @@
   <label class="chk"><input type="checkbox" bind:checked={setlist.options.hideEmpty} /> Leave out a column that is empty for every track</label>
   <label>Key as
     <select bind:value={setlist.options.keyNotation}>
-      <option value="stored">Stored on the device</option>
+      <option value="stored">Stored in the library</option>
       <option value="camelot">Camelot (8A)</option>
       <option value="name">Name (A minor)</option>
     </select>

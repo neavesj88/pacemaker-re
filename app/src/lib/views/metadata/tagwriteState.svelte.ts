@@ -13,7 +13,7 @@ export const STATUS_WORDS: Record<string, string> = {
   write: "Will be written",
   same: "Already matches",
   unsupported: "File type not supported",
-  missing: "File not on the device",
+  missing: "File not found",
   error: "Cannot be written",
 };
 

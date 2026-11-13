@@ -222,7 +222,7 @@
     title="Save several cases as playlist files in a folder, one file per case, with the audio copied alongside if you like"
   >Export{picked.size > 0 ? ` ${picked.size} ticked` : " all"}…</Button>
   <Button onclick={() => (settingsOpen = true)} title="Whether the Pacemaker copies of smart cases refresh by themselves, and how smart cases are exported">Smart case settings…</Button>
-  <span class="muted">Cases are the Pacemaker's own playlists; the order here is the order on the device.</span>
+  <span class="muted">Cases are {session.isComputer ? 'playlists that can be sent to a Pacemaker' : "the Pacemaker's own playlists"}; the order here is the order {session.isComputer ? 'in the library' : 'on the device'}.</span>
 </div>
 {#if cases.infos.length > 0}
   <div class="pickbar filterbar">
@@ -278,7 +278,7 @@
 {#if !cases.loaded}
   <p class="empty">Loading cases…</p>
 {:else if rows.length === 0}
-  <p class="empty">{filters.query || labelFilterActive(labelFilter) ? `No cases match${filters.query ? " the search" : ""}${filters.query && labelFilterActive(labelFilter) ? " and" : ""}${labelFilterActive(labelFilter) ? ` the label filter (${describeLabelFilter(labelFilter)})` : ""}.` : "No cases on this device yet. Use New case, or the heart on a track for Favourites."}</p>
+  <p class="empty">{filters.query || labelFilterActive(labelFilter) ? `No cases match${filters.query ? " the search" : ""}${filters.query && labelFilterActive(labelFilter) ? " and" : ""}${labelFilterActive(labelFilter) ? ` the label filter (${describeLabelFilter(labelFilter)})` : ""}.` : `No cases ${session.place.on} yet. Use New case, or the heart on a track for Favourites.`}</p>
 {/if}
 
 {#if menu}
@@ -320,7 +320,7 @@
   {@const total = list.reduce((s, c) => s + c.track_count, 0)}
   <ConfirmDialog
     title={list.length === 1 ? "Delete this case?" : `Delete ${list.length} cases?`}
-    message={`Delete ${list.length === 1 ? `the case “${list[0].name}”` : `these ${list.length} cases`} (${tracksWord(total)} in all) from the Pacemaker? The tracks stay in the library; only the ${list.length === 1 ? "case is" : "cases are"} removed. This cannot be undone.${deleteNote(list) ? ` ${deleteNote(list)}` : ""}`}
+    message={`Delete ${list.length === 1 ? `the case “${list[0].name}”` : `these ${list.length} cases`} (${tracksWord(total)} in all)${session.isComputer ? "" : " from the Pacemaker"}? The tracks stay in the library; only the ${list.length === 1 ? "case is" : "cases are"} removed. This cannot be undone.${deleteNote(list) ? ` ${deleteNote(list)}` : ""}`}
     items={list.map((c) => `${c.name} (${tracksWord(c.track_count)})`)}
     confirmLabel={list.length === 1 ? "Delete case" : `Delete ${list.length} cases`}
     onconfirm={() => confirmDelete(list)}

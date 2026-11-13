@@ -7,6 +7,8 @@ export const handlers: Handlers = {
     const o = a.options ?? {};
     // an image pick (the export dialog's cover) returns an invented picture
     if ((o.filters ?? []).some((f: { extensions?: string[] }) => f.extensions?.includes("png"))) return "C:\\Pictures\\cover art.png";
+    // the folder for the library on this computer
+    if (String(o.title ?? "").includes("on this computer")) return "C:\\Users\\demo\\Music\\My DJ Library";
     if (o.multiple) return ["C:\\Music\\New Artist - New Tune.mp3", "C:\\Music\\Another - Skip Me.flac", "C:\\Music\\bad file.wav"];
     return "P:\\";
   },

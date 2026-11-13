@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { session } from "$lib/state/session.svelte";
   import { jobs } from "$lib/state/jobs.svelte";
   import { stems } from "$lib/state/stems.svelte";
   import Button from "$lib/ui/Button.svelte";
@@ -55,12 +56,12 @@
 
     {#if files.length}
       <div class="add">
-        <span class="muted">Put {files.length === 1 ? "this file" : `these ${files.length} files`} on the Pacemaker too?</span>
+        <span class="muted">Put {files.length === 1 ? "this file" : `these ${files.length} files`} {session.isComputer ? 'in the library' : 'on the Pacemaker'} too?</span>
         <Button disabled={!jobs.canWrite || stems.busy} title={jobs.canWrite ? undefined : "The library is read-only or a job is running"} onclick={() => stems.addResultsToCard(files)}>
-          Add {noun(files.length, "file")} to the card…
+          Add {noun(files.length, "file")} {session.isComputer ? 'to the library' : 'to the card'}…
         </Button>
       </div>
-      <p class="muted note">You are shown every file and asked before anything is copied. The card's library does not keep tags or a link to the original; they appear as ordinary tracks.</p>
+      <p class="muted note">You are shown every file and asked before anything is copied. The library does not keep tags or a link to the original; they appear as ordinary tracks.</p>
     {/if}
   </section>
 {/if}

@@ -53,7 +53,7 @@
   </header>
 
   {#if !lib}
-    <p class="muted">Open a Pacemaker drive to choose tracks.</p>
+    <p class="muted">Open a library to choose tracks.</p>
   {:else}
     <div class="tools">
       <input class="search" type="search" placeholder="Search artist or title" bind:value={q} aria-label="Search tracks" disabled={stems.running} />
@@ -86,7 +86,7 @@
       </div>
     </div>
     {#if onDevice}
-      <p class="warn" role="alert">That folder is on the Pacemaker. Choose a folder on this computer; adding the results to the card is a separate step afterwards, and asks first.</p>
+      <p class="warn" role="alert">That folder is inside {session.isComputer ? 'the library' : 'the Pacemaker'}. Choose another folder on this computer; adding the results to {session.isComputer ? 'the library' : 'the card'} is a separate step afterwards, and asks first.</p>
     {/if}
     {#if stems.planError}<p class="warn" role="alert">{stems.planError}</p>{/if}
 

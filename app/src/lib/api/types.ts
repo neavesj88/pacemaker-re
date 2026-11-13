@@ -37,8 +37,12 @@ export type Collection = { readonly id: number; readonly name: string; readonly 
 
 export type NeedsAnalysis = { readonly track_id: number; readonly reason: string };
 
+/** Where a library is: on a Pacemaker (a drive root or card) or in a folder on this computer. */
+export type LibraryKind = "pacemaker" | "computer";
+
 export type LibraryView = {
   readonly root: string;
+  readonly kind: LibraryKind;
   readonly problems: string[];
   readonly tracks: Track[];
   readonly mixes: Collection[];

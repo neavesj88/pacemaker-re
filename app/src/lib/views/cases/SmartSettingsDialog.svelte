@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { session } from "$lib/state/session.svelte";
   // The smart-case choices: whether the Pacemaker copies refresh by themselves, and how smart
   // cases appear in exports. Saved in the app's own config (not on the device).
   import type { RefreshMode } from "$lib/api/cases";
@@ -22,7 +23,7 @@
 <Modal title="Smart case settings" {onclose}>
   {#if smartSettings.warning}<p class="warn" role="alert">{smartSettings.warning}</p>{/if}
   <fieldset>
-    <legend>Pacemaker copies (the ★ cases) of smart cases that are switched on</legend>
+    <legend>{session.isComputer ? 'The ★ cases' : 'Pacemaker copies (the ★ cases)'} of smart cases that are switched on</legend>
     {#each MODES as m (m.value)}
       <label class="opt">
         <input type="radio" name="refresh-mode" value={m.value} checked={s.refresh_mode === m.value} onchange={() => smartSettings.set({ refresh_mode: m.value })} />

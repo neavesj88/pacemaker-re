@@ -211,19 +211,19 @@
           class="switch"
           role="switch"
           aria-checked={sc?.on_device ?? false}
-          aria-label="Put on Pacemaker"
+          aria-label={session.isComputer ? 'Keep a ★ case in the library' : 'Put on Pacemaker'}
           disabled={id === 0 || dirty || !!ruleError || !!fieldError || !jobs.canWrite}
           onclick={() => (sc?.on_device ? (takingOff = true) : cases.setSmartOnDevice(id, true))}
         ><span></span></button>
-        <b>Put on Pacemaker</b>
+        <b>{session.isComputer ? 'Keep a ★ case in the library' : 'Put on Pacemaker'}</b>
       </div>
       <p class="muted">
         {#if id === 0}
           Save the smart case first.
         {:else if dirty}
-          Save your changes first: the Pacemaker copy is made from the saved rules.
+          Save your changes first: the {session.isComputer ? 'case' : 'Pacemaker copy'} is made from the saved rules.
         {:else if sc?.on_device}
-          The Pacemaker has a case called “{deviceName(sc.name)}” with these tracks{draft.sort ? ", in this order" : ""}.
+          {session.isComputer ? 'This library has' : 'The Pacemaker has'} a case called “{deviceName(sc.name)}” with these tracks{draft.sort ? ", in this order" : ""}.
           {#if smartSettings.value.refresh_mode === "auto"}
             It is refreshed automatically when the library changes (Cases › Smart case settings).
           {:else if smartSettings.value.refresh_mode === "ask"}
@@ -232,11 +232,11 @@
             It does not change by itself: refresh it after the library changes.
           {/if}
         {:else}
-          Off: this smart case exists only in this app. Switch it on to write a normal case called “{deviceName(draft.name)}” to the Pacemaker.
+          Off: this smart case exists only in this app. Switch it on to write a normal case called “{deviceName(draft.name)}” to {session.isComputer ? 'the library' : 'the Pacemaker'}.
         {/if}
       </p>
       {#if sc?.on_device && !dirty}
-        <Button small disabled={!jobs.canWrite || !!ruleError} onclick={() => cases.setSmartOnDevice(id, true)}>Refresh on Pacemaker now</Button>
+        <Button small disabled={!jobs.canWrite || !!ruleError} onclick={() => cases.setSmartOnDevice(id, true)}>{session.isComputer ? 'Refresh the case now' : 'Refresh on Pacemaker now'}</Button>
       {/if}
     </div>
   </aside>
@@ -265,8 +265,8 @@
 
 {#if takingOff && sc}
   <ConfirmDialog
-    title="Remove from the Pacemaker?"
-    message={`Delete the case “${deviceName(sc.name)}” from the Pacemaker? The smart case stays in this app and no track is deleted; you can put it back at any time.`}
+    title={`Remove from ${session.place.the}?`}
+    message={`Delete the case “${deviceName(sc.name)}” from ${session.place.the}? The smart case stays in this app and no track is deleted; you can put it back at any time.`}
     confirmLabel="Delete device case"
     onconfirm={() => cases.setSmartOnDevice(id, false)}
     onclose={() => (takingOff = false)}
@@ -285,7 +285,7 @@
       {#if sc.on_device}
         <label class="also">
           <input type="checkbox" bind:checked={alsoDevice} />
-          Also delete the case “{deviceName(sc.name)}” from the Pacemaker (otherwise it stays there as an ordinary case)
+          Also delete the case “{deviceName(sc.name)}” from {session.place.the} (otherwise it stays there as an ordinary case)
         </label>
       {/if}
     {/snippet}

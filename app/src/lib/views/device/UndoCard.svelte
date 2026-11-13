@@ -41,7 +41,7 @@
   <p class="muted">
     Ratings, tag edits and favourites made in this session can be put back. Only a field that still holds the value the
     edit gave it is reverted; anything changed again since is left alone and named first. The history is kept in memory
-    for this library and is dropped when the card is ejected or restored.
+    for this library and is dropped when {session.isComputer ? 'the library is closed' : 'the card is ejected'} or restored.
   </p>
   {#if undo.settings.undo_limit === 0}
     <p class="muted">The edit history is switched off (see Safety settings).</p>

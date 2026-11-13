@@ -16,7 +16,7 @@
   import { viewById } from "$lib/views/registry";
 
   onMount(() => {
-    session.refreshVolumes();
+    void session.start();
     return startAll();
   });
 

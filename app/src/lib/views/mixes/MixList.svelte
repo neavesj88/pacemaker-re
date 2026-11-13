@@ -167,7 +167,7 @@
 <div class="list">
   <div class="bar">
     <h2>Mixes</h2>
-    <span class="chip">{rows.length === mixes.list.length ? `${mixes.list.length} on this device` : `${rows.length} of ${mixes.list.length} shown`}</span>
+    <span class="chip">{rows.length === mixes.list.length ? `${mixes.list.length} ${session.isComputer ? 'in this library' : 'on this device'}` : `${rows.length} of ${mixes.list.length} shown`}</span>
     <Button variant="primary" onclick={newMix}>New mix</Button>
     <Button onclick={importPmk}>Import .pmk…</Button>
     <span class="sep"></span>
@@ -289,7 +289,7 @@
       </div>
     {:else if !loading}
       <div class="empty">
-        <p>No mixes on this device yet.</p>
+        <p>No mixes {session.place.on} yet.</p>
         <p class="muted">Create one, or import a .pmk file made with the Tonium Editor or the Pacemaker.</p>
         <Button variant="primary" onclick={newMix}>New mix</Button>
       </div>

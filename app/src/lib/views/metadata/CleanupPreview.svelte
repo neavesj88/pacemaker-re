@@ -116,7 +116,7 @@
   </div>
 
   <div class="foot">
-    <span class="muted">Applying writes to the library on the device ({volumeName(session.library?.root ?? "")}); a copy of music.db is kept first. Audio files are not touched.</span>
+    <span class="muted">Applying writes to the library {session.isComputer ? 'on this computer' : 'on the device'} ({volumeName(session.library?.root ?? "")}); a copy of music.db is kept first. Audio files are not touched.</span>
     <span class="sp"></span>
     <Button
       variant="primary"

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { session } from "$lib/state/session.svelte";
   import Button from "$lib/ui/Button.svelte";
   import Modal from "$lib/ui/Modal.svelte";
 
@@ -32,7 +33,7 @@
 
 <Modal title="Save as case" onclose={() => !busy && oncancel()}>
   <p>
-    This adds one new case to the device library with the {count} track{count === 1 ? "" : "s"} from {source}, in the order shown.
+    This adds one new case to the library with the {count} track{count === 1 ? "" : "s"} from {source}, in the order shown.
     No track, existing case or mix is changed.
   </p>
   <label class="f">

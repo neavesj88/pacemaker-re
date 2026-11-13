@@ -124,7 +124,7 @@
   </label>
   {#if deleteSources && picked.length > 0}
     <div class="danger" role="status">
-      These cases will be deleted from the Pacemaker:
+      These cases will be deleted{session.isComputer ? '' : ' from the Pacemaker'}:
       <ul>
         {#each picked as c (c.id)}
           <li>

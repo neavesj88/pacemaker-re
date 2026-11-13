@@ -495,7 +495,7 @@
 </div>
 
 {#if confirmSave && editor.loaded}
-  <Modal title="Save to the device?" onclose={() => (confirmSave = false)}>
+  <Modal title={`Save to ${session.isComputer ? 'the library' : 'the device'}?`} onclose={() => (confirmSave = false)}>
     <p>This changes the files and database of the open library:</p>
     <ul class="what">
       {#if editor.gridDirty && editor.doc}
@@ -539,7 +539,7 @@
     </p>
     {#snippet actions()}
       <Button data-autofocus onclick={() => (confirmSave = false)}>Cancel</Button>
-      <Button variant="primary" disabled={(needsCueTick && !cueOk) || (needsMixTick && !mixesOk)} onclick={doSave}>Save to device</Button>
+      <Button variant="primary" disabled={(needsCueTick && !cueOk) || (needsMixTick && !mixesOk)} onclick={doSave}>{session.isComputer ? 'Save to library' : 'Save to device'}</Button>
     {/snippet}
   </Modal>
 {/if}
