@@ -1,6 +1,7 @@
 <script lang="ts">
   // Which of the library's tag fields are written into the audio files (a saved setting of the
   // clean-up recipes): shown on the "Write tags to files" page and in the Settings view.
+  import { untrack } from "svelte";
   import { cleanup } from "./cleanupState.svelte";
   import { fieldLabel } from "./tagwriteState.svelte";
 
@@ -10,6 +11,13 @@
   ];
 
   let s = $derived(cleanup.settings);
+
+  // The Tidy page saves the recipes as they change, but the Settings view has no Tidy page behind
+  // it, so the choice is saved from here (scheduleSave does nothing when nothing changed).
+  $effect(() => {
+    void cleanup.signature;
+    untrack(() => cleanup.scheduleSave());
+  });
 
   function toggleField(f: string, on: boolean) {
     if (!s) return;

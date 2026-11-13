@@ -177,3 +177,28 @@ test("every settings file the backend keeps has a Settings entry", () => {
   }
   for (const file of Object.keys(FILES)) assert.ok(found.has(file), `${file} is listed here but the backend no longer keeps it`);
 });
+
+// The Settings view has no feature page behind it, so a shown component that edits a setting
+// held in a shared state object must save it itself (this once left "Write tags to files"
+// unsaved). The state objects that save from their own page's effect are listed with the call
+// that saves them; a component that touches one must make that call.
+const SAVED_FROM_PAGE = [{ state: "cleanupState.svelte", save: "scheduleSave" }];
+
+test("an inline entry whose component edits page-saved state saves it itself", () => {
+  let checked = 0;
+  for (const f of areaFiles()) {
+    const src = readFileSync(f.file, "utf8");
+    const imports = new Map([...src.matchAll(/import\s+(\w+)\s+from\s+"(\.[^"]+\.svelte)"/g)].map((m) => [m[1], resolve(dirname(f.file), m[2])]));
+    for (const m of src.matchAll(/component:\s*(\w+)/g)) {
+      const file = imports.get(m[1]);
+      if (!file) continue;
+      const code = readFileSync(file, "utf8");
+      for (const { state, save } of SAVED_FROM_PAGE) {
+        if (!code.includes(state)) continue;
+        checked++;
+        assert.ok(code.includes(save), `${f.dir}/settings.ts: ${m[1]} uses ${state} but never calls ${save}(), so a change made in the Settings view is not saved`);
+      }
+    }
+  }
+  assert.ok(checked >= 2, `checked ${checked}`);
+});

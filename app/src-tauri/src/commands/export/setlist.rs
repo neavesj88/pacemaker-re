@@ -200,9 +200,8 @@ pub fn save(dir: &Path, root: &str, key: &str, sheet: Sheet) -> Result<Sheet, St
     let mut file = match read_store(&p)? {
         Read::Ok(f) => f,
         Read::Damaged(_) => {
-            // keep the damaged file for the user, never overwrite it
-            let bad = p.with_extension("json.bad");
-            std::fs::rename(&p, &bad).map_err(|e| format!("Cannot move the damaged {} aside: {e}", p.display()))?;
+            // keep the damaged file for the user, never overwrite it (or an earlier damaged copy)
+            crate::store::set_aside(&p).map_err(|e| format!("Cannot move the damaged {} aside: {e}", p.display()))?;
             StoreFile::default()
         }
     };
@@ -386,10 +385,17 @@ mod tests {
         assert!(l.warning.unwrap().contains("not readable"));
         assert_eq!(std::fs::read_to_string(&p).unwrap(), "not json", "loading does not touch the file");
         save(&dir, "P:\\", "case:1", Sheet { dj: "Example DJ".into(), ..Sheet::default() }).unwrap();
-        assert_eq!(std::fs::read_to_string(p.with_extension("json.bad")).unwrap(), "not json", "the damaged file is kept");
+        let kept = std::fs::read_dir(&dir).unwrap().filter_map(|e| e.ok()).filter(|e| e.file_name().to_string_lossy().contains(".corrupt")).count();
+        assert_eq!(kept, 1, "the damaged file is kept");
         let l = load(&dir, "P:\\", "case:1").unwrap();
         assert!(l.warning.is_none());
         assert_eq!(l.sheet.dj, "Example DJ");
+        // a second damaged file must not replace the first copy
+        std::fs::write(&p, "second").unwrap();
+        save(&dir, "P:\\", "case:1", Sheet { dj: "Example DJ".into(), ..Sheet::default() }).unwrap();
+        let mut texts: Vec<String> = std::fs::read_dir(&dir).unwrap().filter_map(|e| e.ok()).filter(|e| e.file_name().to_string_lossy().contains(".corrupt")).map(|e| std::fs::read_to_string(e.path()).unwrap()).collect();
+        texts.sort();
+        assert_eq!(texts, vec!["not json".to_string(), "second".to_string()], "both damaged files are kept");
         std::fs::remove_dir_all(&dir).unwrap();
     }
 

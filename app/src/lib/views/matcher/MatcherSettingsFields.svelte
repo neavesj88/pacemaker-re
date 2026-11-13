@@ -61,15 +61,6 @@
   {VERSION_HELP[matcher.options.versionMode]} A line with no artist (or a library track with none) is always asked about unless the accept score is set to 80 or lower.
   These settings are remembered on this computer.
 </p>
-<label class="inline">
-  <input type="checkbox" checked={matcher.includeUndecided} onchange={(e) => matcher.setIncludeUndecided(e.currentTarget.checked)} />
-  The missing list also holds the lines still waiting for your decision
-</label>
-<p class="muted">
-  Score is 0-100. At or above the first number a single clear match counts as owned; between the two numbers you are asked; below the second it is missing.
-  {VERSION_HELP[matcher.options.versionMode]} A line with no artist (or a library track with none) is always asked about unless the accept score is set to 80 or lower.
-  These settings are remembered on this computer.
-</p>
 
 <style>
   .grid {
