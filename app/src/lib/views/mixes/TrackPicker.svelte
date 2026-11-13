@@ -1,12 +1,16 @@
 <script lang="ts">
   // Searchable library list on the left of the editor. Drag rows onto a channel lane, double-click
   // a row, or use “Add at playhead”. The list is windowed, so a library of thousands stays cheap.
+  import { onDestroy } from "svelte";
   import type { Track } from "$lib/api/types";
   import { mixes } from "$lib/state/mixes.svelte";
   import { session } from "$lib/state/session.svelte";
+  import { armTrackDrag, endTrackDrag } from "$lib/state/trackDrag.svelte";
   import { addTracks } from "./actions";
   import { mmss } from "./layout";
   import { mv } from "./view.svelte";
+
+  onDestroy(endTrackDrag);
 
   const ROW = 44;
   let query = $state("");
@@ -46,12 +50,11 @@
     }
   }
 
-  function dragstart(e: DragEvent, t: Track) {
-    const ids = selected.includes(t.track_id) ? selected : [t.track_id];
+  // The ids a drag from row `t` carries, read when the drag starts (after the press's own click
+  // logic): the selection when the row is in it, else just the row.
+  function dragIds(t: Track) {
     if (!selected.includes(t.track_id)) selected = [t.track_id];
-    e.dataTransfer?.setData("application/x-pm-tracks", JSON.stringify(ids));
-    e.dataTransfer?.setData("text/plain", ids.map((id) => all.find((x) => x.track_id === id)?.title ?? "").join(", "));
-    if (e.dataTransfer) e.dataTransfer.effectAllowed = "copy";
+    return { ids: [...selected] };
   }
 
   function addSelected(at?: number) {
@@ -77,7 +80,6 @@
           role="option"
           aria-selected={selected.includes(t.track_id)}
           tabindex="0"
-          draggable="true"
           style:top="{index * ROW}px"
           style:height="{ROW}px"
           onclick={(e) => click(e, t, index)}
@@ -91,7 +93,7 @@
               addSelected(mv.playhead);
             }
           }}
-          ondragstart={(e) => dragstart(e, t)}
+          onpointerdown={(e) => armTrackDrag(e, "mix:picker", () => dragIds(t))}
         >
           <span class="t">{t.title}{#if used.get(t.track_id)}<em title="Already in this mix">×{used.get(t.track_id)}</em>{/if}</span>
           <span class="a">{t.artist}</span>
@@ -152,6 +154,7 @@
     padding: 4px 8px;
     border-bottom: 1px solid var(--line);
     cursor: grab;
+    user-select: none;
     display: grid;
     grid-template-columns: 1fr;
     align-content: center;
