@@ -40,8 +40,22 @@
 
   const css = (name: string) => (canvas ? getComputedStyle(canvas).getPropertyValue(name).trim() : "#888");
 
+  // The effect only tracks what the drawing depends on and books one redraw per animation frame,
+  // so a drag that changes the height many times a frame repaints once. Until then the old bitmap
+  // is CSS-stretched to the new box.
+  let frame = 0;
   $effect(() => {
     if (!canvas || width === 0 || height === 0) return;
+    const args = { canvas, width, height, peaks, beats, firstDownbeat, duration, cue, loop };
+    cancelAnimationFrame(frame);
+    frame = requestAnimationFrame(() => draw(args));
+    return () => cancelAnimationFrame(frame);
+  });
+
+  function draw({ canvas, width, height, peaks, beats, firstDownbeat, duration, cue, loop }: {
+    canvas: HTMLCanvasElement; width: number; height: number; peaks: Peak[] | null; beats: number[];
+    firstDownbeat: number | null; duration: number; cue: number | null; loop: { start: number; end: number } | null;
+  }) {
     const HEIGHT = height;
     const dpr = window.devicePixelRatio || 1;
     canvas.width = Math.round(width * dpr);
@@ -98,11 +112,13 @@
         // below ~3 px per beat the ticks turn to a smear: draw the bar starts only
         const dense = (px(beats[beats.length - 1]) - px(beats[0])) / (beats.length - 1) < 3;
         const first = firstDownbeat ?? 0;
+        const barColour = css("--text");
+        const beatColour = css("--line-hi");
         g.globalAlpha = 0.8;
         for (let i = 0; i < beats.length; i++) {
           const bar = (((i - first) % 4) + 4) % 4 === 0;
           if (dense && !bar) continue;
-          g.fillStyle = bar ? css("--text") : css("--line-hi");
+          g.fillStyle = bar ? barColour : beatColour;
           g.fillRect(Math.round(px(beats[i])), 0, bar ? 2 : 1, HEIGHT);
         }
         g.globalAlpha = 1;
@@ -119,7 +135,7 @@
         g.fill();
       }
     }
-  });
+  }
 
   function fraction(e: PointerEvent) {
     const r = (e.currentTarget as HTMLElement).getBoundingClientRect();

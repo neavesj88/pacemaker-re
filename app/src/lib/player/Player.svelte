@@ -66,7 +66,7 @@
   const barH = $derived(clampHeight(chosen, winH));
   const scale = $derived(scaleFor(barH, winW));
   let resizing = $state(false);
-  let drag: { y: number; h: number } | null = null;
+  let drag: { y: number; h: number; start: number; id: number; el: HTMLElement } | null = null;
 
   function setChosen(h: number) {
     chosen = h;
@@ -74,9 +74,10 @@
   }
   function gripDown(e: PointerEvent) {
     if (e.button !== 0) return;
-    drag = { y: e.clientY, h: barH };
+    const el = e.currentTarget as HTMLElement;
+    drag = { y: e.clientY, h: barH, start: chosen, id: e.pointerId, el };
     resizing = true;
-    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    el.setPointerCapture(e.pointerId);
   }
   // live while dragging; saved once on release so storage is not written per pixel
   function gripMove(e: PointerEvent) {
@@ -89,6 +90,15 @@
     setChosen(chosen);
   }
   function gripKey(e: KeyboardEvent) {
+    if (e.key === "Escape" && drag) {
+      // cancel: back to the size from before the drag, nothing saved
+      const d = drag;
+      drag = null;
+      resizing = false;
+      chosen = d.start;
+      if (d.el.hasPointerCapture(d.id)) d.el.releasePointerCapture(d.id);
+      return;
+    }
     if (e.ctrlKey || e.metaKey || e.altKey) return;
     const h = keyHeight(e.key, e.shiftKey, barH, winH);
     if (h === null) return;
@@ -137,6 +147,7 @@
     onpointermove={gripMove}
     onpointerup={gripUp}
     onpointercancel={gripUp}
+    onlostpointercapture={gripUp}
     onkeydown={gripKey}
     ondblclick={() => setChosen(DEFAULT_HEIGHT)}
   >
@@ -249,7 +260,8 @@
   .grip {
     position: absolute;
     inset: 0 0 auto 0;
-    height: 9px;
+    /* stays inside the 1px border + 6px padding, so it never covers the waveform or the text */
+    height: 6px;
     z-index: 2;
     display: flex;
     align-items: center;
@@ -326,6 +338,8 @@
   @media (max-width: 900px) {
     .player {
       grid-template-columns: 1fr auto;
+      /* the waveform row takes all the height the bar gains */
+      grid-template-rows: auto 1fr;
     }
     .player :global(.wave) {
       grid-column: 1 / -1;
