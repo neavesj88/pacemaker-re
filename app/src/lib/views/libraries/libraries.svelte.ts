@@ -17,6 +17,7 @@ import { rootKey, sameRoot } from "$lib/state/place";
 import { session } from "$lib/state/session.svelte";
 import { device } from "../device/device.svelte";
 import { isStale, type LibOption } from "../sync/syncLogic";
+import { invalidateReads, readRight, type ReadDeps } from "./readRules";
 import {
   buildSelection, canCopy, emptySelected, otherSide, readsAtOnce, selectionSize, STALE_COPY_TEXT,
   type PaneData, type Selected, type Side, type Tab,
@@ -78,8 +79,8 @@ class LibrariesStore {
   #gen = 0;
   /** The library the running job writes, so it is read again when it ends. */
   #target = "";
-  /** A read asked for while another was running. */
-  #again = "";
+  /** A read asked for while another was running (see readRules.ts). */
+  again = "";
 
   get busy() {
     return this.planning || this.running || device.blocked;
@@ -128,11 +129,18 @@ class LibrariesStore {
   /** Forgets everything read for the right pane because it may be out of date. A library on this
    *  computer is read again at once; a Pacemaker only when the user presses its button. */
   invalidate(keepSelection = false) {
-    this.loaded = new Map();
-    this.readError = "";
-    if (!keepSelection) this.selected = { ...this.selected, right: emptySelected() };
-    if (this.rightRoot && readsAtOnce(this.rightRoot, session.volumes, this.folders.map((f) => f.value), false)) void this.read(this.rightRoot);
+    invalidateReads(this, this.#deps, keepSelection);
   }
+
+  clearRightSelection() {
+    this.selected = { ...this.selected, right: emptySelected() };
+  }
+
+  /** What the read rules need beyond the store's own fields (the rules are plain functions, tested under node). */
+  #deps: ReadDeps = {
+    fetchPane: async (root) => paneOf(await libraryPane(root)),
+    readsAtOnce: (root) => readsAtOnce(root, session.volumes, this.folders.map((f) => f.value), false),
+  };
 
   /** The Rescan button: looks for drives again and forgets what was read of the other library. */
   async rescan() {
@@ -142,25 +150,7 @@ class LibrariesStore {
 
   /** Lists the library at `root` for the right pane (the button "Read the Pacemaker (G:)"). */
   async read(root: string) {
-    if (this.reading) {
-      this.#again = root; // read once more when the running read ends, so a refresh is not lost
-      return;
-    }
-    this.reading = root;
-    this.readError = "";
-    try {
-      const p = await libraryPane(root);
-      const next = new Map(this.loaded);
-      next.set(rootKey(root), paneOf(p));
-      this.loaded = next;
-    } catch (e) {
-      this.readError = String(e);
-    } finally {
-      this.reading = "";
-      const again = this.#again;
-      this.#again = "";
-      if (again && this.rightRoot && sameRoot(again, this.rightRoot)) void this.read(again);
-    }
+    await readRight(this, this.#deps, root);
   }
 
   /** Adds a folder chosen by hand to the picker and shows it (a deliberate choice, so it is read). */
