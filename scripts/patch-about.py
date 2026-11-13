@@ -43,8 +43,8 @@ BLOCK_END = OLD_URL_OFF           # the Legal text, 4 NULs of padding and nothin
 
 MODEL = b"Pacemaker Revival\0"
 URL = b"github.com/neavesj88/pacemaker-re\0"
-MODEL_OFF = 0x8456F0              # just after the 2910-byte Legal text (ends 0x8456ef)
-URL_OFF = 0x845704
+MODEL_OFF = 0x847E00              # fixed slots at the end of the freed block, so the Legal text can change length freely
+URL_OFF = 0x847E20
 
 LEGAL_POOL = 0x39408C             # SettingString::paint, pool word of the Legal literal (unchanged)
 URL_POOL = 0x394088
