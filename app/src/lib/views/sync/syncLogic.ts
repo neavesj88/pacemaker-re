@@ -149,7 +149,8 @@ export function reasonText(i: SyncItem, s: Omit<SyncSettings, "labels_follow">, 
   const a = i.action;
   if (a.type === "skip") return a.reason;
   if (a.type === "update_plays") return "played more on the sending side";
-  if (a.type === "repair") return "the track is on the target, but a file of it is not";
+  // the engine's detail names which file; it is the whole reason, so the list does not repeat it
+  if (a.type === "repair") return i.detail || "a file of the track is missing on the target";
   if (a.type === "remove") return `not in ${sourceLabel === "computer" ? "the library on this computer" : "the Pacemaker's library"}`;
   if (i.kind === "track") {
     if (a.type === "copy") return "not on the other side yet";

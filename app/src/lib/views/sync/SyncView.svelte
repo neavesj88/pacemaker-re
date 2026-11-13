@@ -246,7 +246,7 @@
                   <div class="why">
                     <span class="act" class:skip={!isActionable(i)}>{actionText(i.action)}{isActionable(i) ? ":" : ""}</span>
                     {#if isActionable(i)}<span class="muted">{reasonText(i, plan.settings, plan.source_label)}</span>{/if}
-                    {#if i.detail}<span class="muted"> ({i.detail})</span>{/if}
+                    {#if i.detail && i.action.type !== "update_plays" && i.action.type !== "repair"}<span class="muted"> ({i.detail})</span>{/if}
                   </div>
                   {#if left && isActionable(i)}<div class="why muted">Left out: nothing is done with it.</div>{/if}
                   {#if m && !left}<div class="why mark">{markText(i.kind, isRemoval(i), m)}</div>{/if}

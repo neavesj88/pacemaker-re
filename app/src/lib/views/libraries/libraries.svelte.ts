@@ -64,6 +64,10 @@ class LibrariesStore {
   /** The pane a drag is hovering over, and the case row under it, for the highlight. */
   over = $state<{ side: Side; caseName: string | null } | null>(null);
 
+  /** The "Copy into a case on ..." question: the tracks picked (their ids) and the pane they came from.
+   *  `target` is the other pane, whose cases are on offer. */
+  chooser = $state.raw<{ from: Side; target: Side; ids: number[] } | null>(null);
+
   planning = $state(false);
   pending = $state.raw<Pending | null>(null);
   running = $state(false);
@@ -99,6 +103,7 @@ class LibrariesStore {
       right: { tracks: null, mixes: null, cases: null },
     };
     this.pending = null;
+    this.chooser = null;
     this.over = null;
     this.error = "";
     this.result = "";
@@ -221,6 +226,24 @@ class LibrariesStore {
     } finally {
       if (gen === this.#gen) this.planning = false;
     }
+  }
+
+  /** Opens the case question for the picked tracks of `from`. */
+  openChooser(from: Side, ids: Iterable<number>) {
+    const picked = [...ids];
+    if (this.busy || picked.length === 0 || !this.data(otherSide(from))) return;
+    this.chooser = { from, target: otherSide(from), ids: picked };
+  }
+
+  closeChooser() {
+    this.chooser = null;
+  }
+
+  /** The case question answered: plans the copy into that case (the dialog is the drop's). */
+  chooseCaseDone(into: { name: string; create: boolean }) {
+    const c = this.chooser;
+    this.chooser = null;
+    if (c) void this.copy(c.from, "tracks", c.ids, into);
   }
 
   cancelPending() {

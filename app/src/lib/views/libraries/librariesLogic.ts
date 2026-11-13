@@ -191,6 +191,39 @@ export function parseDragFrom(from: string): { side: Side; tab: Tab } | null {
   return m ? { side: m[1] as Side, tab: m[2] as Tab } : null;
 }
 
+// ---- the click route into a case --------------------------------------------------------------------
+
+/** The longest case name the library takes (the engine refuses a longer one). */
+export const MAX_CASE_NAME = 255;
+/** The choice in the case picker that means "make a new case". */
+export const NEW_CASE = "\u0000new";
+
+/** "Copy into a case on Pacemaker (G:)…": the row menu item and the button for tracks. */
+export const intoCaseLabel = (targetName: string) => `Copy into a case on ${targetName}…`;
+
+/** What the case picker starts on: the other library's first case, or a new one when it has none. */
+export const defaultCasePick = (cases: readonly Collection[]): string => cases[0]?.name ?? NEW_CASE;
+
+/** What the picker's choice means for the plan: an existing case of the other library, or a new
+ *  case with the typed name. A typed name that is already a case there (compared as the engine
+ *  does) is that case, not a second one. The plan and the dialog that follow are the ones a drop on a
+ *  case row gives. */
+export function resolveIntoCase(
+  cases: readonly Collection[],
+  pick: string,
+  typed: string,
+): { into: { name: string; create: boolean } } | { error: string } {
+  if (pick !== NEW_CASE) {
+    const c = cases.find((x) => norm(x.name) === norm(pick));
+    return c ? { into: { name: c.name, create: false } } : { error: "That case is not on the other library any more. Pick another." };
+  }
+  const name = typed.trim();
+  if (!name) return { error: "Type a name for the new case." };
+  if (name.length > MAX_CASE_NAME) return { error: `A case name can have at most ${MAX_CASE_NAME} characters.` };
+  const same = cases.find((x) => norm(x.name) === norm(name));
+  return { into: same ? { name: same.name, create: false } : { name, create: true } };
+}
+
 // ---- which library on the right ------------------------------------------------------------------
 
 /** The libraries the right pane can show: all on offer except the open one. */
@@ -279,7 +312,7 @@ export function lineOf(i: SyncItem, plan: SyncPlan): Line {
   let why = "";
   if (i.needed_by.length > 0) why = `Needed by ${i.needed_by.join(", ")}`;
   else if (a.type !== "copy" || i.kind !== "track") why = reasonText(i, plan.settings, plan.source_label);
-  if (i.detail && a.type !== "update_plays") why = why ? `${why} (${i.detail})` : i.detail;
+  if (i.detail && a.type !== "update_plays" && a.type !== "repair") why = why ? `${why} (${i.detail})` : i.detail;
   return { ...base, action, why, acts: true, same: false };
 }
 

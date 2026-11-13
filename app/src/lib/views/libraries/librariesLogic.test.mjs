@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { libraryOptions } from "../sync/syncLogic.ts";
 import {
-  buildSelection, canCopy, clickSelect, clock, copyLabel, copySummary, defaultRight, readsAtOnce, footerText, sentenceName, dialogTitle, libraryNameFor, dragFrom, dragIds, dragLabel, emptySelected, linesOf,
+  buildSelection, canCopy, defaultCasePick, intoCaseLabel, MAX_CASE_NAME, NEW_CASE, resolveIntoCase, clickSelect, clock, copyLabel, copySummary, defaultRight, readsAtOnce, footerText, sentenceName, dialogTitle, libraryNameFor, dragFrom, dragIds, dragLabel, emptySelected, linesOf,
   num, onBoth, parseDragFrom, presenceOf, pruneTo, readButtonText, resolveDrop, rightOptions, rowsOf, selectionSize, statusText,
 } from "./librariesLogic.ts";
 
@@ -214,7 +214,7 @@ test("the summary sentence and whether the copy can run", () => {
   const rep = plan([item("track:/t/1", "track", { type: "repair" }, { bytes: MB, detail: "the audio file is missing on the target" })]);
   assert.equal(copySummary(rep), "Will copy the missing files of 1 track.");
   assert.equal(canCopy(rep), true);
-  assert.deepEqual([linesOf(rep).acting[0].action, linesOf(rep).acting[0].why], ["Repair", "the track is on the target, but a file of it is not (the audio file is missing on the target)"]);
+  assert.deepEqual([linesOf(rep).acting[0].action, linesOf(rep).acting[0].why], ["Repair", "the audio file is missing on the target"]);
   assert.match(footerText(rep, "Pacemaker (G:)"), /^Nothing on Pacemaker \(G:\) is removed or overwritten\./, "a repair only adds files");
   const nothing = plan([item("track:/t/1", "track", { type: "skip", reason: "already the same" })]);
   assert.equal(copySummary(nothing), "Nothing will be copied: all of it is there already.");
@@ -233,4 +233,25 @@ test("the summary sentence and whether the copy can run", () => {
   assert.equal(dialogTitle("Pacemaker (G:)"), "Copy to Pacemaker (G:)?");
   assert.equal(libraryNameFor("G:\\"), "Pacemaker (G:)");
   assert.equal(libraryNameFor(COMP), "This computer");
+});
+
+test("the click route into a case: the picker's choice becomes the same target a drop on a case row gives", () => {
+  const cases = [{ id: 1, name: "Warm-up", track_count: 4, play_time_secs: 0 }, { id: 2, name: "Crate A", track_count: 0, play_time_secs: 0 }];
+  assert.equal(intoCaseLabel("Pacemaker (G:)"), "Copy into a case on Pacemaker (G:)…");
+  assert.equal(defaultCasePick(cases), "Warm-up");
+  assert.equal(defaultCasePick([]), NEW_CASE, "no cases there: a new one");
+  // an existing case: the library's own spelling, nothing created (as the drop on its row)
+  assert.deepEqual(resolveIntoCase(cases, "Crate A", ""), { into: { name: "Crate A", create: false } });
+  assert.deepEqual(resolveIntoCase(cases, "crate a", ""), { into: { name: "Crate A", create: false } });
+  assert.deepEqual(resolveIntoCase(cases, "Gone", ""), { error: "That case is not on the other library any more. Pick another." });
+  // a new case: the trimmed name; a name that is already a case there is that case, not a second one
+  assert.deepEqual(resolveIntoCase(cases, NEW_CASE, "  Fresh finds "), { into: { name: "Fresh finds", create: true } });
+  assert.deepEqual(resolveIntoCase(cases, NEW_CASE, " WARM-UP"), { into: { name: "Warm-up", create: false } });
+  assert.deepEqual(resolveIntoCase(cases, NEW_CASE, "   "), { error: "Type a name for the new case." });
+  assert.match(resolveIntoCase(cases, NEW_CASE, "x".repeat(MAX_CASE_NAME + 1)).error, /at most 255 characters/);
+  assert.equal(resolveIntoCase(cases, NEW_CASE, "x".repeat(MAX_CASE_NAME)).into.create, true);
+  // the selection it plans is the drop's: the picked tracks, and the case as the target
+  const data = { root: "C:/x", kind: "computer", tracks: [{ track_id: 1, location: "/a" }, { track_id: 2, location: "/b" }], mixes: [], cases: [] };
+  const into = resolveIntoCase(cases, "Warm-up", "").into;
+  assert.deepEqual(buildSelection(data, "tracks", [2], into), buildSelection(data, "tracks", [2], resolveDrop({ fromSide: "left", fromTab: "tracks", overSide: "right", overTab: "cases", overCase: "Warm-up" }).into));
 });

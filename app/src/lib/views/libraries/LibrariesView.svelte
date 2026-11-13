@@ -5,6 +5,7 @@
   import Button from "$lib/ui/Button.svelte";
   import JobProgress from "../device/JobProgress.svelte";
   import CopyDialog from "./CopyDialog.svelte";
+  import IntoCaseDialog from "./IntoCaseDialog.svelte";
   import { libs } from "./libraries.svelte";
   import LibraryPane from "./LibraryPane.svelte";
 
@@ -70,6 +71,7 @@
 </div>
 
 <CopyDialog />
+<IntoCaseDialog />
 
 <style>
   .page {

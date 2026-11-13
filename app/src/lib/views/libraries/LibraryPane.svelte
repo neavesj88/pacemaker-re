@@ -10,7 +10,7 @@
   import { libraryOptions } from "../sync/syncLogic";
   import { libs } from "./libraries.svelte";
   import {
-    clickSelect, clock, copyLabel, defaultRight, dragFrom, dragIds, dragLabel, num, onBoth, otherSide, parseDragFrom, presenceOf, pruneTo, readButtonText,
+    clickSelect, clock, copyLabel, defaultRight, dragFrom, dragIds, dragLabel, intoCaseLabel, num, onBoth, otherSide, parseDragFrom, presenceOf, pruneTo, readButtonText,
     resolveDrop, rightOptions, rowId, rowsOf, statusText, TABS, type Row, type Side, type Tab,
   } from "./librariesLogic";
   import type { Collection, Track } from "$lib/api/types";
@@ -186,6 +186,9 @@
   const copyWhy = $derived(sel.size === 0 ? "Pick something to copy first" : !otherData ? "The other library is not showing yet" : "");
   const copyText = $derived(copyLabel(side, otherName));
   const copySelected = () => void libs.copy(side, tab, sel);
+  // tracks can also go into a case of the other library by click (a drop on a case row does the same)
+  const intoText = $derived(intoCaseLabel(otherName));
+  const intoSelected = () => libs.openChooser(side, sel);
 
   let menu = $state<{ x: number; y: number } | null>(null);
   function rowMenu(e: MouseEvent, id: number, i: number) {
@@ -356,7 +359,10 @@
 
     <div class="foot">
       <div class="status muted" role="status">{statusText(tab, sel.size, rows.length, total)}</div>
-      <Button small disabled={!canCopyNow} title={copyWhy} onclick={copySelected}>{copyText}</Button>
+      <div class="acts">
+        {#if tab === "tracks"}<Button small disabled={!canCopyNow} title={copyWhy || intoText} onclick={intoSelected}>Into a case…</Button>{/if}
+        <Button small disabled={!canCopyNow} title={copyWhy} onclick={copySelected}>{copyText}</Button>
+      </div>
     </div>
   {/if}
 </section>
@@ -365,7 +371,10 @@
   <ContextMenu
     x={menu.x}
     y={menu.y}
-    items={[{ label: copyText, onclick: copySelected, disabled: !canCopyNow }]}
+    items={[
+      { label: copyText, onclick: copySelected, disabled: !canCopyNow },
+      ...(tab === "tracks" ? [{ label: intoText, onclick: intoSelected, disabled: !canCopyNow }] : []),
+    ]}
     onclose={() => (menu = null)}
   />
 {/if}
@@ -594,5 +603,10 @@
   .status {
     font-size: 12px;
     min-width: 0;
+  }
+  .acts {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
   }
 </style>
