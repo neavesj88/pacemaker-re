@@ -32,7 +32,7 @@ use serde::Serialize;
 use tauri::{AppHandle, Manager, State};
 
 use crate::commands::export::loudness::{apply_gains, PreviewGains};
-use crate::commands::export::render::{peq_mode, LibResolver};
+use crate::commands::export::render::{peq_mode, vocal_tools_for, LibResolver};
 use crate::commands::mixes::doc::MixDoc;
 use crate::error::{AppError, AppResult};
 use crate::events;
@@ -118,7 +118,7 @@ impl Shared {
             }
             Event::Note(n) => {
                 if let Ok(mut m) = self.message.lock() {
-                    *m = n;
+                    add_note(&mut m, &n);
                 }
                 self.emit_status();
             }
@@ -139,8 +139,12 @@ struct Session {
     master_db: f64,
     /// Loudness gains of the export settings (per clip and master), applied on top of the fader.
     gains: PreviewGains,
-    /// Library id -> file, `None` for a track that is not on the volume; each id is looked up once.
+    /// Library id -> file, `None` for a track that is not on the volume. Found ids are looked up once; a
+    /// `None` is looked up again by `forget_missing` (on Play, and now and then on an edit).
     paths: HashMap<i64, Option<PathBuf>>,
+    /// The mix as last given, to look its missing tracks up again.
+    mix: Mix,
+    missing_checked: std::time::Instant,
 }
 
 impl Session {
@@ -168,6 +172,42 @@ impl Drop for Session {
     }
 }
 
+/// The longest note text kept: more than a few skipped clips is noise, the first ones name the problem.
+const NOTE_MAX: usize = 400;
+
+/// Adds an engine note to the text the page shows: each different note once, in the order they came, so
+/// two missing tracks are both named instead of the last one hiding the first.
+fn add_note(text: &mut String, note: &str) {
+    let note = note.trim();
+    if note.is_empty() || text.contains(note) || text.len() + note.len() >= NOTE_MAX {
+        return;
+    }
+    if !text.is_empty() {
+        text.push(' ');
+    }
+    text.push_str(note);
+}
+
+/// How often an edit looks again for tracks that were not on the volume (a drive plugged back in, a
+/// file restored by a repair). Play always looks.
+const RECHECK_MISSING: std::time::Duration = std::time::Duration::from_secs(2);
+
+/// Forgets the "not on the volume" answers so `wanted_for` looks those tracks up again. With `last`
+/// set it does so at most once per `every`; returns whether it did.
+fn forget_missing(paths: &mut HashMap<i64, Option<PathBuf>>, last: Option<&mut std::time::Instant>, now: std::time::Instant, every: std::time::Duration) -> bool {
+    if !paths.values().any(Option::is_none) {
+        return false;
+    }
+    if let Some(last) = last {
+        if now.duration_since(*last) < every {
+            return false;
+        }
+        *last = now;
+    }
+    paths.retain(|_, p| p.is_some());
+    true
+}
+
 /// Resolves the audio files of `mix` that the session has not looked up yet and returns the
 /// files the mix needs with their place on the timeline.
 fn wanted_for(root: &Path, paths: &mut HashMap<i64, Option<PathBuf>>, mix: &Mix) -> AppResult<Vec<Wanted>> {
@@ -190,7 +230,7 @@ fn wanted_for(root: &Path, paths: &mut HashMap<i64, Option<PathBuf>>, mix: &Mix)
 fn options(doc: &MixDoc, peq: pm_mixer::PeqMode, vocal_ids: &Option<Vec<String>>, master_db: f64, gains: &PreviewGains) -> LiveOptions {
     let mut o = pm_mixer::Options::default();
     apply_gains(doc, gains, &mut o);
-    let vocal_tools = vocal_ids.as_ref().map(|ids| Arc::new(doc.tool_session_ids(ids)));
+    let vocal_tools = vocal_tools_for(doc, peq, vocal_ids.as_deref());
     LiveOptions { peq, vocal_tools, clip_gain_db: o.clip_gain_db, master_gain_db: o.master_gain_db + master_db }
 }
 
@@ -232,9 +272,9 @@ pub async fn mix_live_load(app: AppHandle, state: State<'_, MixLive>, root: Stri
         let (sh, ld) = (shared.clone(), loader.clone());
         let player = Player::spawn(ring.clone(), Box::new(move |t| ld.get(t.library_id)), Arc::new(move |e| sh.on_event(e)));
         let gains = gains.unwrap_or_default();
-        player.send(Command::Load(mix, options(&doc, peq, &vocal_tool_ids, 0.0, &gains)));
+        player.send(Command::Load(mix.clone(), options(&doc, peq, &vocal_tool_ids, 0.0, &gains)));
         shared.emit_status();
-        Ok(Session { player, loader, device: None, shared, ring, root, peq, vocal_ids: vocal_tool_ids, master_db: 0.0, gains, paths })
+        Ok(Session { player, loader, device: None, shared, ring, root, peq, vocal_ids: vocal_tool_ids, master_db: 0.0, gains, paths, mix, missing_checked: std::time::Instant::now() })
     })
     .await
     .map_err(|e| AppError::from(e.to_string()))??;
@@ -251,24 +291,32 @@ pub async fn mix_live_load(app: AppHandle, state: State<'_, MixLive>, root: Stri
 pub async fn mix_live_update(state: State<'_, MixLive>, doc: MixDoc, gains: Option<PreviewGains>, refresh_vocal: Option<bool>, vocal_tool_ids: Option<Vec<String>>) -> AppResult<()> {
     let mix = doc.to_mix()?;
     // look the new clips up on a blocking thread (the library is opened), then hand over
-    let taken = state.0.lock().map_err(|_| AppError::from("The live player is locked."))?.as_mut().map(|s| (s.root.clone(), std::mem::take(&mut s.paths)));
-    let Some((root, mut paths)) = taken else { return Err(not_loaded()) };
-    let (mix, paths, wanted, peq) = tauri::async_runtime::spawn_blocking(move || {
+    let taken = state.0.lock().map_err(|_| AppError::from("The live player is locked."))?.as_mut().map(|s| (s.root.clone(), std::mem::take(&mut s.paths), s.missing_checked));
+    let Some((root, mut paths, mut checked)) = taken else { return Err(not_loaded()) };
+    let (mix, paths, checked, wanted, peq) = tauri::async_runtime::spawn_blocking(move || {
+        forget_missing(&mut paths, Some(&mut checked), std::time::Instant::now(), RECHECK_MISSING);
         let w = wanted_for(&root, &mut paths, &mix);
         // the card's Vocal flag decides what Wah tools sound like; read again only when asked (it is a file on the volume)
         let peq = refresh_vocal.unwrap_or(false).then(|| peq_mode(&root));
-        (mix, paths, w, peq)
+        (mix, paths, checked, w, peq)
     })
     .await
     .map_err(|e| AppError::from(e.to_string()))?;
     let mut g = state.0.lock().map_err(|_| AppError::from("The live player is locked."))?;
     let s = g.as_mut().ok_or_else(not_loaded)?;
     s.paths = paths;
+    s.missing_checked = checked;
     if let Some(p) = peq {
         s.peq = p;
     }
     let wanted = wanted?;
     s.loader.set_wanted(wanted);
+    s.mix = mix.clone();
+    // an edit may have cured what the last note said (the first track added, a crossfade now on two clips):
+    // the engine says it again if it still holds
+    if let Ok(mut m) = s.shared.message.lock() {
+        m.clear();
+    }
     if let Some(g) = gains {
         s.gains = g;
     }
@@ -330,6 +378,29 @@ pub async fn mix_live_play(state: State<'_, MixLive>, from_sec: f64) -> AppResul
                 s.shared.emit_status();
                 return Err(e.into());
             }
+        }
+    }
+    // a track that was not on the volume when the mix was opened may be there now (drive plugged back in,
+    // file restored): look those up again before the first block is built
+    let recheck = {
+        let mut g = state.0.lock().map_err(|_| AppError::from("The live player is locked."))?;
+        let s = g.as_mut().ok_or_else(not_loaded)?;
+        s.paths.values().any(Option::is_none).then(|| (s.root.clone(), std::mem::take(&mut s.paths), s.mix.clone()))
+    };
+    if let Some((root, mut paths, mix)) = recheck {
+        let (paths, wanted) = tauri::async_runtime::spawn_blocking(move || {
+            forget_missing(&mut paths, None, std::time::Instant::now(), RECHECK_MISSING);
+            let w = wanted_for(&root, &mut paths, &mix);
+            (paths, w)
+        })
+        .await
+        .map_err(|e| AppError::from(e.to_string()))?;
+        let mut g = state.0.lock().map_err(|_| AppError::from("The live player is locked."))?;
+        let s = g.as_mut().ok_or_else(not_loaded)?;
+        s.paths = paths;
+        s.missing_checked = std::time::Instant::now();
+        if let Ok(w) = wanted {
+            s.loader.set_wanted(w);
         }
     }
     let g = state.0.lock().map_err(|_| AppError::from("The live player is locked."))?;
@@ -500,6 +571,40 @@ mod tests {
         assert_eq!(ring.underruns(), 0);
         drop(dev);
         drop(player);
+    }
+
+    #[test]
+    fn notes_pile_up_once_each_and_stay_short() {
+        let mut t = String::new();
+        add_note(&mut t, "Skipped \"A\": gone.");
+        add_note(&mut t, "Skipped \"B\": gone.");
+        add_note(&mut t, "Skipped \"A\": gone.");
+        add_note(&mut t, "  ");
+        assert_eq!(t, "Skipped \"A\": gone. Skipped \"B\": gone.");
+        for i in 0..100 {
+            add_note(&mut t, &format!("Note number {i} is here."));
+        }
+        assert!(t.len() < NOTE_MAX + 40, "{}", t.len());
+    }
+
+    #[test]
+    fn missing_tracks_are_looked_up_again_but_found_ones_are_kept() {
+        use std::time::{Duration, Instant};
+        let mut paths: HashMap<i64, Option<PathBuf>> = HashMap::new();
+        paths.insert(1, Some(PathBuf::from("a.wav")));
+        paths.insert(2, None);
+        let t0 = Instant::now();
+        let mut last = t0;
+        // an edit right after the first look does not look again
+        assert!(!forget_missing(&mut paths, Some(&mut last), t0 + Duration::from_millis(500), Duration::from_secs(2)));
+        assert!(paths.contains_key(&2));
+        // later it does: the missing one is dropped (so it is resolved again), the found one stays
+        assert!(forget_missing(&mut paths, Some(&mut last), t0 + Duration::from_secs(3), Duration::from_secs(2)));
+        assert!(!paths.contains_key(&2) && paths.contains_key(&1));
+        // Play always looks, and with nothing missing there is nothing to do
+        paths.insert(3, None);
+        assert!(forget_missing(&mut paths, None, t0, Duration::from_secs(2)));
+        assert!(!forget_missing(&mut paths, None, t0, Duration::from_secs(2)));
     }
 
     #[test]

@@ -5,10 +5,16 @@ import { MIX_EXPORT_JOB, MIX_LOUDNESS_JOB, onLoudnessReport } from "$lib/api/exp
 import { onJobDone, onJobProgress, subscribeAll, type Unlisten } from "$lib/api/events";
 import { mixExport } from "$lib/state/mixexport.svelte";
 import { toast } from "$lib/state/toast.svelte";
+import { markedToolIds } from "./previewState";
+import { watchLibraryReloads } from "./stale.svelte";
+import { vocalTools } from "./vocalTools.svelte";
 import { mv } from "./view.svelte";
 
 export default function init(): Unlisten {
+  // an export and a loudness analysis render the Vocal-marked Wah tools as the live player does
+  mixExport.vocalIdsOf = (doc) => markedToolIds(doc, vocalTools.ids(doc.id));
   return subscribeAll([
+    () => Promise.resolve(watchLibraryReloads()),
     () =>
       onJobProgress((e) => {
         if (e.job === MIX_EXPORT_JOB && e.total > 0) {

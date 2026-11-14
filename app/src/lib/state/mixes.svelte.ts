@@ -83,6 +83,14 @@ class Mixes {
   /** What `mixValidate` says would stop a save, refreshed after edits. */
   problems = $state.raw<string[]>([]);
   busy = $state(false);
+  /** The library changed this mix behind the editor while it holds unsaved edits (a restore, or a Sync that
+   * replaced it): "changed" = another version is there now, "gone" = the mix is not in the library any more.
+   * Saving is refused until the user chooses (reload, or keep the edits on purpose). */
+  libraryChange = $state<"changed" | "gone" | null>(null);
+  /** The library's stamp behind `libraryChange`, and the stamp the user already chose to overwrite ("Keep my
+   * edits"), so the next reload with the same stamp does not ask the same question again. */
+  libraryStamp: number | null = null;
+  keptStamp: number | null = null;
   /** Copied clips or processes. */
   clipboard = $state.raw<E.Clipboard | null>(null);
   /** The mix list, for pickers (refreshed by `refreshList`). */
@@ -143,6 +151,8 @@ class Mixes {
     const root = this.root;
     const doc = this.doc;
     if (!root || !doc) return;
+    if (this.libraryChange === "gone") throw new Error("this mix is no longer in the library (a restore or sync removed it). Use Save as to keep your edits as a new mix.");
+    if (this.libraryChange === "changed") throw new Error("this mix was changed in the library (a restore or sync) after you opened it, and saving would overwrite that. Reload it, or choose Keep my edits first.");
     this.busy = true;
     try {
       const saved = await mixSave(root, doc.id, doc);
@@ -196,7 +206,18 @@ class Mixes {
     if (this.doc) await this.open(this.doc.id);
   }
 
+  /** The user chose to keep the edits over the version the library has now: the next Save overwrites it. */
+  keepEdits() {
+    if (this.libraryChange === "changed") {
+      this.keptStamp = this.libraryStamp;
+      this.libraryChange = null;
+    }
+  }
+
   close() {
+    this.libraryChange = null;
+    this.libraryStamp = null;
+    this.keptStamp = null;
     this.doc = null;
     this.selected = [];
     this.dirty = false;
@@ -233,6 +254,8 @@ class Mixes {
     let after = fn(before);
     if (after === before) return;
     after = E.settleDecks(before, after);
+    // a mix that has just become empty forgets its reference tempo: the next first track sets it again
+    if (before.clips.length > 0 && after.clips.length === 0) after = { ...after, tempoBpm: E.carryTempo(before.tempoBpm, after) };
     const now = Date.now();
     if (opts.dirties === false) {
       // not part of the saved document (the reference tempo): no undo step, history untouched
@@ -262,7 +285,7 @@ class Mixes {
     const s = this.#undo.pop();
     if (!s || !this.doc) return;
     this.#redo.push({ doc: this.doc, label: s.label });
-    this.doc = { ...s.doc, tempoBpm: this.doc.tempoBpm };
+    this.doc = { ...s.doc, tempoBpm: E.carryTempo(this.doc.tempoBpm, s.doc) };
     this.#afterHistory();
   }
 
@@ -270,7 +293,7 @@ class Mixes {
     const s = this.#redo.pop();
     if (!s || !this.doc) return;
     this.#undo.push({ doc: this.doc, label: s.label });
-    this.doc = { ...s.doc, tempoBpm: this.doc.tempoBpm };
+    this.doc = { ...s.doc, tempoBpm: E.carryTempo(this.doc.tempoBpm, s.doc) };
     this.#afterHistory();
   }
 
@@ -390,10 +413,11 @@ class Mixes {
     this.edit("Change deck", (d) => E.updateClip(d, id, (c) => ({ ...c, channel })));
   }
 
-  /** `startBpm` is for Trans only (the tempo its gate follows). */
-  addTool(clipId: string, type: string, localStart: number, length: number, startBpm = 0) {
+  /** `startBpm` is for Trans only (the tempo its gate follows). `label` is the name the Undo button shows
+   * ("Vocal" for a Wah tool the user made as a Vocal tool). */
+  addTool(clipId: string, type: string, localStart: number, length: number, startBpm = 0, label = type) {
     const tool = E.newTool(type, localStart, length, undefined, startBpm);
-    this.edit(`Add ${type}`, (d) => E.addProcess(d, clipId, tool));
+    this.edit(`Add ${label}`, (d) => E.addProcess(d, clipId, tool));
     this.selected = [tool.id];
     return tool;
   }
@@ -611,11 +635,11 @@ class Mixes {
   /** Renders `[fromSec, toSec]` of the open (possibly unsaved) document to a temporary file for
    * preview; play it with `playback`. The audio area implements `export_render_preview`.
    * `gains` are the loudness gains an export would apply; `edgeFadeMs` fades the window's cuts (a
-   * range preview). */
-  async renderPreview(fromSec: number, toSec: number, gains?: PreviewGains, edgeFadeMs?: number) {
+   * range preview). `vocalToolIds`: the Wah tools the app marks as Vocal tools, so the part is heard as the live player plays it. */
+  async renderPreview(fromSec: number, toSec: number, gains?: PreviewGains, edgeFadeMs?: number, vocalToolIds?: string[]) {
     const root = this.root;
     if (!root || !this.doc) throw new Error("no mix is open");
-    return renderMixPreview(root, this.doc, fromSec, toSec, gains, edgeFadeMs);
+    return renderMixPreview(root, this.doc, fromSec, toSec, gains, edgeFadeMs, vocalToolIds);
   }
 
   // ------------------------------------------------------------------------------------------

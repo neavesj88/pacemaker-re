@@ -16,7 +16,7 @@ import { vocal } from "$lib/state/vocal.svelte";
 import type { VocalMode } from "$lib/api/device";
 import type { MixDoc } from "$lib/api/mixes";
 import { SR, toSamples } from "./layout";
-import { sameRender, volumeToDb } from "./previewState";
+import { ADD_TRACK_NOTICE, NO_AUDIBLE_NOTICE, hasAudibleClips, markedToolIds, sameRender, volumeToDb } from "./previewState";
 import { vocalTools } from "./vocalTools.svelte";
 import { mv } from "./view.svelte";
 
@@ -46,6 +46,8 @@ class Preview {
   #sentGains = "";
   /** The Vocal-tool marks the engine was last given (app-side only: the file has no Vocal tool). */
   #sentVocal = "";
+  /** The engine's own note currently shown (so an edit or a clean status can take it away again). */
+  #engineNotice = "";
   #listening = false;
   /** Engine calls run one after another, so an update never overtakes the load before it. */
   #chain: Promise<unknown> = Promise.resolve();
@@ -98,7 +100,14 @@ class Preview {
     onMixLiveStatus((s) => {
       if (this.#key === null) return;
       this.load = s;
-      if (s.state === "error" || s.message) this.notice = s.message;
+      if (s.state === "error" || s.message) {
+        this.notice = s.message;
+        this.#engineNotice = s.message;
+      } else if (this.#engineNotice !== "") {
+        // the engine has nothing to say any more (an edit cured it): take its old note away, and only its own
+        if (this.notice === this.#engineNotice) this.notice = "";
+        this.#engineNotice = "";
+      }
       if (s.state === "error" && this.status === "playing") this.status = "paused";
     }).catch(() => {});
   }
@@ -106,8 +115,7 @@ class Preview {
   /** Ids of the Wah tools this mix marks as Vocal tools; the engine renders those as the vocal
    * filter and every other Wah tool as Wah. */
   #vocalIds(doc: MixDoc): string[] {
-    const marked = new Set(vocalTools.ids(doc.id));
-    return doc.clips.flatMap((c) => c.processes.filter((p) => marked.has(p.id)).map((p) => p.id)).sort();
+    return markedToolIds(doc, vocalTools.ids(doc.id));
   }
 
   #gainsKey() {
@@ -163,8 +171,10 @@ class Preview {
   /** Called when the open document, the card's Vocal mode or the loudness gains may have changed:
    * sends the new state to the engine (while playing the edit is heard within a few hundred ms). */
   edited() {
-    if (this.#key === null || this.#range) return;
     const doc = mixes.doc;
+    // a reason Play gave stops being true once the mix has what was missing
+    if (doc && ((this.notice === ADD_TRACK_NOTICE && doc.clips.length > 0) || (this.notice === NO_AUDIBLE_NOTICE && hasAudibleClips(doc)))) this.notice = "";
+    if (this.#key === null || this.#range) return;
     if (!doc) return;
     if (`${mixes.root}|${doc.id}` !== this.#key) {
       // another mix was opened: the old one stops, the next play loads the new one
@@ -174,6 +184,11 @@ class Preview {
     }
     if (sameRender(this.#sent, this.#sentMode, doc, vocal.mode) && this.#sentGains === this.#gainsKey() && this.#sentVocal === this.#vocalIds(doc).join("|")) return;
     clearTimeout(this.#timer);
+    if (this.#engineNotice !== "" && this.notice === this.#engineNotice) {
+      // the cause may be gone with this edit; the engine says it again if it still holds
+      this.notice = "";
+      this.#engineNotice = "";
+    }
     this.#timer = setTimeout(() => {
       const d = mixes.doc;
       if (!d || this.#key === null) return;
@@ -197,10 +212,18 @@ class Preview {
     const doc = mixes.doc;
     if (!doc) return;
     if (doc.clips.length === 0) {
-      this.notice = "Add a track before playing.";
+      this.notice = ADD_TRACK_NOTICE;
+      return;
+    }
+    if (!hasAudibleClips(doc)) {
+      // the engine could not build a player from this (it only reports that after Play returned, when the
+      // button already shows "playing"): say it plainly and stay stopped
+      this.notice = NO_AUDIBLE_NOTICE;
+      this.status = this.status === "playing" ? "paused" : this.status;
       return;
     }
     this.notice = "";
+    this.#engineNotice = "";
     this.#stopRange();
     // the mix and the player bar never play together
     playback.pause();
@@ -236,7 +259,7 @@ class Preview {
     this.status = "rendering";
     mv.playhead = toSamples(fromSec);
     try {
-      const { path } = await mixes.renderPreview(fromSec, to, mixExport.previewGains(), mixExport.prefs.edgeFadeMs);
+      const { path } = await mixes.renderPreview(fromSec, to, mixExport.previewGains(), mixExport.prefs.edgeFadeMs, this.#vocalIds(doc));
       if (token !== this.#token) return;
       this.#range = true;
       this.#rangeStart = fromSec;

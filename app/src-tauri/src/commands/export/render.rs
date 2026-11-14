@@ -145,6 +145,18 @@ pub fn peq_mode(root: &Path) -> PeqMode {
     }
 }
 
+/// The Wah tools that render as the Vocal filter, from the ids the app marks as Vocal tools (the file
+/// has no Vocal tool, so only the app knows). On a card whose Vocal flag is on, the card decides for every
+/// Wah tool, as the device does, and the marks change nothing; on stock Wah only the marked tools are
+/// vocal filters. The live player, the range preview and the export all ask here, so the file sounds like
+/// the preview. `None` = every Wah tool follows `peq`.
+pub fn vocal_tools_for(doc: &MixDoc, peq: PeqMode, marked: Option<&[String]>) -> Option<Arc<std::collections::HashSet<String>>> {
+    if peq != PeqMode::Wah {
+        return None;
+    }
+    marked.map(|ids| Arc::new(doc.tool_session_ids(ids)))
+}
+
 const PREVIEW_DIR_PREFIX: &str = "pacemaker-revival-preview-";
 
 /// Deletes preview directories left behind by earlier runs (untouched for a day; a running
@@ -179,13 +191,15 @@ pub fn next_preview_path() -> AppResult<PathBuf> {
 /// Renders `[from_sec, to_sec)` of the timeline to a WAV at `dest`.
 #[cfg(test)]
 pub fn render_preview(root: &Path, doc: &MixDoc, from_sec: f64, to_sec: f64, dest: &Path) -> AppResult<RenderedAudio> {
-    render_preview_with(root, doc, from_sec, to_sec, dest, None, None)
+    render_preview_with(root, doc, from_sec, to_sec, dest, None, None, None)
 }
 
 /// [`render_preview`] with the gains of a loudness analysis (per-clip levelling and master gain),
 /// applied by the same engine options an export uses, so the preview plays at the export's level.
 /// `edge_fade_ms` fades the window's cuts the way a partial export does (omit for plain playback).
-pub fn render_preview_with(root: &Path, doc: &MixDoc, from_sec: f64, to_sec: f64, dest: &Path, gains: Option<&PreviewGains>, edge_fade_ms: Option<f64>) -> AppResult<RenderedAudio> {
+/// `vocal_tool_ids`: the Wah tools the app marks as Vocal tools (see [`vocal_tools_for`]).
+#[allow(clippy::too_many_arguments)]
+pub fn render_preview_with(root: &Path, doc: &MixDoc, from_sec: f64, to_sec: f64, dest: &Path, gains: Option<&PreviewGains>, edge_fade_ms: Option<f64>, vocal_tool_ids: Option<&[String]>) -> AppResult<RenderedAudio> {
     if !from_sec.is_finite() || !to_sec.is_finite() || from_sec < 0.0 || to_sec <= from_sec {
         return Err("The preview range is empty.".into());
     }
@@ -194,7 +208,8 @@ pub fn render_preview_with(root: &Path, doc: &MixDoc, from_sec: f64, to_sec: f64
     }
     let mix = doc.to_mix()?;
     let res = LibResolver::open(root, &mix)?;
-    let mut opts = Options { peq: peq_mode(root), ..Options::window_secs(from_sec, to_sec) };
+    let peq = peq_mode(root);
+    let mut opts = Options { peq, vocal_tools: vocal_tools_for(doc, peq, vocal_tool_ids), ..Options::window_secs(from_sec, to_sec) };
     if let Some(g) = gains {
         loudness::apply_gains(doc, g, &mut opts);
     }
@@ -254,6 +269,8 @@ pub struct ExportRequest {
     pub levels: LevelSettings,
     pub encoding: EncodingSpec,
     pub tags: Option<TagSpec>,
+    /// The Wah tools (document ids) the app marks as Vocal tools; `None` = the card alone decides.
+    pub vocal_tool_ids: Option<Vec<String>>,
 }
 
 /// Everything about an export that can fail fast, checked before the job starts.
@@ -268,6 +285,8 @@ pub struct ExportPlan {
     pub dest: PathBuf,
     /// What `Wah` tools render as, read from the card when the export was planned.
     pub peq: PeqMode,
+    /// Which `Wah` tools are the Vocal filter, see [`vocal_tools_for`].
+    pub vocal_tools: Option<Arc<std::collections::HashSet<String>>>,
     /// The part of the timeline to export; `None` = the whole mix from its first audible frame.
     pub range: Option<Resolved>,
     pub levels: LevelSettings,
@@ -314,7 +333,9 @@ pub fn plan_export_with(root: &Path, doc: &MixDoc, dest: &str, format: &str, req
         None => None,
     };
     let encoding = encoding::build_encoding(format, &req.encoding, tags)?;
-    Ok(ExportPlan { mix, doc: doc.clone(), res, format, encoding, dest, peq: peq_mode(root), range, levels: req.levels.clone() })
+    let peq = peq_mode(root);
+    let vocal_tools = vocal_tools_for(doc, peq, req.vocal_tool_ids.as_deref());
+    Ok(ExportPlan { mix, doc: doc.clone(), res, format, encoding, dest, peq, vocal_tools, range, levels: req.levels.clone() })
 }
 
 /// An export that has finished: the file and what it measured.
@@ -334,7 +355,7 @@ pub fn run_export(plan: &ExportPlan, progress: &mut dyn FnMut(f64) -> bool) -> A
 /// [`run_export`] that also returns the loudness report (the analysis, when there was one, and the
 /// loudness of the finished audio, measured before it is encoded).
 pub fn run_export_full(plan: &ExportPlan, progress: &mut dyn FnMut(f64) -> bool) -> AppResult<Exported> {
-    let subject = Subject { mix: &plan.mix, doc: &plan.doc, res: &plan.res, peq: plan.peq, range: plan.range.as_ref() };
+    let subject = Subject { mix: &plan.mix, doc: &plan.doc, res: &plan.res, peq: plan.peq, vocal_tools: plan.vocal_tools.clone(), range: plan.range.as_ref() };
     let mut opts = Options { measure: true, ..subject.options() };
     let share = if plan.levels.active() { 0.5 } else { 0.0 };
     let mut report = if plan.levels.active() {
@@ -570,6 +591,52 @@ mod tests {
         std::fs::remove_dir_all(scratch).unwrap();
     }
 
+    /// A Wah tool the app marks as a Vocal tool is the vocal filter in the live player, in a range preview and
+    /// in the export alike (stock Wah card), and the card's own flag decides when it is on, whatever the marks.
+    #[test]
+    fn an_export_plays_vocal_marked_tools_as_the_preview_does() {
+        use pm_formats::mix::{Effect, Envelope, Process, Tool};
+        let (vol, scratch, id, frames) = library("vocalmark");
+        let pos = Position { start: 0.0, length: frames as f64, limit_size: true, session_event_id: "a".repeat(32), ..Position::default() };
+        let mut t = Track::new(id, "/pmdb_tracks/unused", 120.0, 1.0, pos);
+        let len = 3.0 * 44100.0;
+        let mut tool = Tool::flat(Effect::wah(), 44100.0, len, 0.0, "t".into());
+        tool.automation.insert("Wah-CutOff".into(), Envelope::flat(len, -100.0));
+        t.processes.push(Process::Tool(tool));
+        let mut mix = Mix::new("Vocal Mark Test");
+        mix.tracks.push(t);
+        let doc = MixDoc::from_mix(7, &mix);
+        let tool_id = doc.clips[0].processes.iter().find_map(|p| if let crate::commands::mixes::doc::ProcessDoc::Tool(x) = p { Some(x.id.clone()) } else { None }).unwrap();
+        let rms_db = |v: &[f32]| 20.0 * (v.iter().map(|x| f64::from(*x) * f64::from(*x)).sum::<f64>() / v.len() as f64).sqrt().max(1e-9).log10();
+        let export_level = |tag: &str, marked: Option<Vec<String>>| -> f64 {
+            let ex = scratch.join(format!("ex-{tag}.wav"));
+            let req = ExportRequest { vocal_tool_ids: marked, ..ExportRequest::default() };
+            let plan = plan_export_with(&vol, &doc, ex.to_str().unwrap(), "wav", &req).unwrap();
+            run_export(&plan, &mut |_| true).unwrap();
+            let e = pm_mixer::audio::load(&ex).unwrap();
+            rms_db(&e.l[3 * 44100..(3.5 * 44100.0) as usize])
+        };
+        let preview_level = |tag: &str, marked: Option<&[String]>| -> f64 {
+            let pv = scratch.join(format!("pv-{tag}.wav"));
+            render_preview_with(&vol, &doc, 2.0, 3.5, &pv, None, None, marked).unwrap();
+            rms_db(&pm_mixer::audio::load(&pv).unwrap().l[44100..])
+        };
+        let flag = vol.join(".Pacemaker").join("revival-vocal");
+        let _ = std::fs::remove_file(&flag);
+        let marks = vec![tool_id];
+        let wah = export_level("unmarked", None);
+        let voc = export_level("marked", Some(marks.clone()));
+        assert!(voc < wah - 25.0, "marked tool exports as the vocal cut: {voc} vs wah {wah}");
+        assert!((preview_level("marked", Some(&marks)) - voc).abs() < 0.3, "the range preview sounds like the export");
+        assert!((export_level("empty", Some(vec![])) - wah).abs() < 0.3, "no marks, stock Wah");
+        // the card's flag on: the card decides for every Wah tool, the marks change nothing
+        std::fs::write(&flag, b"").unwrap();
+        let card = export_level("card", None);
+        assert!((export_level("card-empty", Some(vec![])) - card).abs() < 0.3, "an empty mark list does not undo the card's Vocal filter");
+        std::fs::remove_dir_all(vol).unwrap();
+        std::fs::remove_dir_all(scratch).unwrap();
+    }
+
     #[test]
     fn a_cancelled_export_stops_early_and_leaves_no_file() {
         let (vol, scratch, id, frames) = library("cancel");
@@ -785,13 +852,13 @@ mod tests {
         // the dialog's analysis
         let mix = doc.to_mix().unwrap();
         let res = LibResolver::open(&vol, &mix).unwrap();
-        let subject = Subject { mix: &mix, doc: &doc, res: &res, peq: peq_mode(&vol), range: None };
+        let subject = Subject { mix: &mix, doc: &doc, res: &res, peq: peq_mode(&vol), vocal_tools: None, range: None };
         let analysis = loudness::analyse(&subject, &req.levels, "analysis", &mut |_| true).unwrap();
         assert_eq!(analysis.source, "analysis");
 
         // the preview of a stretch of the second clip, at those gains
         let pv = scratch.join("pv.wav");
-        render_preview_with(&vol, &doc, 26.0, 30.0, &pv, Some(&analysis.gains), None).unwrap();
+        render_preview_with(&vol, &doc, 26.0, 30.0, &pv, Some(&analysis.gains), None, None).unwrap();
         // the export with the same settings
         let ex = scratch.join("ex.wav");
         let plan = plan_export_with(&vol, &doc, ex.to_str().unwrap(), "wav", &req).unwrap();
@@ -805,7 +872,7 @@ mod tests {
         assert!((pr - er).abs() < 0.1, "preview {pr} dB vs export {er} dB");
         // and without the gains it would have been a different level
         let flat = scratch.join("flat.wav");
-        render_preview_with(&vol, &doc, 26.0, 30.0, &flat, None, None).unwrap();
+        render_preview_with(&vol, &doc, 26.0, 30.0, &flat, None, None, None).unwrap();
         let f = pm_mixer::audio::load(&flat).unwrap();
         assert!((rms(&f.l[44100..3 * 44100]) - er).abs() > 3.0, "the gains must make an audible difference in this fixture");
         std::fs::remove_dir_all(vol).unwrap();
@@ -848,12 +915,12 @@ mod tests {
 
         // previewing the range with the same fade is the same samples as exporting it
         let pv = scratch.join("range-preview.wav");
-        render_preview_with(&vol, &doc, 2.0, 6.0, &pv, None, Some(20.0)).unwrap();
+        render_preview_with(&vol, &doc, 2.0, 6.0, &pv, None, Some(20.0), None).unwrap();
         let q = pm_mixer::audio::load(&pv).unwrap();
         assert_eq!(q.l, c.l, "a range preview with the export's fade is the export");
-        assert!(render_preview_with(&vol, &doc, 2.0, 6.0, &pv, None, Some(-1.0)).is_err());
+        assert!(render_preview_with(&vol, &doc, 2.0, 6.0, &pv, None, Some(-1.0), None).is_err());
         let plain = scratch.join("range-plain.wav");
-        render_preview_with(&vol, &doc, 2.0, 6.0, &plain, None, None).unwrap();
+        render_preview_with(&vol, &doc, 2.0, 6.0, &plain, None, None, None).unwrap();
         let head = |v: &[f32]| v[..441].iter().map(|x| x.abs()).fold(0.0f32, f32::max);
         assert!(head(&pm_mixer::audio::load(&plain).unwrap().l) > head(&c.l) + 0.05, "no fade unless asked");
 

@@ -250,6 +250,8 @@ pub struct Subject<'a> {
     pub doc: &'a MixDoc,
     pub res: &'a dyn Resolver,
     pub peq: PeqMode,
+    /// Which `Wah` tools are the Vocal filter (`render::vocal_tools_for`); `None` = `peq` for all.
+    pub vocal_tools: Option<std::sync::Arc<std::collections::HashSet<String>>>,
     /// The part of the timeline to measure; `None` = the whole export (from the first audible frame).
     pub range: Option<&'a Resolved>,
 }
@@ -258,8 +260,8 @@ impl Subject<'_> {
     /// Engine options for a render of the subject.
     pub fn options(&self) -> Options {
         match self.range {
-            Some(r) => Options { from: r.from, to: Some(r.to), edge_fade_frames: r.edge_fade_frames, peq: self.peq, ..Options::default() },
-            None => Options { skip_leading_silence: true, peq: self.peq, ..Options::default() },
+            Some(r) => Options { from: r.from, to: Some(r.to), edge_fade_frames: r.edge_fade_frames, peq: self.peq, vocal_tools: self.vocal_tools.clone(), ..Options::default() },
+            None => Options { skip_leading_silence: true, peq: self.peq, vocal_tools: self.vocal_tools.clone(), ..Options::default() },
         }
     }
 }

@@ -114,7 +114,7 @@
 <div class="field"><span class="lbl">Track BPM</span><span class="val">{clip.bpm.toFixed(2)}</span></div>
 <div class="field">
   <label for="cp-bpm">Plays at</label>
-  <BpmField id="cp-bpm" value={eff} onset={setBpm} label="Plays at" disabled={!(clip.bpm > 0)} />
+  <BpmField id="cp-bpm" value={eff} onset={setBpm} label="Plays at" stack disabled={!(clip.bpm > 0)} />
 </div>
 <div class="field">
   <span class="lbl">Octave</span>
@@ -125,11 +125,12 @@
 </div>
 <div class="field">
   <label for="cp-pct">Pitch / speed</label>
-  <span class="inline">
+  <span class="inline pct">
     <button class="nudge" title="0.1 % slower" onclick={() => nudgePct(-0.1)}>−.1</button>
     <button class="nudge" title="0.01 % slower" onclick={() => nudgePct(-0.01)}>−.01</button>
     <input
       id="cp-pct"
+      class="pct-in"
       type="number"
       step="0.01"
       min="-80"
@@ -142,7 +143,7 @@
         else e.currentTarget.value = String(Number(pct.toFixed(2)));
       }}
     />
-    <span class="muted">%</span>
+    <span class="muted pct-unit">%</span>
     <button class="nudge" title="0.01 % faster" onclick={() => nudgePct(0.01)}>+.01</button>
     <button class="nudge" title="0.1 % faster" onclick={() => nudgePct(0.1)}>+.1</button>
   </span>
@@ -273,6 +274,30 @@
     flex: 1 1 46px;
     min-width: 42px;
     text-align: center;
+  }
+  /* The number gets its own row (the global input padding and the inspector's min-width: 0 left it about
+     14px), the four nudge buttons share the row under it. */
+  .inline.pct {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+  }
+  .inline .pct-in[type="number"] {
+    order: -2;
+    grid-column: 1 / 4;
+    min-width: 0;
+    padding-inline: 3px;
+    appearance: textfield;
+  }
+  .inline .pct-in::-webkit-inner-spin-button,
+  .inline .pct-in::-webkit-outer-spin-button {
+    appearance: none;
+    margin: 0;
+  }
+  .pct-unit {
+    order: -1;
+  }
+  .inline.pct .nudge {
+    padding: 2px 3px;
   }
   .nudge {
     flex: none;

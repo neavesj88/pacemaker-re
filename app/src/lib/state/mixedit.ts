@@ -540,12 +540,18 @@ export function updateProcess(doc: MixDoc, clipId: string, id: string, fn: (p: P
   return replaceClip(doc, clipId, (c) => ({ ...c, processes: c.processes.map((p) => (p.id === id ? fn(p) : p)) }));
 }
 
+/** The reference (mix) tempo a document keeps when `target` replaces the current one (undo, redo, deleting
+ * clips): kept, except that an empty mix has none, so its next first track is matched to nothing and sets
+ * the tempo itself instead of being held to a tempo the mix no longer has. When the current tempo is already
+ * empty (undoing the delete of every clip) the target's own tempo comes back with its clips. */
+export const carryTempo = (current: number | null, target: MixDoc): number | null => (target.clips.length === 0 ? null : (current ?? target.tempoBpm));
+
 /** Moves a process to clip-local `newStart` (snapped on the timeline when asked), keeping it
  * inside its clip. */
 export function moveProcess(doc: MixDoc, clipId: string, id: string, newStart: number, opts?: SnapOptions): MixDoc {
   const c = clipOf(doc, clipId);
   const p = c?.processes.find((x) => x.id === id);
-  if (!c || !p) return doc;
+  if (!c || !p || !Number.isFinite(newStart)) return doc; // NaN would be written into the mix
   let s = newStart;
   if (opts && opts.mode !== "off") {
     const targets = snapTargets(doc, opts.mode, opts.exclude ?? [], [c.start + s - SR, c.start + s + SR], opts.sections);
@@ -562,7 +568,7 @@ export function moveProcess(doc: MixDoc, clipId: string, id: string, newStart: n
 export function resizeProcess(doc: MixDoc, clipId: string, id: string, edge: "left" | "right", pos: number, opts?: SnapOptions): MixDoc {
   const c = clipOf(doc, clipId);
   const p = c?.processes.find((x) => x.id === id);
-  if (!c || !p) return doc;
+  if (!c || !p || !Number.isFinite(pos)) return doc;
   let q = pos;
   if (opts && opts.mode !== "off") {
     q = snap(c.start + pos, snapTargets(doc, opts.mode, opts.exclude ?? [], [c.start + pos - SR, c.start + pos + SR], opts.sections), opts.threshold) - c.start;

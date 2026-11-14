@@ -81,7 +81,12 @@ class MixExport {
   #reportKey = "";
   /** The card's Vocal mode the analysis was measured under (the Wah tools sound different per mode). */
   #reportMode: VocalMode = "off";
-  #pending: { doc: MixDoc | null; key: string; mode: VocalMode } | null = null;
+  /** The Vocal-tool marks the analysis was measured with (a Vocal tool sounds different from Wah). */
+  #reportVocal = "";
+  #pending: { doc: MixDoc | null; key: string; mode: VocalMode; vocal: string } | null = null;
+  /** Which Wah tools of a mix are Vocal tools. The marks belong to the mix view's store, which sets this
+   * (views/mixes/init.ts), so the export and the analysis are given the same tools as the live player. */
+  vocalIdsOf: (doc: MixDoc) => string[] = () => [];
   #infoSeq = 0;
   #forDoc = -1;
 
@@ -152,6 +157,7 @@ class MixExport {
       encoding: encodingOf(this.prefs),
       // the chapters are the track list as the user has set it up for the track list dialog
       tags: tagsOf(this.prefs, this.titleText, tracklist.snapshot()),
+      vocalToolIds: mixes.doc ? this.vocalIdsOf(mixes.doc) : [],
     };
   }
 
@@ -190,10 +196,14 @@ class MixExport {
     return range ? analysisKey(this.levels(), range, this.rangePrefs()) : null;
   }
 
+  #vocalKey(): string {
+    return mixes.doc ? this.vocalIdsOf(mixes.doc).join("|") : "";
+  }
+
   /** The analysis is about the mix and settings in front of the user. */
   get current(): boolean {
     const key = this.#key();
-    return this.report !== null && key !== null && this.#reportKey === key && this.#reportMode === vocal.mode && sameAudio(this.#reportDoc, mixes.doc);
+    return this.report !== null && key !== null && this.#reportKey === key && this.#reportMode === vocal.mode && this.#reportVocal === this.#vocalKey() && sameAudio(this.#reportDoc, mixes.doc);
   }
 
   /** Starts a measuring job for the current choices. The report arrives through `receive`. */
@@ -206,11 +216,11 @@ class MixExport {
       toast.show(this.problem, "bad", 8000);
       return;
     }
-    this.#pending = { doc, key: this.#key() ?? "", mode: vocal.mode };
+    this.#pending = { doc, key: this.#key() ?? "", mode: vocal.mode, vocal: extras.vocalToolIds?.join("|") ?? "" };
     this.analysing = true;
     this.analysePct = 0;
     try {
-      await exportLoudnessAnalyse(root, doc, extras.range, extras.rangePrefs, extras.levels);
+      await exportLoudnessAnalyse(root, doc, extras.range, extras.rangePrefs, extras.levels, extras.vocalToolIds);
     } catch (e) {
       this.analysing = false;
       this.#pending = null;
@@ -230,6 +240,7 @@ class MixExport {
     this.#reportDoc = p?.doc ?? mixes.doc;
     this.#reportKey = p?.key ?? this.#key() ?? "";
     this.#reportMode = p?.mode ?? vocal.mode;
+    this.#reportVocal = p?.vocal ?? this.#vocalKey();
     this.report = r;
   }
 

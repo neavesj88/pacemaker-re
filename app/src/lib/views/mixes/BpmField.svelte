@@ -10,6 +10,7 @@
     max = 250,
     placeholder = "",
     disabled = false,
+    stack = false,
   }: {
     value: number | null;
     onset: (bpm: number) => void;
@@ -19,6 +20,8 @@
     max?: number;
     placeholder?: string;
     disabled?: boolean;
+    // Narrow places (the inspector): the number gets its own row, the four nudge buttons share the row under it.
+    stack?: boolean;
   } = $props();
 
   const round = (v: number) => Math.round(v * 100) / 100;
@@ -31,11 +34,12 @@
   }
 </script>
 
-<span class="bpm">
+<span class="bpm" class:stack>
   <button type="button" {disabled} title="{label} down by 0.1 BPM" aria-label="{label} down 0.1" onclick={() => nudge(-0.1)}>−.1</button>
   <button type="button" {disabled} title="{label} down by 0.01 BPM" aria-label="{label} down 0.01" onclick={() => nudge(-0.01)}>−.01</button>
   <input
     {id}
+    class="bpm-in"
     type="number"
     {min}
     {max}
@@ -61,12 +65,36 @@
     gap: 2px;
     min-width: 0;
   }
-  input {
-    flex: 1 1 52px;
-    width: 52px;
-    min-width: 46px;
+  /* base.css pads every input 10px a side and the inspector forces number fields to min-width 0, which
+     left 124.00 about 30px of room: a real width and a thin side padding keep the digits whole. The class
+     keeps this rule above both. */
+  .bpm .bpm-in[type="number"] {
+    flex: 1 1 56px;
+    width: 56px;
+    min-width: 56px;
+    padding-inline: 3px;
     box-sizing: border-box;
     text-align: center;
+    appearance: textfield; /* the nudge buttons do the stepping; the spinner arrows took the room the digits need */
+  }
+  .bpm .bpm-in::-webkit-inner-spin-button,
+  .bpm .bpm-in::-webkit-outer-spin-button {
+    appearance: none;
+    margin: 0;
+  }
+  .bpm.stack {
+    display: flex;
+    flex-wrap: wrap;
+  }
+  .bpm.stack .bpm-in[type="number"] {
+    order: -1;
+    flex: 1 0 100%;
+    width: auto;
+  }
+  .bpm.stack button {
+    flex: 1 1 0;
+    min-width: 0;
+    padding: 2px 3px;
   }
   button {
     flex: none;

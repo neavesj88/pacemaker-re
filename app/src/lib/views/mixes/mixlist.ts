@@ -219,3 +219,27 @@ export function exportSummary(r: ExportResult, dir: string): { text: string; ok:
   }
   return { text: bits.join(" "), ok: r.failed.length === 0 };
 }
+
+/** The deep-link keys that carry track ids into the Mixes view: with or without the area prefix. */
+export const ADD_KEYS = ["addTracks", "mixes.addTracks"] as const;
+
+/** The tracks a deep link asks to add. A sender may pass the same list under both keys (the Tracks view
+ * does), so the first list found is the request: reading both added every track twice. */
+export function addIdsFrom(params: Record<string, unknown>): number[] {
+  for (const key of ADD_KEYS) {
+    const ids = params[key];
+    if (Array.isArray(ids)) return ids.filter((x): x is number => typeof x === "number");
+  }
+  return [];
+}
+
+/** What a reload of the open library means for the mix open in the editor: `open` is the `dateModified` the
+ * document was read with, `inLibrary` the one the library row has now (null = the mix is gone). A restore or a
+ * Sync that replaces a mix changes it behind the editor, and a later Save would write the old text over it. */
+export type OpenMixVerdict = "same" | "reload" | "changed" | "removed" | "gone";
+
+export function openMixVerdict(open: number | undefined, inLibrary: number | null, dirty: boolean): OpenMixVerdict {
+  if (inLibrary === null) return dirty ? "gone" : "removed";
+  if (open === undefined || open === inLibrary) return "same";
+  return dirty ? "changed" : "reload";
+}

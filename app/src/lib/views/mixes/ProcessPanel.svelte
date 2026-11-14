@@ -3,6 +3,7 @@
   import type { Clip, EnvNode, LoopDoc, ProcessDoc, ToolDoc } from "$lib/api/mixes";
   import * as E from "$lib/state/mixedit";
   import { mixes } from "$lib/state/mixes.svelte";
+  import { session } from "$lib/state/session.svelte";
   import { vocal } from "$lib/state/vocal.svelte";
   import EnvelopeSvg from "./EnvelopeSvg.svelte";
   import { clipTitle, duplicateSelection } from "./actions";
@@ -45,10 +46,21 @@
     const last = Math.max(1, Math.round(p.length) - 1);
     mixes.setEnvelope(clip.id, { kind: "param", processId: p.id, key }, [{ pos: 0, value: to }, { pos: last, value: to }]);
   }
-  function setStart(sec: number) {
+  // An emptied number box reads as NaN: ignore it and put the current value back, like the clip fields do.
+  function setStart(input: HTMLInputElement) {
+    const sec = input.valueAsNumber;
+    if (!Number.isFinite(sec)) {
+      input.value = String(Number((p.start / SR).toFixed(2)));
+      return;
+    }
     mixes.edit("Move tool", (d) => E.moveProcess(d, clip.id, p.id, Math.round(sec * SR)));
   }
-  function setLength(sec: number) {
+  function setLength(input: HTMLInputElement) {
+    const sec = input.valueAsNumber;
+    if (!Number.isFinite(sec)) {
+      input.value = String(Number((p.length / SR).toFixed(2)));
+      return;
+    }
     mixes.edit("Resize tool", (d) => E.resizeProcess(d, clip.id, p.id, "right", p.start + Math.round(sec * SR)));
   }
   function patch(label: string, fn: (q: ProcessDoc) => ProcessDoc) {
@@ -71,14 +83,14 @@
 <div class="field">
   <label for="pp-start">Starts at</label>
   <span class="inline">
-    <input id="pp-start" type="number" min="0" step="0.01" value={Number((p.start / SR).toFixed(2))} onchange={(e) => setStart(e.currentTarget.valueAsNumber)} />
+    <input id="pp-start" type="number" min="0" step="0.01" value={Number((p.start / SR).toFixed(2))} onchange={(e) => setStart(e.currentTarget)} />
     <span class="muted">s</span>
   </span>
 </div>
 <div class="field">
   <label for="pp-len">Length</label>
   <span class="inline">
-    <input id="pp-len" type="number" min="0.05" step="0.01" value={Number((p.length / SR).toFixed(2))} onchange={(e) => setLength(e.currentTarget.valueAsNumber)} />
+    <input id="pp-len" type="number" min="0.05" step="0.01" value={Number((p.length / SR).toFixed(2))} onchange={(e) => setLength(e.currentTarget)} />
     <span class="muted">s</span>
   </span>
 </div>
@@ -122,7 +134,7 @@
     </span>
   </div>
   <p class="note">Chops the clip on and off in eighth notes from the start of this block, at the tempo above (0 follows the clip's tempo). It has no curves.</p>
-  <div class="warn">The file layout of a Trans tool has not been checked on a real Pacemaker or in the Tonium Editor (no mix with one has been seen). The preview and the audio export play it; if the device does not like it, delete the block and save again.</div>
+  <div class="warn">The file layout of a Trans tool has not been checked on a real Pacemaker or in the Tonium Editor (no mix with one has been seen). The preview and the audio export play it; if {session.isComputer ? "the Pacemaker" : "the device"} does not like it, delete the block and save again.</div>
 {/if}
 
 {#if tool && type === "Wah"}
@@ -132,8 +144,8 @@
     <label class="check"><input type="checkbox" checked={marked} onchange={(e) => mixes.doc && vocalTools.set(mixes.doc.id, p.id, e.currentTarget.checked)} /> use as the vocal filter</label>
   </div>
   <p class="note">
-    Vocal and Wah are the same tool in the mix file (Wah, cut-off). On the Pacemaker it plays as the vocal filter only with Revival firmware and the Vocal flag switched on (Device view);
-    otherwise it plays as Wah. This app remembers which tools you made as Vocal, for the names here and for the live preview, which plays them as the vocal filter. The mark is kept in this
+    Vocal and Wah are the same tool in the mix file (Wah, cut-off). {session.isComputer ? "A mix sent to a Pacemaker" : "On the Pacemaker"} plays it as the vocal filter only with Revival firmware and the Vocal flag switched on ({session.isComputer ? "Device view, with the Pacemaker connected" : "Device view"});
+    otherwise the Pacemaker plays it as Wah. This app remembers which tools you made as Vocal, for the names here, the live preview and audio exports, which play them as the vocal filter. The mark is kept in this
     app, not in the mix, and a copy of the tool is a Wah tool until you mark it.
   </p>
 {/if}
