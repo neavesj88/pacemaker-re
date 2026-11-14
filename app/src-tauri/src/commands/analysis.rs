@@ -79,7 +79,7 @@ pub(crate) fn audio_path(root: &Path, location: &str) -> AppResult<PathBuf> {
     Ok(root.join(naming::MUSIC_DIR).join(rel))
 }
 
-fn peaks_blocking(state: &PeaksState, cache_dir: &Path, root: &str, location: &str, width: usize) -> AppResult<Vec<peaks::Column>> {
+pub(crate) fn peaks_blocking(state: &PeaksState, cache_dir: &Path, root: &str, location: &str, width: usize) -> AppResult<Vec<peaks::Column>> {
     let audio = audio_path(Path::new(root), location)?;
     // the volume is part of the identity: two devices can hold the same location string
     let id = format!("{root}|{location}");
@@ -218,7 +218,7 @@ fn check_key_args(track_ids: Option<&[i64]>, overwrite: bool) -> AppResult<()> {
 /// Writes a batch of keys. `set_track_keys` is all-or-nothing, so if it fails (a track removed
 /// meanwhile, say) the entries are written one by one and only the bad ones are returned, with
 /// the reason. Returns (rows changed, failures).
-fn write_keys(lib: &mut Library, pending: &[(i64, String)]) -> (usize, Vec<(i64, String)>) {
+pub(crate) fn write_keys(lib: &mut Library, pending: &[(i64, String)]) -> (usize, Vec<(i64, String)>) {
     if let Ok(n) = lib.set_track_keys(pending) {
         return (n, Vec::new());
     }

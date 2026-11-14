@@ -30,6 +30,12 @@ function measureMock(t: (typeof tracks)[number]): MockEntry {
 // two thirds of the fixture tracks start analysed, so the table shows both markers and blanks
 for (const t of tracks) if (t.track_id % 3 !== 0) cache.set(t.location, measureMock(t));
 
+/** What the simulated background worker reads and writes of the sections cache (devmock/bganalysis.ts). */
+export const bgSections = {
+  missing: () => tracks.filter((t) => !cache.has(t.location) || cache.get(t.location)!.size !== t.file_size),
+  make: (t: (typeof tracks)[number]) => cache.set(t.location, measureMock(t)),
+};
+
 /** intro / build / drop / breakdown / build / drop / outro, cut to the track's bars. */
 const TEMPLATE: [SectionKind, number][] = [["intro", 16], ["build", 8], ["drop", 32], ["breakdown", 16], ["build", 8], ["drop", 24], ["outro", 1000]];
 

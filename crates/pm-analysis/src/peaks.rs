@@ -231,6 +231,42 @@ pub fn load(dir: &Path, id: &str, stamp: Stamp) -> Option<Vec<Column>> {
     Some(data.as_chunks::<3>().0.to_vec())
 }
 
+/// Whether [`load`] would find a current entry, decided from the file's header and length alone
+/// (a few dozen bytes read instead of the whole column list), so a library of tens of thousands
+/// of tracks can be checked for missing waveforms without reading every cache file.
+pub fn is_current(dir: &Path, id: &str, stamp: Stamp) -> bool {
+    use std::io::Read;
+    let head_len = MAGIC.len() + 4 + 8 + 16 + 4;
+    let Ok(mut f) = std::fs::File::open(cache_path(dir, id)) else { return false };
+    let Ok(file_len) = f.metadata().map(|m| m.len()) else { return false };
+    let mut head = vec![0u8; head_len + id.len() + 4];
+    if f.read_exact(&mut head).is_err() {
+        return false;
+    }
+    let mut at = 0usize;
+    let mut take = |n: usize| -> &[u8] {
+        let s = &head[at..at + n];
+        at += n;
+        s
+    };
+    if take(MAGIC.len()) != MAGIC {
+        return false;
+    }
+    if u32::from_le_bytes(take(4).try_into().unwrap()) != COLUMNS_PER_SEC {
+        return false;
+    }
+    let size = u64::from_le_bytes(take(8).try_into().unwrap());
+    let mtime_ns = u128::from_le_bytes(take(16).try_into().unwrap());
+    if (Stamp { size, mtime_ns }) != stamp {
+        return false;
+    }
+    if u32::from_le_bytes(take(4).try_into().unwrap()) as usize != id.len() || take(id.len()) != id.as_bytes() {
+        return false;
+    }
+    let n = u32::from_le_bytes(take(4).try_into().unwrap()) as u64;
+    file_len == head.len() as u64 + n * 3
+}
+
 /// Fine columns for an audio file: from the cache when current, otherwise decoded, computed and
 /// stored. A failure to write the cache does not fail the call.
 pub fn fine_for_file(cache_dir: &Path, id: &str, audio: &Path) -> Result<Vec<Column>, Error> {
@@ -381,6 +417,29 @@ mod tests {
         assert_eq!(load(&cache, "vol|/t/a", stamp_of(&audio).unwrap()), None);
         assert_eq!(fine_for_file(&cache, "vol|/t/a", &audio).unwrap().len(), 300);
 
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn is_current_agrees_with_load_without_reading_the_columns() {
+        let dir = temp_dir("current");
+        let cache = dir.join("cache");
+        let audio = dir.join("a.wav");
+        write_wav(&audio, &sine(100.0, 0.8, 2.0));
+        let stamp = stamp_of(&audio).unwrap();
+        assert!(!is_current(&cache, "vol|/t/a", stamp), "no file yet");
+        fine_for_file(&cache, "vol|/t/a", &audio).unwrap();
+        assert!(is_current(&cache, "vol|/t/a", stamp));
+        assert!(!is_current(&cache, "vol|/t/b", stamp), "another track id");
+        assert!(!is_current(&cache, "vol|/t/a", Stamp { size: stamp.size + 1, ..stamp }));
+        assert!(!is_current(&cache, "vol|/t/a", Stamp { mtime_ns: stamp.mtime_ns + 1, ..stamp }));
+        // a truncated entry is not current, exactly as `load` refuses it
+        let p = cache_path(&cache, "vol|/t/a");
+        let mut bytes = std::fs::read(&p).unwrap();
+        bytes.truncate(bytes.len() - 5);
+        std::fs::write(&p, bytes).unwrap();
+        assert!(!is_current(&cache, "vol|/t/a", stamp));
+        assert_eq!(load(&cache, "vol|/t/a", stamp), None);
         std::fs::remove_dir_all(&dir).unwrap();
     }
 

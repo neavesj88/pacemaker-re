@@ -144,6 +144,7 @@ test("every setting kept in browser storage has an entry, or is listed as view s
 // be reachable from the Settings view; add the entry (and its row here) when a new one appears.
 const FILES = {
   "bpm-range-settings.json": "bpm-range",
+  "bg-analysis-settings.json": "background-analysis",
   "duplicate-settings.json": "duplicates",
   "energy-settings.json": "energy-auto",
   "energy-source.json": "energy-source",

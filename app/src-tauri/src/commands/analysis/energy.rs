@@ -476,6 +476,78 @@ fn run_analysis(dir: &Path, root: &str, targets: &[TrackRef], settings: &Setting
     Ok(JobOutcome { ok: ok + skipped, failed, summary })
 }
 
+// ---- the background queue's use of this analysis ---------------------------------------------
+
+/// What `commands/bganalysis` uses: which tracks lack a result, one track measured at a time, and
+/// the results held in memory until [`Bg::flush`] merges them into the saved cache. Merging (load
+/// the file, add the new entries, save) rather than saving a copy read at the start means a result
+/// saved meanwhile by a job the user ran is never overwritten by an older picture of the file.
+pub(crate) struct Bg {
+    dir: PathBuf,
+    root: String,
+    fresh: BTreeMap<String, Entry>,
+    last_save: std::time::Instant,
+    /// Entries in the saved file at the last save: the bigger it is, the less often it is rewritten.
+    cached: usize,
+}
+
+impl Bg {
+    pub(crate) fn new(dir: &Path, root: &str) -> Self {
+        Bg { dir: dir.to_path_buf(), root: root.to_string(), fresh: BTreeMap::new(), last_save: std::time::Instant::now(), cached: 0 }
+    }
+
+    /// Tracks never measured, or measured for a file of another size, in library order.
+    pub(crate) fn missing(&self, lib: &Library) -> Result<Vec<crate::commands::bganalysis::queue::Item>, String> {
+        let settings = load_settings(&self.dir);
+        let refs = refs_of(lib).map_err(|e| e.to_string())?;
+        let (cache, _) = load_cache(&self.dir, &self.root);
+        Ok(pick_targets(&refs, &cache, None, false, settings.min_secs)
+            .into_iter()
+            .map(|t| crate::commands::bganalysis::queue::Item { id: t.id, location: t.location, size: t.size, label: t.label })
+            .collect())
+    }
+
+    /// Measures one track. Ok carries the words for the status line (a track too short or silent
+    /// is a result too: it has no estimate and is not measured again).
+    pub(crate) fn measure_one(&mut self, item: &crate::commands::bganalysis::queue::Item) -> Result<String, String> {
+        let t = TrackRef { id: item.id, location: item.location.clone(), size: item.size, bpm: 0.0, analysed: false, label: item.label.clone() };
+        match measure(Path::new(&self.root), &t)? {
+            Measure::Done(m) => {
+                self.fresh.insert(t.location, Entry { size: t.size, measured: Some(m), skip: None });
+                Ok("measured".into())
+            }
+            Measure::Skip(why) => {
+                self.fresh.insert(t.location, Entry { size: t.size, measured: None, skip: Some(why.reason().into()) });
+                Ok(why.reason().into())
+            }
+        }
+    }
+
+    /// True when results are waiting and enough of them (or enough time) has gathered to save.
+    pub(crate) fn has_pending(&self) -> bool {
+        !self.fresh.is_empty()
+    }
+
+    pub(crate) fn due(&self) -> bool {
+        !self.fresh.is_empty() && (self.fresh.len() >= FLUSH_EVERY || self.last_save.elapsed() >= std::time::Duration::from_secs(2 + self.cached as u64 / 2000))
+    }
+
+    /// Saves what was measured. Ok(true) when something was written.
+    pub(crate) fn flush(&mut self) -> Result<bool, String> {
+        if self.fresh.is_empty() {
+            return Ok(false);
+        }
+        let (mut cache, _) = load_cache(&self.dir, &self.root);
+        cache.tracks.extend(self.fresh.iter().map(|(k, v)| (k.clone(), v.clone())));
+        self.cached = cache.tracks.len();
+        self.last_save = std::time::Instant::now();
+        // the results are dropped only once they are on disk, so a failed save is tried again
+        save_cache(&self.dir, &self.root, &cache)?;
+        self.fresh.clear();
+        Ok(true)
+    }
+}
+
 // ---- commands --------------------------------------------------------------------------------
 
 /// Every track's auto energy under the saved settings, with the counts for the UI (analysed,

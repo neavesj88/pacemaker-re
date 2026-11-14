@@ -3,6 +3,7 @@
   import { tempo } from "$lib/state/tempo.svelte";
   import { inverseOp } from "$lib/state/tempoLogic";
   import Button from "$lib/ui/Button.svelte";
+  import BgStrip from "$lib/views/analysis/BgStrip.svelte";
 
   // Progress of the running add / analysis job, and its result until dismissed.
 </script>
@@ -34,6 +35,8 @@
     {/if}
   </div>
 {/if}
+
+<BgStrip />
 
 <style>
   .strip {

@@ -98,3 +98,30 @@ export function requestPeaks(root: string, location: string, width: number, done
     }
   };
 }
+
+/** Drops what is remembered as "no waveform" (an empty answer, or a failed fetch not yet retried)
+ *  for these tracks of `root`, because the background analysis has just made them. Returns the
+ *  locations that had such an entry: only their rows need to ask again. */
+export function forgetPeaks(root: string, locations: string[]): string[] {
+  const wanted = new Set(locations);
+  const hit = new Set<string>();
+  const parse = (key: string) => {
+    const [r, location] = key.split("\n");
+    return r === root && wanted.has(location) ? location : null;
+  };
+  for (const [key, value] of [...cache]) {
+    const loc = parse(key);
+    if (loc !== null && value === null) {
+      cache.delete(key);
+      hit.add(loc);
+    }
+  }
+  for (const key of [...failed.keys()]) {
+    const loc = parse(key);
+    if (loc !== null) {
+      failed.delete(key);
+      hit.add(loc);
+    }
+  }
+  return [...hit];
+}
