@@ -56,7 +56,7 @@ function fingerprint(text: string): string {
 
 function plan(req: ExportRequest): ExportPlan {
   if (!req.folder.trim()) throw "Choose a folder to export to.";
-  if (/^p:/i.test(req.folder)) throw "Choose a folder outside the device: files written there are not part of its library.";
+  if (/^p:/i.test(req.folder)) throw "Choose a folder outside the library: files written there are not part of it.";
   const ext = EXT[req.format];
   if (!ext) throw `unknown export format ${req.format}`;
   if (req.case_ids.length === 0 && req.smart_ids.length === 0) throw "Tick at least one case to export.";

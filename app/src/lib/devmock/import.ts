@@ -41,11 +41,11 @@ function mockPlan(path: string, options: ImportOptions): ImportPlan {
   const sel = options.playlist_indexes;
   for (const c of cases) c.selected = options.playlists && (sel === null || sel.includes(c.index));
   const unmatched = [
-    { title: "Mock Tune One", artist: "Example Artist Z", path: "C:\\Music\\Mock Tune One.mp3", reason: "not on the device", on_disk: true, in_playlist: true },
-    { title: "Mock Tune Two", artist: "Example Artist Z", path: "C:\\Music\\Mock Tune Two.flac", reason: "not on the device", on_disk: true, in_playlist: true },
-    { title: "Mock Tune Three", artist: "Example Artist Y", path: "D:\\Gone\\Mock Tune Three.mp3", reason: "not on the device", on_disk: false, in_playlist: false },
+    { title: "Mock Tune One", artist: "Example Artist Z", path: "C:\\Music\\Mock Tune One.mp3", reason: "not in the library", on_disk: true, in_playlist: true },
+    { title: "Mock Tune Two", artist: "Example Artist Z", path: "C:\\Music\\Mock Tune Two.flac", reason: "not in the library", on_disk: true, in_playlist: true },
+    { title: "Mock Tune Three", artist: "Example Artist Y", path: "D:\\Gone\\Mock Tune Three.mp3", reason: "not in the library", on_disk: false, in_playlist: false },
     { title: "Mock Tune Four", artist: "Example Artist Y", path: "", reason: "2 device tracks share this title and artist", on_disk: false, in_playlist: false },
-    { title: "Mock Tune Five", artist: "", path: "//example-host/share/Mock Tune Five.mp3", reason: "not on the device; the file location was not checked because it points at a network or device location", on_disk: false, in_playlist: true },
+    { title: "Mock Tune Five", artist: "", path: "//example-host/share/Mock Tune Five.mp3", reason: "not in the library; the file location was not checked because it points at a network or device location", on_disk: false, in_playlist: true },
   ].map((u) => ({ path_checked: !u.reason.includes("not checked"), ...u }));
   return {
     source,

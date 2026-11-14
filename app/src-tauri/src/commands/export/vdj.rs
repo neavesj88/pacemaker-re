@@ -328,7 +328,7 @@ fn check_dest(root: &Path, dest: &Path) -> Result<(), String> {
     if let Ok(r) = root.canonicalize()
         && d.starts_with(&r)
     {
-        return Err("Choose a folder outside the Pacemaker: this export is not part of its library.".into());
+        return Err("Choose a folder outside the library: this export is not part of it.".into());
     }
     Ok(())
 }
@@ -402,7 +402,7 @@ pub fn plan_from(root: &Path, tracks: &[Track], ids: &[i64], list_name: &str, de
                 continue;
             }
             Err(e) if e.kind() == ErrorKind::NotFound => {
-                entries.push(left_out(label, "The audio file is missing from the Pacemaker.".into()));
+                entries.push(left_out(label, "The audio file is missing from the library.".into()));
                 continue;
             }
             Err(e) => {

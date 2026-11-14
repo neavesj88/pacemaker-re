@@ -47,7 +47,7 @@
       </dd>
       <dt>In the log</dt>
       <dd>{log.logged_plays} play{log.logged_plays === 1 ? "" : "s"}</dd>
-      <dt>On the device now</dt>
+      <dt>{session.isComputer ? "In the library now" : "On the device now"}</dt>
       <dd>{log.now_plays} play{log.now_plays === 1 ? "" : "s"}{log.now_last > 0 ? `, last played ${ago(log.now_last)}` : ""}</dd>
     </dl>
     {#if log.hits.length > 0}

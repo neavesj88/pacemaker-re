@@ -2,6 +2,11 @@
 // refresh will change (or changed), and the signature that lets "Not now" be remembered. Types
 // only are imported, so `smartRefresh.test.mjs` runs it with plain node.
 import type { RefreshItem, RefreshMode, RefreshReport, TrackRef } from "$lib/api/cases";
+import type { LibraryKind } from "$lib/api/types";
+import { placeWords } from "../../state/place.ts";
+
+/** What the case written for a smart case is called: "Pacemaker copy" on a Pacemaker, "★ case" in a library on this computer. */
+export const smartCopyName = (lib: LibraryKind = "pacemaker") => (lib === "computer" ? "★ case" : "Pacemaker copy");
 
 export const plural = (n: number, one: string, many = one + "s") => `${n} ${n === 1 ? one : many}`;
 
@@ -26,13 +31,13 @@ export function changeParts(i: RefreshItem): string[] {
 }
 
 /** One line per smart case: what its Pacemaker copy gets (`done` = it has been written). */
-export function itemLine(i: RefreshItem, done: boolean): string {
+export function itemLine(i: RefreshItem, done: boolean, lib: LibraryKind = "pacemaker"): string {
   const name = `“${i.name}”`;
   const copy = `“${i.device_name}”`;
   switch (i.action) {
     case "create": {
       const verb = done ? "made" : "will be made";
-      const why = i.recreated ? " again (it was deleted on the Pacemaker)" : "";
+      const why = i.recreated ? ` again (it was deleted ${placeWords(lib).on})` : "";
       return `${name}: ${copy} ${verb}${why} with ${plural(i.after, "track")}`;
     }
     case "update": {
@@ -55,15 +60,15 @@ export function itemTrackLines(i: RefreshItem): { sign: "+" | "-"; text: string 
 }
 
 /** The sentence after a refresh ran (toast / banner): counts, then every smart case by name. */
-export function doneSummary(r: RefreshReport): string {
+export function doneSummary(r: RefreshReport, lib: LibraryKind = "pacemaker"): string {
   const did = changed(r);
   const skippedItems = skipped(r);
-  if (did.length === 0 && skippedItems.length === 0) return "The Pacemaker copies of your smart cases were already up to date.";
+  if (did.length === 0 && skippedItems.length === 0) return `The ${lib === "computer" ? "★ cases" : "Pacemaker copies"} of your smart cases were already up to date.`;
   const bits = did.map((i) => {
     if (i.action === "create") return `“${i.name}” ${i.recreated ? "made again" : "made"} (${plural(i.after, "track")})`;
     return `“${i.name}” (${changeParts(i).join(", ")})`;
   });
-  let text = did.length ? `Refreshed ${plural(did.length, "smart case")} on the Pacemaker: ${bits.join("; ")}.` : "No smart case was refreshed.";
+  let text = did.length ? `Refreshed ${plural(did.length, "smart case")} ${placeWords(lib).on}: ${bits.join("; ")}.` : "No smart case was refreshed.";
   if (skippedItems.length) {
     text += ` Not refreshed: ${skippedItems.map((i) => `“${i.name}” (${i.error ?? "unknown reason"})`).join("; ")}.`;
   }
@@ -127,7 +132,7 @@ export function decideCheck(plan: RefreshReport, mode: RefreshMode, mem: Refresh
 }
 
 /** The sentence when automatic refresh stops because it would write the same changes again. */
-export function loopMessage(plan: RefreshReport): string {
+export function loopMessage(plan: RefreshReport, lib: LibraryKind = "pacemaker"): string {
   const names = changed(plan).map((i) => `“${i.name}”`).join(", ");
-  return `Automatic refresh of smart cases stopped: the changes to ${names} were already written and came back, so something keeps undoing them (for example smart cases whose rules read each other's Pacemaker copies). Nothing more is written automatically until the changes are different; “Refresh smart cases” shows them.`;
+  return `Automatic refresh of smart cases stopped: the changes to ${names} were already written and came back, so something keeps undoing them (for example smart cases whose rules read each other's ${lib === "computer" ? "★ cases" : "Pacemaker copies"}). Nothing more is written automatically until the changes are different; “Refresh smart cases” shows them.`;
 }

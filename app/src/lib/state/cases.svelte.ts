@@ -404,7 +404,7 @@ class Cases {
     const copy = await this.#write((root) => setSmartCaseOnDevice(root, id, on));
     if (copy) {
       await this.loadSmart();
-      toast.show(on ? `On the Pacemaker: ${copy.count} track${copy.count === 1 ? "" : "s"}` : "Removed from the Pacemaker", "ok");
+      toast.show(on ? `${session.isComputer ? "In this library" : "On the Pacemaker"}: ${copy.count} track${copy.count === 1 ? "" : "s"}` : `Removed from ${session.place.the}`, "ok");
     }
     return copy;
   }

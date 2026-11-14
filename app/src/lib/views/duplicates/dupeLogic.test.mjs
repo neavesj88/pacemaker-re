@@ -138,7 +138,7 @@ test("a file another track uses and a file already gone are said so, and merge-o
   p.files[1].exists = false;
   const parts = planSentences(p)[0].copies[0].parts;
   assert.ok(parts.includes("keeps audio file a/b/c.mp3 (another track in the library uses this file)"));
-  assert.ok(parts.includes("beat grid file a/b/c.str is not on the device"));
+  assert.ok(parts.includes("beat grid file a/b/c.str is missing"));
   const mergeOnly = plan();
   mergeOnly.groups[0].remove = [];
   mergeOnly.groups[0].blocked = [];

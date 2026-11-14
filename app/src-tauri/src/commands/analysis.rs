@@ -70,7 +70,7 @@ pub fn setup(app: &mut tauri::App) {
 /// The audio file for a `tracks.location` on the volume at `root`. Refuses anything that is not
 /// a plain relative path below `/pmdb_tracks/`.
 pub(crate) fn audio_path(root: &Path, location: &str) -> AppResult<PathBuf> {
-    let rel = location.strip_prefix(naming::LOCATION_PREFIX).ok_or("That track is not stored on the device library.")?;
+    let rel = location.strip_prefix(naming::LOCATION_PREFIX).ok_or("That track is not stored under the library's music folder.")?;
     let rel = Path::new(rel);
     if rel.as_os_str().is_empty() || !rel.components().all(|c| matches!(c, Component::Normal(_))) {
         return Err("That track location is not valid.".into());

@@ -140,7 +140,7 @@ function buildPlan(ids: number[], dest: string): Plan {
   if (!ids.length) throw "Select at least one track.";
   if (!dest.trim() || /[\u0000]/.test(dest)) throw `${dest} is not a folder that exists.`;
   if (dest.toLowerCase().startsWith(DEVICE_ROOT.toLowerCase())) {
-    throw "Choose a folder on this computer, not on the device. To put the results on the card, make them here first and then add them (the same step as adding any audio files).";
+    throw "Choose a folder on this computer, outside the library. To put the results in the library, make them here first and then add them (the same step as adding any audio files).";
   }
   const seen = new Set<number>();
   const claimed = new Map<string, string>();

@@ -29,7 +29,7 @@
     return t ? [t.title, t.artist].filter(Boolean).join(" — ") || `Track ${id}` : `Track ${id}`;
   };
   const noun = (n: number) => `${n} track${n === 1 ? "" : "s"}`;
-  const goneNoun = (n: number) => `${n} labelled track${n === 1 ? "" : "s"} no longer on this card`;
+  const goneNoun = (n: number) => `${n} labelled track${n === 1 ? "" : "s"} no longer ${session.isComputer ? "in this library" : "on this card"}`;
 
   function startRename(tag: string) {
     editing = tag;
@@ -121,8 +121,8 @@
         </p>
       {:else}
         <p>
-          Forget the labels of {pending.gone.length} track{pending.gone.length === 1 ? "" : "s"} that are no longer on this card? Their tags, colours and
-          energy are removed from the tag file. Tracks on this card are not touched. This cannot be undone.
+          Forget the labels of {pending.gone.length} track{pending.gone.length === 1 ? "" : "s"} that are no longer {session.isComputer ? "in this library" : "on this card"}? Their tags, colours and
+          energy are removed from the tag file. Tracks {session.isComputer ? "in this library" : "on this card"} are not touched. This cannot be undone.
         </p>
       {/if}
       {#if pending.kind !== "forget"}
@@ -188,7 +188,7 @@
     </ul>
     {#if labels.orphans > 0}
       <p class="muted foot">
-        The tag file also holds labels for {labels.orphans} track{labels.orphans === 1 ? "" : "s"} that are not on this card
+        The tag file also holds labels for {labels.orphans} track{labels.orphans === 1 ? "" : "s"} that are not {session.isComputer ? "in this library" : "on this card"}
         (removed or added again). They are kept and hidden, and Delete and Merge change them too.
         <Button small onclick={askForget}>Forget labels of removed tracks…</Button>
       </p>

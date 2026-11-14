@@ -82,13 +82,13 @@ type HitLike = { plays: number; approx: boolean; time_known: boolean; reset: boo
 export function hitNote(h: HitLike): string {
   const parts: string[] = [];
   if (!h.time_known) {
-    parts.push("The device gave no newer last-played time, so this is when the library was read");
+    parts.push("No newer last-played time came with the plays, so this is when the library was read");
   } else if (h.plays > 1) {
     parts.push(`${h.plays} plays were seen at once; only the latest time is known, the others were earlier`);
   } else if (h.approx) {
     parts.push("Inferred from the last-played time alone (the play count did not change)");
   }
-  if (h.reset) parts.push("the counter on the device had been reset, so it counts from zero");
+  if (h.reset) parts.push("the play counter had been reset, so it counts from zero");
   const text = parts.join("; ");
   return text ? text + "." : "";
 }

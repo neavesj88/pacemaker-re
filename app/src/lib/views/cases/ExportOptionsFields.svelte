@@ -37,7 +37,7 @@
       <div class="grp">
         <span class="lbl">Names</span>
         <label class="inline"><input type="radio" name="{uid}-names" value="tags" bind:group={prefs.audio_names} /> “Artist - Title” from the tags</label>
-        <label class="inline"><input type="radio" name="{uid}-names" value="device" bind:group={prefs.audio_names} /> The name the Pacemaker gave the file</label>
+        <label class="inline"><input type="radio" name="{uid}-names" value="device" bind:group={prefs.audio_names} /> The name {session.isComputer ? "the library gave" : "the Pacemaker gave"} the file</label>
       </div>
     </div>
   {/if}

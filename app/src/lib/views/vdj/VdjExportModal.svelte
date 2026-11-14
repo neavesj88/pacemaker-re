@@ -24,7 +24,7 @@
   const selectedAtOpen = untrack(() => [...selection.trackIds]);
   const selected = $derived(selectedInCase(selectedAtOpen, caseIds));
 
-  let listName = $state(untrack(() => suggestListName(caseName)));
+  let listName = $state(untrack(() => suggestListName(caseName, session.library?.kind)));
   let scope = $state<"all" | "selected">("all");
   let replace = $state(false);
 
@@ -156,8 +156,8 @@
         <p class="bad empty">{loadFailed}</p>
       {:else}
         <p class="muted intro">
-          Writes a VirtualDJ list (VirtualDJ 2024 or later) of this case into a folder you choose, and can copy the audio next to it. Nothing on
-          the Pacemaker is changed or deleted. Afterwards put the <code>.xml</code> file into VirtualDJ's <i>My Lists</i> folder.
+          Writes a VirtualDJ list (VirtualDJ 2024 or later) of this case into a folder you choose, and can copy the audio next to it. Nothing {session.place.on}
+          is changed or deleted. Afterwards put the <code>.xml</code> file into VirtualDJ's <i>My Lists</i> folder.
         </p>
 
         <fieldset disabled={vdj.running}>
@@ -191,13 +191,13 @@
           {:else if planError}
             <p class="bad" role="alert">{planError}</p>
           {:else if plan}
-            <p class="sum">{planLine(plan)}</p>
+            <p class="sum">{planLine(plan, session.library?.kind)}</p>
             {#each plan.notes as n (n)}<p class="muted small">{n}</p>{/each}
             <ol class="tracks">
               {#each plan.entries as e (e.track_id)}
                 <li class={e.status}>
                   <span class="t">{e.label}</span>
-                  <span class="w">{entryWords(e)}</span>
+                  <span class="w">{entryWords(e, session.library?.kind)}</span>
                 </li>
               {/each}
             </ol>

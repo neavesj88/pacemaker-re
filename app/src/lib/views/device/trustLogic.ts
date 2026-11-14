@@ -1,6 +1,10 @@
 // Pure helpers of the device area's trust pack (restore, verify, fixes, undo). No imports from
 // the app, so `node --experimental-strip-types` runs them in trustLogic.test.mjs.
 
+/** Which kind of library is open; the sentences name "the card" for a Pacemaker and "the library" for one on this computer. */
+export type LibKind = "pacemaker" | "computer";
+const card = (lib: LibKind) => (lib === "computer" ? "the library" : "the card");
+
 /** The counts of a snapshot-vs-card comparison (mirrors api/device-trust.ts DiffCounts). */
 export type Counts = {
   tracks_returning: number;
@@ -51,9 +55,9 @@ const n = (count: number, one: string, many = `${one}s`) => `${count} ${count ==
 
 /** What a restore changes, in plain sentences, most consequential first. Empty when the snapshot
  *  and the card hold the same library. */
-export function diffSentences(c: Counts): string[] {
+export function diffSentences(c: Counts, lib: LibKind = "pacemaker"): string[] {
   const out: string[] = [];
-  if (c.tracks_lost) out.push(`${n(c.tracks_lost, "track")} added since will leave the library (their files stay on the card)`);
+  if (c.tracks_lost) out.push(`${n(c.tracks_lost, "track")} added since will leave the library (their files stay ${lib === "computer" ? "in the library folder" : "on the card"})`);
   if (c.tracks_returning) out.push(`${n(c.tracks_returning, "track")} will come back`);
   if (c.tracks_changed) out.push(`${n(c.tracks_changed, "track")} will get their earlier tags, rating or key back`);
   if (c.cases_lost) out.push(`${n(c.cases_lost, "case")} made since will go`);
@@ -66,10 +70,10 @@ export function diffSentences(c: Counts): string[] {
 }
 
 /** One line for a snapshot row: the first sentences, or "same as the card now". */
-export function diffSummary(c: Counts | null): string {
+export function diffSummary(c: Counts | null, lib: LibKind = "pacemaker"): string {
   if (!c) return "";
-  const s = diffSentences(c);
-  if (s.length === 0) return "Same as the card now";
+  const s = diffSentences(c, lib);
+  if (s.length === 0) return `Same as ${card(lib)} now`;
   return s.length > 2 ? `${s.slice(0, 2).join("; ")}; and more` : s.join("; ");
 }
 
@@ -141,10 +145,10 @@ export function deadRowLine(r: Row): string {
 }
 
 /** The warning above a removal that looks like a half-mounted card, or "". */
-export function massWarning(plan: { mass: boolean; dead_rows: unknown[]; kept_for_mixes: unknown[]; total_tracks: number; guard_percent: number }): string {
+export function massWarning(plan: { mass: boolean; dead_rows: unknown[]; kept_for_mixes: unknown[]; total_tracks: number; guard_percent: number }, lib: LibKind = "pacemaker"): string {
   if (!plan.mass) return "";
   const dead = plan.dead_rows.length + plan.kept_for_mixes.length;
-  return `${dead} of ${plan.total_tracks} tracks look dead, more than ${plan.guard_percent}% of the library. That usually means the card is not fully mounted or the wrong drive is open, not that the library is full of dead rows. Check the drive before removing anything.`;
+  return `${dead} of ${plan.total_tracks} tracks look dead, more than ${plan.guard_percent}% of the library. That usually means ${lib === "computer" ? "the library folder is not all there (a drive that is not connected, a moved folder) or the wrong folder is open" : "the card is not fully mounted or the wrong drive is open"}, not that the library is full of dead rows. Check the ${lib === "computer" ? "folder" : "drive"} before removing anything.`;
 }
 
 // ---- undo ----

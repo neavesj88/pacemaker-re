@@ -52,7 +52,7 @@ impl From<Summary> for JobOutcome {
             parts.push(format!("{} analysed", s.reanalysed));
         }
         if s.skipped > 0 {
-            parts.push(format!("{} already on the device", s.skipped));
+            parts.push(format!("{} already in the library", s.skipped));
         }
         if s.failed > 0 {
             parts.push(format!("{} failed", s.failed));

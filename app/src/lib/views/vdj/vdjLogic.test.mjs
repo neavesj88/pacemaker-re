@@ -90,3 +90,10 @@ test("the request carries the trimmed fields and drops the path base when nothin
   assert.equal(ref.options.path_base, "");
   assert.equal(base.options.path_base, " D:\\Gigs\\Set A ", "the dialog's own options are not changed");
 });
+
+test("for a library on this computer the list says 'in this library', not the Pacemaker", () => {
+  assert.equal(entryWords(entry({ status: "reference" }), "computer"), "Listed where it is in this library, not copied");
+  assert.equal(entryWords(entry({ status: "reference" })), "Listed where it is on the Pacemaker, not copied");
+  assert.equal(suggestListName("  ", "computer"), "Case");
+  assert.equal(suggestListName("  "), "Pacemaker case");
+});

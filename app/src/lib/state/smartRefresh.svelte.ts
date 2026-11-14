@@ -60,11 +60,11 @@ class SmartRefresh {
       } else if (action === "stuck") {
         // nothing to write, but a smart case cannot be refreshed: say so once
         this.#mem.failed = sig;
-        toast.show(doneSummary(plan), "bad", 9000);
+        toast.show(doneSummary(plan, session.library?.kind), "bad", 9000);
         session.error = stuckLines(skipped(plan)).join("\n");
       } else if (action === "loop") {
         this.#mem.failed = sig;
-        session.error = loopMessage(plan);
+        session.error = loopMessage(plan, session.library?.kind);
       }
     } catch (e) {
       session.error = String(e);
@@ -81,8 +81,8 @@ class SmartRefresh {
     try {
       const plan = await smartRefreshPlan(root);
       if (this.#root() !== root) return;
-      if (plan.items.length === 0) toast.show("No smart case is on the Pacemaker", "ok");
-      else if (plan.changes === 0 && skipped(plan).length === 0) toast.show(doneSummary(plan), "ok");
+      if (plan.items.length === 0) toast.show(session.isComputer ? "No smart case has a ★ case in this library" : "No smart case is on the Pacemaker", "ok");
+      else if (plan.changes === 0 && skipped(plan).length === 0) toast.show(doneSummary(plan, session.library?.kind), "ok");
       else {
         this.manual = true;
         this.report = plan;
@@ -121,7 +121,7 @@ class SmartRefresh {
       this.#mem.failed = stuck.length > 0 && wrote.length === 0 ? sig : "";
       await cases.loadSmart();
       await cases.refresh();
-      toast.show(doneSummary(done), stuck.length ? "bad" : "ok", 9000);
+      toast.show(doneSummary(done, session.library?.kind), stuck.length ? "bad" : "ok", 9000);
       if (stuck.length) session.error = stuckLines(stuck).join("\n");
     } catch (e) {
       this.#mem.failed = sig;

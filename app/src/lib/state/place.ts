@@ -35,11 +35,15 @@ export type Place = {
   card: string;
   /** "the drive" / "the library folder". */
   drive: string;
+  /** "the device" / "the library": where a write or a read of the open library goes. */
+  device: string;
+  /** "this card" / "this library". */
+  thisCard: string;
 };
 
 const WORDS: Record<LibraryKind, Place> = {
-  pacemaker: { the: "the Pacemaker", on: "on the Pacemaker", its: "the Pacemaker's", card: "the card", drive: "the drive" },
-  computer: { the: "this library", on: "in this library", its: "this library's", card: "the library", drive: "the library folder" },
+  pacemaker: { the: "the Pacemaker", on: "on the Pacemaker", its: "the Pacemaker's", card: "the card", drive: "the drive", device: "the device", thisCard: "this card" },
+  computer: { the: "this library", on: "in this library", its: "this library's", card: "the library", drive: "the library folder", device: "the library", thisCard: "this library" },
 };
 
 export const placeWords = (kind: LibraryKind | undefined): Place => WORDS[kind ?? "pacemaker"];

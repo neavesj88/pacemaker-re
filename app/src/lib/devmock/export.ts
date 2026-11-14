@@ -63,7 +63,7 @@ function coverProblem(path: string): string | null {
 function checkDest(dest: string, format: string) {
   if (/[\\/]$/.test(dest)) throw "The destination is a folder; choose a file name.";
   if (!dest.toLowerCase().endsWith("." + format)) throw `The file name must end in .${format} to match the chosen format.`;
-  if (/[\\/]device[\\/]/i.test(dest)) throw "Choose a folder outside the device: files written there would not be in its library.";
+  if (/[\\/]device[\\/]/i.test(dest)) throw "Choose a folder outside the library: files written there would not be part of it.";
 }
 
 // ---- track list ------------------------------------------------------------------------------
@@ -92,7 +92,7 @@ function mockTracklist(doc: MixDoc, o: TracklistOptions, audioFileName: string):
   const listed = audible
     .filter((c) => {
       const ok = c.trackId >= 0 && (c.track?.available ?? true);
-      if (!ok && !o.includeUnavailable) warnings.push(`${c.track?.title || "A clip"} is left out of the list: its audio is not on the device, so the export leaves it out too`);
+      if (!ok && !o.includeUnavailable) warnings.push(`${c.track?.title || "A clip"} is left out of the list: its audio is not in the library, so the export leaves it out too`);
       return ok || o.includeUnavailable;
     })
     .sort((a, b) => a.visibleStart - b.visibleStart || a.visibleEnd - b.visibleEnd);
@@ -329,7 +329,7 @@ export const handlers: Handlers = {
     const ext = ({ txt: "txt", csv: "csv", youtube: "txt", mixcloud: "txt", cue: "cue" } as Record<string, string>)[String(a.format as TracklistFormat)];
     if (!ext) throw `Unknown track list format '${a.format}' (use txt, csv, youtube, mixcloud or cue).`;
     if (!String(a.dest).toLowerCase().endsWith("." + ext)) throw `The file name must end in .${ext} to match the chosen format.`;
-    if (/[\\/]device[\\/]/i.test(String(a.dest))) throw "Choose a folder outside the device: files written there would not be in its library.";
+    if (/[\\/]device[\\/]/i.test(String(a.dest))) throw "Choose a folder outside the library: files written there would not be part of it.";
     mockTracklist(a.mix as MixDoc, withDefaults(a.options), String(a.audioFileName ?? ""));
     return String(a.dest); // nothing is written in the browser
   },

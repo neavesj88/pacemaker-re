@@ -972,7 +972,7 @@ fn match_tracks(lib_tracks: &[Track], foreign: &[ForeignTrack]) -> Vec<Matched> 
                 return Matched::No("no file match and no title to compare".into());
             }
             if f.duration_secs.is_none() {
-                return Matched::No("not on the device (the file gives no length to confirm a title match)".into());
+                return Matched::No("not in the library (the file gives no length to confirm a title match)".into());
             }
             let cands: Vec<&&Track> = by_tags
                 .get(&(norm(&f.title), norm(&f.artist)))
@@ -987,7 +987,7 @@ fn match_tracks(lib_tracks: &[Track], foreign: &[ForeignTrack]) -> Vec<Matched> 
                 })
                 .unwrap_or_default();
             match cands.len() {
-                0 => Matched::No("not on the device (or no length to confirm a title match)".into()),
+                0 => Matched::No("not in the library (or no length to confirm a title match)".into()),
                 1 => Matched::ByTags(cands[0].track_id),
                 n => Matched::No(format!("{n} device tracks share this title and artist")),
             }
@@ -1125,8 +1125,8 @@ pub fn plan_import(lib: &Library, foreign: &ForeignLibrary, opts: &ImportOptions
     for (i, (f, m)) in foreign.tracks.iter().zip(&matches).enumerate() {
         if let Matched::No(reason) = m {
             let on_disk = paths::local_is_file(&f.path);
-            let reason = if f.path.is_empty() && reason.starts_with("not on the device") {
-                "not on the device (and the file has no location)".to_string()
+            let reason = if f.path.is_empty() && reason.starts_with("not in the library") {
+                "not in the library (and the file has no location)".to_string()
             } else {
                 reason.clone()
             };

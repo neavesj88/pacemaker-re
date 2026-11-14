@@ -68,11 +68,11 @@ pub fn reanalyse_tracks(app: AppHandle, lock: State<'_, JobLock>, root: String, 
 /// location whose part after `/pmdb_tracks/` is absolute, has a drive prefix or climbs with `..`
 /// would make `join` leave the volume, so anything but plain names is refused.
 pub(crate) fn audio_in_volume(lib: &Library, location: &str) -> AppResult<PathBuf> {
-    let (audio, _) = lib.track_paths(location).ok_or("This track has no file on the device.")?;
+    let (audio, _) = lib.track_paths(location).ok_or("This track has no file in the library.")?;
     let music = lib.root().join(pm_formats::naming::MUSIC_DIR);
     let inside = audio.strip_prefix(&music).is_ok_and(|rel| rel.components().all(|c| matches!(c, Component::Normal(_))));
     if !inside {
-        return Err("The track's location points outside the device.".into());
+        return Err("The track's location points outside the library.".into());
     }
     Ok(audio)
 }
@@ -83,7 +83,7 @@ fn audio_file(lib: &Library, track_id: i64) -> AppResult<PathBuf> {
     let track = lib.tracks()?.into_iter().find(|t| t.track_id == track_id).ok_or("That track is not in the library.")?;
     let audio = audio_in_volume(lib, &track.location)?;
     if !audio.is_file() {
-        return Err("The audio file is missing from the device.".into());
+        return Err("The audio file is missing from the library.".into());
     }
     Ok(audio)
 }

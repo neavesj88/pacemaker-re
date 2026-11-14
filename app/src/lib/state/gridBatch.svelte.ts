@@ -254,7 +254,7 @@ class GridBatch {
       count: n,
       names: this.rows.map((r: BatchRow) => rowLine(r, this.ticked.has(r.track_id))),
       title: opTitle(this.kind, n, lib.root, nudgeMs),
-      description: opDescription(this.kind) + (note ? ` ${note}` : ""),
+      description: opDescription(this.kind, session.library?.kind) + (note ? ` ${note}` : ""),
       confirmLabel: `Change ${n}`,
       runningLabel: "Changing beat grids",
       doneLabel: "Beat grid change finished",

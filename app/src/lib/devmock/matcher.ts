@@ -25,7 +25,7 @@ export const handlers: Handlers = {
   matcher_save_text: (a) => {
     const dest = String(a.dest ?? "");
     if (!/\.(txt|csv)$/i.test(dest)) throw "The file name must end in .txt or .csv.";
-    if (/[\\/]device[\\/]/i.test(dest)) throw "Choose a folder outside the device: this list is not part of its library.";
+    if (/[\\/]device[\\/]/i.test(dest)) throw "Choose a folder outside the library: this list is not part of it.";
     return { path: dest, bytes: String(a.text ?? "").length };
   },
 };

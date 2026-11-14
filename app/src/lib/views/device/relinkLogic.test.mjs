@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   actionLine, cardMusicFolder, confidenceLabel, confirmLine, freeSpaceProblem, isPreselected, kindLabel, locationLine, matchSummary, scanLine,
-  scanPercent, sizeText, sortRows, tickAfterBulk, nonStandardNote, totals, totalsLine,
+  scanPercent, sizeText, sortRows, tickAfterBulk, nonStandardNote, matchLabel, totals, totalsLine,
 } from "./relinkLogic.ts";
 
 const MB = 1024 * 1024;
@@ -132,4 +132,16 @@ test("the paths the app did not generate are said once, with the count", () => {
   assert.equal(nonStandardNote([{ non_standard: false }, {}]), "");
   assert.match(nonStandardNote([{ non_standard: true }, { non_standard: false }]), /^1 track will point at a path under Music that this app did not generate\..*not been checked on hardware/);
   assert.match(nonStandardNote([{ non_standard: true }, { non_standard: true }]), /^2 tracks will point/);
+});
+
+test("the same sentences name the library, not the card, for a library on this computer", () => {
+  assert.equal(actionLine({ action: "copy", dest: "6/8/x.mp3", on_card: false }, "computer"), "Copies the file into the library as 6/8/x.mp3");
+  assert.match(actionLine({ action: "copy", dest: "6/8/x.mp3", on_card: true }, "computer"), /already in the library, under another name/);
+  const t = totals([{ action: "copy", size: 2 * MB }, { action: "point", size: 1 }]);
+  assert.equal(totalsLine(t, "computer"), "This will copy 1 file (2.0 MB) into the library and point 1 track at files already in the library.");
+  assert.equal(totalsLine(t), "This will copy 1 file (2.0 MB) onto the card and point 1 track at files already on the card.", "a Pacemaker keeps its words");
+  assert.equal(freeSpaceProblem(50 * MB, 55 * MB, "computer"), "The drive has 55.0 MB free and the copies need 58.0 MB.");
+  assert.match(nonStandardNote([{ non_standard: true }], "computer"), /set "A match already in the library" to copy it/);
+  assert.match(nonStandardNote([{ non_standard: true }]), /set "A match already on the card" to copy it/);
+  assert.equal(matchLabel("computer"), "A match already in the library");
 });

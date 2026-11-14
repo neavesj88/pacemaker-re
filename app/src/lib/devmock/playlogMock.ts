@@ -147,7 +147,7 @@ export const playlogHandlers: Handlers = {
   playlog_record: () => {
     if (!settings.enabled) return { enabled: false, status: "off", tracks: 0, pruned: 0, detail: null };
     if (cleared && candidate && settings.ask_before_new_log && !chose) {
-      return { enabled: true, status: "candidate", tracks: 0, pruned: 0, detail: "the play log from E:\\ has 13 of the 14 tracks it has seen played on this card" };
+      return { enabled: true, status: "candidate", tracks: 0, pruned: 0, detail: "the play log from E:\\ has 13 of the 14 tracks it has seen played in this library" };
     }
     if (cleared) {
       cleared = false;

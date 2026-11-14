@@ -38,7 +38,7 @@
 </script>
 
 <div class="bar">
-  <h2>Device</h2>
+  <h2>{onComputer ? "This library" : "Device"}</h2>
   {#if lib}
     <span class="chip">{onComputer ? "This computer" : volumeName(lib.root)}</span>
     <span class="sp"></span>

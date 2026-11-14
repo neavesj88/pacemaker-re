@@ -9,7 +9,7 @@
 
   const id = $derived(holders.trackId);
   const track = $derived(id === null ? undefined : session.library?.tracks.find((t) => t.track_id === id));
-  const rows = $derived(holders.holding ? holdingRows(holders.holding) : { cases: [], smart: [] });
+  const rows = $derived(holders.holding ? holdingRows(holders.holding, session.library?.kind) : { cases: [], smart: [] });
 </script>
 
 {#if id !== null}

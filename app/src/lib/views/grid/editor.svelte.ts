@@ -299,9 +299,9 @@ class GridEditor {
       if (this.gridDirty) {
         const now = await gridLoad(lib.root, l.track_id);
         if (JSON.stringify(now.doc) !== JSON.stringify(this.#baseDocState)) {
-          this.error =
-            "The beat grid on the device changed since this track was opened. Re-open the track to see the current grid; nothing was saved.";
-          toast.show("Grid changed on the device: nothing saved", "bad");
+          const where = session.isComputer ? "in the library" : "on the device";
+          this.error = `The beat grid ${where} changed since this track was opened. Re-open the track to see the current grid; nothing was saved.`;
+          toast.show(`Grid changed ${where}: nothing saved`, "bad");
           return false;
         }
       }

@@ -65,7 +65,7 @@ class Tempo {
       // every track asked for, the ones that stay as they are included, with the reason
       names: rows.map(rowLine),
       title: opTitle(op, n, lib.root),
-      description: opDescription(op) + note,
+      description: opDescription(op, session.library?.kind) + note,
       confirmLabel: `Change ${n}`,
       runningLabel: "Changing BPM",
       doneLabel: "BPM change finished",

@@ -30,7 +30,7 @@
         <span><strong>{m.label}</strong><span class="muted note">{m.note}</span></span>
       </label>
     {/each}
-    <p class="muted">Writes go through the same safety as every other change to the device. Nothing is written when every copy is already current.</p>
+    <p class="muted">Writes go through the same safety as every other change to {session.place.the}. Nothing is written when every copy is already current.</p>
   </fieldset>
   <fieldset>
     <legend>Exports</legend>

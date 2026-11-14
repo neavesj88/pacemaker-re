@@ -25,6 +25,8 @@ assert.equal(placeWords("computer").the, "this library");
 assert.equal(placeWords(undefined).the, "the Pacemaker", "no library open reads as a Pacemaker");
 assert.deepEqual([placeWords("computer").card, placeWords("computer").drive], ["the library", "the library folder"]);
 assert.deepEqual([placeWords("pacemaker").card, placeWords("pacemaker").drive], ["the card", "the drive"]);
+assert.deepEqual([placeWords("pacemaker").device, placeWords("pacemaker").thisCard], ["the device", "this card"]);
+assert.deepEqual([placeWords("computer").device, placeWords("computer").thisCard], ["the library", "this library"]);
 
 // how a library is named
 assert.equal(libraryLabel("computer", "C:\\Users\\me\\Music\\Pacemaker Revival"), "This computer");

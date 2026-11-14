@@ -256,7 +256,7 @@ fn summarise(rep: &ops_relink::RunReport) -> String {
         let copied = rep.relinked.iter().filter(|d| d.copied).count();
         let mut s = format!("Relinked {}", plural(rep.relinked.len(), "track"));
         if copied > 0 {
-            s.push_str(&format!(" ({} copied onto the card, {})", copied, mb(rep.copied_bytes)));
+            s.push_str(&format!(" ({} copied into the library, {})", copied, mb(rep.copied_bytes)));
         }
         parts.push(s);
         let grid_copied = rep.relinked.iter().filter(|d| d.grid == GridState::Copied).count();
@@ -410,7 +410,7 @@ mod tests {
             copied_bytes: 5 << 20,
         };
         let s = summarise(&rep);
-        assert!(s.starts_with("Relinked 3 tracks (1 copied onto the card, 5.0 MB)"), "{s}");
+        assert!(s.starts_with("Relinked 3 tracks (1 copied into the library, 5.0 MB)"), "{s}");
         assert!(s.contains("1 track had its beat grid copied"), "{s}");
         assert!(s.contains("1 track without a beat grid, to analyse: B - Two"), "{s}");
         assert!(s.contains("Stopped at your request"), "{s}");

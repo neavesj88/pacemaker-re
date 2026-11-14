@@ -232,7 +232,7 @@ pub fn check_dest_ext(root: &Path, dest: &Path, want: &str) -> AppResult<()> {
     if let Ok(r) = root.canonicalize()
         && parent.starts_with(&r)
     {
-        return Err("Choose a folder outside the device: files written there would not be in its library.".into());
+        return Err("Choose a folder outside the library: files written there would not be part of it.".into());
     }
     Ok(())
 }

@@ -47,3 +47,8 @@ test("when nothing would change the message gives the reasons once each", () => 
   const four = [1, 2, 3, 4].map((i) => ({ ...left, track_id: i, skip: `reason ${i}` }));
   assert.equal(nothingToDo(four), "Nothing would change: reason 1; reason 2; reason 3; ….");
 });
+
+test("a tempo change on a library on this computer does not mention the device", () => {
+  assert.doesNotMatch(opDescription({ kind: "halve" }, "computer"), /device/);
+  assert.match(opDescription({ kind: "halve" }, "computer"), /copied out of the library/);
+});

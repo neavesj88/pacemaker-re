@@ -2,6 +2,7 @@
 // windows, the remembered settings, and the wording of the preview, the mixes warning and the
 // confirmation. No store or component imports so it runs under plain node: see batchLogic.test.mjs.
 import type { BatchRow, GenreWindow, SuspectSettings } from "../api/grid";
+import type { LibraryKind } from "../api/types";
 import defaults from "./suspectDefaults.json" with { type: "json" };
 
 /** The starting rules. The file is the single source: a Rust test keeps it equal to the backend's own defaults. */
@@ -204,8 +205,9 @@ export function counts(rows: BatchRow[], ticked: ReadonlySet<number>): Counts {
 /** Identifies what a preview was computed for; a preview whose key differs from the controls' key is stale. */
 export const previewKey = (kind: BatchKind, nudgeMs: number, ids: readonly number[]) => `${kind}|${kind === "nudge" ? nudgeMs : ""}|${[...ids].sort((a, b) => a - b).join(",")}`;
 
-const BOTH =
-  "The beat grid (.str) and the BPM of each track are rewritten together, so they always agree. Each track's previous beat grid is first copied off the device (the app's data folder, next to the music.db snapshots), because Restore from a snapshot does not bring beat grids back.";
+/** The sentence every grid change ends with; "off the device" for a Pacemaker, "out of the library" for one on this computer. */
+export const bothNote = (kind: LibraryKind = "pacemaker") =>
+  `The beat grid (.str) and the BPM of each track are rewritten together, so they always agree. Each track's previous beat grid is first copied ${kind === "computer" ? "out of the library" : "off the device"} (the app's data folder, next to the music.db snapshots), because Restore from a snapshot does not bring beat grids back.`;
 
 /** The confirmation's question: "Halve the BPM of 3 tracks on P:\ ?". */
 export function opTitle(kind: BatchKind, n: number, root: string, nudgeMs = 0): string {
@@ -224,7 +226,8 @@ export function opTitle(kind: BatchKind, n: number, root: string, nudgeMs = 0): 
   }
 }
 
-export function opDescription(kind: BatchKind): string {
+export function opDescription(kind: BatchKind, lib: LibraryKind = "pacemaker"): string {
+  const BOTH = bothNote(lib);
   switch (kind) {
     case "nudge":
       return `Every beat line of each track moves by the same time; the tempo and the bar lines stay. ${BOTH}`;
@@ -235,7 +238,7 @@ export function opDescription(kind: BatchKind): string {
     case "suggested":
       return `Each track gets the fix its own rule suggested (half or double, whichever brings it into its genre's window). ${BOTH}`;
     case "reanalyse":
-      return `Each track's grid is replaced by the analysis shown in the preview, made from the audio already on the device. A beat grid or BPM you set by hand is replaced. No audio is copied or changed. ${BOTH}`;
+      return `Each track's grid is replaced by the analysis shown in the preview, made from the audio already ${lib === "computer" ? "in the library" : "on the device"}. A beat grid or BPM you set by hand is replaced. No audio is copied or changed. ${BOTH}`;
   }
 }
 

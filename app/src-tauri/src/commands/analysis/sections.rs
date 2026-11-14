@@ -458,7 +458,7 @@ fn measure(root: &Path, t: &TrackRef) -> Result<Measure, String> {
     // the same validated resolution the waveform uses: plain names below /pmdb_tracks/ only
     let (audio, sidecar) = sidecar_of(root, &t.location)?;
     if !audio.is_file() {
-        return Err("the audio file is missing from the device".into());
+        return Err("the audio file is missing from the library".into());
     }
     // the stamp is taken before the grid is read: an edit that lands in between shows up as stale
     let stamp = stamp_of(&sidecar);
