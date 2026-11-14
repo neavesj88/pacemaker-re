@@ -4,14 +4,23 @@
   // A right-click menu at viewport position (x, y). Mount inside {#if}; it closes on any click
   // outside, Escape, or after an item runs.
   let { x, y, items, onclose }: { x: number; y: number; items: MenuItem[]; onclose: () => void } = $props();
+
+  // Escape belongs to the menu alone. Capture phase + stopPropagation so neither a list underneath
+  // (it would clear its selection) nor a dialog underneath (the case picker would close) also sees it,
+  // whatever order their own listeners were registered in.
+  $effect(() => {
+    const h = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      e.preventDefault();
+      e.stopPropagation();
+      onclose();
+    };
+    window.addEventListener("keydown", h, true);
+    return () => window.removeEventListener("keydown", h, true);
+  });
 </script>
 
-<svelte:window onclick={onclose} onkeydown={(e) => {
-    if (e.key !== "Escape") return;
-    // handled: a dialog underneath (the case picker) must not also close on this Escape
-    e.preventDefault();
-    onclose();
-  }} oncontextmenu={onclose} />
+<svelte:window onclick={onclose} oncontextmenu={onclose} />
 
 <ul class="menu" role="menu" style:left="{x}px" style:top="{y}px">
   {#each items as item (item.label)}

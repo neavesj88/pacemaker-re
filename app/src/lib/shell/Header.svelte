@@ -26,7 +26,13 @@
   <div class="brand"><RMark size={20} /><b>Pacemaker <span>Revival</span></b></div>
   <div class="source">
     {#if options.length > 0}
-      <select aria-label="Library" value={current} onchange={(e) => pick((e.currentTarget as HTMLSelectElement).value)}>
+      <select aria-label="Library" value={current} onchange={(e) => {
+          const el = e.currentTarget as HTMLSelectElement;
+          const v = el.value;
+          // keep showing the open library until the switch really happens (a prompt may stop it)
+          el.value = current;
+          pick(v);
+        }}>
         <option value="" disabled>Choose a library…</option>
         {#each options as o (o.value)}
           <option value={o.value} title={o.title}>{o.label}</option>

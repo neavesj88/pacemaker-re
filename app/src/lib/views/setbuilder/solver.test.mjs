@@ -580,9 +580,9 @@ await test("building a mix: hops that cannot blend start after the last track an
     assert.equal(E.clipOf(r.doc, id).visibleStart, prev.visibleEnd, "starts when the last one ends");
   });
   assert.equal(r.notes.length, 4);
-  assert.match(r.notes[0], /"T2".*no beat grid/);
-  assert.match(r.notes[2], /"T4".*could not be blended.*do not overlap/);
-  assert.match(r.notes[3], /"T5".*half or double/);
+  assert.match(r.notes[0], /“T2”.*no beat grid/);
+  assert.match(r.notes[2], /“T4”.*could not be blended.*do not overlap/);
+  assert.match(r.notes[3], /“T5”.*half or double/);
   // the half-time track kept its own tempo and the refused one was not stretched
   close(E.effectiveBpm(E.clipOf(r.doc, r.clipIds[4]), 0), 63, 1e-3);
   close(E.effectiveBpm(E.clipOf(r.doc, r.clipIds[3]), 0), 126, 1e-3);
@@ -726,7 +726,7 @@ await test("building a mix: a hop beyond the limit starts after the last track a
   const r = await B.buildSetDoc(emptyDoc(), t.map((x) => ({ id: x.id, title: `T${x.id}` })), plan, bopts(), fakeDeps(specs), kit);
   assert.equal(r.doc.transitions.length, 0);
   assert.equal(E.clipOf(r.doc, r.clipIds[1]).visibleStart, E.clipOf(r.doc, r.clipIds[0]).visibleEnd);
-  assert.match(r.notes[0], /"T2".*75\.0 % above.*limit for beat-matching/);
+  assert.match(r.notes[0], /“T2”.*75\.0 % above.*limit for beat-matching/);
   close(r.stretchPct[1], 0, 1e-6);
 });
 

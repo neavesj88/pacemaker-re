@@ -41,6 +41,7 @@
   // The ★ copy of a smart case is rewritten from the rules (tracks, order and name), so hand edits
   // to it would be lost: those controls are off and a notice says why.
   let smartCopy = $derived(smartCopyOf(cases.smart, open.id));
+  const STAR_COPY_TIP = "A star copy is rewritten from its smart case, so its tracks cannot be changed here";
   let canEdit = $derived(jobs.canWrite && !smartCopy);
 
   onDestroy(() => {
@@ -327,8 +328,8 @@
 
     <div class="toolbar">
       <Button variant="primary" onclick={() => play()} disabled={all.every((r) => !r.t)}>▶ Play</Button>
-      <Button onclick={() => (adding = true)} disabled={!canEdit}>Add tracks…</Button>
-      <Button onclick={() => (removing = selectedRows)} disabled={!canEdit || selectedRows.length === 0}>
+      <Button onclick={() => (adding = true)} disabled={!canEdit} title={smartCopy ? STAR_COPY_TIP : undefined}>Add tracks…</Button>
+      <Button onclick={() => (removing = selectedRows)} disabled={!canEdit || selectedRows.length === 0} title={smartCopy ? STAR_COPY_TIP : undefined}>
         Remove{selectedRows.length > 0 ? ` ${selectedRows.length}` : ""}…
       </Button>
       <Button onclick={() => nudge(-1)} disabled={!canReorder || selectedRows.length === 0} title="Move up (Alt+Up)">▲</Button>
@@ -712,6 +713,21 @@
     min-height: 170px;
     overflow: auto;
     outline: none;
+  }
+  /* A short window (a 1080p laptop with banners above): tighter bars, and a table tall enough for
+     several rows so the pane scrolls once, not twice. */
+  @media (max-height: 700px) {
+    .crumb,
+    .toolbar {
+      padding: 4px 8px;
+      gap: 6px;
+    }
+    .notice {
+      padding: 3px 10px;
+    }
+    .scroll {
+      min-height: 300px;
+    }
   }
   table {
     width: 100%;

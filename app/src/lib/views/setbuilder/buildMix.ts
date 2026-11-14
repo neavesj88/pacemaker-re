@@ -97,7 +97,7 @@ export async function buildSetDoc(
     progress?.(i, tracks.length, t.title);
     const fresh = await deps.makeClip(t.id);
     const channel = i % 2;
-    const label = `"${t.title}"`;
+    const label = `“${t.title}”`;
 
     /** The tempo a track that starts a run must be set to (the rest of the run follows it). */
     const runTempo = Math.abs(plan.stretchPct[i]) > 1e-9 ? plan.tempos[i] : null;

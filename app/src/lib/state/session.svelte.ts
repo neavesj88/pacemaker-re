@@ -187,6 +187,20 @@ class Session {
   /** Reads the library on `root`. `keepView` re-reads in place (after a job) without resetting
    *  the view, the open case or the filters. */
   async load(root: string, keepView = false) {
+    if (!keepView && nav.beforeLeave) {
+      // Opening a different library discards what an open case editor holds: it asks first (and
+      // does nothing if the user keeps the edits). A reload in place (keepView) never asks.
+      let opening = null as Promise<void> | null;
+      nav.beforeLeave(() => {
+        opening = this.#open(root, false);
+      });
+      if (opening) await opening;
+      return;
+    }
+    await this.#open(root, keepView);
+  }
+
+  async #open(root: string, keepView: boolean) {
     this.loading = true;
     this.error = "";
     try {
