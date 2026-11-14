@@ -1,7 +1,7 @@
 // Run: node --experimental-strip-types --test src/lib/views/analysis/bgLogic.test.mjs
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { clampPct, failureCount, failureNote, failureRows, groupKeys, noResultRows, parseDismissed, pauseAction, statusLine, stripVisible } from "./bgLogic.ts";
+import { clampPct, failureCount, failureNote, failureRows, groupKeys, heldBackRows, noResultRows, parseDismissed, pauseAction, statusLine, stripVisible } from "./bgLogic.ts";
 
 const base = { state: "running", detail: "", root: "C:\\Lib", pacemaker: false, word: "waveforms", done: 12, total: 40, left: 100, label: "A - B", failures: 0 };
 const fail = (kind, track_id, reason, label = `Track ${track_id}`) => ({ kind, track_id, label, location: `/pmdb_tracks/${track_id}.mp3`, size: 1, reason });
@@ -83,6 +83,16 @@ test("a drum-only track with no key is not a failure: no note, no retry row, lis
   assert.equal(failureNote(mixed, 0), "1 track couldn't be analysed.");
   assert.equal(failureCount(mixed), 1);
   assert.deepEqual(noResultRows(mixed).map((r) => r.track_id), [1, 2]);
+});
+
+test("a key held back by the floor is not a failure and is listed in its own group", () => {
+  const weak = { ...fail("keys", 4, "low confidence: C major (30%)", "Weak"), held_back: true };
+  const list = [weak, fail("peaks", 3, "cannot decode")];
+  assert.equal(failureCount(list), 1);
+  assert.equal(failureNote([weak], 0), null);
+  assert.deepEqual(failureRows(list).map((r) => r.track_id), [3]);
+  assert.deepEqual(heldBackRows(list).map((r) => [r.track_id, r.kinds]), [[4, "keys"]]);
+  assert.deepEqual(noResultRows(list), []);
 });
 
 test("a Sync plan on screen holds the worker and the strip says so", () => {

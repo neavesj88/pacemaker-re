@@ -23,7 +23,7 @@ const entries: SettingsEntry[] = [
     area: "Analysis",
     title: "Background analysis",
     help: "Whether waveforms, keys, energy and sections are made automatically for the library on this computer, which of them, and Run now for a Pacemaker.",
-    keywords: "background automatic waveform peaks key energy sections pause playback run now pacemaker queue",
+    keywords: "background automatic waveform peaks key energy sections pause playback sync plan hold confidence floor held back run now pacemaker queue",
     how: "inline",
     component: BgSettingsFields,
     load: () => bg.load(),

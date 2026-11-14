@@ -33,6 +33,7 @@ export const DEFAULT_BG_SETTINGS: BgSettings = {
   energy: true,
   sections: true,
   pause_during_playback: true,
+  hold_during_sync_plan: true,
   key_min_confidence_pct: 0,
 };
 

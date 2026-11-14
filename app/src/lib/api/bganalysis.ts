@@ -15,6 +15,7 @@ export type BgSettings = {
   sections: boolean;
   /** Wait while a track or a mix preview plays. */
   pause_during_playback: boolean;
+  hold_during_sync_plan: boolean;
   /** A detected key below this confidence (per cent, 0-100) is listed, not written. */
   key_min_confidence_pct: number;
 };
@@ -49,6 +50,8 @@ export type BgFailure = {
   reason: string;
   /** The file was read fine but has no result to give (no clear key): nothing to retry. */
   no_result?: boolean;
+  /** A key was found but the confidence floor held it back; a new floor asks again. */
+  held_back?: boolean;
   /** The audio file was not there; it is tried again once it is. */
   file_missing?: boolean;
 };

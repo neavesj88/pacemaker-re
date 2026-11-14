@@ -222,7 +222,7 @@ pub fn decide(s: &Snap) -> Option<Stop> {
     if s.job_running {
         return Some(Stop::Job);
     }
-    if s.held {
+    if s.settings.hold_during_sync_plan && s.held {
         return Some(Stop::Held);
     }
     None
@@ -553,8 +553,8 @@ impl Backend for Real {
                     Ok(Err(e)) => Outcome::Failed(e.to_string()),
                     Ok(Ok(None)) => Outcome::NoResult("no clear key (too short, silent or atonal)".into()),
                     Ok(Ok(Some(r))) if r.confidence < self.key_min_confidence => {
-                        // a key was found, a setting held it back: that is retryable, unlike a file with no key
-                        Outcome::Failed(format!("low confidence: {} ({:.0}%)", r.key.name(), r.confidence * 100.0))
+                        // a key was found and the floor held it back: not a failure, and not asked again until the floor changes
+                        Outcome::HeldBack(format!("low confidence: {} ({:.0}%)", r.key.name(), r.confidence * 100.0))
                     }
                     Ok(Ok(Some(r))) => {
                         self.pending_keys.push((item.id, r.key.name()));
@@ -595,9 +595,10 @@ struct Ctl<'a> {
     last_emit: Instant,
 }
 
-/// How many of the records are things that went wrong; a track with no result to give is not one.
+/// How many of the records are things that went wrong; a track with no result to give, or a key the
+/// floor held back, is not one.
 fn real_failures(list: &[Failure]) -> usize {
-    list.iter().filter(|f| !f.no_result).count()
+    list.iter().filter(|f| !f.no_result && !f.held_back).count()
 }
 
 impl Ctl<'_> {
@@ -694,12 +695,14 @@ pub struct Worker {
     /// After a key save failed: keys are left out of the plan until this time, and each failure in
     /// a row doubles the wait (up to KEY_HOLD_MAX), so the other lanes run and nothing is decoded in vain.
     keys_hold: Option<Instant>,
+    /// The confidence floor the held-back records were made under; a new floor asks them again.
+    floor_seen: Option<u8>,
     keys_fails: u32,
 }
 
 impl Worker {
     pub fn new(env: Arc<dyn Env>, shared: Arc<Shared>, cfg_dir: PathBuf, cache_dir: PathBuf, peaks: Arc<PeaksState>) -> Self {
-        Worker { env, shared, cfg_dir, cache_dir, peaks, engine: Engine::default(), engine_root: None, epoch: u64::MAX, keys_hold: None, keys_fails: 0 }
+        Worker { env, shared, cfg_dir, cache_dir, peaks, engine: Engine::default(), engine_root: None, epoch: u64::MAX, keys_hold: None, floor_seen: None, keys_fails: 0 }
     }
 
     fn set_state(&self, stop: &Stop) {
@@ -760,6 +763,14 @@ impl Worker {
             drop(g);
             self.epoch = u64::MAX;
         }
+        if self.floor_seen != Some(settings.key_min_confidence_pct) {
+            let first = self.floor_seen.is_none();
+            self.floor_seen = Some(settings.key_min_confidence_pct);
+            // a record made under the old floor says nothing about the new one
+            if !first && self.engine.failures.forget_held_back() {
+                self.epoch = u64::MAX;
+            }
+        }
         if self.epoch != epoch {
             self.engine.replan();
             self.epoch = epoch;
@@ -769,7 +780,7 @@ impl Worker {
         let mut status = Status::new("running");
         status.root = Some(root.clone());
         status.pacemaker = library_kind(&root) == PACEMAKER;
-        status.failures = self.engine.failures.list().iter().filter(|f| !f.no_result).count();
+        status.failures = real_failures(&self.engine.failures.list());
         let mut ctl = Ctl { env: &self.env, shared: &self.shared, root: root.clone(), epoch, status, lanes: Vec::new(), seen: Vec::new(), last_emit: Instant::now() - STATUS_EVERY };
         let mut run_settings = settings;
         if let Some(until) = self.keys_hold {
@@ -1338,7 +1349,16 @@ mod tests {
         w.step();
         assert_eq!(keys_of(&vol), vec!["", "", "", ""]);
         let v = view_of(&shared);
-        assert!(v.failures.iter().any(|f| f.reason.starts_with("low confidence")), "{:?}", v.failures);
+        assert!(v.failures.iter().any(|f| f.reason.starts_with("low confidence") && f.held_back && !f.no_result), "{:?}", v.failures);
+        assert_eq!(v.status.failures, v.failures.iter().filter(|f| !f.held_back).count(), "a held-back key is not counted as a failure");
+        // a lower floor asks again; the same floor does not
+        shared.change(true, |_| {});
+        w.step();
+        assert_eq!(keys_of(&vol), vec!["", "", "", ""]);
+        shared.change(true, |g| g.settings.key_min_confidence_pct = 0);
+        w.step();
+        assert!(view_of(&shared).failures.iter().all(|f| !f.held_back), "{:?}", view_of(&shared).failures);
+        assert!(keys_of(&vol).iter().any(|k| !k.is_empty()), "{:?}", keys_of(&vol));
         std::fs::remove_dir_all(&base).unwrap();
     }
 

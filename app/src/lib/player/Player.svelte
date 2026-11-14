@@ -49,8 +49,8 @@
   );
 
   /** The one status line under the title, worst first. */
-  const status = $derived.by((): { text: string; bad: boolean } | null => {
-    if (playback.error) return { text: `${playback.error} Press Space or Try again to open it again.`, bad: true };
+  const status = $derived.by((): { text: string; bad: boolean; hint?: string } | null => {
+    if (playback.error) return { text: playback.error, bad: true, hint: "Press Space or Try again to retry." };
     if (track && engine.peaksProblem) return { text: `No waveform: ${engine.peaksProblem}`, bad: false };
     if (track && engine.beatsProblem) return { text: `No beat ticks: ${engine.beatsProblem}`, bad: false };
     if (loaded && engine.silent) return { text: "Browser preview: no audio, silent clock", bad: false };
@@ -173,7 +173,9 @@
       <b class="title muted">Nothing loaded</b>
       <div class="muted line">Select a track and press Space</div>
     {/if}
-    {#if status}<div class="line status" class:bad={status.bad} title={status.text}>{status.text}</div>{/if}
+    {#if status}<div class="line status" class:bad={status.bad} title={status.text}>{status.text}</div>
+      {#if status.hint}<div class="line hint">{status.hint}</div>{/if}
+    {/if}
   </div>
 
   <PlayerWave
@@ -314,6 +316,9 @@
   .status {
     color: var(--muted);
     font-style: italic;
+  }
+  .hint {
+    color: var(--muted);
   }
   .status.bad {
     color: var(--bad-text);

@@ -75,19 +75,28 @@ export function groupKeys(keys: { track_id: number; key: string }[]): Map<string
 
 /** Something went wrong with this one, as against a file that was read fine and has no result to
  *  give (a drum-only track has no key): that is not a failure and has nothing to try again. */
-export const isFailure = (f: BgFailure): boolean => !f.no_result;
+export const isFailure = (f: BgFailure): boolean => !f.no_result && !f.held_back;
 
 /** What was read fine but gave no result: one row per track, with what is missing (`keys`). */
 export function noResultRows(list: BgFailure[]): FailureRow[] {
-  return failureRows(list.filter((f) => f.no_result).map((f) => ({ ...f, no_result: false })));
+  return rowsOf(list.filter((f) => f.no_result));
+}
+
+/** Keys found but under the confidence floor: not failures, and asked again when the floor changes. */
+export function heldBackRows(list: BgFailure[]): FailureRow[] {
+  return rowsOf(list.filter((f) => f.held_back));
 }
 
 /** The "couldn't analyse" list: one row per track, the kinds that failed and the reasons. */
 export type FailureRow = { track_id: number; label: string; kinds: string; reasons: string };
 
 export function failureRows(list: BgFailure[]): FailureRow[] {
+  return rowsOf(list.filter(isFailure));
+}
+
+function rowsOf(list: BgFailure[]): FailureRow[] {
   const by = new Map<number, BgFailure[]>();
-  for (const f of list.filter(isFailure)) by.set(f.track_id, [...(by.get(f.track_id) ?? []), f]);
+  for (const f of list) by.set(f.track_id, [...(by.get(f.track_id) ?? []), f]);
   return [...by.values()]
     .map((fs) => ({
       track_id: fs[0].track_id,

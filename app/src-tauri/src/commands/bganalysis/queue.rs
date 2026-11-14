@@ -50,13 +50,15 @@ pub struct Settings {
     pub sections: bool,
     /// Wait while a mix preview plays, so the music never competes with the analysis for the CPU.
     pub pause_during_playback: bool,
+    /// Wait while a Sync plan is on screen, so no key written now makes the plan stale.
+    pub hold_during_sync_plan: bool,
     /// A detected key below this confidence (per cent) is not written; it is listed instead.
     pub key_min_confidence_pct: u8,
 }
 
 impl Default for Settings {
     fn default() -> Self {
-        Settings { enabled: true, waveforms: true, keys: true, energy: true, sections: true, pause_during_playback: true, key_min_confidence_pct: 0 }
+        Settings { enabled: true, waveforms: true, keys: true, energy: true, sections: true, pause_during_playback: true, hold_during_sync_plan: true, key_min_confidence_pct: 0 }
     }
 }
 
@@ -102,6 +104,9 @@ pub enum Outcome {
     /// The file was read fine but holds no result (no clear key). Listed with its reason and not
     /// asked again, like a failure.
     NoResult(String),
+    /// A key was found but its confidence is under the floor in Settings. Listed apart from the
+    /// failures; asked again when the floor changes, not before.
+    HeldBack(String),
     /// The file could not be analysed.
     Failed(String),
     /// The audio file is not there (a drive unplugged, a file moved). Listed like a failure, but
@@ -125,6 +130,9 @@ pub struct Failure {
     /// again cannot change it.
     #[serde(default)]
     pub no_result: bool,
+    /// A key was found but the confidence floor held it back; a new floor asks again.
+    #[serde(default)]
+    pub held_back: bool,
     /// The audio file was not there when this was recorded.
     #[serde(default)]
     pub file_missing: bool,
@@ -133,13 +141,14 @@ pub struct Failure {
 impl Failure {
     /// The record an outcome leaves, or None when it leaves none.
     pub fn of(kind: Kind, item: &Item, outcome: &Outcome) -> Option<Failure> {
-        let (reason, no_result, file_missing) = match outcome {
-            Outcome::Failed(why) => (why, false, false),
-            Outcome::NoResult(why) => (why, true, false),
-            Outcome::Missing(why) => (why, false, true),
+        let (reason, no_result, held_back, file_missing) = match outcome {
+            Outcome::Failed(why) => (why, false, false, false),
+            Outcome::NoResult(why) => (why, true, false, false),
+            Outcome::HeldBack(why) => (why, false, true, false),
+            Outcome::Missing(why) => (why, false, false, true),
             Outcome::Done { .. } | Outcome::Later(_) => return None,
         };
-        Some(Failure { kind, track_id: item.id, label: item.label.clone(), location: item.location.clone(), size: item.size, reason: reason.clone(), no_result, file_missing })
+        Some(Failure { kind, track_id: item.id, label: item.label.clone(), location: item.location.clone(), size: item.size, reason: reason.clone(), no_result, held_back, file_missing })
     }
 }
 
@@ -174,6 +183,13 @@ impl Failures {
     /// Drops the record of a file that has now been analysed (it was given up on, then came back).
     pub fn forget(&mut self, kind: Kind, location: &str) {
         self.0.remove(&failure_key(kind, location));
+    }
+
+    /// Drops the records of keys the floor held back (the floor changed), so they are judged again.
+    pub fn forget_held_back(&mut self) -> bool {
+        let before = self.0.len();
+        self.0.retain(|_, f| !f.held_back);
+        self.0.len() != before
     }
 
     pub fn clear(&mut self) -> usize {
@@ -356,7 +372,7 @@ impl Engine {
             lane.done += 1;
             let (done, total) = (lane.done, lane.total);
             match &outcome {
-                Outcome::NoResult(_) | Outcome::Failed(_) | Outcome::Missing(_) => self.failures.record_outcome(kind, &item, &outcome),
+                Outcome::NoResult(_) | Outcome::HeldBack(_) | Outcome::Failed(_) | Outcome::Missing(_) => self.failures.record_outcome(kind, &item, &outcome),
                 Outcome::Done { .. } => self.failures.forget(kind, &item.location),
                 Outcome::Later(_) => {}
             }
@@ -750,7 +766,7 @@ mod tests {
     #[test]
     fn settings_default_to_everything_on_and_read_partial_files() {
         let d = Settings::default();
-        assert!(d.enabled && d.waveforms && d.keys && d.energy && d.sections && d.pause_during_playback);
+        assert!(d.enabled && d.waveforms && d.keys && d.energy && d.sections && d.pause_during_playback && d.hold_during_sync_plan);
         let partial: Settings = serde_json::from_str(r#"{"keys":false}"#).unwrap();
         assert!(!partial.keys && partial.enabled && partial.waveforms);
         assert!(Settings { key_min_confidence_pct: 101, ..d }.validate().is_err());
