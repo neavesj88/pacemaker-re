@@ -4,6 +4,7 @@
 // it with plain node.
 import type { FindResult, Group, GroupPlan, Link, Member, MergePlan, MergeRequest } from "$lib/api/duplicates";
 import type { DupSettings } from "$lib/api/duplicates";
+import { mmss } from "../format.ts";
 
 export const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
@@ -16,14 +17,16 @@ export function fmtBytes(b: number): string {
 
 const pad = (n: number) => String(n).padStart(2, "0");
 
-/** Unix milliseconds as a UTC date (the same everywhere), or `never` for the "no play" marker. */
+/** Unix milliseconds as a date in local time, as every other view shows it (the Tracks columns,
+ *  History), or `never` for the "no play" marker. */
 export function fmtDate(ms: number, never = "never"): string {
   if (ms <= 0) return never;
   const d = new Date(ms);
-  return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`;
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
-export const fmtLength = (secs: number) => (secs > 0 ? `${Math.floor(secs / 60)}:${pad(Math.floor(secs % 60))}` : "–");
+/** A length as the rest of the app writes it (`3:35`, `1:02:05` with hours). */
+export const fmtLength = (secs: number) => (secs > 0 ? mmss(Math.floor(secs)) : "–");
 
 // ---- the field-by-field comparison --------------------------------------------------------------
 

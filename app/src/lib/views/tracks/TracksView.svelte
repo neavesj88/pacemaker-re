@@ -61,6 +61,44 @@
     });
   });
 
+  // "Show tracks" in Library health (and any other list of tracks to show): select every one that
+  // is in the library, focus the first and scroll to it
+  $effect(() => {
+    if (nav.params["tracks.trackIds"] === undefined || !library) return;
+    untrack(() => {
+      const ids = nav.take<number[]>("tracks.trackIds");
+      if (Array.isArray(ids)) void showTracks(ids.filter((id) => typeof id === "number"));
+    });
+  });
+
+  async function showTracks(want: number[]) {
+    const present = want.filter((id) => byId.has(id));
+    if (present.length === 0) {
+      toast.show("None of those tracks is in the library any more.", "info");
+      return;
+    }
+    const hiddenNow = () => {
+      const seen = new Set(rows.map((r) => r.track_id));
+      return present.filter((id) => !seen.has(id));
+    };
+    if (hiddenNow().length > 0 && tracksState.prefs.findClearsFilters) {
+      tracksState.clearAllFilters();
+      toast.show("Cleared the search and filters to show those tracks.", "info");
+      await tick(); // the list is rebuilt without the filters
+    }
+    await tick(); // and the table exists
+    const hidden = new Set(hiddenNow());
+    const shown = rows.filter((r) => present.includes(r.track_id)).map((r) => r.track_id);
+    if (shown.length === 0) {
+      toast.show(`${present.length === 1 ? "That track is" : "Those tracks are"} hidden by the current search or filters. Clear them to see ${present.length === 1 ? "it" : "them"}.`, "info");
+      return;
+    }
+    list?.reveal(shown[0], true);
+    tracksState.selectedIds = shown; // reveal picks one; the rest of the list stays selected
+    if (hidden.size > 0) toast.show(`${shown.length} of ${present.length} tracks shown; ${hidden.size} hidden by the current search or filters.`, "info");
+    if (present.length < want.length) toast.show(`${want.length - present.length} of those tracks are no longer in the library.`, "info");
+  }
+
   async function findTrack(id: number) {
     if (!byId.has(id)) {
       toast.show("That track is no longer in the library.", "info");

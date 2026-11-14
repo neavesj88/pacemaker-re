@@ -22,6 +22,8 @@ export type ViewState = {
   /** "", "compat:8A" or "is:8A". */
   keyFilter: string;
   labelFilter: LabelFilter;
+  /** The case (crate) the table is limited to, or null. Absent in files saved before it existed. */
+  caseId: number | null;
   /** Present when the state also fixes the sort. */
   sort?: SortSpec[];
 };
@@ -29,7 +31,7 @@ export type ViewState = {
 export const MAX_QUERY_CHARS = 500;
 
 export function emptyViewState(): ViewState {
-  return { query: "", onlyNeeds: false, onlyAnalysed: false, onlySuspect: false, genre: "", bpmMin: "", bpmMax: "", keyFilter: "", labelFilter: freshLabelFilter() };
+  return { query: "", onlyNeeds: false, onlyAnalysed: false, onlySuspect: false, genre: "", bpmMin: "", bpmMax: "", keyFilter: "", labelFilter: freshLabelFilter(), caseId: null };
 }
 
 const str = (v: unknown, max: number): string => (typeof v === "string" ? v.slice(0, max) : "");
@@ -57,6 +59,7 @@ export function sanitiseViewState(raw: unknown): ViewState | null {
     bpmMax: str(r.bpmMax, 12),
     keyFilter: typeof r.keyFilter === "string" && /^(?:(?:compat|is):(?:1[0-2]|[1-9])[AB])?$/.test(r.keyFilter) ? r.keyFilter : "",
     labelFilter: { tags, tagMode: lf.tagMode === "all" ? "all" : "any", colours, energyMin: energy(lf.energyMin), energyMax: energy(lf.energyMax) },
+    caseId: typeof r.caseId === "number" && Number.isSafeInteger(r.caseId) && r.caseId >= 0 ? r.caseId : null,
   };
   // "Analysed" and "Missing" are opposites; a file that has both on keeps neither
   if (out.onlyNeeds && out.onlyAnalysed) out.onlyNeeds = out.onlyAnalysed = false;
@@ -71,7 +74,7 @@ export function sameViewState(a: ViewState, b: ViewState): boolean {
 }
 
 function canonical(s: ViewState) {
-  return [s.query, s.onlyNeeds, s.onlyAnalysed, s.onlySuspect, s.genre, s.bpmMin, s.bpmMax, s.keyFilter, s.labelFilter.tags, s.labelFilter.tagMode, s.labelFilter.colours, s.labelFilter.energyMin, s.labelFilter.energyMax, s.sort ?? null];
+  return [s.query, s.onlyNeeds, s.onlyAnalysed, s.onlySuspect, s.genre, s.bpmMin, s.bpmMax, s.keyFilter, s.labelFilter.tags, s.labelFilter.tagMode, s.labelFilter.colours, s.labelFilter.energyMin, s.labelFilter.energyMax, s.caseId, s.sort ?? null];
 }
 
 /** True when the state would show every track (no search, no filter). The sort does not count. */
@@ -80,7 +83,7 @@ export function viewStateIsClear(s: ViewState): boolean {
 }
 
 /** One line saying what the state filters by, for the preset list and for confirmations. */
-export function describeViewState(s: ViewState, sortLabel?: (spec: SortSpec) => string): string {
+export function describeViewState(s: ViewState, sortLabel?: (spec: SortSpec) => string, caseName?: (id: number) => string | undefined): string {
   const parts: string[] = [];
   if (s.query.trim()) parts.push(`search “${s.query.trim()}”`);
   if (s.genre) parts.push(`genre ${s.genre}`);
@@ -91,6 +94,7 @@ export function describeViewState(s: ViewState, sortLabel?: (spec: SortSpec) => 
   }
   const labels = describeLabelFilter(s.labelFilter);
   if (labels) parts.push(labels);
+  if (s.caseId !== null) parts.push(`only the case “${caseName?.(s.caseId) ?? "(removed)"}”`);
   if (s.onlyAnalysed) parts.push("only analysed");
   if (s.onlyNeeds) parts.push("only missing a beat grid");
   if (s.onlySuspect) parts.push("only suspect beat grids");

@@ -11,6 +11,7 @@
   import { toast } from "$lib/state/toast.svelte";
   import Button from "$lib/ui/Button.svelte";
   import Table, { type Column } from "$lib/ui/Table.svelte";
+  import BpmKey from "./BpmKey.svelte";
   import PlayLog from "./PlayLog.svelte";
   import SaveCaseModal from "./SaveCaseModal.svelte";
   import { ago, dayLabel, sessionLabel, timeLabel } from "./when";
@@ -236,7 +237,7 @@
     {#if loading}<div class="updating" role="status">Updating...</div>{/if}
     {#if tab === "sessions"}
       <div class="note">
-        The device stores only each track's most recent play, not a log. Sessions are rebuilt from those times: a pause longer than
+        {session.isComputer ? "This library stores" : "The device stores"} only each track's most recent play, not a log. Sessions are rebuilt from those times: a pause longer than
         <select bind:value={gap} aria-label="Pause that ends a session">
           {#each GAPS as g (g.min)}<option value={g.min}>{g.label}</option>{/each}
         </select>
@@ -257,8 +258,8 @@
               {#if c.key === "n"}<span title={when(r.at ?? 0)}>{timeLabel(r.at ?? 0)}</span>
               {:else if c.key === "title"}{r.track.title}
               {:else if c.key === "artist"}{r.track.artist}
-              {:else if c.key === "bpm"}{r.track.bpm ? r.track.bpm.toFixed(1) : ""}
-              {:else if c.key === "key"}{r.track.key}
+              {:else if c.key === "bpm"}<BpmKey track={r.track} field="bpm" />
+              {:else if c.key === "key"}<BpmKey track={r.track} field="key" />
               {:else if c.key === "time"}{mmss(r.track.play_time_secs)}
               {:else}{@render acts(r)}{/if}
             {/snippet}
@@ -282,8 +283,8 @@
           {#if c.key === "n"}{mostIndex.get(r.track.track_id)}
           {:else if c.key === "title"}{r.track.title}
           {:else if c.key === "artist"}{r.track.artist}
-          {:else if c.key === "bpm"}{r.track.bpm ? r.track.bpm.toFixed(1) : ""}
-          {:else if c.key === "key"}{r.track.key}
+          {:else if c.key === "bpm"}<BpmKey track={r.track} field="bpm" />
+          {:else if c.key === "key"}<BpmKey track={r.track} field="key" />
           {:else if c.key === "time"}{mmss(r.track.play_time_secs)}
           {:else if c.key === "plays"}{r.plays}
           {:else if c.key === "last"}<span title={r.last && r.last > 0 ? when(r.last) : "never"}>{ago(r.last ?? -1)}</span>
@@ -304,8 +305,8 @@
           {#if c.key === "n"}{neverIndex.get(r.track.track_id)}
           {:else if c.key === "title"}{r.track.title}
           {:else if c.key === "artist"}{r.track.artist}
-          {:else if c.key === "bpm"}{r.track.bpm ? r.track.bpm.toFixed(1) : ""}
-          {:else if c.key === "key"}{r.track.key}
+          {:else if c.key === "bpm"}<BpmKey track={r.track} field="bpm" />
+          {:else if c.key === "key"}<BpmKey track={r.track} field="key" />
           {:else if c.key === "time"}{mmss(r.track.play_time_secs)}
           {:else}{@render acts(r)}{/if}
         {/snippet}

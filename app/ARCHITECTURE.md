@@ -156,7 +156,7 @@ Crates in `crates/` are not part of the app layout; the app only calls them.
 3. A view may import another view's *exported component* only where listed here. Everything else
    goes through `lib/state` and `lib/api`. The cross-view imports that exist, all of them
    presentational pieces or pure logic, never another view's state:
-   the Cases view uses `trackFilter.ts`; `tracks/ColourSwatch` is used by cases, import, metadata
+   the Cases view uses `trackFilter.ts`; the History view uses `tracks/trackLogic.ts` (`bpmText`, `parseKey`, `keyColour`) so a track's BPM and key read as they do in the table; `tracks/ColourSwatch` is used by cases, import, metadata
    and tracks; `metadata/ThingChips` and `ThingFilterBar` by cases and mixes;
    `metadata/EnergySourceSelect` by analysis, insights and setbuilder; `analysis/SectionBand` and
    `SectionList` by grid and tracks; `analysis/EnergyCell` by tracks; `cases/CaseChips` by tracks;

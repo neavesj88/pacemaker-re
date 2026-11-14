@@ -335,3 +335,40 @@ test("energy: reads the resolver; myenergy: and autoenergy: ask for one source",
   // the same word in the search box and in the label filter means one thing
   assert.deepEqual(run("energy:5", list, contextFor("auto")), [], "6.5 and 8.2 are 7 and 8");
 });
+
+test("a space after the colon or the operator reads the same as none", () => {
+  const list = [T(1, { bpm: 128, key: "Abm" }), T(2, { bpm: 124, key: "Cm" }), T(3, { bpm: 140, key: "Abm" })];
+  const same = (spaced, tight) => assert.deepEqual(run(spaced, list), run(tight, list), `${spaced} == ${tight}`);
+  same("bpm: 128", "bpm:128");
+  same("bpm > 126", "bpm>126");
+  same("bpm >= 128", "bpm>=128");
+  same("bpm:120 - 128", "bpm:120-128");
+  same("bpm:120 .. 128", "bpm:120..128");
+  same("bpm:120- 128", "bpm:120-128");
+  same("key: 1A", "key:1A");
+  same('title: "Title 2"', 'title:"Title 2"');
+  assert.deepEqual(run("bpm: 120 - 130 key: 1A", list), [1], "later terms still read");
+  assert.deepEqual(run("bpm: 128", list), [1]);
+  assert.deepEqual(compileQuery("bpm: 128 is: fav key: 8A").diagnostics, []);
+  // OR still separates, and plain words keep their spaces
+  assert.deepEqual(run("bpm:128 OR bpm:140", list), [1, 3]);
+  assert.deepEqual(run("bpm: OR key:Cm", list), [2], "an empty value before OR is skipped");
+  assert.equal(compileQuery("bpm: OR key:Cm").diagnostics.length, 1);
+  // an unknown field with a colon is not joined
+  assert.deepEqual(tokenize("foo: bar").length, 2);
+});
+
+test("an empty value is reported unless it is the term still being typed", () => {
+  assert.deepEqual(compileQuery("bpm:").diagnostics, []);
+  assert.deepEqual(compileQuery("house bpm:").diagnostics, []);
+  assert.deepEqual(compileQuery("bpm: OR house").diagnostics.map((d) => d.term), ["bpm:"]);
+  assert.match(compileQuery("bpm: OR house").diagnostics[0].message, /bpm:value/);
+});
+
+test("a plain word finds a key as the table shows it (8A) and as stored", () => {
+  const list = [T(1, { key: "Abm" }), T(2, { key: "8A" }), T(3, { key: "Cm" })];
+  assert.deepEqual(run("1A", list), [1], "Abm is 1A");
+  assert.deepEqual(run("8A", list), [2]);
+  assert.deepEqual(run("Abm", list), [1]);
+  assert.deepEqual(run("house 1A", list), [1]);
+});

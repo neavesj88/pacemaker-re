@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { mmss } from "../../format.ts";
-import { cleanOrder, cleanSort, COLUMNS, defaultPrefs, mergePrefs, moveColumn, shownColumns, stepTarget } from "./columns.ts";
+import { cleanOrder, cleanSort, COLUMNS, defaultPrefs, gridTemplate, mergePrefs, moveColumn, shownColumns, stepTarget } from "./columns.ts";
 
 const KEYS = COLUMNS.map((c) => c.key);
 
@@ -146,4 +146,22 @@ test("the Time column cannot be narrowed below what 59:59 and 1:12:05 need", () 
   assert.equal(mmss(3599), "59:59");
   assert.equal(mmss(215), "3:35");
   assert.equal(mergePrefs({ widths: { time: 40 } }).widths.time, time.min, "a width saved by an older version is raised");
+});
+
+test("Colour and Plays are wide enough for their header and sort arrow, also for widths saved before", () => {
+  const d = defaultPrefs();
+  assert.ok(d.widths.colour >= 70 && d.widths.plays >= 60);
+  const old = mergePrefs({ widths: { colour: 58, plays: 48 } });
+  for (const k of ["colour", "plays"]) assert.equal(old.widths[k], COLUMNS.find((c) => c.key === k).min, `${k}: an old narrow width is raised`);
+});
+
+test("Title and Artist share spare width when asked; every other column keeps its width", () => {
+  const p = defaultPrefs();
+  assert.equal(p.fillWidth, true);
+  const cols = shownColumns(p).filter((c) => ["fav", "title", "artist", "bpm"].includes(c.key));
+  const w = p.widths;
+  assert.equal(gridTemplate(cols, w, true), `${w.fav}px minmax(${w.title}px, ${w.title}fr) minmax(${w.artist}px, ${w.artist}fr) ${w.bpm}px`);
+  assert.equal(gridTemplate(cols, p.widths, false), cols.map((c) => `${p.widths[c.key]}px`).join(" "), "off: exact widths");
+  assert.equal(mergePrefs({ fillWidth: false }).fillWidth, false);
+  assert.equal(mergePrefs({ fillWidth: "no" }).fillWidth, true, "a non-boolean keeps the default");
 });

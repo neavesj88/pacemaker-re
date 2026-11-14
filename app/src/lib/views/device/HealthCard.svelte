@@ -1,7 +1,6 @@
 <script lang="ts">
   import { jobs } from "$lib/state/jobs.svelte";
   import { nav } from "$lib/state/nav.svelte";
-  import { selection } from "$lib/state/selection.svelte";
   import { session } from "$lib/state/session.svelte";
   import Button from "$lib/ui/Button.svelte";
   import Card from "./Card.svelte";
@@ -26,8 +25,8 @@
   });
 
   function showMissing() {
-    selection.trackIds = (h?.missing_audio ?? []).map((m) => m.track_id);
-    nav.go("tracks");
+    // the Tracks view selects them, scrolls to the first and (setting) clears filters that hide them
+    nav.go("tracks", { "tracks.trackIds": (h?.missing_audio ?? []).map((m) => m.track_id) });
   }
 </script>
 

@@ -23,7 +23,8 @@
   let busy = $state(false);
 
   const sortLabel = (k: SortSpec) => COLUMNS.find((c) => c.sort === k.field)?.label || (k.field === "fav" ? "Favourite" : k.field);
-  const describe = (s: Parameters<typeof describeViewState>[0]) => describeViewState(s, sortLabel);
+  const caseName = (id: number) => session.library?.cases.find((c) => c.id === id)?.name;
+  const describe = (s: Parameters<typeof describeViewState>[0]) => describeViewState(s, sortLabel, caseName);
 
   // what a save would store: the same capture the save itself takes
   const current = $derived(tracksState.captureState(withSort));

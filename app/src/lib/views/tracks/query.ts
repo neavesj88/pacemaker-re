@@ -100,16 +100,28 @@ export function tokenize(text: string): (Token | null)[] {
       let j = i;
       while (j < n && !/\s/.test(text[j]) && text[j] !== '"' && !OP_CHARS.has(text[j])) j++;
       const name = text.slice(i, j);
-      let k = j;
+      const known = FIELD_BY_NAME.has(name.toLowerCase());
+      // `bpm > 128`: spaces between a field's name and its operator mean the same as none
+      let opAt = j;
+      if (known) {
+        const s = skipSpace(text, j);
+        if (s > j && s < n && OP_CHARS.has(text[s])) opAt = s;
+      }
+      let k = opAt;
       while (k < n && OP_CHARS.has(text[k])) k++;
-      const opText = text.slice(j, k);
+      const opText = text.slice(opAt, k);
       const parsed = parseOp(opText);
-      if (name && /^[A-Za-z_]+$/.test(name) && parsed && k > j) {
+      if (name && /^[A-Za-z_]+$/.test(name) && parsed && k > opAt) {
         field = name.toLowerCase();
         op = parsed.op;
         i = k;
         // a leftover operator character after the real one (`bpm>>3`) stays in the value
         if (parsed.rest) value = parsed.rest;
+        // `bpm: 128`, `key: 8A`: the value may follow after spaces (but `OR` still separates)
+        if (known && !value) {
+          const s = skipSpace(text, i);
+          if (s > i && s < n && !/^OR(\s|$)/.test(text.slice(s))) i = s;
+        }
       }
       if (text[i] === '"') {
         const end = text.indexOf('"', i + 1);
@@ -128,6 +140,23 @@ export function tokenize(text: string): (Token | null)[] {
         i = m;
       }
     }
+    // `bpm:120 - 128`, `bpm:120 .. 128`, `bpm:120- 128`: a range with spaces round its dash
+    if (field && !quoted && (op === ":" || op === "=") && value !== "") {
+      const def = FIELD_BY_NAME.get(field);
+      if (def && (def.kind === "number" || def.kind === "date")) {
+        const joiner = /^\s+(?:-\s+|\.\.\s*)(?=\S)/.exec(text.slice(i));
+        const dangling = /(?:-|\.\.)$/.test(value) ? /^\s+(?=\S)/.exec(text.slice(i)) : null;
+        const gap = joiner ?? dangling;
+        if (gap) {
+          i += gap[0].length;
+          if (joiner) value += /^\s+-/.test(joiner[0]) ? "-" : "..";
+          let m = i;
+          while (m < n && !/\s/.test(text[m])) m++;
+          value += text.slice(i, m);
+          i = m;
+        }
+      }
+    }
     const raw = text.slice(start, i);
     if (!field && !sawQuote && !negated && value === "OR") {
       out.push(null);
@@ -136,6 +165,12 @@ export function tokenize(text: string): (Token | null)[] {
     out.push({ raw, negated, field, op, value, quoted });
   }
   return out;
+}
+
+function skipSpace(text: string, from: number): number {
+  let s = from;
+  while (s < text.length && /\s/.test(text[s])) s++;
+  return s;
 }
 
 /** `>=` and friends: the operator at the start of `text` and anything left over. */
@@ -324,7 +359,9 @@ function tagMatcher(pattern: string): (tag: string) => boolean {
 const COLOUR_NAMES: readonly string[] = LABEL_COLOURS;
 
 function haystack(t: Track): string[] {
-  return [t.title, t.artist, t.album, t.genre, t.key, t.comments, t.label, t.remixer, t.composer, t.year > 0 ? String(t.year) : ""];
+  // the key as the table shows it (8A) and as stored (Abm), so what is on screen is searchable
+  const key = parseKey(t.key);
+  return [t.title, t.artist, t.album, t.genre, t.key, key ? key.code : "", t.comments, t.label, t.remixer, t.composer, t.year > 0 ? String(t.year) : ""];
 }
 
 /** Builds the term for one token, or returns an error message (the term is then skipped) or null
@@ -430,23 +467,31 @@ export function compileQuery(text: string): CompiledQuery {
 function readQuery(text: string): CompiledQuery {
   const diagnostics: QueryDiagnostic[] = [];
   const groups: Term[][] = [[]];
-  for (const tok of tokenize(text)) {
+  const tokens = tokenize(text);
+  tokens.forEach((tok, at) => {
     if (tok === null) {
       if (groups[groups.length - 1].length > 0) groups.push([]);
-      continue;
+      return;
     }
     // `name:value` with a name that is not a field: search for the text, and say so
     if (tok.field && !FIELD_BY_NAME.has(tok.field) && tok.op === ":" && tok.value !== "" && !tok.quoted) {
       diagnostics.push({ term: tok.raw, message: `"${tok.field}" is not a field, so ${tok.raw.replace(/^-/, "")} is searched as text. Put it in quotes to search for it on purpose.` });
     }
     const built = buildTerm(tok);
-    if (built === null) continue;
+    if (built === null) {
+      // `bpm:` as the last thing typed is a term still being written; anywhere else it has no value
+      const field = tok.field ? FIELD_BY_NAME.get(tok.field) : undefined;
+      if (field && at < tokens.length - 1 && tok.value.trim() === "" && !tok.quoted) {
+        diagnostics.push({ term: tok.raw, message: `${field.name}: has no value, so it was skipped. Write it as ${field.name}:value` });
+      }
+      return;
+    }
     if (typeof built === "string") {
       diagnostics.push({ term: tok.raw, message: built });
-      continue;
+      return;
     }
     groups[groups.length - 1].push({ negated: tok.negated, test: built });
-  }
+  });
   const used = groups.filter((g) => g.length > 0);
   if (used.length === 0) return { empty: true, diagnostics, test: () => true };
   return {

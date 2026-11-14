@@ -18,7 +18,7 @@
   import { tempo } from "$lib/state/tempo.svelte";
   import ContextMenu from "$lib/ui/ContextMenu.svelte";
   import Stars from "$lib/ui/Stars.svelte";
-  import type { ColDef, ColKey } from "./columns";
+  import { gridTemplate, type ColDef, type ColKey } from "./columns";
   import ColourSwatch from "./ColourSwatch.svelte";
   import EnergyBar from "./EnergyBar.svelte";
   import MiniWave from "./MiniWave.svelte";
@@ -80,7 +80,7 @@
   const cols = $derived(table.shownColumns);
   const widthOf = (c: ColDef) => table.prefs.widths[c.key];
   const totalW = $derived(cols.reduce((sum, c) => sum + widthOf(c), 0));
-  const template = $derived(cols.map((c) => `${widthOf(c)}px`).join(" "));
+  const template = $derived(gridTemplate(cols, table.prefs.widths, table.prefs.fillWidth));
   const bodyH = $derived(Math.max(0, viewH - HEAD));
   const start = $derived(Math.max(0, Math.floor(scrollTop / ROW) - OVERSCAN));
   const end = $derived(Math.min(rows.length, Math.ceil((scrollTop + bodyH) / ROW) + OVERSCAN));
@@ -335,7 +335,7 @@
     const sectionsAgain = ids.every((id) => sections.of(id) !== null);
     return [
       { label: "Play", onclick: () => playTrack(ids[0]) },
-      { label: one ? "Edit metadata…" : `Edit metadata of ${n} tracks…`, onclick: () => editMetadata(ids) },
+      { label: one ? "Edit metadata…" : `Edit metadata of ${n} tracks…`, onclick: () => editMetadata(ids, rows.map((r) => r.track_id)) },
       { label: one ? "Tags, colour, energy…" : `Tags, colour, energy of ${n} tracks…`, onclick: () => labelEditor.edit(ids) },
       { label: one ? "Add to mix" : `Add ${n} tracks to mix`, onclick: () => addToMixFn(ids) },
       { label: one ? "Add to case…" : `Add ${n} tracks to case…`, onclick: () => addToCase.ask(ids) },

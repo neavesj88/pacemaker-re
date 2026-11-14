@@ -126,6 +126,11 @@ export class TableState {
     this.save();
   }
 
+  setFillWidth(on: boolean) {
+    this.prefs.fillWidth = on;
+    this.save();
+  }
+
   setCaseOrderOnPick(on: boolean) {
     this.prefs.caseOrderOnPick = on;
     this.save();

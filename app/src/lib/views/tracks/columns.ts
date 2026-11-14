@@ -24,7 +24,7 @@ export type ColDef = {
 export const COLUMNS: ColDef[] = [
   { key: "fav", label: "", width: 34, min: 34, sort: "fav", fixed: true, defaultOn: true },
   // colour, energy and tags are app-side labels (state/labels.ts), not data on the device
-  { key: "colour", label: "Colour", width: 58, min: 44, sort: "colour", defaultOn: true },
+  { key: "colour", label: "Colour", width: 74, min: 66, sort: "colour", defaultOn: true },
   { key: "title", label: "Title", width: 190, min: 90, sort: "title", fixed: true, defaultOn: true },
   { key: "artist", label: "Artist", width: 140, min: 70, sort: "artist", defaultOn: true },
   { key: "album", label: "Album", width: 160, min: 70, sort: "album", defaultOn: false },
@@ -36,7 +36,7 @@ export const COLUMNS: ColDef[] = [
   // not the energy label above, which the user sets.
   { key: "autoenergy", label: "Energy (auto)", width: 112, min: 70, sort: "auto_energy", defaultOn: true },
   { key: "rating", label: "Rating", width: 92, min: 90, sort: "rating", defaultOn: true },
-  { key: "plays", label: "Plays", width: 48, min: 44, num: true, sort: "times_played", defaultOn: true },
+  { key: "plays", label: "Plays", width: 64, min: 58, num: true, sort: "times_played", defaultOn: true },
   { key: "time", label: "Time", width: 76, min: 72, num: true, sort: "play_time_secs", defaultOn: true },
   { key: "genre", label: "Genre", width: 100, min: 60, sort: "genre", defaultOn: true },
   { key: "tags", label: "Tags", width: 170, min: 70, sort: "tags", defaultOn: true },
@@ -56,6 +56,9 @@ export const COLUMNS: ColDef[] = [
   { key: "caseno", label: "Case #", width: 80, min: 60, num: true, sort: "case_order", defaultOn: false },
 ];
 
+/** The columns that take up spare width when `fillWidth` is on. */
+export const FLEX_COLUMNS: ColKey[] = ["title", "artist"];
+
 /** Columns that only make sense while a case is chosen in the filter bar. */
 export const CASE_ONLY: ColKey[] = ["caseno"];
 
@@ -72,6 +75,9 @@ export type ViewPrefs = {
   findClearsFilters: boolean;
   /** Choosing a case in the filter bar sorts by the case's own order (the sort before is put back when the case is cleared). */
   caseOrderOnPick: boolean;
+  /** On a window wider than the columns, Title and Artist share the spare width (FLEX_COLUMNS);
+   *  their saved widths are then the least they get. Off: every column keeps its exact width. */
+  fillWidth: boolean;
 };
 
 const STORAGE_KEY = "pm.tracks.view.v1";
@@ -87,6 +93,7 @@ export function defaultPrefs(): ViewPrefs {
     rememberView: true,
     findClearsFilters: true,
     caseOrderOnPick: true,
+    fillWidth: true,
   };
 }
 
@@ -141,7 +148,14 @@ export function mergePrefs(saved: unknown, base: ViewPrefs = defaultPrefs()): Vi
   if (typeof s.rememberView === "boolean") prefs.rememberView = s.rememberView;
   if (typeof s.findClearsFilters === "boolean") prefs.findClearsFilters = s.findClearsFilters;
   if (typeof s.caseOrderOnPick === "boolean") prefs.caseOrderOnPick = s.caseOrderOnPick;
+  if (typeof s.fillWidth === "boolean") prefs.fillWidth = s.fillWidth;
   return prefs;
+}
+
+/** The CSS grid track of each shown column: its width, or (when `fillWidth` is on) at least that
+ *  width and a share of any spare room in proportion to it, for Title and Artist only. */
+export function gridTemplate(cols: readonly ColDef[], widths: Readonly<Record<string, number>>, fillWidth: boolean): string {
+  return cols.map((c) => (fillWidth && FLEX_COLUMNS.includes(c.key) ? `minmax(${widths[c.key]}px, ${widths[c.key]}fr)` : `${widths[c.key]}px`)).join(" ");
 }
 
 /** The columns to draw: in the saved order, hidden ones left out. */
@@ -189,7 +203,6 @@ export function mixPickerDefaults(): ViewPrefs {
   const d = defaultPrefs();
   d.visible.cases = true;
   d.widths.wave = 90;
-  d.widths.colour = 74; // room for the sort arrow: the header read "Colo…" at 58
   return d;
 }
 

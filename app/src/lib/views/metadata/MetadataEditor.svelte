@@ -35,8 +35,10 @@
   const multi = startIds.length > 1;
 
   const root = $derived(session.library?.root ?? "");
-  // Previous/Next walk the library in its own order
-  const order = $derived((session.library?.tracks ?? []).map((t) => t.track_id));
+  // Previous/Next walk the table the editor was opened from (its filter and sort, as they were
+  // then), or the library in its own order when it was opened from somewhere else
+  const startOrder = untrack(() => (metadataEditor.order?.includes(startIds[0]) ? [...metadataEditor.order] : null));
+  const order = $derived(startOrder ?? (session.library?.tracks ?? []).map((t) => t.track_id));
 
   let details = $state<Record<number, TrackDetail>>({});
   let drafts = $state<Record<number, Draft>>({});

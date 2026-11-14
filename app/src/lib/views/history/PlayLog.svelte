@@ -11,6 +11,7 @@
   import Button from "$lib/ui/Button.svelte";
   import Modal from "$lib/ui/Modal.svelte";
   import Table, { type Column } from "$lib/ui/Table.svelte";
+  import BpmKey from "./BpmKey.svelte";
   import PlayLogSettings from "./PlayLogSettings.svelte";
   import TrackLogModal from "./TrackLogModal.svelte";
   import { PERIODS, fmtBytes, groupByDay, hitNote, periodLabel, periodRange, retentionLabel, type Period } from "./playlogLogic";
@@ -26,6 +27,9 @@
     byId: Map<number, Track>;
     ask: (name: string, ids: number[], source: string) => void;
   } = $props();
+
+  // a library on this computer has no device of its own: its counters came from a Pacemaker via Sync
+  const dev = $derived(session.isComputer ? "this library" : "the device");
 
   type Sub = "sessions" | "most";
   type Row = { key: string; track: Track; hit?: LogHit; rank?: LogRank };
@@ -161,7 +165,7 @@
     try {
       await playlogClear(root);
       confirmClear = false;
-      toast.show("Play log deleted. The device and its counters were not changed.", "ok");
+      toast.show(`Play log deleted. ${session.isComputer ? "This library" : "The device"} and its counters were not changed.`, "ok");
       // With logging on, the counters as they are now become the new baseline straight away.
       await playlog.record(root);
     } catch (e) {
@@ -183,14 +187,14 @@
 {#snippet trackCells(r: Row, key: string)}
   {#if key === "title"}{r.track.title}
   {:else if key === "artist"}{r.track.artist}
-  {:else if key === "bpm"}{r.track.bpm ? r.track.bpm.toFixed(1) : ""}
-  {:else if key === "key"}{r.track.key}
+  {:else if key === "bpm"}<BpmKey track={r.track} field="bpm" />
+  {:else if key === "key"}<BpmKey track={r.track} field="key" />
   {:else if key === "time"}{mmss(r.track.play_time_secs)}{/if}
 {/snippet}
 
 <div class="top">
   <span class="muted">
-    A record of how the device's play counters changed, kept by this app.
+    A record of how the play counters of {dev} changed, kept by this app.
     {#if data?.has_log}
       Logging since {dayLabel(data.started_at)}, {data.events} change{data.events === 1 ? "" : "s"} recorded, {fmtBytes(data.file_bytes)},
       {retentionLabel(data.retention_days)}.
@@ -212,7 +216,7 @@
   {#if !data.enabled}
     <div class="note warn" role="status">
       <b>Play logging is off.</b>
-      Nothing is recorded when you open a library, so new plays will not appear here. Turn it on in Log settings. The device keeps counting either way.
+      Nothing is recorded when you open a library, so new plays will not appear here. Turn it on in Log settings. {session.isComputer ? "The counters" : "The device"} keep counting either way.
     </div>
   {/if}
 
@@ -277,7 +281,7 @@
       <b>No play log yet for this library.</b>
       {#if data.enabled}
         The first time a library is opened with logging on, the play counters at that moment become the starting point. From then on each
-        change is recorded, and plays are worked out from them: open the library again after a night on the device and it appears here.
+        change is recorded, and plays are worked out from them: open the library again after {session.isComputer ? "more plays have come in with Sync" : "a night on the device"} and it appears here.
         Plays before the starting point can only be seen as a count.
       {:else}
         Turn logging on in Log settings; the next time the library is opened its counters become the starting point.
@@ -320,7 +324,7 @@
     </div>
 
     <div class="legend muted">
-      Times are the device's clock. A <b>~</b> means the play is not exact (hover it for why).
+      Times are {session.isComputer ? "the clock of the Pacemaker they came from" : "the device's clock"}. A <b>~</b> means the play is not exact (hover it for why).
       {#if data.removed_plays > 0}
         {data.removed_plays} play{data.removed_plays === 1 ? "" : "s"} of tracks no longer in the library {data.removed_plays === 1 ? "is" : "are"} not listed.
       {/if}
@@ -356,7 +360,7 @@
             </section>
           {/each}
         {:else}
-          <p class="empty">No plays are logged for {words}. Plays appear after the library is opened again following a session on the device.</p>
+          <p class="empty">No plays are logged for {words}. Plays appear after the library is opened again following {session.isComputer ? "a Sync that brought in new plays" : "a session on the device"}.</p>
         {/each}
         {#if data.sessions.length < data.sessions_total}
           <div class="more">

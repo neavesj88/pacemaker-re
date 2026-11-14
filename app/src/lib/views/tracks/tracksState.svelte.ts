@@ -14,6 +14,7 @@ import { filters } from "$lib/state/filters.svelte";
 import { jobs } from "$lib/state/jobs.svelte";
 import { session } from "$lib/state/session.svelte";
 import { toast } from "$lib/state/toast.svelte";
+import { caseMembers } from "$lib/state/caseMembers.svelte";
 import { TRACKS_KEY } from "./columns";
 import { selection } from "$lib/state/selection.svelte";
 import { TableState } from "./tableState.svelte";
@@ -65,6 +66,7 @@ class TracksState extends TableState {
       bpmMax: this.bpmMax,
       keyFilter: this.keyFilter,
       labelFilter: $state.snapshot(this.labelFilter),
+      caseId: this.caseId,
       ...(withSort ? { sort: $state.snapshot(this.persistentSort) } : {}),
     };
   }
@@ -81,9 +83,19 @@ class TracksState extends TableState {
     this.bpmMax = s.bpmMax;
     this.keyFilter = s.keyFilter;
     this.labelFilter = { ...s.labelFilter, tags: [...s.labelFilter.tags], colours: [...s.labelFilter.colours] };
+    // a case that no longer exists would hide every track; leaving a case first lets the sort that
+    // was in force before it come back, so the state's own sort (below) wins over it
+    const caseId = s.caseId !== null && session.library?.cases.some((c) => c.id === s.caseId) ? s.caseId : null;
+    if (caseId === null) this.setCase(null);
     if (s.sort) {
       this.prefs.sort = s.sort.map((k) => ({ ...k }));
       this.save();
+    }
+    // choosing a case after the sort: with "Choosing a case sorts by case order" on, that sort is
+    // put on and the one just applied is what comes back when the case is cleared
+    if (caseId !== null) {
+      this.setCase(caseId);
+      void caseMembers.ensure();
     }
   }
 
