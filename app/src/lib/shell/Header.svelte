@@ -2,15 +2,22 @@
   import { filters } from "$lib/state/filters.svelte";
   import { jobs } from "$lib/state/jobs.svelte";
   import { nav } from "$lib/state/nav.svelte";
-  import { pickerOptions, sameRoot } from "$lib/state/place";
+  import { missingComputerPath, pickerOptions, sameRoot } from "$lib/state/place";
   import { session } from "$lib/state/session.svelte";
   import Button from "$lib/ui/Button.svelte";
   import RMark from "$lib/ui/RMark.svelte";
 
   // "This computer" first, then each detected Pacemaker; a folder opened by hand is added so the
   // picker always names what is open.
+  // A saved path that is not there (an unplugged drive) is not offered: choosing it would quietly make a
+  // second, empty library. The Welcome screen explains it and asks first.
   const options = $derived(
-    pickerOptions(session.computerOffer?.path ?? null, session.computerOffer?.exists ?? false, session.volumes, session.attached),
+    pickerOptions(
+      missingComputerPath(session.computerOffer) ? null : (session.computerOffer?.path ?? null),
+      session.computerOffer?.exists ?? false,
+      session.volumes,
+      session.attached,
+    ),
   );
   const current = $derived(options.find((o) => session.attached && sameRoot(o.value, session.attached.root))?.value ?? "");
 

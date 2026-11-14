@@ -12,7 +12,7 @@ import {
 } from "$lib/api/library";
 import type { Collection, LibraryKind, LibraryView, NeedsAnalysis, Track } from "$lib/api/types";
 import { allSaveable, unsavedWork, type UnsavedWork } from "./leaveGuard";
-import { LoadSeq } from "./loadSeq";
+import { LoadSeq, reloadAfter } from "./loadSeq";
 import { nav } from "./nav.svelte";
 import { placeWords, startupRoot } from "./place";
 
@@ -55,7 +55,7 @@ class Session {
   /** Where that read is going, for the "Reading..." line. "" when none. */
   loadingRoot = $state("");
   /** Unsaved work that opening another library would discard, while the user is asked about it. */
-  leaving = $state.raw<{ work: UnsavedWork[]; done: (go: boolean) => void } | null>(null);
+  leaving = $state.raw<{ work: UnsavedWork[]; target: string | null; done: (go: boolean) => void } | null>(null);
   /** The library whose Pacemaker was ejected: it is still on screen (read from memory) but nothing can
    *  be written to it and it is no longer offered. Opening a library again makes a new object. */
   #detached = $state.raw<unknown>(null);
@@ -206,7 +206,7 @@ class Session {
 
   /** Welcome: "Start a library on this computer". */
   async startComputer() {
-    if (!(await this.confirmLeave())) return;
+    if (!(await this.confirmLeave(this.computer?.path))) return;
     const root = await this.createComputer();
     if (root) await this.load(root, false, true);
   }
@@ -215,7 +215,7 @@ class Session {
    *  computer, then goes to the Sync view with the Pacemaker as the other side, to get its tracks,
    *  mixes and cases. The Pacemaker is only read when the user confirms the plan there. */
   async copyFromPacemaker(volume: string) {
-    if (!(await this.confirmLeave())) return;
+    if (!(await this.confirmLeave(this.computer?.path))) return;
     const root = await this.createComputer();
     if (!root) return;
     await this.load(root, false, true);
@@ -224,14 +224,16 @@ class Session {
 
   /** Asks the user before the open library is replaced, when something unsaved would be lost.
    *  Resolves true when there is nothing unsaved, or the user saved it or chose to discard it;
-   *  false when they cancelled (the dialog is shell/LeaveDialog.svelte). */
-  confirmLeave(): Promise<boolean> {
+   *  false when they cancelled (the dialog is shell/LeaveDialog.svelte). `target` is the root about to
+   *  be opened, named in the question. */
+  confirmLeave(target?: string | null): Promise<boolean> {
     const work = unsavedWork();
     if (work.length === 0) return Promise.resolve(true);
     this.leaving?.done(false);
     return new Promise((resolve) => {
       this.leaving = {
         work,
+        target: target ?? null,
         done: (go) => {
           this.leaving = null;
           resolve(go);
@@ -251,7 +253,7 @@ class Session {
    *  takes effect: a reload that started before a switch, or while one is being read, cannot put
    *  the old library back. A failed read leaves the open library as it was. */
   async load(root: string, keepView = false, confirmed = false) {
-    if (!keepView && !confirmed && !(await this.confirmLeave())) return;
+    if (!keepView && !confirmed && !(await this.confirmLeave(root))) return;
     const ticket = this.#seq.begin(keepView);
     if (ticket === null) {
       this.#pendingReload = true;
@@ -280,9 +282,10 @@ class Session {
         this.loadingRoot = "";
         // a switch that opened a new library makes the skipped reload moot; one that failed leaves the old
         // library open, which still needs the reload it was refused
-        const redo = this.#pendingReload && !opened && !keepView && this.#library;
+        // (an ejected Pacemaker is not re-read: it is gone, and the read would only raise an error)
+        const redo = reloadAfter(this.#pendingReload, opened, keepView, this.attached?.root ?? null);
         this.#pendingReload = false;
-        if (redo) void this.load(redo.root, true);
+        if (redo) void this.load(redo, true);
       }
     }
   }

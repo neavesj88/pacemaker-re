@@ -35,7 +35,8 @@
     else appearance.step(act === "bigger" ? 1 : -1);
     // the whole window changes size, so say what it is now and how to get back; one message, replaced
     toast.dismiss(sizeToast);
-    sizeToast = toast.show(`Interface size ${appearance.scale}%. Ctrl+0 sets it back to ${SCALE_DEFAULT}%.`, "info", 2500);
+    const hint = appearance.scale === SCALE_DEFAULT ? "" : ` Ctrl+0 sets it back to ${SCALE_DEFAULT}%.`;
+    sizeToast = toast.show(`Interface size ${appearance.scale}%.${hint}`, "info", 2500);
   }
 
   let Active = $derived(viewById(nav.view).component);

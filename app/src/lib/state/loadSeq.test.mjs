@@ -1,6 +1,6 @@
 // Run: node --experimental-strip-types src/lib/state/loadSeq.test.mjs
 import assert from "node:assert/strict";
-import { LoadSeq } from "./loadSeq.ts";
+import { LoadSeq, reloadAfter } from "./loadSeq.ts";
 
 // a plain switch
 {
@@ -44,5 +44,12 @@ import { LoadSeq } from "./loadSeq.ts";
   assert.equal(q.end(b), true);
   assert.equal(q.end(a), false);
 }
+
+// after a switch ends: a refused reload is owed only when the switch failed and an attached library stays open
+assert.equal(reloadAfter(true, false, false, "D:\Lib"), "D:\Lib", "failed switch: the library that stays open is re-read");
+assert.equal(reloadAfter(true, true, false, "D:\Lib"), null, "the switch opened a library: the reload is moot");
+assert.equal(reloadAfter(false, false, false, "D:\Lib"), null, "nothing was refused");
+assert.equal(reloadAfter(true, false, true, "D:\Lib"), null, "an in-place reload does not chain another");
+assert.equal(reloadAfter(true, false, false, null), null, "an ejected or absent library is not re-read");
 
 console.log("loadSeq.test.mjs ok");

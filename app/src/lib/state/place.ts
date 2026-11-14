@@ -86,6 +86,13 @@ export function pickerOptions(
   return out;
 }
 
+/** The folder the settings name for the library on this computer when it is not there (a drive that is
+ *  not connected, a folder that was moved). null for the default location, which is just a library
+ *  not made yet, and when the settings are unreadable or the library exists. */
+export function missingComputerPath(info: StartupInfo): string | null {
+  return info && !info.unreadable && !info.exists && info.settings.path ? info.path : null;
+}
+
 export type StartupInfo = { exists: boolean; path: string; unreadable?: boolean; settings: { path?: string; open_at_start: boolean } } | null;
 
 /** The library to open when the app starts: the one on this computer, only when it is there and
@@ -112,6 +119,6 @@ export function welcomeOffer(
     open: !!info && info.exists,
     copyFrom: start && volumes.length > 0 ? volumes[0] : null,
     unreadable: false,
-    missingPath: start && info?.settings.path ? info.path : null,
+    missingPath: missingComputerPath(info),
   };
 }

@@ -1,6 +1,7 @@
 <script lang="ts">
   import "./leaveGuards";
   import { unsavedWork } from "$lib/state/leaveGuard";
+  import { libraryKind, libraryLabel } from "$lib/state/place";
   import { session } from "$lib/state/session.svelte";
   import Button from "$lib/ui/Button.svelte";
   import Modal from "$lib/ui/Modal.svelte";
@@ -11,6 +12,8 @@
   let failed = $state("");
 
   const leaving = $derived(session.leaving);
+  // where the user is going, named in the question (null when it is not known, e.g. a folder dialog result)
+  const target = $derived(leaving?.target ? libraryLabel(libraryKind(leaving.target), leaving.target, session.computer?.path ?? null) : "");
   const lines = $derived(leaving ? leaving.work.flatMap((w) => w.lines) : []);
 
   function cancel() {
@@ -53,16 +56,16 @@
 
 {#if leaving}
   <Modal title="Unsaved changes" onclose={cancel}>
-    <p>Opening another library closes this one, and these changes are lost:</p>
+    <p>Opening {target ? `${target}` : "another library"} closes {session.library ? libraryLabel(session.library.kind, session.library.root, session.computer?.path ?? null) : "this one"}, and these changes are lost:</p>
     <ul>
       {#each lines as l, i (i)}<li>{l}</li>{/each}
     </ul>
     {#if failed}<p class="bad" role="alert">{failed}</p>{/if}
     {#snippet actions()}
       <Button onclick={cancel} data-autofocus>Cancel</Button>
-      <Button onclick={discard} disabled={busy}><span class="bad">Discard and open the other library</span></Button>
+      <Button onclick={discard} disabled={busy}><span class="bad">Discard and open {target || "the other library"}</span></Button>
       {#if session.leavingSaveable}
-        <Button variant="primary" disabled={busy} onclick={saveThenGo}>Save, then open it</Button>
+        <Button variant="primary" disabled={busy} onclick={saveThenGo}>Save, then open {target || "it"}</Button>
       {/if}
     {/snippet}
   </Modal>

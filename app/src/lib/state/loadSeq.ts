@@ -33,3 +33,10 @@ export class LoadSeq {
     return true;
   }
 }
+
+/** The root to re-read in place when a library switch ends, or null. A reload refused while the switch was
+ *  being read (`pending`) is only still owed when the switch did not open a library and what stays open
+ *  (`attachedRoot`: null when nothing is open or the open one was ejected) is still there to read. */
+export function reloadAfter(pending: boolean, opened: boolean, keepView: boolean, attachedRoot: string | null): string | null {
+  return pending && !opened && !keepView ? attachedRoot : null;
+}

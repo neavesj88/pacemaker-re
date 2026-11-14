@@ -2,7 +2,7 @@
 // The same table of paths as the Rust tests of library_kind (commands/library/kind.rs): the
 // browser preview and the app must agree on what is a Pacemaker and what is this computer.
 import assert from "node:assert/strict";
-import { libraryKind, libraryLabel, pickerOptions, placeWords, sameRoot, startupRoot, welcomeOffer } from "./place.ts";
+import { missingComputerPath, libraryKind, libraryLabel, pickerOptions, placeWords, sameRoot, startupRoot, welcomeOffer } from "./place.ts";
 
 const kinds = (paths, want) => {
   for (const p of paths) assert.equal(libraryKind(p), want, JSON.stringify(p));
@@ -81,5 +81,10 @@ const gone = { exists: false, path: "E:/Music/Lib", settings: { path: "E:/Music/
 assert.equal(startupRoot(gone), null);
 assert.equal(welcomeOffer(gone, []).missingPath, "E:/Music/Lib");
 assert.equal(welcomeOffer(info(false, true), []).missingPath, null, "the default location is just a library not made yet, not a missing one");
+
+assert.equal(missingComputerPath(gone), "E:/Music/Lib");
+assert.equal(missingComputerPath(info(false, true)), null, "the default location is not a missing path");
+assert.equal(missingComputerPath({ ...gone, exists: true }), null, "it is there");
+assert.equal(missingComputerPath({ ...gone, unreadable: true }), null, "unreadable settings are another case");
 
 console.log("place.test.mjs ok");
