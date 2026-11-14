@@ -122,7 +122,7 @@
           <span class="k">From</span>
           <select value={pair.from} onchange={(e) => pick("from", e.currentTarget.value)} disabled={sync.busy}>
             <option value="" disabled>Choose a library…</option>
-            {#each options as o (o.value)}<option value={o.value}>{o.label}</option>{/each}
+            {#each options as o (o.value)}<option value={o.value} title={o.title}>{o.label}</option>{/each}
           </select>
         </label>
         <Button title="Swap the two" aria-label="Swap From and To" disabled={sync.busy} onclick={() => sync.setPair(swapPair(pair))}>⇄</Button>
@@ -130,7 +130,7 @@
           <span class="k">To</span>
           <select value={pair.to} onchange={(e) => pick("to", e.currentTarget.value)} disabled={sync.busy}>
             <option value="" disabled>Choose a library…</option>
-            {#each options as o (o.value)}<option value={o.value}>{o.label}</option>{/each}
+            {#each options as o (o.value)}<option value={o.value} title={o.title}>{o.label}</option>{/each}
           </select>
         </label>
       </div>

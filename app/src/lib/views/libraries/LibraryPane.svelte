@@ -6,7 +6,6 @@
   import { armTrackDrag, trackDrag, trackDropTarget, type DropOptions } from "$lib/state/trackDrag.svelte";
   import Button from "$lib/ui/Button.svelte";
   import ContextMenu from "$lib/ui/ContextMenu.svelte";
-  import { volumeName } from "$lib/format";
   import { libraryOptions } from "../sync/syncLogic";
   import { libs } from "./libraries.svelte";
   import {
@@ -45,7 +44,7 @@
   });
   const picker = $derived(rightOptions(choices, open));
   const chosen = $derived(choices.find((o) => sameRoot(o.value, libs.rightRoot)));
-  const nameOf = (d: { root: string; kind: "pacemaker" | "computer" } | null) => (d ? libraryLabel(d.kind, d.root) : "the other library");
+  const nameOf = (d: { root: string; kind: "pacemaker" | "computer" } | null) => (d ? libraryLabel(d.kind, d.root, session.computer?.path ?? null) : "the other library");
   const otherName = $derived(nameOf(otherData ?? (side === "left" ? (chosen ? { root: chosen.value, kind: chosen.kind } : null) : open)));
 
   // the right pane follows the picker: keep a choice that is still on offer, else the default
@@ -59,7 +58,7 @@
     const dir = await chooseLibraryFolder();
     if (!dir) return;
     const kind = libraryKind(dir);
-    libs.addFolder(dir, libraryLabel(kind, dir).replace(/^This computer$/, volumeName(dir)), kind);
+    libs.addFolder(dir, libraryLabel(kind, dir, session.computer?.path ?? null), kind, dir);
   }
 
   async function onPick(el: HTMLSelectElement) {
@@ -225,7 +224,7 @@
         onchange={(e) => onPick(e.currentTarget)}
       >
         {#if !libs.rightRoot}<option value="" disabled>Choose a library…</option>{/if}
-        {#each picker as o (o.value)}<option value={o.value}>{o.label}</option>{/each}
+        {#each picker as o (o.value)}<option value={o.value} title={o.title}>{o.label}</option>{/each}
         <option value="__folder__">Open folder…</option>
       </select>
       <Button small variant="ghost" title="Look for a connected Pacemaker. What was read of the other library is forgotten" disabled={libs.busy} onclick={() => libs.rescan()}>Rescan</Button>
@@ -491,10 +490,10 @@
     --both: 34px;
   }
   .scroller.tracks {
-    --cols: var(--both) minmax(70px, 1.5fr) minmax(48px, 1fr) 36px 38px 42px;
+    --cols: var(--both) minmax(70px, 1.5fr) minmax(48px, 1fr) 36px 38px 76px;
   }
   .scroller.cols-mix {
-    --cols: var(--both) minmax(70px, 1fr) 50px 48px;
+    --cols: var(--both) minmax(70px, 1fr) 76px 48px;
   }
   .scroller.cols-case {
     --cols: var(--both) minmax(70px, 1fr) 54px;
@@ -502,7 +501,7 @@
   /* a narrow pane (the window at its smallest) drops the artist column so titles stay readable */
   @container (max-width: 400px) {
     .scroller.tracks {
-      --cols: var(--both) minmax(70px, 1fr) 36px 38px 42px;
+      --cols: var(--both) minmax(70px, 1fr) 36px 38px 76px;
     }
     .artist {
       display: none;

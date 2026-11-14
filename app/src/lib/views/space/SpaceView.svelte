@@ -2,6 +2,7 @@
   import { untrack } from "svelte";
   import { deviceSpaceOpenFolder, JOB_SPACE, pickArchiveFolder, type SpaceItem } from "$lib/api/device";
   import { volumeName } from "$lib/format";
+  import { libraryLabel } from "$lib/state/place";
   import { session } from "$lib/state/session.svelte";
   import { toast } from "$lib/state/toast.svelte";
   import Button from "$lib/ui/Button.svelte";
@@ -85,7 +86,7 @@
 <div class="bar">
   <h2>Free space</h2>
   {#if lib}
-    <span class="chip">{session.isComputer ? "This computer" : volumeName(lib.root)}</span>
+    <span class="chip">{session.isComputer ? libraryLabel("computer", lib.root, session.computer?.path ?? null) : volumeName(lib.root)}</span>
     <span class="sp"></span>
     {#if !session.isComputer}
       <Button small disabled={space.planning || device.blocked || detached} onclick={() => space.refresh()}>

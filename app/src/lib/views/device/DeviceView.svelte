@@ -1,6 +1,7 @@
 <script lang="ts">
   import { untrack } from "svelte";
   import { nav } from "$lib/state/nav.svelte";
+  import { libraryLabel } from "$lib/state/place";
   import { session } from "$lib/state/session.svelte";
   import Button from "$lib/ui/Button.svelte";
   import { volumeName } from "$lib/format";
@@ -40,7 +41,7 @@
 <div class="bar">
   <h2>{onComputer ? "This library" : "Device"}</h2>
   {#if lib}
-    <span class="chip">{onComputer ? "This computer" : volumeName(lib.root)}</span>
+    <span class="chip">{onComputer ? libraryLabel("computer", lib.root, session.computer?.path ?? null) : volumeName(lib.root)}</span>
     <span class="sp"></span>
     {#if !onComputer}
       <Button

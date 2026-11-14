@@ -40,7 +40,7 @@ export const libraryPane = (root: string) => invoke<PaneLibrary>("library_pane",
 
 /** Folder picker for the drive (the folder that contains .Pacemaker); null if cancelled. */
 export async function chooseLibraryFolder(): Promise<string | null> {
-  const dir = await open({ directory: true, title: "Choose the Pacemaker drive (the folder that contains .Pacemaker)" });
+  const dir = await open({ directory: true, title: "Open a library: choose the Pacemaker drive (the folder that contains .Pacemaker) or a library folder" });
   return typeof dir === "string" ? dir : null;
 }
 

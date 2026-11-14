@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { session } from "$lib/state/session.svelte";
   import Button from "$lib/ui/Button.svelte";
   import WideModal from "../device/WideModal.svelte";
   import { libs } from "./libraries.svelte";
@@ -9,7 +10,7 @@
   // row does and shows the same dialog (CopyDialog). Nothing is written from here.
   const c = $derived(libs.chooser);
   const cases = $derived(c ? (libs.data(c.target)?.cases ?? []) : []);
-  const targetName = $derived(c ? libraryNameFor(libs.data(c.target)?.root ?? "") : "");
+  const targetName = $derived(c ? libraryNameFor(libs.data(c.target)?.root ?? "", session.computer?.path ?? null) : "");
 
   let pick = $state(NEW_CASE);
   let typed = $state("");

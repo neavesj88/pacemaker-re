@@ -381,7 +381,7 @@ export const canCopy = (plan: SyncPlan) => plan.items.some((i) => i.action.type 
 export const dialogSpace = (plan: SyncPlan): SpaceVerdict => spaceLine(plan, plan.bytes_to_copy);
 
 /** How a library root is named in a sentence: "This computer", "Pacemaker (G:)". */
-export const libraryNameFor = (root: string) => libraryLabel(libraryKind(root), root);
+export const libraryNameFor = (root: string, computerRoot?: string | null) => libraryLabel(libraryKind(root), root, computerRoot);
 
 /** "Copy to Pacemaker (G:)?" */
 export const dialogTitle = (targetName: string) => `Copy to ${targetName}?`;

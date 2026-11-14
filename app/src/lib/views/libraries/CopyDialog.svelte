@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { session } from "$lib/state/session.svelte";
   import Button from "$lib/ui/Button.svelte";
   import WideModal from "../device/WideModal.svelte";
   import { ROW_CAP, ROW_MORE, sizeText } from "../sync/syncLogic";
@@ -12,8 +13,8 @@
   const lines = $derived(p ? linesOf(p.plan) : { acting: [], skipped: [], same: [] });
   const space = $derived(p ? dialogSpace(p.plan) : null);
   const ok = $derived(!!p && canCopy(p.plan));
-  const targetName = $derived(p ? libraryNameFor(p.target) : "");
-  const sourceName = $derived(p ? libraryNameFor(p.source) : "");
+  const targetName = $derived(p ? libraryNameFor(p.target, session.computer?.path ?? null) : "");
+  const sourceName = $derived(p ? libraryNameFor(p.source, session.computer?.path ?? null) : "");
 
   // the tracks an "Add to case" row puts in, named (the first few, then how many more)
   const NAMES_SHOWN = 4;

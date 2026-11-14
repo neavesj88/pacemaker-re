@@ -154,8 +154,8 @@ class LibrariesStore {
   }
 
   /** Adds a folder chosen by hand to the picker and shows it (a deliberate choice, so it is read). */
-  addFolder(dir: string, label: string, kind: LibOption["kind"]) {
-    if (!this.folders.some((f) => sameRoot(f.value, dir))) this.folders = [...this.folders, { value: dir, label, kind }];
+  addFolder(dir: string, label: string, kind: LibOption["kind"], title?: string) {
+    if (!this.folders.some((f) => sameRoot(f.value, dir))) this.folders = [...this.folders, { value: dir, label, kind, title }];
     this.chooseRight(dir, true);
   }
 

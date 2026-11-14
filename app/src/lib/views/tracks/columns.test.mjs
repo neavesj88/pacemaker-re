@@ -135,3 +135,10 @@ test("the energy label and the auto energy estimate are two columns with two sor
   assert.equal(auto.sort, "auto_energy");
   assert.deepEqual(cleanSort([{ field: "auto_energy", asc: false }, { field: "energy", asc: true }]), [{ field: "auto_energy", asc: false }, { field: "energy", asc: true }]);
 });
+
+test("the Time column cannot be narrowed below what 59:59 and 123:45 need", () => {
+  // 13px tabular digits: 6 characters are about 52 px, plus the cell's 12 px of padding
+  const time = COLUMNS.find((c) => c.key === "time");
+  assert.ok(time.min >= 64 && time.width >= time.min);
+  assert.equal(mergePrefs({ widths: { time: 40 } }).widths.time, time.min, "a width saved by an older version is raised");
+});

@@ -27,7 +27,8 @@ export function sizeText(n: number): string {
 
 // ---- which libraries, which pair ---------------------------------------------------------------
 
-export type LibOption = { value: string; label: string; kind: LibraryKind };
+/** `title` is the full path, shown as a tooltip. */
+export type LibOption = { value: string; label: string; kind: LibraryKind; title?: string };
 
 /** "This computer" (only when its library is there or is the open one), each detected Pacemaker, and
  *  the open library when it is neither (a folder chosen by hand). */
@@ -38,9 +39,9 @@ export function libraryOptions(
 ): LibOption[] {
   const out: LibOption[] = [];
   const computerOpen = !!computer && !!open && sameRoot(open.root, computer.path);
-  if (computer && (computer.exists || computerOpen)) out.push({ value: computer.path, label: libraryLabel("computer", computer.path), kind: "computer" });
-  for (const v of volumes) if (!out.some((o) => sameRoot(o.value, v))) out.push({ value: v, label: libraryLabel("pacemaker", v), kind: "pacemaker" });
-  if (open && !out.some((o) => sameRoot(o.value, open.root))) out.push({ value: open.root, label: libraryLabel(open.kind, open.root), kind: open.kind });
+  if (computer && (computer.exists || computerOpen)) out.push({ value: computer.path, label: libraryLabel("computer", computer.path, computer.path), kind: "computer", title: computer.path });
+  for (const v of volumes) if (!out.some((o) => sameRoot(o.value, v))) out.push({ value: v, label: libraryLabel("pacemaker", v), kind: "pacemaker", title: v });
+  if (open && !out.some((o) => sameRoot(o.value, open.root))) out.push({ value: open.root, label: libraryLabel(open.kind, open.root, computer?.path ?? null), kind: open.kind, title: open.root });
   return out;
 }
 

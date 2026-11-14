@@ -175,3 +175,9 @@ test("the stale refusal is recognised", () => {
   assert.ok(isStale("The libraries changed since the preview, so nothing was synced. Look at the preview again."));
   assert.ok(!isStale("disk full"));
 });
+
+test("a folder opened by hand is named by its folder, never a second This computer", () => {
+  const o = libraryOptions({ path: COMP, exists: true }, ["G:\\"], { root: "D:\\Gigs", kind: "computer" });
+  assert.deepEqual(o.map((x) => x.label), ["This computer", "Pacemaker (G:)", "Folder (Gigs)"]);
+  assert.equal(o[2].title, "D:\\Gigs");
+});
