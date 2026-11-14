@@ -47,7 +47,7 @@ class Jobs {
   dragging = $state(false);
 
   busy = $derived(this.job?.running ?? false);
-  canWrite = $derived(!!session.library && session.library.problems.length === 0 && !this.busy);
+  canWrite = $derived(!!session.library && !session.isDetached && session.library.problems.length === 0 && !this.busy);
 
   /** Opens the confirmation for a job. Returns false (and sets the error banner) if writing is
    *  not possible right now. */
@@ -63,7 +63,9 @@ class Jobs {
     if (this.canWrite) return true;
     session.error = this.busy
       ? "Another job is still running."
-      : "This library is not device-compatible, so it stays read-only here.";
+      : session.isDetached
+        ? "This Pacemaker was ejected, so nothing can be written to it. Plug it in and open it again, or choose another library."
+        : "This library is not device-compatible, so it stays read-only here.";
     return false;
   }
 

@@ -1,7 +1,7 @@
 // Run: node --experimental-strip-types --test src/lib/views/analysis/bgLogic.test.mjs
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { clampPct, failureNote, failureRows, groupKeys, pauseAction, statusLine, stripVisible } from "./bgLogic.ts";
+import { clampPct, failureNote, failureRows, groupKeys, libraryChanged, pauseAction, statusLine, stripVisible } from "./bgLogic.ts";
 
 const base = { state: "running", detail: "", root: "C:\\Lib", pacemaker: false, word: "waveforms", done: 12, total: 40, left: 100, label: "A - B", failures: 0 };
 const fail = (kind, track_id, reason, label = `Track ${track_id}`) => ({ kind, track_id, label, location: `/pmdb_tracks/${track_id}.mp3`, size: 1, reason });
@@ -68,4 +68,13 @@ test("the key floor is clamped to whole per cent between 0 and 100", () => {
   assert.equal(clampPct(-5), 0);
   assert.equal(clampPct(150), 100);
   assert.equal(clampPct(42.6), 43);
+});
+
+test("the failure list and its Hide belong to one library: another root, or none, is a change", () => {
+  assert.equal(libraryChanged("C:/Lib", "C:/Other"), true, "two libraries with the same failure count are still two");
+  assert.equal(libraryChanged("C:/Lib", "c:/lib/"), false, "one library, two spellings");
+  assert.equal(libraryChanged(null, "C:/Lib"), true);
+  assert.equal(libraryChanged("C:/Lib", null), true);
+  assert.equal(libraryChanged(null, null), false);
+  assert.equal(libraryChanged(undefined, null), false);
 });

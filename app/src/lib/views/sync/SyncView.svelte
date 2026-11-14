@@ -20,7 +20,7 @@
   // a library moved in between). Every item is named, can be left out, and nothing is removed unless
   // the setting for it is on and the list was confirmed.
 
-  const options = $derived(libraryOptions(session.computer, session.volumes, session.library));
+  const options = $derived(libraryOptions(session.computer, session.volumes, session.attached));
   const open = $derived(session.library ? { root: session.library.root, kind: session.library.kind } : null);
   const hasPacemaker = $derived(options.some((o) => o.kind === "pacemaker"));
   const hasComputer = $derived(options.some((o) => o.kind === "computer"));

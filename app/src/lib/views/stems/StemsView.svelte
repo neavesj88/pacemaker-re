@@ -1,7 +1,7 @@
 <script lang="ts">
   import { session } from "$lib/state/session.svelte";
   import { stems } from "$lib/state/stems.svelte";
-  import { volumeName } from "$lib/format";
+  import { libraryLabel } from "$lib/state/place";
   import MakeCard from "./MakeCard.svelte";
   import ResultCard from "./ResultCard.svelte";
   import SettingsCard from "./SettingsCard.svelte";
@@ -21,7 +21,7 @@
 
 <div class="bar">
   <h2>Stems</h2>
-  {#if lib}<span class="chip">{volumeName(lib.root)}</span>{/if}
+  {#if lib}<span class="chip">{libraryLabel(lib.kind, lib.root, session.computer?.path ?? null)}</span>{/if}
   <span class="muted sub">Acapella and instrumental versions of your tracks, made offline on this computer</span>
 </div>
 

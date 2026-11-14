@@ -4,7 +4,8 @@
 
 <script lang="ts">
   import { untrack } from "svelte";
-  import { volumeName } from "$lib/format";
+  import { libraryKind, libraryLabel } from "$lib/state/place";
+  import { session } from "$lib/state/session.svelte";
   import Button from "$lib/ui/Button.svelte";
   import Modal from "$lib/ui/Modal.svelte";
 
@@ -35,6 +36,11 @@
     onclose: () => void;
   } = $props();
 
+  // named the way the header names it ("This computer", "Pacemaker (G:)"), never by its folder
+  const place = $derived.by(() => {
+    const kind = libraryKind(root);
+    return { kind, label: libraryLabel(kind, root, session.computer?.path ?? null) };
+  });
   let name = $state(untrack(() => initial));
   const valid = $derived(name.trim().length > 0 && [...name].length <= 255);
   const clash = $derived(taken.some((t) => t.trim().toLowerCase() === name.trim().toLowerCase()) && name.trim() !== "");
@@ -47,7 +53,7 @@
 
 <Modal title="Save owned tracks as a case" {onclose}>
   <p>
-    Creates a new case on <b>{volumeName(root)}</b> holding <b>{trackCount}</b> track{trackCount === 1 ? "" : "s"}, in the order of the request list.
+    Creates a new case {place.kind === "computer" ? "in" : "on"} <b>{place.label}</b> holding <b>{trackCount}</b> track{trackCount === 1 ? "" : "s"}, in the order of the request list.
     This is a write to the library; no audio is added, changed or deleted.
   </p>
   <form

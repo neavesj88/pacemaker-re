@@ -11,6 +11,8 @@ import {
   type ComputerLibrarySettings,
 } from "$lib/api/library";
 import type { Collection, LibraryKind, LibraryView, NeedsAnalysis, Track } from "$lib/api/types";
+import { allSaveable, unsavedWork, type UnsavedWork } from "./leaveGuard";
+import { LoadSeq } from "./loadSeq";
 import { nav } from "./nav.svelte";
 import { placeWords, startupRoot } from "./place";
 
@@ -48,6 +50,16 @@ class Session {
   computer = $state<ComputerLibraryInfo | null>(null);
   #library = $state.raw<OpenLibrary | null>(null);
   loading = $state(false);
+  /** The user asked for a different library and it is being read (not a reload in place after a job). */
+  switching = $state(false);
+  /** Where that read is going, for the "Reading..." line. "" when none. */
+  loadingRoot = $state("");
+  /** Unsaved work that opening another library would discard, while the user is asked about it. */
+  leaving = $state.raw<{ work: UnsavedWork[]; done: (go: boolean) => void } | null>(null);
+  /** The library whose Pacemaker was ejected: it is still on screen (read from memory) but nothing can
+   *  be written to it and it is no longer offered. Opening a library again makes a new object. */
+  #detached = $state.raw<unknown>(null);
+  #seq = new LoadSeq();
   /** Shown in the red banner under the header. Any area may set it; "" clears it. */
   error = $state("");
 
@@ -75,6 +87,21 @@ class Session {
 
   /** Tracks whose .str is missing, empty or unreadable (or never analysed), with the reason. */
   needs = $derived(new Map((this.library?.needs_analysis ?? []).map((n) => [n.track_id, n.reason])));
+
+  /** The open library is an ejected Pacemaker. */
+  get isDetached(): boolean {
+    return !!this.#library && this.#library === this.#detached;
+  }
+
+  /** `lib` was ejected: see `#detached`. */
+  markDetached(lib: unknown) {
+    this.#detached = lib;
+  }
+
+  /** The open library unless it was ejected: what a picker should offer as "the open library". */
+  get attached(): LibraryView | null {
+    return this.isDetached ? null : this.#library;
+  }
 
   /** A store registers here to clear its own state when a different library is opened (not on
    *  an in-place reload). Called at module load by the store itself; session imports no store. */
@@ -170,35 +197,74 @@ class Session {
 
   /** Welcome: "Start a library on this computer". */
   async startComputer() {
+    if (!(await this.confirmLeave())) return;
     const root = await this.createComputer();
-    if (root) await this.load(root);
+    if (root) await this.load(root, false, true);
   }
 
   /** Welcome: "Copy my Pacemaker's library to this computer". Makes and opens the library on this
    *  computer, then goes to the Sync view with the Pacemaker as the other side, to get its tracks,
    *  mixes and cases. The Pacemaker is only read when the user confirms the plan there. */
   async copyFromPacemaker(volume: string) {
+    if (!(await this.confirmLeave())) return;
     const root = await this.createComputer();
     if (!root) return;
-    await this.load(root);
+    await this.load(root, false, true);
     if (this.library?.root === root) nav.go("sync", { direction: "get", other: volume });
   }
 
+  /** Asks the user before the open library is replaced, when something unsaved would be lost.
+   *  Resolves true when there is nothing unsaved, or the user saved it or chose to discard it;
+   *  false when they cancelled (the dialog is shell/LeaveDialog.svelte). */
+  confirmLeave(): Promise<boolean> {
+    const work = unsavedWork();
+    if (work.length === 0) return Promise.resolve(true);
+    this.leaving?.done(false);
+    return new Promise((resolve) => {
+      this.leaving = {
+        work,
+        done: (go) => {
+          this.leaving = null;
+          resolve(go);
+        },
+      };
+    });
+  }
+
+  /** The unsaved work can all be saved from the question (see `allSaveable`). */
+  get leavingSaveable(): boolean {
+    return !!this.leaving && allSaveable(this.leaving.work);
+  }
+
   /** Reads the library on `root`. `keepView` re-reads in place (after a job) without resetting
-   *  the view, the open case or the filters. */
-  async load(root: string, keepView = false) {
+   *  the view, the open case or the filters. Opening a different library (no `keepView`) first
+   *  asks about unsaved work unless `confirmed` says the caller already did. Only the newest read
+   *  takes effect: a reload that started before a switch, or while one is being read, cannot put
+   *  the old library back. A failed read leaves the open library as it was. */
+  async load(root: string, keepView = false, confirmed = false) {
+    if (!keepView && !confirmed && !(await this.confirmLeave())) return;
+    const ticket = this.#seq.begin(keepView);
+    if (ticket === null) return;
     this.loading = true;
+    this.switching = !keepView;
+    this.loadingRoot = root;
     this.error = "";
     try {
-      this.#library = new OpenLibrary(await openLibrary(root));
+      const view = await openLibrary(root);
+      if (!this.#seq.current(ticket)) return;
+      this.#library = new OpenLibrary(view);
       if (!keepView) {
         nav.go("tracks");
         for (const fn of resetHooks) fn();
       }
     } catch (e) {
-      this.error = String(e);
+      if (this.#seq.current(ticket)) this.error = String(e);
     } finally {
-      this.loading = false;
+      if (this.#seq.end(ticket)) {
+        this.loading = false;
+        this.switching = false;
+        this.loadingRoot = "";
+      }
     }
   }
 

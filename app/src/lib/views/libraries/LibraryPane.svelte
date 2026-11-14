@@ -35,7 +35,7 @@
 
   // ---- names --------------------------------------------------------------------------------
 
-  const options = $derived(libraryOptions(session.computer, session.volumes, session.library ? { root: session.library.root, kind: session.library.kind } : null));
+  const options = $derived(libraryOptions(session.computer, session.volumes, session.attached ? { root: session.attached.root, kind: session.attached.kind } : null));
   const open = $derived(session.library ? { root: session.library.root, kind: session.library.kind } : null);
   const choices = $derived.by(() => {
     const all = [...options];

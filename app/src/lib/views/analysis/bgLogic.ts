@@ -2,6 +2,7 @@
 // how finished keys reach the table, and how the "couldn't analyse" list reads. Run by plain
 // node (`npm test`), so no Svelte and no Tauri in here.
 import type { BgFailure, BgKind, BgStatus } from "$lib/api/bganalysis";
+import { sameRoot } from "../../state/place.ts";
 
 export const KIND_WORD: Record<BgKind, string> = { peaks: "waveforms", keys: "keys", energy: "energy", sections: "sections" };
 
@@ -92,6 +93,14 @@ export function failureNote(failures: BgFailure[], dismissedAt: number): string 
   const tracks = new Set(failures.map((f) => f.track_id)).size;
   if (tracks === 0 || failures.length <= dismissedAt) return null;
   return `${plural(tracks, "track", "tracks")} couldn't be analysed.`;
+}
+
+/** The status now belongs to another library than the last one (or none): the failure list read
+ *  for the old one, and a "Hide" pressed on it, are not about this one. The worker's list is
+ *  global, so the count alone cannot tell two libraries with the same number of failures apart. */
+export function libraryChanged(prevRoot: string | null | undefined, nextRoot: string | null | undefined): boolean {
+  if (!prevRoot || !nextRoot) return !!prevRoot !== !!nextRoot;
+  return !sameRoot(prevRoot, nextRoot);
 }
 
 /** Clamps the key confidence floor the way the backend validates it (whole per cent, 0 to 100). */
