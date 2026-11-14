@@ -697,7 +697,7 @@ fn track_item(source: &Library, target: &Library, s: &TrackRow, t: Option<&Track
                             // the grid comes with the update; the audio the target lacks comes with it
                             if let (None, Some(n)) = (file_len(&t_audio), file_len(&audio)) {
                                 item.bytes += n;
-                                item.detail = format!("{AUDIO_MISSING}, so it is copied too");
+                                item.detail = if item.detail.is_empty() { format!("{AUDIO_MISSING}, so it is copied too") } else { format!("{}; {AUDIO_MISSING}, so it is copied too", item.detail) };
                             }
                         }
                         SyncAction::Skip { .. } => {

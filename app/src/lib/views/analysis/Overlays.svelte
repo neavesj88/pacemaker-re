@@ -11,7 +11,6 @@
   import { bg } from "$lib/state/bganalysis.svelte";
   import { energy } from "$lib/state/energy.svelte";
   import { jobs } from "$lib/state/jobs.svelte";
-  import { nav } from "$lib/state/nav.svelte";
   import { playback } from "$lib/state/playback.svelte";
   import { preview } from "$lib/views/mixes/preview.svelte";
   import { sync } from "$lib/views/sync/sync.svelte";
@@ -51,9 +50,10 @@
   });
 
   // Every key the worker writes changes a row a Sync plan was made from, and the plan would be
-  // refused as stale. The worker waits while a plan is being made or is on screen in the Sync view.
+  // refused as stale. The plan stays in memory when the owner leaves the Sync view, so the worker
+  // waits for as long as a plan is being made or is kept, whichever view is open.
   $effect(() => {
-    const hold = nav.view === "sync" && (sync.planning || sync.plan !== null);
+    const hold = sync.planning || sync.plan !== null;
     untrack(() => bg.setHold(hold));
   });
 

@@ -82,6 +82,8 @@ class Playback {
   }
 
   toggle() {
+    // after an error Space does what the bar's Try again button does
+    if (this.error) return this.retry();
     if (this.playing) this.pause();
     else this.play();
   }

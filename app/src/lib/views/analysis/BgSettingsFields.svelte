@@ -66,7 +66,7 @@
     Confidence floor for background keys, per cent
     <small class="muted">
       Applies to background analysis only; the manual Key detection section has its own floor. A key found below this is not written; the track is listed under
-      "couldn't be analysed" instead. 0 writes every result.
+      "Couldn't be analysed" instead, and Try these again looks at it once you have changed the floor. 0 writes every result.
     </small>
   </span>
 </label>
@@ -102,11 +102,8 @@
   {/if}
   {#if noResult.length > 0}
     <details class="nokey" data-testid="bg-no-result">
-      <summary>{noResult.length} {noResult.length === 1 ? "track has" : "tracks have"} nothing to give for one result</summary>
-      <p class="muted small">
-        These were read fine: their waveform and tempo are there. The result listed is one the audio does not hold (a drum-only or silent track has no key), so
-        there is nothing to try again.
-      </p>
+      <summary>{noResult.length} {noResult.length === 1 ? "track has" : "tracks have"} no key to write (nothing to try again)</summary>
+      <p class="muted small">These were read fine. A drum-only, silent or atonal track has no key in it, so there is nothing to try again.</p>
       <ul>
         {#each noResult as r (r.track_id)}<li><b>{r.label}</b> ({r.kinds}): {r.reasons}</li>{/each}
       </ul>
@@ -155,6 +152,9 @@
   }
   .fail {
     margin-top: 14px;
+  }
+  .nokey {
+    margin-top: 10px;
   }
   .fail ul {
     margin: 6px 0 8px;

@@ -305,7 +305,12 @@ class Engine {
       playback.error = e instanceof Error ? e.message : String(e);
       playback.playing = false;
     } finally {
-      if (token === this.#token) this.loading = false;
+      if (token === this.#token) {
+        this.loading = false;
+        // the library reloaded in place while the file was opening: its beats and peaks were read
+        // from the older one
+        if (this.ready && session.library !== this.#decorLib) this.#refreshDecor(session.library);
+      }
     }
   }
 
@@ -313,9 +318,11 @@ class Engine {
    *  Nothing is unloaded: the audio, its position and its play state are left alone. */
   #refreshDecor(lib: typeof session.library) {
     if (lib === this.#decorLib) return;
+    // still opening: `#select` looks again when it is done, so the library is not marked as seen
+    if (!this.ready) return;
     this.#decorLib = lib;
     const id = playback.trackId;
-    if (!lib || id === null || playback.mixPreview || !this.ready) return;
+    if (!lib || id === null || playback.mixPreview) return;
     const track = lib.tracks.find((t) => t.track_id === id);
     if (!track) return;
     const token = this.#token; // a track change bumps it and drops these results

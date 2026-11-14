@@ -50,7 +50,7 @@
 
   /** The one status line under the title, worst first. */
   const status = $derived.by((): { text: string; bad: boolean } | null => {
-    if (playback.error) return { text: playback.error, bad: true };
+    if (playback.error) return { text: `${playback.error} Press Space or Try again to open it again.`, bad: true };
     if (track && engine.peaksProblem) return { text: `No waveform: ${engine.peaksProblem}`, bad: false };
     if (track && engine.beatsProblem) return { text: `No beat ticks: ${engine.beatsProblem}`, bad: false };
     if (loaded && engine.silent) return { text: "Browser preview: no audio, silent clock", bad: false };
@@ -318,6 +318,11 @@
   .status.bad {
     color: var(--bad-text);
     font-style: normal;
+    white-space: normal;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    line-clamp: 3;
+    -webkit-box-orient: vertical;
   }
   .controls {
     display: flex;

@@ -165,8 +165,15 @@ impl Failures {
 
     /// True while the record still describes this file: the same size, and, for a file that was
     /// not there, still not there (`present` says whether it is now).
-    pub fn skips(&self, kind: Kind, item: &Item, present: bool) -> bool {
-        self.0.get(&failure_key(kind, &item.location)).is_some_and(|f| f.size == item.size && !(f.file_missing && present))
+    /// `present` is only called for a record of a missing file, so a library with no such
+    /// records never touches the disk.
+    pub fn skips(&self, kind: Kind, item: &Item, present: impl FnOnce() -> bool) -> bool {
+        self.0.get(&failure_key(kind, &item.location)).is_some_and(|f| f.size == item.size && !(f.file_missing && present()))
+    }
+
+    /// Drops the record of a file that has now been analysed (it was given up on, then came back).
+    pub fn forget(&mut self, kind: Kind, location: &str) {
+        self.0.remove(&failure_key(kind, location));
     }
 
     pub fn clear(&mut self) -> usize {
@@ -302,7 +309,7 @@ impl Engine {
                 continue;
             }
             let found = b.missing(kind)?;
-            let items: VecDeque<Item> = found.into_iter().filter(|i| !self.failures.skips(kind, i, b.file_present(i))).collect();
+            let items: VecDeque<Item> = found.into_iter().filter(|i| !self.failures.skips(kind, i, || b.file_present(i))).collect();
             self.lanes.push(Lane { kind, total: items.len(), items, done: 0 });
         }
         self.planned = true;
@@ -350,7 +357,8 @@ impl Engine {
             let (done, total) = (lane.done, lane.total);
             match &outcome {
                 Outcome::NoResult(_) | Outcome::Failed(_) | Outcome::Missing(_) => self.failures.record_outcome(kind, &item, &outcome),
-                Outcome::Done { .. } | Outcome::Later(_) => {}
+                Outcome::Done { .. } => self.failures.forget(kind, &item.location),
+                Outcome::Later(_) => {}
             }
             c.event(Event::Result { kind, item: &item, outcome: &outcome, done, total });
         }
@@ -552,6 +560,7 @@ mod tests {
         e.run(&s, &mut f, &mut Script::unlimited());
         assert_eq!(f.calls.len(), before + 1);
         assert!(f.have.contains(&(Kind::Keys, 1)));
+        assert!(e.failures.list().is_empty(), "the old note goes once the track has its result");
     }
 
     #[test]
@@ -728,8 +737,8 @@ mod tests {
         fl.record(Kind::Peaks, &item(2), "cannot decode".into());
         let back: Failures = serde_json::from_str(&serde_json::to_string(&fl).unwrap()).unwrap();
         assert_eq!(back, fl);
-        assert!(back.skips(Kind::Keys, &item(1), false));
-        assert!(!back.skips(Kind::Energy, &item(1), false), "a failure belongs to one kind");
+        assert!(back.skips(Kind::Keys, &item(1), || false));
+        assert!(!back.skips(Kind::Energy, &item(1), || false), "a failure belongs to one kind");
         let mut gone = back.clone();
         let kept = item(2).location;
         let here: HashSet<&str> = [kept.as_str()].into_iter().collect();

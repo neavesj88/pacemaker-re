@@ -553,7 +553,8 @@ impl Backend for Real {
                     Ok(Err(e)) => Outcome::Failed(e.to_string()),
                     Ok(Ok(None)) => Outcome::NoResult("no clear key (too short, silent or atonal)".into()),
                     Ok(Ok(Some(r))) if r.confidence < self.key_min_confidence => {
-                        Outcome::NoResult(format!("low confidence: {} ({:.0}%)", r.key.name(), r.confidence * 100.0))
+                        // a key was found, a setting held it back: that is retryable, unlike a file with no key
+                        Outcome::Failed(format!("low confidence: {} ({:.0}%)", r.key.name(), r.confidence * 100.0))
                     }
                     Ok(Ok(Some(r))) => {
                         self.pending_keys.push((item.id, r.key.name()));
@@ -594,6 +595,11 @@ struct Ctl<'a> {
     last_emit: Instant,
 }
 
+/// How many of the records are things that went wrong; a track with no result to give is not one.
+fn real_failures(list: &[Failure]) -> usize {
+    list.iter().filter(|f| !f.no_result).count()
+}
+
 impl Ctl<'_> {
     fn left(&self) -> usize {
         self.lanes.iter().map(|(_, done, total)| total.saturating_sub(*done)).sum()
@@ -605,8 +611,9 @@ impl Ctl<'_> {
             let mut g = self.shared.lock();
             g.status = self.status.clone();
             g.failures.extend(self.seen.drain(..));
-            self.status.failures = g.failures.len();
-            g.status.failures = g.failures.len();
+            let n = real_failures(&g.failures);
+            self.status.failures = n;
+            g.status.failures = n;
         }
         if force || self.last_emit.elapsed() >= STATUS_EVERY {
             self.last_emit = Instant::now();
@@ -651,6 +658,10 @@ impl Control for Ctl<'_> {
                 self.status.total = total;
                 if let Some(f) = Failure::of(kind, item, outcome) {
                     self.seen.push(f);
+                } else if matches!(outcome, Outcome::Done { .. }) {
+                    // a track given up on that has now been analysed (its file came back): the
+                    // note about it goes, as the queue's own record has
+                    self.shared.lock().failures.retain(|f| !(f.kind == kind && f.location == item.location));
                 }
                 self.publish(done == total);
             }
@@ -706,7 +717,7 @@ impl Worker {
                 g.status.total = 0;
                 g.status.left = 0;
             }
-            g.status.failures = g.failures.len();
+            g.status.failures = real_failures(&g.failures);
             g.status.clone()
         };
         self.env.status(&status);
@@ -758,7 +769,7 @@ impl Worker {
         let mut status = Status::new("running");
         status.root = Some(root.clone());
         status.pacemaker = library_kind(&root) == PACEMAKER;
-        status.failures = self.engine.failures.len();
+        status.failures = self.engine.failures.list().iter().filter(|f| !f.no_result).count();
         let mut ctl = Ctl { env: &self.env, shared: &self.shared, root: root.clone(), epoch, status, lanes: Vec::new(), seen: Vec::new(), last_emit: Instant::now() - STATUS_EVERY };
         let mut run_settings = settings;
         if let Some(until) = self.keys_hold {
@@ -812,7 +823,7 @@ impl Worker {
                     g.status.word.clear();
                     g.status.label.clear();
                     g.status.left = 0;
-                    g.status.failures = g.failures.len();
+                    g.status.failures = real_failures(&g.failures);
                     let s = g.status.clone();
                     drop(g);
                     self.env.status(&s);
