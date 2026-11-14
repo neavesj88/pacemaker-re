@@ -967,3 +967,48 @@ export function planMix(tracks: readonly SetTrack[], hasGrid: (id: number) => bo
   }
   return { pairs, tempos, stretchPct };
 }
+
+/** A stretch of consecutive tracks joined by blends: the tracks `first` .. `first + count - 1` of the
+ * plan. `tempo` is the one tempo they all play at, or null when they do not share one (no
+ * beat-matching, or unknown tempos). A track with no blended neighbour is a run of one. */
+export type MixRun = { first: number; count: number; tempo: number | null };
+
+export function planRuns(plan: MixPlan): MixRun[] {
+  const n = plan.tempos.length;
+  const runs: MixRun[] = [];
+  let i = 0;
+  while (i < n) {
+    let j = i;
+    while (j + 1 < n && plan.pairs[j]?.mode === "blend") j++;
+    const t = plan.tempos[i];
+    const same = t !== null && plan.tempos.slice(i, j + 1).every((x) => x !== null && Math.abs(x - t) < 1e-9);
+    runs.push({ first: i, count: j - i + 1, tempo: same ? t : null });
+    i = j + 1;
+  }
+  return runs;
+}
+
+/** The tempo of the longest beat-matched run (the first one on a tie): the tempo a mix made from
+ * the plan is best described by. null when no run of two or more tracks shares a tempo. */
+export function longestRunTempo(plan: MixPlan): number | null {
+  let best: MixRun | null = null;
+  for (const r of planRuns(plan)) if (r.count > 1 && r.tempo !== null && (!best || r.count > best.count)) best = r;
+  return best?.tempo ?? null;
+}
+
+/** What the dialog says about tempo with beat-matching on: one sentence that is true of the plan.
+ * `middle`: the user set no tempo, so a lone run runs at the middle tempo of its tracks. */
+export function tempoSentence(plan: MixPlan, middle: boolean): string {
+  const runs = planRuns(plan);
+  const matched = runs.filter((r) => r.count > 1 && r.tempo !== null);
+  const alone = runs.length - matched.length; // runs that are not beat-matched together
+  const bpm = (t: number | null) => `${(t ?? 0).toFixed(1)} BPM`;
+  if (matched.length === 0) return "No two neighbouring tracks can be beat-matched, so every track keeps its own tempo.";
+  if (matched.length === 1 && alone === 0) {
+    return `Every track is stretched to the tempo of the one before it, so the whole mix runs at ${bpm(matched[0].tempo)}${middle ? " (the middle tempo of the set)" : ""}.`;
+  }
+  const parts = matched.map((r) => `${r.count} tracks at ${bpm(r.tempo)}`).join(", ");
+  const stretches = `${matched.length} beat-matched stretch${matched.length === 1 ? "" : "es"} (${parts})`;
+  const single = runs.filter((r) => r.count === 1).length;
+  return `Tracks are only stretched to the one before them within a stretch of blended tracks: the set has ${stretches}${single > 0 ? `, and ${single} track${single === 1 ? " that keeps its" : "s that keep their"} own tempo` : ""}.`;
+}

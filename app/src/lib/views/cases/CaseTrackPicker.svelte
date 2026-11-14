@@ -1,118 +1,175 @@
 <script lang="ts">
-  import { mmss } from "$lib/format";
+  // Picks library tracks to add to a case. It is the real Tracks table (every column, multi-key
+  // sorting, the filter bar with search, case and label filters) with its own layout, filters and
+  // selection, like the Mix tab's picker. Tracks the case already holds are marked and skipped.
+  import { onMount } from "svelte";
+  import type { Track } from "$lib/api/types";
+  import { Filters } from "$lib/state/filters.svelte";
   import { session } from "$lib/state/session.svelte";
+  import { endTrackDrag } from "$lib/state/trackDrag.svelte";
+  import { toast } from "$lib/state/toast.svelte";
   import Button from "$lib/ui/Button.svelte";
-  import Modal from "$lib/ui/Modal.svelte";
+  import FilterBar from "../tracks/FilterBar.svelte";
+  import TrackList from "../tracks/TrackList.svelte";
+  import { TableState } from "../tracks/tableState.svelte";
+  import { tracksViewRows } from "../tracks/trackFilter";
+  import { parseKey, uniqueGenres } from "../tracks/trackLogic";
+  import { tracksState } from "../tracks/tracksState.svelte";
+  import { addSummary } from "./caseLogic";
+  import { CASE_PICKER_KEY, casePickerDefaults } from "./casePicker";
 
-  // Picks library tracks to add to a case: search, tick, Add. Tracks already in the case are
-  // listed greyed out and cannot be ticked.
   let {
     caseName,
     existing,
     onadd,
     onclose,
-  }: { caseName: string; existing: Set<number>; onadd: (ids: number[]) => void; onclose: () => void } = $props();
+  }: { caseName: string; existing: Set<number>; onadd: (ids: number[]) => void | Promise<void>; onclose: () => void } = $props();
 
-  const LIMIT = 200;
-  let query = $state("");
-  let picked = $state<Set<number>>(new Set());
+  // This table's own search box, selection and layout; the favourites are the library's.
+  const search = new Filters();
+  const selection = $state({ trackIds: [] as number[] });
+  const table = new TableState({ storageKey: CASE_PICKER_KEY, defaults: casePickerDefaults, search, selection, favourites: tracksState.favourites });
 
-  let matches = $derived.by(() => {
-    const q = query.trim().toLowerCase();
-    const all = session.library?.tracks ?? [];
-    return q ? all.filter((t) => [t.title, t.artist, t.album, t.genre, t.key].some((f) => f.toLowerCase().includes(q))) : all;
+  const library = $derived(session.library);
+  const all = $derived(library?.tracks ?? []);
+  const genres = $derived(uniqueGenres(all));
+  const rows = $derived(tracksViewRows(all, table));
+  const byId = $derived(new Map(all.map((t) => [t.track_id, t])));
+  const focus = $derived(table.focusId === null ? null : (byId.get(table.focusId) ?? null));
+
+  let panel = $state<HTMLDivElement | null>(null);
+
+  onMount(() => {
+    panel?.focus();
+    const root = library?.root;
+    if (root && tracksState.favourites.size === 0) void tracksState.loadFavourites(root);
+    return endTrackDrag;
   });
-  let shown = $derived(matches.slice(0, LIMIT));
-  let pickable = $derived(matches.filter((t) => !existing.has(t.track_id)));
 
-  function toggle(id: number) {
-    const next = new Set(picked);
-    if (!next.delete(id)) next.add(id);
-    picked = next;
+  // a genre this library does not have would silently hide everything
+  $effect(() => {
+    if (table.genre && !genres.includes(table.genre)) table.genre = "";
+  });
+
+  const chosen = $derived(selection.trackIds.filter((id) => byId.has(id)));
+  const label = (t: Track) => (t.artist ? `${t.artist} – ${t.title}` : t.title);
+  const plan = $derived(addSummary(chosen.map((id) => ({ id, label: label(byId.get(id)!) })), existing));
+  const noun = (n: number) => `${n} track${n === 1 ? "" : "s"}`;
+
+  async function add(ids: number[], close: boolean) {
+    if (ids.length === 0) return;
+    await onadd(ids);
+    if (close) onclose();
+  }
+
+  /** Double-click / Enter on a row adds that track and keeps the picker open for more. */
+  function open(t: Track) {
+    if (existing.has(t.track_id)) {
+      toast.show(`“${t.title}” is already in “${caseName}”`, "ok");
+      return;
+    }
+    void add([t.track_id], false);
   }
 </script>
 
-<Modal title={`Add tracks to “${caseName}”`} {onclose}>
-  <!-- svelte-ignore a11y_autofocus -->
-  <input class="search" data-autofocus placeholder="Search title, artist, album, genre or key" bind:value={query} />
-  <div class="tools muted">
-    <span>{matches.length} track{matches.length === 1 ? "" : "s"}{matches.length > LIMIT ? `, first ${LIMIT} shown: narrow the search` : ""}</span>
-    <Button small variant="link" onclick={() => (picked = new Set([...picked, ...pickable.map((t) => t.track_id)]))} disabled={pickable.length === 0}>
-      Tick all {query.trim() ? "matches" : "tracks"}
-    </Button>
-    <Button small variant="link" onclick={() => (picked = new Set())} disabled={picked.size === 0}>Clear</Button>
+<svelte:window onkeydown={(e) => e.key === "Escape" && onclose()} />
+
+<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+<div class="scrim" onclick={onclose}>
+  <div class="panel" role="dialog" aria-modal="true" tabindex="-1" bind:this={panel} aria-label={`Add tracks to ${caseName}`} onclick={(e) => e.stopPropagation()}>
+    <h2>Add tracks to “{caseName}”</h2>
+    <div class="bar">
+      <FilterBar {table} ownSearch withPresets={false} {genres} focusKey={focus ? parseKey(focus.key) : null} shown={rows.length} total={all.length} selected={chosen.length} />
+    </div>
+    <div class="tbl">
+      {#if library}
+        <TrackList {rows} root={library.root} {table} label="Library tracks" dragFrom="picker:case" onopen={open} marker={(id) => (existing.has(id) ? "in case" : "")} />
+      {/if}
+      {#if rows.length === 0}
+        <p class="empty">{all.length === 0 ? "No tracks in this library yet." : "No tracks match. Clear the search or the filters above."}</p>
+      {/if}
+    </div>
+    <div class="foot">
+      <div class="what" aria-live="polite">
+        {#if chosen.length === 0}
+          <span class="muted">Select tracks, then add them. Double-click or Enter adds one at once. Tracks already in the case are marked and skipped.</span>
+        {:else if plan.fresh.length === 0}
+          <span class="muted">All {noun(chosen.length)} selected {chosen.length === 1 ? "is" : "are"} already in “{caseName}”.</span>
+        {:else}
+          <span>Adding {noun(plan.fresh.length)} to “{caseName}”: {plan.list}{plan.skipped > 0 ? ` (${plan.skipped} already there, skipped)` : ""}</span>
+        {/if}
+      </div>
+      <Button onclick={onclose}>Done</Button>
+      <Button variant="primary" disabled={plan.fresh.length === 0} onclick={() => add(plan.fresh, true)}>{plan.fresh.length === 0 ? "Add" : `Add ${noun(plan.fresh.length)}`}</Button>
+    </div>
   </div>
-  <div class="list">
-    {#each shown as t (t.track_id)}
-      {@const inCase = existing.has(t.track_id)}
-      <label class:dim={inCase}>
-        <input type="checkbox" checked={inCase || picked.has(t.track_id)} disabled={inCase} onchange={() => toggle(t.track_id)} />
-        <span class="title">{t.title}</span>
-        <span class="muted">{t.artist}</span>
-        <span class="muted num">{mmss(t.play_time_secs)}</span>
-        {#if inCase}<span class="muted">in case</span>{/if}
-      </label>
-    {/each}
-    {#if shown.length === 0}<p class="muted pad">No tracks match.</p>{/if}
-  </div>
-  {#snippet actions()}
-    <Button onclick={onclose}>Cancel</Button>
-    <Button
-      variant="primary"
-      disabled={picked.size === 0}
-      onclick={() => {
-        onadd([...picked]);
-        onclose();
-      }}
-    >Add {picked.size} track{picked.size === 1 ? "" : "s"}</Button>
-  {/snippet}
-</Modal>
+</div>
 
 <style>
-  .search {
-    width: 100%;
-    box-sizing: border-box;
-  }
-  .tools {
+  .scrim {
+    position: fixed;
+    inset: 0;
+    z-index: 30;
     display: flex;
     align-items: center;
-    gap: 12px;
-    margin: 6px 0;
+    justify-content: center;
+    background: var(--scrim);
   }
-  .tools span {
+  .panel {
+    display: flex;
+    flex-direction: column;
+    width: min(1400px, 96vw);
+    height: min(820px, 92vh);
+    min-width: 0;
+    background: var(--panel);
+    border: 1px solid var(--line-hi);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  h2 {
+    flex: none;
+    margin: 0;
+    padding: 12px 16px 8px;
+    font-size: 16px;
+  }
+  .bar {
+    flex: none;
+  }
+  .tbl {
+    position: relative;
     flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
   }
-  .list {
-    height: 320px;
-    overflow: auto;
-    background: var(--deep);
-    border: 1px solid var(--line);
-    border-radius: 4px;
+  .empty {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 70px;
+    margin: 0;
+    text-align: center;
+    color: var(--muted);
+    pointer-events: none;
   }
-  label {
-    display: grid;
-    grid-template-columns: 20px 1fr 1fr 48px 52px;
-    gap: 8px;
+  .foot {
+    flex: none;
+    display: flex;
     align-items: center;
-    padding: 3px 8px;
-    cursor: pointer;
+    gap: 8px;
+    padding: 8px 16px;
+    border-top: 1px solid var(--line);
+    background: var(--deep);
   }
-  label:hover {
-    background: var(--hover);
-  }
-  label.dim {
-    opacity: 0.55;
-    cursor: default;
-  }
-  label span {
+  .what {
+    flex: 1;
+    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    font-size: 12px;
   }
-  input[type="checkbox"] {
-    padding: 0;
-  }
-  .pad {
-    padding: 12px;
+  .muted {
+    color: var(--muted);
   }
 </style>

@@ -17,6 +17,22 @@
     });
   });
 
+  // A rating, a key or a play count changes the library's tracks without reopening it, and a smart
+  // case can rule on any of them: count again (after a pause, so a run of edits is one count).
+  // Not on the first run for a library: opening it already counts.
+  let seen: { root: string; tracks: unknown } | null = null;
+  $effect(() => {
+    const root = session.library?.root;
+    const tracks = session.library?.tracks;
+    untrack(() => {
+      if (!root || !tracks) seen = null;
+      else {
+        if (seen && seen.root === root && seen.tracks !== tracks) cases.scheduleSmartCounts();
+        seen = { root, tracks };
+      }
+    });
+  });
+
   function open(id: number) {
     if (nav.view === "cases" && cases.smartOpen === id) return;
     // asks first if the editor now open holds unsaved edits

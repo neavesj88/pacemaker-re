@@ -6,10 +6,18 @@ import type { ViewId } from "$lib/views/ids";
 class Nav {
   view = $state<ViewId>("tracks");
   params = $state<Record<string, unknown>>({});
+  /** Set by a view that can hold unsaved edits (the Cases store): called when something asks to show
+   *  a different view, and it runs `proceed` at once or after asking the user. Not called for a
+   *  deep link into the view already showing. */
+  beforeLeave: ((proceed: () => void) => void) | null = null;
 
   go(view: ViewId, params: Record<string, unknown> = {}) {
-    this.params = params;
-    this.view = view;
+    const show = () => {
+      this.params = params;
+      this.view = view;
+    };
+    if (view !== this.view && this.beforeLeave) this.beforeLeave(show);
+    else show();
   }
 
   /** Reads and removes one param, so a deep link is acted on once. */

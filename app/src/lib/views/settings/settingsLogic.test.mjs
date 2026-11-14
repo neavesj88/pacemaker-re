@@ -119,6 +119,7 @@ const VIEW_STATE = {
   "pm.mixes.tools.v1": "whether transitions are shown in the mix editor",
   "pm.mixes.sectionMarkers.v1": "whether section markers are drawn on clips",
   "pm.mixes.picker.v1": "the Mix tab's track table: its columns, their widths and its sort",
+  "pm.cases.picker.v1": "the case Add tracks table: its columns, their widths and its sort",
   "pm.mixes.pickerHeight.v1": "how tall the Mix tab's track table is",
   "pm.mixes.vocalTools.v1": "which Wah tools of a mix the user made as Vocal tools (a note about the mix kept in this app, not a setting)",
   "pm.gridBatchNudgeMs": "the last nudge typed into the grid batch dialog",

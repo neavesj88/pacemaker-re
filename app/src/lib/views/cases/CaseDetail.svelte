@@ -27,7 +27,7 @@
   import { setlist } from "../setlist/setlist.svelte";
   import { vdj } from "../vdj/vdj.svelte";
   import CaseTrackPicker from "./CaseTrackPicker.svelte";
-  import { CASE_COLUMNS, type CaseCol, type Row, copyName, plural, searchRows, sortRows, trackLabel } from "./caseLogic";
+  import { CASE_COLUMNS, type CaseCol, type Row, copyName, plural, searchRows, smartCopyOf, sortRows, trackLabel } from "./caseLogic";
   import { caseView } from "./caseView.svelte";
   import ConfirmDialog from "./ConfirmDialog.svelte";
   import { exportMenuItems } from "./exportMenu";
@@ -38,6 +38,10 @@
   // The view only mounts this with a case open; the fallback covers the moment it closes.
   let open = $derived(cases.open ?? { id: -1, name: "", play_time_secs: 0, track_count: 0 });
   let info = $derived(cases.openInfo);
+  // The ★ copy of a smart case is rewritten from the rules (tracks, order and name), so hand edits
+  // to it would be lost: those controls are off and a notice says why.
+  let smartCopy = $derived(smartCopyOf(cases.smart, open.id));
+  let canEdit = $derived(jobs.canWrite && !smartCopy);
 
   onDestroy(() => {
     endReorder();
@@ -62,7 +66,7 @@
   let selectedRows = $derived(all.filter((r) => selected.has(r.id)));
   let cols = $derived(caseView.shown);
   // dragging to reorder needs the whole list on screen, in the case's order, every row a real track
-  let canReorder = $derived(jobs.canWrite && !query && !viewSorted && missing.length === 0);
+  let canReorder = $derived(canEdit && !query && !viewSorted && missing.length === 0);
 
   const label = (r: Row) => trackLabel(r.id, r.t);
   const sortLabel = $derived(CASE_COLUMNS.find((c) => c.sort === caseView.prefs.sortKey)?.label || (caseView.prefs.sortKey === "fav" ? "favourites" : ""));
@@ -134,7 +138,7 @@
   // drag that started on a row of this very table is never dropped back here.
   let dropping = $state(false);
   const dropOptions = {
-    accept: () => jobs.canWrite && trackDrag.from !== `case:${open.id}`,
+    accept: () => canEdit && trackDrag.from !== `case:${open.id}`,
     onhover: (hit: Element | null) => (dropping = !!hit),
     ondrop: (ids: number[]) => {
       if (ids.length > 0) void cases.dropTracks(open.id, open.name, ids);
@@ -212,7 +216,7 @@
     // Not while a dialog is up: its keys must not act on the case behind it.
     if (dialogOpen) return;
     if ((e.target as HTMLElement).closest("input, select, textarea, [role='dialog']")) return;
-    if (e.key === "Delete" && jobs.canWrite && selectedRows.length > 0) removing = selectedRows;
+    if (e.key === "Delete" && canEdit && selectedRows.length > 0) removing = selectedRows;
     else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "a") {
       e.preventDefault();
       selection.trackIds = rows.map((r) => r.id);
@@ -240,8 +244,8 @@
         { label: "Play", onclick: () => play(live[0]?.id), disabled: live.length === 0 },
         { label: live.length === 1 ? "Edit metadata…" : `Edit metadata of ${live.length} tracks…`, onclick: () => metadataEditor.edit(live.map((r) => r.id)), disabled: live.length === 0 },
         { label: n === 1 ? "Copy to another case…" : `Copy ${n} tracks to another case…`, onclick: () => (transfer = { mode: "copy", ids: live.map((r) => r.id) }), disabled: !w || live.length === 0 },
-        { label: n === 1 ? "Move to another case…" : `Move ${n} tracks to another case…`, onclick: () => (transfer = { mode: "move", ids: live.map((r) => r.id) }), disabled: !w || live.length === 0 },
-        { label: n === 1 ? "Remove from this case…" : `Remove ${n} tracks from this case…`, onclick: () => (removing = picked), disabled: !w, danger: true },
+        { label: n === 1 ? "Move to another case…" : `Move ${n} tracks to another case…`, onclick: () => (transfer = { mode: "move", ids: live.map((r) => r.id) }), disabled: !canEdit || live.length === 0 },
+        { label: n === 1 ? "Remove from this case…" : `Remove ${n} tracks from this case…`, onclick: () => (removing = picked), disabled: !canEdit, danger: true },
       ],
     };
   }
@@ -261,7 +265,7 @@
 
   // The view-only sort can be written back as the case's real order (the order on the Pacemaker).
   const orderIds = $derived(rows.map((r) => r.id));
-  const canSaveOrder = $derived(jobs.canWrite && viewSorted && !query && missing.length === 0);
+  const canSaveOrder = $derived(canEdit && viewSorted && !query && missing.length === 0);
 
   function sortHeader(c: CaseCol) {
     if (c.sort) caseView.sortBy(c.sort);
@@ -293,6 +297,16 @@
   let dirty = $derived(baseline !== null && !same({ ...draft, year: Number(draft.year) || 0 }, baseline));
   let nameOk = $derived(draft.name.trim().length > 0);
 
+  // Unsaved edits to these details are not thrown away silently: leaving through the store asks first.
+  let leaving = $state<(() => void) | null>(null);
+  $effect(() => {
+    if (!dirty) return;
+    cases.leaveGuard = (proceed) => (leaving = proceed);
+    return () => {
+      cases.leaveGuard = null;
+    };
+  });
+
   async function save() {
     if (!info || !nameOk) return;
     await cases.saveMeta(info.id, { ...draft, name: draft.name.trim(), year: Math.max(0, Math.min(9999, Math.trunc(Number(draft.year) || 0))) });
@@ -306,15 +320,15 @@
 <div class="split">
   <div class="main">
     <div class="crumb">
-      <Button small onclick={() => cases.close()}>← Cases</Button>
+      <Button small onclick={() => cases.leave(() => cases.close())}>← Cases</Button>
       <b>{open.name}</b>
       <span class="muted">{all.length} track{all.length === 1 ? "" : "s"} · {mmss(totalSecs)}</span>
     </div>
 
     <div class="toolbar">
       <Button variant="primary" onclick={() => play()} disabled={all.every((r) => !r.t)}>▶ Play</Button>
-      <Button onclick={() => (adding = true)} disabled={!jobs.canWrite}>Add tracks…</Button>
-      <Button onclick={() => (removing = selectedRows)} disabled={!jobs.canWrite || selectedRows.length === 0}>
+      <Button onclick={() => (adding = true)} disabled={!canEdit}>Add tracks…</Button>
+      <Button onclick={() => (removing = selectedRows)} disabled={!canEdit || selectedRows.length === 0}>
         Remove{selectedRows.length > 0 ? ` ${selectedRows.length}` : ""}…
       </Button>
       <Button onclick={() => nudge(-1)} disabled={!canReorder || selectedRows.length === 0} title="Move up (Alt+Up)">▲</Button>
@@ -327,7 +341,7 @@
       >Copy to…</Button>
       <Button
         onclick={() => (transfer = { mode: "move", ids: inLibrary(selectedRows.map((r) => r.id)) })}
-        disabled={!jobs.canWrite || inLibrary(selectedRows.map((r) => r.id)).length === 0}
+        disabled={!canEdit || inLibrary(selectedRows.map((r) => r.id)).length === 0}
         title="Move the selected tracks into another case (they leave this one)"
       >Move to…</Button>
       <Button
@@ -349,6 +363,13 @@
       <Button onclick={() => vdj.openCase(open.id, open.name)} disabled={all.length === 0} title="Export this case as a VirtualDJ list, with copies of the audio if you want them">VirtualDJ…</Button>
     </div>
 
+    {#if smartCopy}
+      <div class="notice">
+        This case is rewritten from the smart case “{smartCopy.name}”, so its tracks, their order and its name cannot be changed here.
+        <Button small onclick={() => cases.leave(() => cases.openSmart(smartCopy.id))}>Open the smart case</Button>
+      </div>
+    {/if}
+
     {#if viewSorted}
       <div class="notice">
         Showing the tracks sorted by {sortLabel || "a column"}{caseView.prefs.sortAsc ? "" : " (descending)"}; the case itself is unchanged and reordering is off.
@@ -360,7 +381,7 @@
     {#if missing.length > 0}
       <div class="warn">
         {missing.length} track{missing.length === 1 ? " is" : "s are"} no longer in the library.
-        <Button small onclick={() => (removing = missing)} disabled={!jobs.canWrite}>Remove {missing.length === 1 ? "it" : "them"}…</Button>
+        <Button small onclick={() => (removing = missing)} disabled={!canEdit}>Remove {missing.length === 1 ? "it" : "them"}…</Button>
         <span class="muted">Reordering is off until they are removed.</span>
       </div>
     {/if}
@@ -484,7 +505,7 @@
       <Button small variant="link" onclick={() => thingEditor.edit("case", [open.id])} title="Tags and a colour label. Kept by this app only; nothing is written to the device.">Tags and colour…</Button>
     </div>
     {#if info}
-      <div class="field"><label for="c-name">Name</label><input id="c-name" bind:value={draft.name} maxlength="255" disabled={!jobs.canWrite} /></div>
+      <div class="field"><label for="c-name">Name</label><input id="c-name" bind:value={draft.name} maxlength="255" disabled={!canEdit} title={smartCopy ? `The smart case “${smartCopy.name}” sets this name` : undefined} /></div>
       <div class="field"><label for="c-genre">Genre</label><input id="c-genre" bind:value={draft.genre} disabled={!jobs.canWrite} /></div>
       <div class="field"><label for="c-year">Year</label><input id="c-year" type="number" min="0" max="9999" bind:value={draft.year} disabled={!jobs.canWrite} /></div>
       <div class="field">
@@ -503,7 +524,7 @@
       <div class="field"><span class="lbl">Modified</span><span>{when(info.date_modified)}</span></div>
     {/if}
     <div class="actions">
-      <Button onclick={() => (renaming = true)} disabled={!jobs.canWrite}>Rename…</Button>
+      <Button onclick={() => (renaming = true)} disabled={!canEdit} title={smartCopy ? `The smart case “${smartCopy.name}” sets this name` : undefined}>Rename…</Button>
       <Button onclick={() => (duplicating = true)} disabled={!jobs.canWrite}>Duplicate…</Button>
       <Button onclick={() => (merging = true)} disabled={!jobs.canWrite || cases.infos.length < 2} title="Merge this case with others, without repeats">Merge…</Button>
       <Button onclick={() => (deleting = true)} disabled={!jobs.canWrite}>Delete case…</Button>
@@ -563,6 +584,17 @@
       caseView.useCaseOrder();
     }}
     onclose={() => (savingOrder = false)}
+  />
+{/if}
+
+{#if leaving}
+  {@const proceed = leaving}
+  <ConfirmDialog
+    title="Discard unsaved changes?"
+    message={`The details of the case “${open.name}” (name, genre, year, rating, producer, remixer or comments) have changes that are not saved. Leaving now discards them.`}
+    confirmLabel="Discard changes"
+    onconfirm={() => proceed()}
+    onclose={() => (leaving = null)}
   />
 {/if}
 

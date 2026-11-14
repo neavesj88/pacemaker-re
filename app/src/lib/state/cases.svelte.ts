@@ -46,6 +46,7 @@ import { baseName } from "$lib/format";
 import { caseExport } from "./caseExport.svelte";
 import { EXT, FORMAT_LABEL, saveSuggestion } from "./exportLogic";
 import { jobs } from "./jobs.svelte";
+import { nav } from "./nav.svelte";
 import { session } from "./session.svelte";
 import { caseMembers } from "./caseMembers.svelte";
 import { referencedCases } from "./smartRules";
@@ -424,3 +425,6 @@ class Cases {
 
 export const cases = new Cases();
 session.onReset(() => cases.reset());
+// Switching view from the sidebar, the header or a deep link asks about unsaved edits in an open
+// smart case or case details first (the editors set `leaveGuard` only while they hold some).
+nav.beforeLeave = (proceed) => cases.leave(proceed);
