@@ -651,8 +651,8 @@ fn track_item(source: &Library, target: &Library, s: &TrackRow, t: Option<&Track
     match t {
         None => {
             item.action = match (file_len(&audio), file_len(&side)) {
-                (None, _) => skip("its audio file is missing"),
-                (_, None) => skip("its analysis file (.str) is missing"),
+                (None, _) => skip("the audio file is missing in the sending library"),
+                (_, None) => skip("the beat grid file (.str) is missing in the sending library"),
                 (Some(a), Some(b)) => {
                     item.bytes = a + b;
                     SyncAction::Copy
@@ -683,7 +683,7 @@ fn track_item(source: &Library, target: &Library, s: &TrackRow, t: Option<&Track
                 item.action = match want_update {
                     Err(why) => skip(why),
                     Ok(()) => match file_len(&side) {
-                        None => skip("its analysis file (.str) is missing"),
+                        None => skip("the beat grid file (.str) is missing in the sending library"),
                         Some(b) => {
                             item.bytes = b;
                             SyncAction::Update

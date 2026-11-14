@@ -147,7 +147,7 @@ function planOf(a: Record<string, any>) {
       const t = tByLoc.get(loc);
       const reason = S === computer ? needs.get(s.track_id) : undefined;
       if (!t) {
-        if (reason && reason !== "never analysed") it.action = skip(reason.startsWith("no .str") ? "its analysis file (.str) is missing" : "its analysis file (.str) is empty");
+        if (reason && reason !== "never analysed") it.action = skip(reason.startsWith("no .str") ? "the beat grid file (.str) is missing in the sending library" : "the beat grid file (.str) is empty in the sending library");
         else it.bytes = s.file_size + 4096;
       } else {
         it.target_id = t.track_id;

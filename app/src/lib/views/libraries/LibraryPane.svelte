@@ -182,7 +182,7 @@
   // ---- copy by click ----------------------------------------------------------------------------
 
   const canCopyNow = $derived(sel.size > 0 && !!otherData && !libs.busy);
-  const copyWhy = $derived(sel.size === 0 ? "Pick something to copy first" : !otherData ? "The other library is not showing yet" : "");
+  const copyWhy = $derived(sel.size === 0 ? `Select ${tab} here first, then copy them to ${otherName}` : !otherData ? `Read ${otherName} first` : "");
   const copyText = $derived(copyLabel(side, otherName));
   const copySelected = () => void libs.copy(side, tab, sel);
   // tracks can also go into a case of the other library by click (a drop on a case row does the same)

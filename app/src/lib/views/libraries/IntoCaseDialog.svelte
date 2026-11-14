@@ -37,10 +37,11 @@
 
 {#if c}
   <WideModal title={`Copy into a case on ${targetName}`} onclose={() => libs.closeChooser()} width={480}>
-    <p class="sum">Copy {countText("tracks", c.ids.length)} to {targetName} and put them in a case there.</p>
+    <p class="sum">Copy {countText("tracks", c.ids.length)} to {targetName} and add {c.ids.length === 1 ? "it" : "them"} to a case there.</p>
     <label class="field">
       <span>Case</span>
       <select bind:value={pick} data-autofocus aria-label={`Case on ${targetName}`} onchange={() => (problem = "")}>
+        <option value="" disabled>Choose a case…</option>
         {#each cases as k (k.id)}<option value={k.name}>{k.name} ({countText("tracks", k.track_count)})</option>{/each}
         <option value={NEW_CASE}>A new case…</option>
       </select>

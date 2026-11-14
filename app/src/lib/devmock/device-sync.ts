@@ -63,7 +63,7 @@ function send(): Item[] {
     track(11, "Sample Band - Lantern", 0.01, { type: "repair" }, { target_id: 111, detail: "the beat grid file (.str) is missing in the receiving library" }),
     track(12, "Sample Band - Harbour Lights", 0, { type: "update_plays" }, { target_id: 112, detail: "played more in the sending library" }),
     track(13, "Sample Band - Quiet Hours", 0, { type: "skip", reason: "the beat grid file (.str) is missing in both libraries" }, { target_id: 113 }),
-    track(9, MISSING.label, 0, { type: "skip", reason: "its audio file is missing" }),
+    track(9, MISSING.label, 0, { type: "skip", reason: "the audio file is missing in the sending library" }),
     track(6, "Demo Duo - Tidal", 0, { type: "skip", reason: SAME }),
     track(7, "Demo Duo - Morning Light", 0, { type: "skip", reason: SAME }),
     track(8, "Example Artist - Low Tide", 0, { type: "skip", reason: "the receiving library's copy is the same age or newer" }),

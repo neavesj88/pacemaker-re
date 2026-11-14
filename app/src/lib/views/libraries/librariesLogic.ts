@@ -201,8 +201,9 @@ export const NEW_CASE = "\u0000new";
 /** "Copy into a case on Pacemaker (G:)…": the row menu item and the button for tracks. */
 export const intoCaseLabel = (targetName: string) => `Copy into a case on ${targetName}…`;
 
-/** What the case picker starts on: the other library's first case, or a new one when it has none. */
-export const defaultCasePick = (cases: readonly Collection[]): string => cases[0]?.name ?? NEW_CASE;
+/** What the case picker starts on: nothing chosen ("") when the other library has cases, so a case is
+ *  never picked by pressing on; a new case when it has none. */
+export const defaultCasePick = (cases: readonly Collection[]): string => (cases.length ? "" : NEW_CASE);
 
 /** What the picker's choice means for the plan: an existing case of the other library, or a new
  *  case with the typed name. A typed name that is already a case there (compared as the engine
@@ -213,6 +214,7 @@ export function resolveIntoCase(
   pick: string,
   typed: string,
 ): { into: { name: string; create: boolean } } | { error: string } {
+  if (!pick) return { error: "Choose a case, or a new one." };
   if (pick !== NEW_CASE) {
     const c = cases.find((x) => norm(x.name) === norm(pick));
     return c ? { into: { name: c.name, create: false } } : { error: "That case is not on the other library any more. Pick another." };

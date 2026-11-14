@@ -248,7 +248,7 @@ export function tallyText(t: Tally): string {
   if (t.copyTracks) p.push(`copy ${plural(t.copyTracks, "track")}`);
   if (t.updateTracks) p.push(`update ${plural(t.updateTracks, "track")}`);
   if (t.repairTracks) p.push(`copy the missing files of ${plural(t.repairTracks, "track")}`);
-  if (t.plays) p.push(`update the play counts of ${plural(t.plays, "item")}`);
+  if (t.plays) p.push(`update the play counts of ${plural(t.plays, "track")}`);
   if (t.mixes) p.push(`bring ${plural(t.mixes, "mix", "mixes")}`);
   if (t.cases) p.push(`bring ${plural(t.cases, "case")}`);
   const rm = t.removeTracks + t.removeOthers;

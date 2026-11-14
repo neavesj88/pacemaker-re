@@ -133,7 +133,7 @@ test("totals follow the boxes", () => {
   p[1].action = { type: "update_plays" };
   const pt = tally(p, new Set(["track:/t/9"]));
   assert.deepEqual([pt.plays, pt.updateTracks, pt.mixes, pt.cases, pt.bytes], [3, 0, 0, 0, 0]);
-  assert.equal(tallyText(pt), "Will update the play counts of 3 items.");
+  assert.equal(tallyText(pt), "Will update the play counts of 3 tracks.");
   assert.equal(isStale("stale plan: a library changed since the plan was made; plan again"), true);
   assert.deepEqual(excludedKeys(items, new Set(["track:/t/1", "track:/t/3", "gone"])), ["track:/t/1"]);
 });

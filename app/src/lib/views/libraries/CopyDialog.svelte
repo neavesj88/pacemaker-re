@@ -54,7 +54,7 @@
           <span class="act" class:no={!l.acts}>{l.action}</span>
           <span class="name" title={l.name}>{l.name}</span>
           {#if l.acts && l.kind === "track" && l.bytes > 0}<span class="size muted">{sizeText(l.bytes)}</span>{/if}
-          {#if l.why}<span class="why muted">{l.why}</span>{/if}
+          {#if l.why}<span class="why muted" title={l.why}>{l.why}</span>{/if}
           {#if l.names.length > 0}<span class="tracks muted" title={l.names.join(", ")}>{namesText(l.names)}</span>{/if}
         </li>
       {/each}
@@ -143,9 +143,7 @@
     flex: 0 1 auto;
     max-width: 45%;
     font-size: 12px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    overflow-wrap: anywhere;
   }
   .tracks {
     flex: 1 1 100%;

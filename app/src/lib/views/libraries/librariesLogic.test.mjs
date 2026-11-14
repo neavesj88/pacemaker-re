@@ -238,7 +238,8 @@ test("the summary sentence and whether the copy can run", () => {
 test("the click route into a case: the picker's choice becomes the same target a drop on a case row gives", () => {
   const cases = [{ id: 1, name: "Warm-up", track_count: 4, play_time_secs: 0 }, { id: 2, name: "Crate A", track_count: 0, play_time_secs: 0 }];
   assert.equal(intoCaseLabel("Pacemaker (G:)"), "Copy into a case on Pacemaker (G:)…");
-  assert.equal(defaultCasePick(cases), "Warm-up");
+  assert.equal(defaultCasePick(cases), "", "nothing is picked for the user");
+  assert.deepEqual(resolveIntoCase(cases, "", ""), { error: "Choose a case, or a new one." });
   assert.equal(defaultCasePick([]), NEW_CASE, "no cases there: a new one");
   // an existing case: the library's own spelling, nothing created (as the drop on its row)
   assert.deepEqual(resolveIntoCase(cases, "Crate A", ""), { into: { name: "Crate A", create: false } });
