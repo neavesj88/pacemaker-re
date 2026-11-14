@@ -7,7 +7,8 @@ class Nav {
   view = $state<ViewId>("tracks");
   params = $state<Record<string, unknown>>({});
   /** Set by a view that can hold unsaved edits (the Cases store): called when something asks to show
-   *  a different view, and it runs `proceed` at once or after asking the user. Not called for a
+   *  a different view, and it runs `proceed` at once or after asking the user. Because it may ask first, `go` can
+   *  finish later: do not read `view` or `params` right after it. Not called for a
    *  deep link into the view already showing. */
   beforeLeave: ((proceed: () => void) => void) | null = null;
 

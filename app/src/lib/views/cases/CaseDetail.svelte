@@ -493,7 +493,7 @@
       {/if}
     </div>
     <div class="hintbar muted">
-      Drag the ≡ number to reorder (in case order) · drag a row onto a case in the sidebar to copy it there · click a column to sort the view · the order is the order {session.place.on}
+      {#if !smartCopy}Drag the ≡ number to reorder (in case order) · {/if}drag a row onto a case in the sidebar to copy it there · click a column to sort the view · the order is the order {session.place.on}
     </div>
   </div>
 

@@ -11,5 +11,9 @@ export function casePickerDefaults(): ViewPrefs {
   d.visible.cases = true;
   d.widths.wave = 90;
   d.widths.colour = 74;
+  // the picker is narrower than the Tracks view: drop the auto energy estimate and narrow Tags so
+  // the Cases column is not cut off
+  d.visible.autoenergy = false;
+  d.widths.tags = 120;
   return d;
 }

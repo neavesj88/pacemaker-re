@@ -11,7 +11,7 @@
   import { blendLimit, createMix, planFor, preflight, transitionWords, type Created, type Preflight } from "./createMix";
   import { setPrefs } from "./prefs.svelte";
   import { setBuilder } from "./setbuilder.svelte";
-  import { clock, longestRunTempo, playSecs, solverOptions, tempoSentence, type SetTrack } from "./solver";
+  import { clock, longestRunTempo, planRuns, playSecs, solverOptions, tempoSentence, type SetTrack } from "./solver";
 
   // Lays the set out as a NEW mix: every track a clip, each beat-matched to the one before and
   // joined with the Mixes view's auto-transition recipe. The dialog first asks the backend about
@@ -182,7 +182,7 @@
       </label>
       <label class="row">
         <span>Tempo the mix runs at (BPM)</span>
-        <input type="number" min="40" max="250" step="0.1" placeholder="middle tempo of the set" disabled={!prefs.beatmatch || phase === "building"} value={prefs.mixTempo ?? ""} onchange={(e) => setPrefs.commitNumber(e.currentTarget, "mixTempo", true)} />
+        <input type="number" min="40" max="250" step="0.1" placeholder={planRuns(plan).length > 1 ? "middle tempo of each stretch" : "middle tempo of the set"} disabled={!prefs.beatmatch || phase === "building"} value={prefs.mixTempo ?? ""} onchange={(e) => setPrefs.commitNumber(e.currentTarget, "mixTempo", true)} />
       </label>
       <label class="row">
         <span>Do not beat-match a hop bigger than (%)</span>

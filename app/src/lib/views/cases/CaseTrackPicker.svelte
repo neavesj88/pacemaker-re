@@ -39,6 +39,14 @@
 
   let panel = $state<HTMLDivElement | null>(null);
 
+  // Escape closes the picker only when nothing opened from it (the metadata editor, a menu) is on top
+  function escape(e: KeyboardEvent) {
+    if (e.key !== "Escape" || e.defaultPrevented) return;
+    const dialogs = document.querySelectorAll('[role="dialog"]');
+    if (dialogs.length > 0 && dialogs[dialogs.length - 1] !== panel) return;
+    onclose();
+  }
+
   onMount(() => {
     panel?.focus();
     const root = library?.root;
@@ -72,7 +80,7 @@
   }
 </script>
 
-<svelte:window onkeydown={(e) => e.key === "Escape" && onclose()} />
+<svelte:window onkeydown={escape} />
 
 <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
 <div class="scrim" onclick={onclose}>

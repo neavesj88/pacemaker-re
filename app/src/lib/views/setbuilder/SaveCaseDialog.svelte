@@ -23,7 +23,7 @@
     for (let n = 2; ; n++) if (!t.has(`${base} ${n}`.toLowerCase())) return `${base} ${n}`;
   }
 
-  let name = $state(untrack(() => freeName(setBuilder.source?.kind === "case" ? `${setBuilder.source.name} set` : "Selected tracks set")));
+  let name = $state(untrack(() => freeName(setBuilder.source?.kind === "case" ? `${setBuilder.source.name} set` : "Set from selected tracks")));
   let busy = $state(false);
   let valid = $derived(name.trim().length > 0 && [...name].length <= 255);
   let clash = $derived(taken.some((t) => t.trim().toLowerCase() === name.trim().toLowerCase()));
