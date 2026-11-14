@@ -148,7 +148,7 @@ pub fn export_one(root_str: &str, config_dir: &Path, id: u32, format: &str, dest
         notes.push(note);
     }
     if tracks.is_empty() {
-        return Err(format!("Every track “{}” matches has a file location outside the device's music folder, so there is nothing to export. {}", sc.name, notes.join(" ")).into());
+        return Err(format!("Every track “{}” matches has a file location outside the library's music folder, so there is nothing to export. {}", sc.name, notes.join(" ")).into());
     }
     let text = match format {
         "m3u8" => interop::export_m3u8(&lib, &tracks),

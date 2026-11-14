@@ -260,7 +260,7 @@ pub fn apply(lib: &mut Library, dir: &Path, root: &str, list: &[SmartCase], now_
             let written = smart::put_on_device(lib, sc, &ids).map_err(|e| e.to_string()).and_then(|(case_id, _)| {
                 let mut stored = sc.clone();
                 stored.device_case_id = Some(case_id);
-                smart::update(dir, root, &stored).map_err(|e| format!("the Pacemaker copy was written but the app could not remember it: {e}"))
+                smart::update(dir, root, &stored).map_err(|e| format!("the copy was written but the app could not remember it: {e}"))
             });
             if let Err(e) = written {
                 item.action = Action::Skip;

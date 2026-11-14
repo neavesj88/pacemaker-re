@@ -122,7 +122,7 @@
           <span class="k">From</span>
           <select value={pair.from} onchange={(e) => pick("from", e.currentTarget.value)} disabled={sync.busy}>
             <option value="" disabled>Choose a library…</option>
-            {#each options as o (o.value)}<option value={o.value}>{o.label}</option>{/each}
+            {#each options as o (o.value)}<option value={o.value} title={o.title}>{o.label}</option>{/each}
           </select>
         </label>
         <Button title="Swap the two" aria-label="Swap From and To" disabled={sync.busy} onclick={() => sync.setPair(swapPair(pair))}>⇄</Button>
@@ -130,7 +130,7 @@
           <span class="k">To</span>
           <select value={pair.to} onchange={(e) => pick("to", e.currentTarget.value)} disabled={sync.busy}>
             <option value="" disabled>Choose a library…</option>
-            {#each options as o (o.value)}<option value={o.value}>{o.label}</option>{/each}
+            {#each options as o (o.value)}<option value={o.value} title={o.title}>{o.label}</option>{/each}
           </select>
         </label>
       </div>
@@ -246,7 +246,7 @@
                   <div class="why">
                     <span class="act" class:skip={!isActionable(i)}>{actionText(i.action)}{isActionable(i) ? ":" : ""}</span>
                     {#if isActionable(i)}<span class="muted">{reasonText(i, plan.settings, plan.source_label)}</span>{/if}
-                    {#if i.detail}<span class="muted"> ({i.detail})</span>{/if}
+                    {#if i.detail && i.action.type !== "update_plays" && i.action.type !== "repair"}<span class="muted"> ({i.detail})</span>{/if}
                   </div>
                   {#if left && isActionable(i)}<div class="why muted">Left out: nothing is done with it.</div>{/if}
                   {#if m && !left}<div class="why mark">{markText(i.kind, isRemoval(i), m)}</div>{/if}

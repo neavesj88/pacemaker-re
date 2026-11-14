@@ -27,7 +27,8 @@ export function sizeText(n: number): string {
 
 // ---- which libraries, which pair ---------------------------------------------------------------
 
-export type LibOption = { value: string; label: string; kind: LibraryKind };
+/** `title` is the full path, shown as a tooltip. */
+export type LibOption = { value: string; label: string; kind: LibraryKind; title?: string };
 
 /** "This computer" (only when its library is there or is the open one), each detected Pacemaker, and
  *  the open library when it is neither (a folder chosen by hand). */
@@ -38,9 +39,9 @@ export function libraryOptions(
 ): LibOption[] {
   const out: LibOption[] = [];
   const computerOpen = !!computer && !!open && sameRoot(open.root, computer.path);
-  if (computer && (computer.exists || computerOpen)) out.push({ value: computer.path, label: libraryLabel("computer", computer.path), kind: "computer" });
-  for (const v of volumes) if (!out.some((o) => sameRoot(o.value, v))) out.push({ value: v, label: libraryLabel("pacemaker", v), kind: "pacemaker" });
-  if (open && !out.some((o) => sameRoot(o.value, open.root))) out.push({ value: open.root, label: libraryLabel(open.kind, open.root), kind: open.kind });
+  if (computer && (computer.exists || computerOpen)) out.push({ value: computer.path, label: libraryLabel("computer", computer.path, computer.path), kind: "computer", title: computer.path });
+  for (const v of volumes) if (!out.some((o) => sameRoot(o.value, v))) out.push({ value: v, label: libraryLabel("pacemaker", v), kind: "pacemaker", title: v });
+  if (open && !out.some((o) => sameRoot(o.value, open.root))) out.push({ value: open.root, label: libraryLabel(open.kind, open.root, computer?.path ?? null), kind: open.kind, title: open.root });
   return out;
 }
 
@@ -135,6 +136,7 @@ export function actionText(a: SyncAction): string {
     case "copy": return "Copy";
     case "update": return "Update";
     case "update_plays": return "Update play counts";
+    case "repair": return "Repair";
     case "replace": return "Replace";
     case "copy_as_new": return `Copy as "${a.name}"`;
     case "merge": return "Merge";
@@ -147,16 +149,18 @@ export function actionText(a: SyncAction): string {
 export function reasonText(i: SyncItem, s: Omit<SyncSettings, "labels_follow">, sourceLabel: string): string {
   const a = i.action;
   if (a.type === "skip") return a.reason;
-  if (a.type === "update_plays") return "played more on the sending side";
+  if (a.type === "update_plays") return "played more in the sending library";
+  // the engine's detail names which file; it is the whole reason, so the list does not repeat it
+  if (a.type === "repair") return i.detail || "a file of the track is missing in the receiving library";
   if (a.type === "remove") return `not in ${sourceLabel === "computer" ? "the library on this computer" : "the Pacemaker's library"}`;
   if (i.kind === "track") {
-    if (a.type === "copy") return "not on the other side yet";
-    return s.tracks_on_both === "source" ? "the setting always takes the sending side's details" : "the sending side's details are newer";
+    if (a.type === "copy") return "not in the receiving library yet";
+    return s.tracks_on_both === "source" ? "the setting always takes the sending library's details" : "the sending library's details are newer";
   }
   if (i.kind === "mix") {
     if (a.type === "copy") return "no mix with this name there";
     if (a.type === "copy_as_new") return "a mix with this name is there and the setting keeps both";
-    return s.mixes_same_name === "replace" ? "a mix with this name is there, and the setting always replaces it" : "a mix with this name is there and the sending side's is newer";
+    return s.mixes_same_name === "replace" ? "a mix with this name is there, and the setting always replaces it" : "a mix with this name is there and the sending library's is newer";
   }
   if (a.type === "copy") return "no case with this name there";
   if (a.type === "merge") return "a case with this name is there; the missing tracks are added";
@@ -200,6 +204,8 @@ export function markText(kind: SyncItem["kind"], isRemove: boolean, m: Mark): st
 
 export type Tally = {
   copyTracks: number; updateTracks: number; removeTracks: number;
+  /** Tracks that are there but lack a file: only the missing file is copied. */
+  repairTracks: number;
   /** Items that only bring their play counts over. */
   plays: number;
   mixes: number; cases: number; removeOthers: number;
@@ -212,7 +218,7 @@ export type Tally = {
  *  left-out track holds up. */
 export function tally(items: SyncItem[], excluded: ReadonlySet<string>): Tally {
   const marks = dependencyMarks(items, excluded);
-  const t: Tally = { copyTracks: 0, updateTracks: 0, removeTracks: 0, plays: 0, mixes: 0, cases: 0, removeOthers: 0, skippedMixes: 0, bytes: 0 };
+  const t: Tally = { copyTracks: 0, updateTracks: 0, removeTracks: 0, repairTracks: 0, plays: 0, mixes: 0, cases: 0, removeOthers: 0, skippedMixes: 0, bytes: 0 };
   for (const i of items) {
     if (!isActionable(i) || excluded.has(i.key)) continue;
     const m = marks.get(i.key);
@@ -226,6 +232,7 @@ export function tally(items: SyncItem[], excluded: ReadonlySet<string>): Tally {
       else t.removeOthers++;
     } else if (i.kind === "track") {
       if (i.action.type === "copy") t.copyTracks++;
+      else if (i.action.type === "repair") t.repairTracks++;
       else t.updateTracks++;
       t.bytes += i.bytes;
     } else if (i.kind === "mix") t.mixes++;
@@ -234,13 +241,14 @@ export function tally(items: SyncItem[], excluded: ReadonlySet<string>): Tally {
   return t;
 }
 
-export const doesAnything = (t: Tally) => t.copyTracks + t.updateTracks + t.plays + t.removeTracks + t.mixes + t.cases + t.removeOthers > 0;
+export const doesAnything = (t: Tally) => t.copyTracks + t.updateTracks + t.repairTracks + t.plays + t.removeTracks + t.mixes + t.cases + t.removeOthers > 0;
 
 export function tallyText(t: Tally): string {
   const p: string[] = [];
   if (t.copyTracks) p.push(`copy ${plural(t.copyTracks, "track")}`);
   if (t.updateTracks) p.push(`update ${plural(t.updateTracks, "track")}`);
-  if (t.plays) p.push(`update the play counts of ${plural(t.plays, "item")}`);
+  if (t.repairTracks) p.push(`copy the missing files of ${plural(t.repairTracks, "track")}`);
+  if (t.plays) p.push(`update the play counts of ${plural(t.plays, "track")}`);
   if (t.mixes) p.push(`bring ${plural(t.mixes, "mix", "mixes")}`);
   if (t.cases) p.push(`bring ${plural(t.cases, "case")}`);
   const rm = t.removeTracks + t.removeOthers;
@@ -279,7 +287,7 @@ export function excludedKeys(items: SyncItem[], excluded: ReadonlySet<string>): 
 
 export type ResultPart = { heading: string; items: string[]; tone: "ok" | "muted" | "bad" };
 
-const PART_START = /\. (?=(?:Copied|Updated|Replaced|Merged|Removed|Stopped|Tags and labels|The tags and labels|\d+ items? (?:left out|could not be synced)))/;
+const PART_START = /\. (?=(?:Copied|Updated|Repaired|Replaced|Merged|Removed|Stopped|Tags and labels|The tags and labels|\d+ items? (?:left out|could not be synced)))/;
 
 /** Splits the finished line the backend wrote ("Copied 4 tracks (35.5 MB). 1 item left out: a: b; c:
  *  d") into parts; a "left out" or "could not be synced" part becomes a heading plus one entry per item. */

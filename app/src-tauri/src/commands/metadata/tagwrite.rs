@@ -159,7 +159,7 @@ fn locate(root: &Path, location: &str) -> Result<(PathBuf, String), (&'static st
     let rel = check_relative(location).map_err(|m| ("error", m))?;
     let music = root.join(naming::MUSIC_DIR);
     let path = music.join(rel);
-    let meta = std::fs::symlink_metadata(&path).map_err(|_| ("missing", "the audio file is not on the device".to_string()))?;
+    let meta = std::fs::symlink_metadata(&path).map_err(|_| ("missing", "the audio file is not in the library".to_string()))?;
     if meta.file_type().is_symlink() || !meta.is_file() {
         return Err(("error", "the track's location is not a regular file".into()));
     }
@@ -169,7 +169,7 @@ fn locate(root: &Path, location: &str) -> Result<(PathBuf, String), (&'static st
         _ => false,
     };
     if !inside {
-        return Err(("error", "the track's location points outside the device".into()));
+        return Err(("error", "the track's location points outside the library".into()));
     }
     Ok((path, rel.to_string()))
 }

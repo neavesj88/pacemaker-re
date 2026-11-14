@@ -1,6 +1,7 @@
 <script lang="ts">
   // The VirtualDJ list export's saved choices (`vdj.options`, kept on this computer): shown in the
   // export dialog, where the folder and list name are known, and in the Settings view, where they are not.
+  import { session } from "$lib/state/session.svelte";
   import { vdj } from "./vdj.svelte";
 
   let { folderHint = "", listName = "" }: { folderHint?: string; listName?: string } = $props();
@@ -20,8 +21,12 @@
     {#if vdj.options.copy_audio}
       A file that is already in the Audio folder with the same name, size and first and last 64 kB is reused, never overwritten.
     {:else}
-      The list points at the files where they are on the Pacemaker, so the card has to be plugged in at the same place when VirtualDJ
-      opens the list.
+      {#if session.isComputer}
+        The list points at the files where they are in the library, so the library has to stay in the same place when VirtualDJ opens the list.
+      {:else}
+        The list points at the files where they are on the Pacemaker, so the card has to be plugged in at the same place when VirtualDJ
+        opens the list.
+      {/if}
     {/if}
   </p>
   {#if vdj.options.copy_audio}
@@ -29,7 +34,7 @@
       <label for="vdj-names">Name the copies</label>
       <select id="vdj-names" bind:value={vdj.options.name_files}>
         <option value="artist_title">Artist - Title</option>
-        <option value="original">As named on the Pacemaker</option>
+        <option value="original">As named {session.place.on}</option>
       </select>
     </div>
     <div class="row sub">

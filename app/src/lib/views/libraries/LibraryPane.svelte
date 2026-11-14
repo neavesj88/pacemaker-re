@@ -6,11 +6,10 @@
   import { armTrackDrag, trackDrag, trackDropTarget, type DropOptions } from "$lib/state/trackDrag.svelte";
   import Button from "$lib/ui/Button.svelte";
   import ContextMenu from "$lib/ui/ContextMenu.svelte";
-  import { volumeName } from "$lib/format";
   import { libraryOptions } from "../sync/syncLogic";
   import { libs } from "./libraries.svelte";
   import {
-    clickSelect, clock, copyLabel, defaultRight, dragFrom, dragIds, dragLabel, num, onBoth, otherSide, parseDragFrom, presenceOf, pruneTo, readButtonText,
+    clickSelect, clock, copyLabel, defaultRight, dragFrom, dragIds, dragLabel, intoCaseLabel, num, onBoth, otherSide, parseDragFrom, presenceOf, pruneTo, readButtonText,
     resolveDrop, rightOptions, rowId, rowsOf, statusText, TABS, type Row, type Side, type Tab,
   } from "./librariesLogic";
   import type { Collection, Track } from "$lib/api/types";
@@ -45,7 +44,7 @@
   });
   const picker = $derived(rightOptions(choices, open));
   const chosen = $derived(choices.find((o) => sameRoot(o.value, libs.rightRoot)));
-  const nameOf = (d: { root: string; kind: "pacemaker" | "computer" } | null) => (d ? libraryLabel(d.kind, d.root) : "the other library");
+  const nameOf = (d: { root: string; kind: "pacemaker" | "computer" } | null) => (d ? libraryLabel(d.kind, d.root, session.computer?.path ?? null) : "the other library");
   const otherName = $derived(nameOf(otherData ?? (side === "left" ? (chosen ? { root: chosen.value, kind: chosen.kind } : null) : open)));
 
   // the right pane follows the picker: keep a choice that is still on offer, else the default
@@ -59,7 +58,7 @@
     const dir = await chooseLibraryFolder();
     if (!dir) return;
     const kind = libraryKind(dir);
-    libs.addFolder(dir, libraryLabel(kind, dir).replace(/^This computer$/, volumeName(dir)), kind);
+    libs.addFolder(dir, libraryLabel(kind, dir, session.computer?.path ?? null), kind, dir);
   }
 
   async function onPick(el: HTMLSelectElement) {
@@ -183,9 +182,12 @@
   // ---- copy by click ----------------------------------------------------------------------------
 
   const canCopyNow = $derived(sel.size > 0 && !!otherData && !libs.busy);
-  const copyWhy = $derived(sel.size === 0 ? "Pick something to copy first" : !otherData ? "The other library is not showing yet" : "");
+  const copyWhy = $derived(sel.size === 0 ? `Select ${tab} here first, then copy them to ${otherName}` : !otherData ? `Read ${otherName} first` : "");
   const copyText = $derived(copyLabel(side, otherName));
   const copySelected = () => void libs.copy(side, tab, sel);
+  // tracks can also go into a case of the other library by click (a drop on a case row does the same)
+  const intoText = $derived(intoCaseLabel(otherName));
+  const intoSelected = () => libs.openChooser(side, sel);
 
   let menu = $state<{ x: number; y: number } | null>(null);
   function rowMenu(e: MouseEvent, id: number, i: number) {
@@ -197,6 +199,8 @@
     menu = { x: e.clientX, y: e.clientY };
   }
 
+  // the Time column only pays for h:mm:ss when this list has a track or mix of an hour or more
+  const longTimes = $derived(tab !== "cases" && rows.some((r) => (r as Track | Collection).play_time_secs >= 3600));
   const clockOf = (r: Row) => clock(tab === "tracks" ? (r as Track).play_time_secs : (r as Collection).play_time_secs);
 </script>
 
@@ -222,7 +226,7 @@
         onchange={(e) => onPick(e.currentTarget)}
       >
         {#if !libs.rightRoot}<option value="" disabled>Choose a library…</option>{/if}
-        {#each picker as o (o.value)}<option value={o.value}>{o.label}</option>{/each}
+        {#each picker as o (o.value)}<option value={o.value} title={o.title}>{o.label}</option>{/each}
         <option value="__folder__">Open folder…</option>
       </select>
       <Button small variant="ghost" title="Look for a connected Pacemaker. What was read of the other library is forgotten" disabled={libs.busy} onclick={() => libs.rescan()}>Rescan</Button>
@@ -286,6 +290,7 @@
       class:tracks={tab === "tracks"}
       class:cols-mix={tab === "mixes"}
       class:cols-case={tab === "cases"}
+      class:long={longTimes}
       role="listbox"
       aria-multiselectable="true"
       aria-label={`${tab} of ${nameOf(data)}`}
@@ -356,7 +361,10 @@
 
     <div class="foot">
       <div class="status muted" role="status">{statusText(tab, sel.size, rows.length, total)}</div>
-      <Button small disabled={!canCopyNow} title={copyWhy} onclick={copySelected}>{copyText}</Button>
+      <div class="acts">
+        {#if tab === "tracks"}<Button small disabled={!canCopyNow} title={copyWhy || intoText} onclick={intoSelected}>Into a case…</Button>{/if}
+        <Button small disabled={!canCopyNow} title={copyWhy} onclick={copySelected}>{copyText}</Button>
+      </div>
     </div>
   {/if}
 </section>
@@ -365,7 +373,10 @@
   <ContextMenu
     x={menu.x}
     y={menu.y}
-    items={[{ label: copyText, onclick: copySelected, disabled: !canCopyNow }]}
+    items={[
+      { label: copyText, onclick: copySelected, disabled: !canCopyNow },
+      ...(tab === "tracks" ? [{ label: intoText, onclick: intoSelected, disabled: !canCopyNow }] : []),
+    ]}
     onclose={() => (menu = null)}
   />
 {/if}
@@ -480,12 +491,16 @@
     scrollbar-gutter: stable;
     --cols: var(--both) minmax(60px, 1fr) 44px 38px;
     --both: 34px;
+    --time: 44px;
+  }
+  .scroller.long {
+    --time: 62px;
   }
   .scroller.tracks {
-    --cols: var(--both) minmax(70px, 1.5fr) minmax(48px, 1fr) 36px 38px 42px;
+    --cols: var(--both) minmax(70px, 1.5fr) minmax(48px, 1fr) 36px 46px var(--time);
   }
   .scroller.cols-mix {
-    --cols: var(--both) minmax(70px, 1fr) 50px 48px;
+    --cols: var(--both) minmax(70px, 1fr) var(--time) 48px;
   }
   .scroller.cols-case {
     --cols: var(--both) minmax(70px, 1fr) 54px;
@@ -493,7 +508,7 @@
   /* a narrow pane (the window at its smallest) drops the artist column so titles stay readable */
   @container (max-width: 400px) {
     .scroller.tracks {
-      --cols: var(--both) minmax(70px, 1fr) 36px 38px 42px;
+      --cols: var(--both) minmax(70px, 1fr) 36px 46px var(--time);
     }
     .artist {
       display: none;
@@ -594,5 +609,10 @@
   .status {
     font-size: 12px;
     min-width: 0;
+  }
+  .acts {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
   }
 </style>

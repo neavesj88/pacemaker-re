@@ -93,7 +93,7 @@
     </section>
 
     {#if gridBatch.phase === "setup"}
-      <p class="empty">Choose what to do, then Preview. Nothing is changed on the device until you have seen the result for every track and confirmed.</p>
+      <p class="empty">Choose what to do, then Preview. Nothing is changed {session.place.on} until you have seen the result for every track and confirmed.</p>
     {:else if gridBatch.phase === "working"}
       <div class="working" role="status">
         <div class="bar" aria-label="Analysis progress"><i style:width="{progressPct}%"></i></div>

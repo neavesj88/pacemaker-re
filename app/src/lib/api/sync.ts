@@ -45,6 +45,8 @@ export type SyncAction =
   | { type: "update" }
   /** Only the play counts come over; no file is copied. */
   | { type: "update_plays" }
+  /** The row is the same but the audio and/or .str file is missing on the target: only the missing file(s) are copied; `detail` names them. */
+  | { type: "repair" }
   | { type: "replace" }
   | { type: "copy_as_new"; name: string }
   | { type: "merge" }

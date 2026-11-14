@@ -77,13 +77,13 @@
                 {plural(r.snapshot?.tracks ?? 0, "track")}, {plural(r.snapshot?.cases ?? 0, "case")}, {plural(r.snapshot?.mixes ?? 0, "mix", "mixes")}
               </span>
               <span class="muted"> · {bytes(r.music_db_bytes)}</span>
-              <div class="diff">{diffSummary(r.counts)}</div>
+              <div class="diff">{diffSummary(r.counts, session.library?.kind)}</div>
             </div>
           {/if}
           <Button
             small
             disabled={!!r.problem || device.blocked || !lib}
-            title={device.blocked ? "A job is still writing to the device" : undefined}
+            title={device.blocked ? `A job is still writing to ${session.place.device}` : undefined}
             onclick={() => (reviewing = r)}>Review…</Button
           >
         </li>

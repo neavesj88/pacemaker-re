@@ -89,7 +89,7 @@ pub fn check_dest(root: &Path, dest: &Path) -> Result<(), String> {
     if let Ok(r) = root.canonicalize()
         && parent.starts_with(&r)
     {
-        return Err("Choose a folder outside the device: this list is not part of its library.".into());
+        return Err("Choose a folder outside the library: this list is not part of it.".into());
     }
     Ok(())
 }
@@ -199,7 +199,7 @@ mod tests {
         assert!(save_text(&root, &d.join("list.exe"), "x").unwrap_err().contains(".txt or .csv"));
         assert!(save_text(&root, &d.join("nope").join("list.txt"), "x").unwrap_err().contains("does not exist"));
         // inside the device volume
-        assert!(save_text(&root, &root.join("list.txt"), "x").unwrap_err().contains("outside the device"));
+        assert!(save_text(&root, &root.join("list.txt"), "x").unwrap_err().contains("outside the library"));
         let sub = root.join("sub");
         std::fs::create_dir_all(&sub).unwrap();
         assert!(save_text(&root, &sub.join("list.txt"), "x").is_err());

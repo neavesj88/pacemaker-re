@@ -336,7 +336,7 @@
             {:else}<span title={tip(c)}>{ago(c.last_played)}</span>{/if}
           {/snippet}
         </Table>
-        {#if g.rows.length === 0}<p class="empty">No {g.noun} on this device yet.</p>{/if}
+        {#if g.rows.length === 0}<p class="empty">No {g.noun} {session.isComputer ? "in this library" : "on this device"} yet.</p>{/if}
       {/each}
     {/if}
   </div>

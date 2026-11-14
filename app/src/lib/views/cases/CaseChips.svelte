@@ -42,7 +42,7 @@
     };
   });
 
-  const rows = $derived(holding && holding.track_id === trackId ? holdingRows(holding) : null);
+  const rows = $derived(holding && holding.track_id === trackId ? holdingRows(holding, session.library?.kind) : null);
   const all = $derived(
     rows
       ? [

@@ -371,7 +371,7 @@ fn measure(root: &Path, t: &TrackRef) -> Result<Measure, String> {
     // the same validated resolution the waveform uses: plain names below /pmdb_tracks/ only
     let audio = super::audio_path(root, &t.location).map_err(|e| e.to_string())?;
     if !audio.is_file() {
-        return Err("the audio file is missing from the device".into());
+        return Err("the audio file is missing from the library".into());
     }
     match catch_unwind(AssertUnwindSafe(|| energy::analyze_file(&audio))) {
         Err(_) => Err("the decoder crashed on this file".into()),

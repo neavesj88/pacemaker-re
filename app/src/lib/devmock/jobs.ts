@@ -34,7 +34,7 @@ export function runJob(
         const parts = [
           n.added && `${n.added} added`,
           n.reanalysed && `${n.reanalysed} analysed`,
-          n.skipped && `${n.skipped} already on the device`,
+          n.skipped && `${n.skipped} already in the library`,
           n.failed && `${n.failed} failed`,
         ].filter(Boolean);
         await emit("job-done", {

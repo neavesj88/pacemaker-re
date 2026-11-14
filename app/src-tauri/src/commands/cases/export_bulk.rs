@@ -325,9 +325,9 @@ pub fn relative_path(from_dir: &Path, to: &Path, ci: bool) -> Option<String> {
 /// this area's extra, stricter check on the stored text.
 pub fn audio_source(lib: &Library, location: &str) -> Result<PathBuf, String> {
     if !plain_location(location) {
-        return Err("the track's location points outside the device".into());
+        return Err("the track's location points outside the library".into());
     }
-    crate::commands::analysis::audio_path(lib.root(), location).map_err(|_| "the track's location points outside the device".to_string())
+    crate::commands::analysis::audio_path(lib.root(), location).map_err(|_| "the track's location points outside the library".to_string())
 }
 
 fn rel_display(folder: &Path, p: &Path) -> String {
@@ -352,7 +352,7 @@ pub fn check_folder(root: &Path, folder: &str) -> AppResult<PathBuf> {
     if let Ok(r) = root.canonicalize()
         && canon.starts_with(&r)
     {
-        return Err("Choose a folder outside the device: files written there are not part of its library.".into());
+        return Err("Choose a folder outside the library: files written there are not part of it.".into());
     }
     Ok(p)
 }
@@ -413,7 +413,7 @@ fn sources(lib: &Library, config_dir: &Path, root_str: &str, req: &Request, now_
             continue;
         };
         if let Some(smart_name) = copies.get(id) {
-            notes.push(format!("{} is the Pacemaker copy of the smart case {}, which is exported as itself, so it was not written a second time.", quoted(&info.name), quoted(smart_name)));
+            notes.push(format!("{} is the library's copy of the smart case {}, which is exported as itself, so it was not written a second time.", quoted(&info.name), quoted(smart_name)));
             continue;
         }
         let ids = lib.case_track_ids(*id)?;
@@ -598,15 +598,15 @@ pub fn build(lib: &Library, config_dir: &Path, root_str: &str, req: &Request, no
                         match src.as_ref().map(std::fs::metadata) {
                             None => {
                                 op.entry.action = Action::Missing;
-                                op.entry.problem = Some("the track's location points outside the device".into());
+                                op.entry.problem = Some("the track's location points outside the library".into());
                             }
                             Some(Err(_)) => {
                                 op.entry.action = Action::Missing;
-                                op.entry.problem = Some("the audio file is missing from the device".into());
+                                op.entry.problem = Some("the audio file is missing from the library".into());
                             }
                             Some(Ok(m)) if !m.is_file() => {
                                 op.entry.action = Action::Missing;
-                                op.entry.problem = Some("the audio file is missing from the device".into());
+                                op.entry.problem = Some("the audio file is missing from the library".into());
                             }
                             Some(Ok(m)) => {
                                 op.entry.size = m.len();
@@ -1079,8 +1079,8 @@ mod tests {
         };
         let root = vol.to_string_lossy().into_owned();
         let try_it = |folder: &Path, fmt: &str| build(&lib, &cfg, &root, &req(folder, fmt, vec![case]), 0).err().map(|e| e.to_string());
-        assert!(try_it(&vol, "m3u8").unwrap().contains("outside the device"));
-        assert!(try_it(&vol.join(".Pacemaker"), "m3u8").unwrap().contains("outside the device"));
+        assert!(try_it(&vol, "m3u8").unwrap().contains("outside the library"));
+        assert!(try_it(&vol.join(".Pacemaker"), "m3u8").unwrap().contains("outside the library"));
         assert!(try_it(&out.join("nowhere"), "m3u8").unwrap().contains("does not exist"));
         assert!(try_it(&out, "pdf").unwrap().contains("unknown export format"));
         assert!(try_it(Path::new(""), "m3u8").unwrap().contains("Choose a folder"));

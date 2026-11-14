@@ -240,7 +240,7 @@ pub fn check_dest(root: &Path, dest: &Path) -> Result<(), String> {
     if let Ok(r) = root.canonicalize()
         && parent.starts_with(&r)
     {
-        return Err("Choose a folder outside the device: a setlist page is not part of its library.".into());
+        return Err("Choose a folder outside the library: a setlist page is not part of it.".into());
     }
     Ok(())
 }
@@ -434,7 +434,7 @@ mod tests {
         assert!(save_html(&root, &d, "x").unwrap_err().contains("folder"));
         assert!(save_html(&root, &d.join("set.txt"), "x").unwrap_err().contains(".html"));
         assert!(save_html(&root, &d.join("nope").join("set.html"), "x").unwrap_err().contains("does not exist"));
-        assert!(save_html(&root, &root.join("set.html"), "x").unwrap_err().contains("outside the device"));
+        assert!(save_html(&root, &root.join("set.html"), "x").unwrap_err().contains("outside the library"));
         let sub = root.join("sub");
         std::fs::create_dir_all(&sub).unwrap();
         assert!(save_html(&root, &sub.join("set.html"), "x").is_err());

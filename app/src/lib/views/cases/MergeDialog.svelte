@@ -9,7 +9,7 @@
   import Modal from "$lib/ui/Modal.svelte";
   import { caseView } from "./caseView.svelte";
   import { mergeSummary, plural, trackLabel } from "./caseLogic";
-  import { remakeWhen } from "./smartRefreshLogic";
+  import { remakeWhen, smartCopyName } from "./smartRefreshLogic";
 
   // Merges cases into a new case or an existing one, without repeats. The sentence and the track
   // list come from `cases_merge_preview`, which runs the same function the merge runs, so what is
@@ -128,7 +128,7 @@
       <ul>
         {#each picked as c (c.id)}
           <li>
-            “{c.name}” ({plural(c.track_count, "track")}){c.name === "Favourites" ? " – the case the heart on a track uses" : ""}{smartOf(c.id) ? ` – the Pacemaker copy of the smart case “${smartOf(c.id)?.name}”, which will be made again ${remakeWhen(smartSettings.value.refresh_mode)}` : ""}
+            “{c.name}” ({plural(c.track_count, "track")}){c.name === "Favourites" ? " – the case the heart on a track uses" : ""}{smartOf(c.id) ? ` – the ${smartCopyName(session.library?.kind)} of the smart case “${smartOf(c.id)?.name}”, which will be made again ${remakeWhen(smartSettings.value.refresh_mode)}` : ""}
           </li>
         {/each}
       </ul>

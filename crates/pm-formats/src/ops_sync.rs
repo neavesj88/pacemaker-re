@@ -35,10 +35,10 @@ use crate::{appfile, naming};
 pub const SAME: &str = "already the same";
 /// Why a track or mix is not updated because the target's is the same age or newer.
 const LEAVE_TRACK: &str = "both have it and the setting leaves it as it is";
-const TARGET_NEWER_TRACK: &str = "the target's copy is the same age or newer";
-const TARGET_NEWER_MIX: &str = "the target's mix is newer";
+const TARGET_NEWER_TRACK: &str = "the receiving library's copy is the same age or newer";
+const TARGET_NEWER_MIX: &str = "the receiving library's mix is newer";
 /// Detail of an item that only brings play counts over.
-pub const PLAYED_MORE: &str = "played more on the sending side";
+pub const PLAYED_MORE: &str = "played more in the sending library";
 /// Prefix of the error [`apply`] returns when the libraries changed since the plan was made.
 pub const STALE: &str = "stale plan";
 /// Room kept free on the target beyond the files themselves.
@@ -123,6 +123,10 @@ pub enum SyncAction {
     /// Only the play counts and last-played time are brought over (the row is otherwise the same,
     /// or the target's is newer); no file is copied.
     UpdatePlays,
+    /// The target's row is the same as the source's but its audio file and/or its `.str` file is
+    /// missing on the target: only the missing file(s) are copied from the source. The row, its
+    /// grid and its plays are not touched. The item's `detail` names what is missing.
+    Repair,
     Skip { reason: String },
     Remove,
 }
@@ -474,7 +478,7 @@ pub fn plan_with_free(source: &Library, target: &Library, settings: &SyncSetting
             items.push(item);
             continue;
         }
-        items.push(track_item(source, s, t_by_loc.get(s.location.as_str()).copied(), settings));
+        items.push(track_item(source, target, s, t_by_loc.get(s.location.as_str()).copied(), settings));
     }
 
     // mixes
@@ -633,7 +637,7 @@ fn first_by_name<T: Named>(rows: &[T]) -> HashMap<String, &T> {
 
 /// What a sync does about one source track, given the target's row at the same place (if any).
 /// Shared by the full plan and the selection plan.
-fn track_item(source: &Library, s: &TrackRow, t: Option<&TrackRow>, settings: &SyncSettings) -> SyncItem {
+fn track_item(source: &Library, target: &Library, s: &TrackRow, t: Option<&TrackRow>, settings: &SyncSettings) -> SyncItem {
     let mut item = blank_item(format!("track:{}", s.location), ItemKind::Track, s.label(), SyncAction::Copy);
     item.global_id = Some(s.global_id.clone()).filter(|g| !g.is_empty());
     item.location = Some(s.location.clone());
@@ -647,8 +651,8 @@ fn track_item(source: &Library, s: &TrackRow, t: Option<&TrackRow>, settings: &S
     match t {
         None => {
             item.action = match (file_len(&audio), file_len(&side)) {
-                (None, _) => skip("its audio file is missing"),
-                (_, None) => skip("its analysis file (.str) is missing"),
+                (None, _) => skip("the audio file is missing in the sending library"),
+                (_, None) => skip("the beat grid file (.str) is missing in the sending library"),
                 (Some(a), Some(b)) => {
                     item.bytes = a + b;
                     SyncAction::Copy
@@ -661,6 +665,9 @@ fn track_item(source: &Library, s: &TrackRow, t: Option<&TrackRow>, settings: &S
                 item.action = skip("a different file is stored at the same place");
             } else if same_columns(s, t) {
                 item.action = skip(SAME);
+                if let Some(tp) = paths_of(target, &s.location) {
+                    repair_check(&mut item, &audio, &side, &tp.0, &tp.1);
+                }
             } else {
                 let want_update = match settings.tracks_on_both {
                     TracksOnBoth::Leave => Err(LEAVE_TRACK),
@@ -676,7 +683,7 @@ fn track_item(source: &Library, s: &TrackRow, t: Option<&TrackRow>, settings: &S
                 item.action = match want_update {
                     Err(why) => skip(why),
                     Ok(()) => match file_len(&side) {
-                        None => skip("its analysis file (.str) is missing"),
+                        None => skip("the beat grid file (.str) is missing in the sending library"),
                         Some(b) => {
                             item.bytes = b;
                             SyncAction::Update
@@ -685,16 +692,57 @@ fn track_item(source: &Library, s: &TrackRow, t: Option<&TrackRow>, settings: &S
                 };
             }
             // plays counted on the sending side come over even when nothing else changes
-            if settings.play_counts == PlayCounts::Higher
-                && matches!(&item.action, SyncAction::Skip { reason } if reason == SAME || reason == TARGET_NEWER_TRACK)
-                && plays_ahead(s.int("times_played"), s.int("last_played"), t.int("times_played"), t.int("last_played"))
-            {
-                item.action = SyncAction::UpdatePlays;
-                item.detail = PLAYED_MORE.into();
+            if settings.play_counts == PlayCounts::Higher && plays_ahead(s.int("times_played"), s.int("last_played"), t.int("times_played"), t.int("last_played")) {
+                if matches!(&item.action, SyncAction::Skip { reason } if reason == SAME || reason == TARGET_NEWER_TRACK || reason.ends_with(LACK_SUFFIX)) {
+                    item.action = SyncAction::UpdatePlays;
+                    item.detail = PLAYED_MORE.into();
+                } else if matches!(item.action, SyncAction::Repair) {
+                    // one action per track: the files first, the play counts on the next sync
+                    item.detail.push_str("; the play counts follow on the next sync");
+                }
             }
         }
     }
     item
+}
+
+const LACK_SUFFIX: &str = "is missing in both libraries";
+const AUDIO_MISSING: &str = "the audio file is missing in the receiving library";
+const SIDE_MISSING: &str = "the beat grid file (.str) is missing in the receiving library";
+
+/// For a track whose row is the same on both sides: when the target lacks the audio and/or the
+/// `.str`, plans a [`SyncAction::Repair`] that copies the missing file(s) the source has. When the
+/// source lacks a file the target also lacks, that file stays missing and the reason says both
+/// sides lack it (a skip when nothing can be copied).
+fn repair_check(item: &mut SyncItem, s_audio: &Path, s_side: &Path, t_audio: &Path, t_side: &Path) {
+    let mut bytes = 0u64;
+    let mut will: Vec<&str> = Vec::new();
+    let mut both: Vec<&str> = Vec::new();
+    for (src, dest, what) in [(s_audio, t_audio, AUDIO_MISSING), (s_side, t_side, SIDE_MISSING)] {
+        if file_len(dest).is_some() {
+            continue;
+        }
+        match file_len(src) {
+            Some(n) => {
+                bytes += n;
+                will.push(what);
+            }
+            None => both.push(if what == AUDIO_MISSING { "the audio file" } else { "the beat grid file (.str)" }),
+        }
+    }
+    let lack = if both.is_empty() { String::new() } else { format!("{} {LACK_SUFFIX}", both.join(" and ")) };
+    if will.is_empty() {
+        if !lack.is_empty() {
+            item.action = skip(lack);
+        }
+        return;
+    }
+    item.action = SyncAction::Repair;
+    item.bytes = bytes;
+    item.detail = will.join("; ");
+    if !lack.is_empty() {
+        item.detail.push_str(&format!("; {lack}, so that one cannot be repaired"));
+    }
 }
 
 /// The target's mixes as the mix planning needs them: by name, and the names a copy would take.
@@ -902,7 +950,7 @@ fn settle(items: &mut [SyncItem], target_locs: &HashSet<String>, excluded: &Hash
         if it.kind == ItemKind::Mix && matches!(it.action, SyncAction::Copy | SyncAction::Replace | SyncAction::CopyAsNew { .. }) {
             let missing: Vec<String> = it.needs.iter().filter(|n| !available(&n.location)).map(|n| n.label.clone()).collect();
             if !missing.is_empty() {
-                missing_for.push((i, format!("it needs {}, which will not be on the target", names_list(&missing))));
+                missing_for.push((i, format!("it needs {}, which will not be in the receiving library", names_list(&missing))));
             }
         }
     }
@@ -932,13 +980,15 @@ fn digest_of(items: &[SyncItem], settings: &SyncSettings, label: &str, s_stamp: 
     for it in items {
         text.push('\n');
         text.push_str(&format!(
-            "{}|{}|{}|{}|{:?}|{:?}",
+            "{}|{}|{}|{}|{:?}|{:?}|{}",
             it.key,
             serde_json::to_string(&it.action).unwrap_or_default(),
             it.bytes,
             it.needs.iter().map(|n| n.location.as_str()).collect::<Vec<_>>().join(","),
             it.source_id,
-            it.target_id
+            it.target_id,
+            // a repair carries no payload in its action: the detail names what is missing
+            if matches!(it.action, SyncAction::Repair) { it.detail.as_str() } else { "" }
         ));
     }
     format!("{:016x}", appfile::fnv1a(&text))
@@ -1011,7 +1061,7 @@ fn run_plan(
     if need_bytes > 0 {
         if let Ok((_, free)) = crate::ops_device::volume_space(target.root()) {
             if need_bytes + SPACE_MARGIN > free {
-                return Err(Error::Invalid(format!("not enough space on the target: the sync needs {need_bytes} bytes and {free} are free")));
+                return Err(Error::Invalid(format!("not enough space in the receiving library: the sync needs {need_bytes} bytes and {free} are free")));
             }
         }
     }
@@ -1053,6 +1103,7 @@ fn run_plan(
         let res = match (it.kind, &it.action) {
             (ItemKind::Track, SyncAction::Remove) => remove_track(target, it),
             (_, SyncAction::UpdatePlays) => update_plays(source, target, it, &s_rows),
+            (ItemKind::Track, SyncAction::Repair) => repair_track(source, target, it),
             (ItemKind::Track, _) => match s_rows.get(it.location.as_deref().unwrap_or("")) {
                 Some(row) => copy_track(source, target, row, it, &settings),
                 None => Err(Error::Invalid("the source track is gone".into())),
@@ -1070,7 +1121,7 @@ fn run_plan(
                 if missing.is_empty() {
                     Outcome::Done
                 } else {
-                    Outcome::Failed { error: format!("the case was made without {}, which did not arrive on the target", names_list(&missing)) }
+                    Outcome::Failed { error: format!("the case was made without {}, which did not arrive in the receiving library", names_list(&missing)) }
                 }
             }
             Ok(o) => o,
@@ -1137,6 +1188,33 @@ fn copy_track(source: &Library, target: &mut Library, row: &TrackRow, it: &SyncI
             let _ = std::fs::remove_file(&t_side);
         }
         return Err(e.into());
+    }
+    Ok(Outcome::Done)
+}
+
+/// Copies the audio and/or `.str` the target lacks and the source has; nothing else changes (no
+/// row, no grid already there, no plays). Re-checks the files now, so a file that appeared since
+/// the plan is not overwritten. A failure removes what this item created.
+fn repair_track(source: &Library, target: &Library, it: &SyncItem) -> Result<Outcome, Error> {
+    let loc = it.location.as_deref().unwrap_or("");
+    let (s_audio, s_side) = paths_of(source, loc).ok_or_else(|| bad("the track is not stored under /pmdb_tracks/"))?;
+    let (t_audio, t_side) = paths_of(target, loc).ok_or_else(|| bad("the track is not stored under /pmdb_tracks/"))?;
+    let mut made: Vec<&Path> = Vec::new();
+    for (src, dest) in [(&s_audio, &t_audio), (&s_side, &t_side)] {
+        if file_len(dest).is_some() || file_len(src).is_none() {
+            continue;
+        }
+        // only now, so a plan that went stale (the files came back) leaves no empty folder behind
+        if let Some(parent) = dest.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        if let Err(e) = copy_checked(src, dest) {
+            for p in made {
+                let _ = std::fs::remove_file(p);
+            }
+            return Err(e);
+        }
+        made.push(dest);
     }
     Ok(Outcome::Done)
 }
@@ -1247,7 +1325,7 @@ fn copy_mix(source: &Library, target: &mut Library, it: &SyncItem, settings: &Sy
         }
     }
     if !lost.is_empty() {
-        return Ok(Outcome::Skipped { reason: format!("it needs {}, which is not on the target", names_list(&lost)) });
+        return Ok(Outcome::Skipped { reason: format!("it needs {}, which is not in the receiving library", names_list(&lost)) });
     }
     let image: Option<Vec<u8>> = if info.image_id > 0 {
         source.con.query_row("SELECT data FROM miximages WHERE id = ?1", [info.image_id], |r| r.get(0)).optional()?
@@ -1425,12 +1503,12 @@ fn copy_into_case(target: &mut Library, it: &SyncItem) -> Result<Outcome, Error>
     let t_ids = ids_by_locations(target, &locs)?;
     let ids: Vec<i64> = locs.iter().filter_map(|l| t_ids.get(l).copied()).collect();
     if ids.is_empty() {
-        return Ok(Outcome::Skipped { reason: "none of the tracks is on the target".into() });
+        return Ok(Outcome::Skipped { reason: "none of the tracks is in the receiving library".into() });
     }
     match it.action {
         SyncAction::Copy => {
             if target.case_infos()?.iter().any(|c| norm(&c.name) == norm(&name)) {
-                return Err(bad(format!("a case named \"{name}\" appeared on the target meanwhile")));
+                return Err(bad(format!("a case named \"{name}\" appeared in the receiving library meanwhile")));
             }
             target.create_case_with_tracks(&name, &ids)?;
         }

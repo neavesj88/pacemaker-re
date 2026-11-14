@@ -551,7 +551,7 @@ fn build_plan(lib: &Library, req: &MergeRequest) -> AppResult<Plan> {
             let state = file_state(root, &keeper.location);
             let loses_a_file = files.iter().any(|f| f.kind == "audio" && f.exists && f.kept_because.is_none() && p.remove.iter().any(|r| r.track_id == f.track_id));
             if state != FileState::Present && loses_a_file {
-                let why = if state == FileState::Missing { "its audio file is not on the Pacemaker" } else { "its location is not a plain path in the music folder" };
+                let why = if state == FileState::Missing { "its audio file is not in the library" } else { "its location is not a plain path in the music folder" };
                 problems.push(format!("“{}”, the track you keep, has no usable audio file ({why}), but a copy you are deleting does: after this merge there would be no playable file. Choose another track to keep, or leave the files alone.", label_of(keeper)));
             }
         }

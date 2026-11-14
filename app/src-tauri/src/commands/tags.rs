@@ -145,7 +145,7 @@ fn forget_kind(kind: Kind, dir: &Path, volume_key: &str, idents: &[(i64, String)
         let live = live_keys(idents);
         let now = store.unattached(kind, &live).len();
         if now != expected {
-            return Err(format!("{now} labelled {}s are no longer on the card, not the {expected} you were shown. Nothing was removed; reopen the tag manager.", kind.as_str()));
+            return Err(format!("{now} labelled {}s are no longer in the library, not the {expected} you were shown. Nothing was removed; reopen the tag manager.", kind.as_str()));
         }
         Ok(store.forget_unattached(kind, &live))
     })

@@ -2,6 +2,8 @@
   // The options of the missing-audio search (`relink.settings`, kept in the app's config folder):
   // shown in the search dialog and in the Settings view. Whoever shows them saves them
   // (`relink.saveSettings()`): the dialog when a search starts, Settings on its Save button.
+  import { session } from "$lib/state/session.svelte";
+  import { matchLabel } from "./relinkLogic";
   import { relink } from "./relink.svelte";
 
   const s = $derived(relink.settings);
@@ -36,7 +38,7 @@
     Search the folders inside it too
   </label>
   <label class="opt">
-    A match already on the card (under .Pacemaker/Music):
+    {matchLabel(session.library?.kind)} (under .Pacemaker/Music):
     <select bind:value={s.card_files}>
       <option value="reuse">point the track at it where it is</option>
       <option value="standard">copy it to the name this app gives new files</option>

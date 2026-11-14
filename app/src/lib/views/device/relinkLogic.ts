@@ -1,6 +1,15 @@
 // Pure helpers of the Relink dialog. No imports from the app, so `node --experimental-strip-types`
 // runs them in relinkLogic.test.mjs. The shapes mirror api/device-relink.ts.
 
+/** Which kind of library is open: the words below name where its files are. */
+export type LibKind = "pacemaker" | "computer";
+/** "on the card" for a Pacemaker, "in the library" for a library on this computer. */
+export const onCard = (lib: LibKind = "pacemaker") => (lib === "computer" ? "in the library" : "on the card");
+/** "onto the card" / "into the library". */
+export const toCard = (lib: LibKind = "pacemaker") => (lib === "computer" ? "into the library" : "onto the card");
+/** The label of the option about a match that is already there (it is quoted in the note below). */
+export const matchLabel = (lib: LibKind = "pacemaker") => `A match already ${onCard(lib)}`;
+
 export type Kind = "exact" | "same_name" | "tags" | "manual";
 export type Confidence = "sure" | "likely" | "check";
 export type Preselect = "none" | "sure" | "likely";
@@ -59,9 +68,9 @@ export function kindLabel(k: Kind): string {
 }
 
 /** What taking this file does to the card, in words. */
-export function actionLine(c: Pick<Cand, "action" | "dest" | "on_card">): string {
+export function actionLine(c: Pick<Cand, "action" | "dest" | "on_card">, lib: LibKind = "pacemaker"): string {
   return c.action === "copy"
-    ? `Copies the file onto the card as ${c.dest}${c.on_card ? " (it is already on the card, under another name)" : ""}`
+    ? `Copies the file ${toCard(lib)} as ${c.dest}${c.on_card ? ` (it is already ${onCard(lib)}, under another name)` : ""}`
     : `Points the track at ${c.dest}, where the file already is; nothing is copied`;
 }
 
@@ -80,18 +89,18 @@ export function totals(items: Chosen[]): { copies: number; copyBytes: number; po
   return { copies, copyBytes, points };
 }
 
-export function totalsLine(t: { copies: number; copyBytes: number; points: number }): string {
+export function totalsLine(t: { copies: number; copyBytes: number; points: number }, lib: LibKind = "pacemaker"): string {
   const parts: string[] = [];
-  if (t.copies) parts.push(`copy ${plural(t.copies, "file")} (${sizeText(t.copyBytes)}) onto the card`);
-  if (t.points) parts.push(`point ${plural(t.points, "track")} at files already on the card`);
+  if (t.copies) parts.push(`copy ${plural(t.copies, "file")} (${sizeText(t.copyBytes)}) ${toCard(lib)}`);
+  if (t.points) parts.push(`point ${plural(t.points, "track")} at files already ${onCard(lib)}`);
   return parts.length ? `This will ${parts.join(" and ")}.` : "Nothing is ticked.";
 }
 
 /** Why the copies cannot start, or "" when they fit. The backend checks again per file. */
-export function freeSpaceProblem(copyBytes: number, freeBytes: number | null | undefined): string {
+export function freeSpaceProblem(copyBytes: number, freeBytes: number | null | undefined, lib: LibKind = "pacemaker"): string {
   if (copyBytes === 0 || freeBytes == null || freeBytes <= 0) return "";
   const need = copyBytes + 8 * MB;
-  return freeBytes < need ? `The card has ${sizeText(freeBytes)} free and the copies need ${sizeText(need)}.` : "";
+  return freeBytes < need ? `The ${lib === "computer" ? "drive" : "card"} has ${sizeText(freeBytes)} free and the copies need ${sizeText(need)}.` : "";
 }
 
 /** One line of the confirmation: every ticked track, what happens to it. */
@@ -151,8 +160,8 @@ export function tickAfterBulk(current: boolean, c: Pick<Cand, "confidence" | "ki
 /** One line for the confirmation when some chosen file keeps a path the app did not generate:
  *  the track will point at it and whether the device follows it is not verified on hardware.
  *  Empty when none does. */
-export function nonStandardNote(chosen: { non_standard?: boolean }[]): string {
+export function nonStandardNote(chosen: { non_standard?: boolean }[], lib: LibKind = "pacemaker"): string {
   const n = chosen.filter((c) => c.non_standard).length;
   if (n === 0) return "";
-  return `${plural(n, "track")} will point at a path under Music that this app did not generate. The Pacemaker playing a track from such a path has not been checked on hardware. To be safe, go back and set "A match already on the card" to copy it to the name this app gives new files.`;
+  return `${plural(n, "track")} will point at a path under Music that this app did not generate. The Pacemaker playing a track from such a path has not been checked on hardware. To be safe, go back and set "${matchLabel(lib)}" to copy it to the name this app gives new files.`;
 }

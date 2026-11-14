@@ -35,7 +35,7 @@
 
   const chosen = $derived((plan?.dead_rows ?? []).filter((r) => !unticked.has(r.track_id)));
   const needsAck = $derived(!!plan?.mass);
-  const warning = $derived(plan ? massWarning(plan) : "");
+  const warning = $derived(plan ? massWarning(plan, session.library?.kind) : "");
   const nothing = $derived(
     !!plan && plan.dead_rows.length === 0 && plan.kept_for_mixes.length === 0 && plan.grids.length === 0 && plan.unchecked.length === 0,
   );
@@ -95,7 +95,7 @@
       names: p.grids.map((g) => `${g.label}: ${g.reason}`),
       title: `Re-analyse ${plural(ids.length, "track")} on ${root} ?`,
       description:
-        "Only the beat grid (.str) and BPM of these tracks are rewritten, from the audio already on the device. No audio is copied." + mixNote,
+        `Only the beat grid (.str) and BPM of these tracks are rewritten, from the audio already ${session.isComputer ? "in the library" : "on the device"}. No audio is copied.` + mixNote,
       confirmLabel: `Analyse ${ids.length}`,
       runningLabel: "Analysing",
       doneLabel: "Analysis finished",

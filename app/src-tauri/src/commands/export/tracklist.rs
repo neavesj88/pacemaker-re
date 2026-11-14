@@ -243,7 +243,7 @@ pub fn build_in(doc: &MixDoc, opts: &TracklistOptions, has_audio: &dyn Fn(i64) -
         if !available && !opts.include_unavailable {
             let (title, artist, ..) = identity(clip);
             let what = if artist.is_empty() { title } else { format!("{artist} - {title}") };
-            warnings.push(format!("{what} is left out of the list: its audio is not on the device, so the export leaves it out too"));
+            warnings.push(format!("{what} is left out of the list: its audio is not in the library, so the export leaves it out too"));
             continue;
         }
         kept.push((a, clip, available));

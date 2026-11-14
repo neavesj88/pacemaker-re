@@ -11,7 +11,7 @@ const entries: SettingsEntry[] = [
     id: "smart-cases",
     area: "Cases",
     title: "Smart cases",
-    help: "Whether the Pacemaker copies of smart cases refresh by themselves, and how smart cases appear in exports.",
+    help: "Whether the case written for each smart case (the Pacemaker copy, or the ★ case in a library on this computer) refreshes by itself, and how smart cases appear in exports.",
     keywords: "smart cases refresh copies rekordbox xml export folder",
     load: () => smartSettings.ensure(),
     how: "dialog",

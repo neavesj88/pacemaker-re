@@ -86,7 +86,7 @@ export const handlers: Handlers = {
   tags_rename_tag: (a) => (mutateTag(a.from, a.to), view()),
   tags_delete_tag: (a) => (mutateTag(a.tag, null), view()),
   tags_forget_unattached: (a) => {
-    if (orphans.size !== a.expected) throw `${orphans.size} labelled tracks are no longer on the card, not the ${a.expected} you were shown. Nothing was removed; reopen the tag manager.`;
+    if (orphans.size !== a.expected) throw `${orphans.size} labelled tracks are no longer in the library, not the ${a.expected} you were shown. Nothing was removed; reopen the tag manager.`;
     orphans.clear();
     return view();
   },

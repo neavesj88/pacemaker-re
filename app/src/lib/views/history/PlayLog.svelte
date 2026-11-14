@@ -231,8 +231,8 @@
   {:else if data.mismatch}
     <div class="note bad" role="alert">
       <b>This library does not match its play log.</b>
-      Fewer than {playlog.settings.identity_min_present_pct}% of the tracks the log has seen played are here. That is a different card at the
-      same drive or path, or the same card after a clean-out or a new set. Nothing is being logged for it until you choose, so the log is
+      Fewer than {playlog.settings.identity_min_present_pct}% of the tracks the log has seen played are here. That is {session.isComputer ? "a different library in the" : "a different card at the"}
+      same {session.isComputer ? "folder" : "drive or path"}, or the same {session.isComputer ? "library" : "card"} after a clean-out or a new set. Nothing is being logged for it until you choose, so the log is
       not filled with false plays.
       <span class="row">
         <Button small variant="primary" disabled={choosing} onclick={() => session.library && keepLog(session.library.root)}>
@@ -241,20 +241,24 @@
         <Button small onclick={() => (confirmClear = true)}>Delete log and start a new one...</Button>
       </span>
       <span class="sub">
-        Keep: the played tracks that are not on this card stay in the log (set aside, not deleted, and not held against the card), and
+        Keep: the played tracks that are not in {session.place.thisCard} stay in the log (set aside, not deleted, and not held against {session.place.card}), and
         tracks the log has never seen start from the counters they have now, so they are not counted as plays. Nothing is deleted.
         You can also change how many tracks must match, or switch the check off, in Log settings.
       </span>
     </div>
   {:else if !data.has_log && data.candidates.length > 0}
     <div class="note" role="status">
-      <b>This card matches a play log kept for another drive.</b>
-      A log is stored per drive or path, and the card does not carry an identity of its own, so a card that appears at a new drive letter has no log yet.
+      <b>{session.isComputer ? "This library" : "This card"} matches a play log kept for another {session.isComputer ? "folder" : "drive"}.</b>
+      {#if session.isComputer}
+        A log is stored per library folder, so a library that appears in a new folder has no log yet.
+      {:else}
+        A log is stored per drive or path, and the card does not carry an identity of its own, so a card that appears at a new drive letter has no log yet.
+      {/if}
       Nothing is logged for it until you choose.
       {#each data.candidates as c (c.file)}
         <span class="cand">
           The log for <b class="inl">{c.root || "an unnamed drive"}</b>: since {dayLabel(c.started_at)}, last changed {dayLabel(c.last_change_at)},
-          {c.present_tracks} of its {c.played_tracks} played tracks are on this card.
+          {c.present_tracks} of its {c.played_tracks} played tracks are in {session.place.thisCard}.
           <Button small variant="primary" disabled={choosing} onclick={() => session.library && continueFrom(session.library.root, c.file)}>
             Continue it here
           </Button>

@@ -132,7 +132,7 @@ class UndoStore {
     try {
       const p = await this.preview(1);
       if (id && p.top_entry_id !== id) {
-        toast.show("That edit is no longer the newest one. Use the Device view's edit history.", "bad", 8000);
+        toast.show(`That edit is no longer the newest one. Use the ${session.isComputer ? "This library" : "Device"} view's edit history.`, "bad", 8000);
         return;
       }
       await this.apply(1, p.top_entry_id);

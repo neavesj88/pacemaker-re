@@ -87,6 +87,7 @@ test("action words", () => {
   assert.equal(actionText({ type: "copy" }), "Copy");
   assert.equal(actionText({ type: "update" }), "Update");
   assert.equal(actionText({ type: "update_plays" }), "Update play counts");
+  assert.equal(actionText({ type: "repair" }), "Repair");
   assert.equal(actionText({ type: "replace" }), "Replace");
   assert.equal(actionText({ type: "copy_as_new", name: "Warm-up (2)" }), 'Copy as "Warm-up (2)"');
   assert.equal(actionText({ type: "merge" }), "Merge");
@@ -132,9 +133,19 @@ test("totals follow the boxes", () => {
   p[1].action = { type: "update_plays" };
   const pt = tally(p, new Set(["track:/t/9"]));
   assert.deepEqual([pt.plays, pt.updateTracks, pt.mixes, pt.cases, pt.bytes], [3, 0, 0, 0, 0]);
-  assert.equal(tallyText(pt), "Will update the play counts of 3 items.");
+  assert.equal(tallyText(pt), "Will update the play counts of 3 tracks.");
   assert.equal(isStale("stale plan: a library changed since the plan was made; plan again"), true);
   assert.deepEqual(excludedKeys(items, new Set(["track:/t/1", "track:/t/3", "gone"])), ["track:/t/1"]);
+});
+
+test("a repair is its own count, copies bytes, and is not an update", () => {
+  const r = [trk(1, { type: "repair" }, 3 * MB), trk(2, { type: "copy" }, MB)];
+  const t = tally(r, new Set());
+  assert.deepEqual([t.repairTracks, t.updateTracks, t.copyTracks, t.bytes], [1, 0, 1, 4 * MB]);
+  assert.equal(tallyText(t), "Will copy 1 track, copy the missing files of 1 track.");
+  assert.equal(tallyText(tally(r, new Set(["track:/t/2"]))), "Will copy the missing files of 1 track.");
+  assert.equal(tally([trk(1, { type: "repair" }, 5)], new Set()).bytes, 5);
+  assert.deepEqual(resultParts("Copied 1 track. Repaired the missing files of 2 tracks. Updated 1 track").map((p) => p.heading || p.items.join()), ["Copied 1 track", "Repaired the missing files of 2 tracks", "Updated 1 track"]);
 });
 
 test("space line", () => {
@@ -151,10 +162,10 @@ test("space line", () => {
 
 test("the finished line splits into parts, keeping the items of a list together", () => {
   const s =
-    "Copied 4 tracks (35.5 MB), 1 mix. Updated 1 track. 2 items left out: Road trip: it needs Track 9, which is not on the target; Old. Mix: left out by you. 1 item could not be synced: Track 5: disk full. Tags and labels came with 4 tracks";
+    "Copied 4 tracks (35.5 MB), 1 mix. Updated 1 track. 2 items left out: Road trip: it needs Track 9, which is not in the receiving library; Old. Mix: left out by you. 1 item could not be synced: Track 5: disk full. Tags and labels came with 4 tracks";
   const p = resultParts(s);
   assert.deepEqual(p.map((x) => x.heading), ["Copied 4 tracks (35.5 MB), 1 mix", "Updated 1 track", "2 items left out", "1 item could not be synced", "Tags and labels came with 4 tracks"]);
-  assert.deepEqual(p[2].items, ["Road trip: it needs Track 9, which is not on the target", "Old. Mix: left out by you"]);
+  assert.deepEqual(p[2].items, ["Road trip: it needs Track 9, which is not in the receiving library", "Old. Mix: left out by you"]);
   assert.equal(p[3].tone, "bad");
   assert.deepEqual(p[3].items, ["Track 5: disk full"]);
   assert.deepEqual(resultParts("Nothing to sync, the two libraries already match").map((x) => x.heading), ["Nothing to sync, the two libraries already match"]);
@@ -163,4 +174,10 @@ test("the finished line splits into parts, keeping the items of a list together"
 test("the stale refusal is recognised", () => {
   assert.ok(isStale("The libraries changed since the preview, so nothing was synced. Look at the preview again."));
   assert.ok(!isStale("disk full"));
+});
+
+test("a folder opened by hand is named by its folder, never a second This computer", () => {
+  const o = libraryOptions({ path: COMP, exists: true }, ["G:\\"], { root: "D:\\Gigs", kind: "computer" });
+  assert.deepEqual(o.map((x) => x.label), ["This computer", "Pacemaker (G:)", "Folder (Gigs)"]);
+  assert.equal(o[2].title, "D:\\Gigs");
 });

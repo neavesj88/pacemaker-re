@@ -67,6 +67,10 @@ const pm: MockLib = {
 // tracks the Pacemaker has with other details: a drag leaves them as they are and says so
 const UPDATES = new Set([demoTracks[4].location, demoTracks[5].location]);
 
+// tracks the Pacemaker holds a row for but not all of the files: a drag from the computer repairs them
+const REPAIRS = new Map<string, "audio" | "side">([[demoTracks[2].location, "audio"], [demoTracks[7].location, "side"]]);
+const REPAIR_WORDS = { audio: "the audio file is missing in the receiving library", side: "the beat grid file (.str) is missing in the receiving library" };
+
 export const libraryFor = (root: string): MockLib => (libraryKind(root) === "pacemaker" ? pm : computer);
 export const stripIds = (c: MColl): Coll => ({ id: c.id, name: c.name, play_time_secs: c.play_time_secs, track_count: c.track_count });
 
@@ -143,12 +147,19 @@ function planOf(a: Record<string, any>) {
       const t = tByLoc.get(loc);
       const reason = S === computer ? needs.get(s.track_id) : undefined;
       if (!t) {
-        if (reason && reason !== "never analysed") it.action = skip(reason.startsWith("no .str") ? "its analysis file (.str) is missing" : "its analysis file (.str) is empty");
+        if (reason && reason !== "never analysed") it.action = skip(reason.startsWith("no .str") ? "the beat grid file (.str) is missing in the sending library" : "the beat grid file (.str) is empty in the sending library");
         else it.bytes = s.file_size + 4096;
       } else {
         it.target_id = t.track_id;
         // the engine never changes a track the target has, even with other details (drag_settings)
-        it.action = UPDATES.has(loc) && S === computer ? skip("it is already there, and a drag never changes a track on the target") : skip(SAME);
+        it.action = UPDATES.has(loc) && S === computer ? skip("it is already there, and a drag never changes a track in the receiving library") : skip(SAME);
+        const lack = S === computer && T === pm ? REPAIRS.get(loc) : undefined;
+        if (lack) {
+          // only the missing file is copied: the row, its grid and its plays stay as they are
+          it.action = { type: "repair" };
+          it.detail = REPAIR_WORDS[lack];
+          it.bytes = lack === "audio" ? s.file_size : 4096;
+        }
       }
       if (!picked.includes(loc)) it.needed_by = needed.get(loc) ?? [];
     }
@@ -181,7 +192,7 @@ function planOf(a: Record<string, any>) {
       it.action = skip(SAME);
     }
     const missing = it.needs.filter((x) => !willExist(x.location)).map((x) => x.label);
-    if (missing.length && it.action.type === "copy") it.action = skip(`it needs ${missing.slice(0, 3).map((x) => `"${x}"`).join(", ")}${missing.length > 3 ? ` and ${missing.length - 3} more` : ""}, which will not be on the target`);
+    if (missing.length && it.action.type === "copy") it.action = skip(`it needs ${missing.slice(0, 3).map((x) => `"${x}"`).join(", ")}${missing.length > 3 ? ` and ${missing.length - 3} more` : ""}, which will not be in the receiving library`);
     items.push(it);
   }
 
@@ -224,12 +235,19 @@ function planOf(a: Record<string, any>) {
     } else if (sel.into_case.create) {
       it = blank(`into-case:${norm(name)}`, "case", `New case ${name} with ${plural(avail.length, "track")}`, { type: "copy" });
     } else {
-      it = blank(`into-case:${norm(name)}`, "case", `Add ${plural(avail.length, "track")} to case ${name}`, skip("the case is not on the target any more"));
+      it = blank(`into-case:${norm(name)}`, "case", `Add ${plural(avail.length, "track")} to case ${name}`, skip("the case is not in the receiving library any more"));
     }
-    if (avail.length === 0 && it.action.type !== "skip") it.action = skip("none of the tracks will be on the target");
+    if (avail.length === 0 && it.action.type !== "skip") it.action = skip("none of the tracks will be in the receiving library");
     it.into_case = name;
     it.needs = needsHere;
-    if (avail.length < needsHere.length) it.detail = `${needsHere.length - avail.length} of ${needsHere.length} tracks will not be there and are left out`;
+    const notes: string[] = [];
+    if (t && it.action.type === "merge") {
+      const have = new Set(t.ids.map((id) => T.tracks.find((x) => x.track_id === id)?.location));
+      const fresh = avail.filter((x) => !have.has(x.location)).length;
+      if (fresh > 0 && fresh < avail.length) notes.push(`${avail.length - fresh} of the ${avail.length} ${avail.length - fresh === 1 ? "is" : "are"} already in it`);
+    }
+    if (avail.length < needsHere.length) notes.push(`${needsHere.length - avail.length} of ${needsHere.length} tracks will not be there and are left out`);
+    it.detail = notes.join("; ");
     items.push(it);
   }
 
@@ -262,6 +280,7 @@ function apply(p: ReturnType<typeof planOf>) {
     if (it.kind === "track") {
       const s = S.tracks.find((t) => t.track_id === it.source_id);
       if (s && it.action.type === "copy") T.tracks.push({ ...s, track_id: nextId(T.tracks, "track_id") });
+      if (s && it.action.type === "repair") REPAIRS.delete(s.location);
     } else if (it.into_case !== null) {
       const ids = it.needs.map((n) => tIdAt(n.location)).filter((x): x is number => x !== undefined);
       const t = T.cases.find((c) => norm(c.name) === norm(it.into_case!));
@@ -306,6 +325,7 @@ function summary(p: ReturnType<typeof planOf>) {
     parts.push(`Copied ${what.join(", ")}`);
   }
   if (count("track", "update")) parts.push(`Updated ${plural(count("track", "update"), "track")}`);
+  if (count("track", "repair")) parts.push(`Repaired the missing files of ${plural(count("track", "repair"), "track")}`);
   if (count("case", "merge")) parts.push(`Merged ${plural(count("case", "merge"), "case")}`);
   for (const i of run.filter((x) => x.into_case !== null)) parts.push(i.action.type === "copy" ? `Made new case ${i.label.slice("New case ".length)}` : `Added ${i.label.slice("Add ".length)}`);
   return parts.join(". ") || "Nothing to copy, all of it is there already";

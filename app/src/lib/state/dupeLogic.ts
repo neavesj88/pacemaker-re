@@ -60,7 +60,7 @@ export const FIELDS: Field[] = [
   { key: "analysed", label: "Beat grid", get: (m) => (m.analysed ? "analysed" : "not analysed") },
   { key: "cases", label: "In cases", get: (m) => (m.cases.length ? m.cases.map((c) => `${c.name} (${c.position} of ${c.of})`).join(", ") : "none") },
   { key: "mixes", label: "In mixes", get: (m) => (m.mixes.length ? m.mixes.join(", ") : "none") },
-  { key: "file", label: "File on the device", get: (m) => FILE_TEXT[m.file] },
+  { key: "file", label: "File", get: (m) => FILE_TEXT[m.file] },
   { key: "location", label: "Location", get: (m) => text(m.location) },
 ];
 
@@ -196,7 +196,7 @@ export function planSentences(plan: MergePlan): PlanGroup[] {
       for (const f of plan.files.filter((x) => x.track_id === id)) {
         const what = f.kind === "audio" ? "audio file" : "beat grid file";
         if (f.kept_because) parts.push(`keeps ${what} ${f.path} (${f.kept_because})`);
-        else if (!f.exists) parts.push(`${what} ${f.path} is not on the device`);
+        else if (!f.exists) parts.push(`${what} ${f.path} is missing`);
         else parts.push(`deletes ${what} ${f.path} (${fmtBytes(f.size)})`);
       }
       return { track_id: id, label: name(id), parts };

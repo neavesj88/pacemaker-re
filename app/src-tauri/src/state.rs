@@ -150,7 +150,7 @@ impl WriteGate {
             if left.is_zero() {
                 drop(st);
                 drop(guard); // clears the flag
-                return Err("A write to the device is still in progress. Try again in a moment.".into());
+                return Err("A write to the library is still in progress. Try again in a moment.".into());
             }
             st = self.0.changed.wait_timeout(st, left).unwrap_or_else(|e| e.into_inner()).0;
         }

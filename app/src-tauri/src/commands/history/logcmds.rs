@@ -90,7 +90,7 @@ fn record_at(dir: &Path, root: &str, readings: &[Reading], now: i64, mode: Mode)
     if mode == Mode::Normal && !log.is_started() && recovered.is_none() && settings.ask_before_new_log {
         if let Some(c) = playlog::candidates(dir, root, readings, settings.identity_min_present_pct).first() {
             let at = if c.root.is_empty() { "another drive".to_string() } else { c.root.clone() };
-            let why = format!("the play log from {at} has {} of the {} tracks it has seen played on this card", c.present_tracks, c.played_tracks);
+            let why = format!("the play log from {at} has {} of the {} tracks it has seen played in this library", c.present_tracks, c.played_tracks);
             return Ok(report(true, "candidate", 0, 0, Some(why)));
         }
     }

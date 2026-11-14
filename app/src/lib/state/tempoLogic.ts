@@ -1,6 +1,8 @@
 // Pure logic of the bulk tempo tools: reading a typed BPM and wording what a tempo edit will do to
 // each track. No store or component imports so it runs under plain node: see tempoLogic.test.mjs.
 import type { TempoOp, TempoRow } from "../api/grid";
+import type { LibraryKind } from "../api/types";
+import { bothNote } from "./batchLogic.ts";
 
 /** Tempo range the device and the grid editor accept; the same numbers as `ops_grid::MIN_BPM`
  *  and `MAX_BPM` in pm-formats, which the backend enforces anyway. */
@@ -43,9 +45,8 @@ export function opTitle(op: TempoOp, n: number, root: string): string {
   }
 }
 
-export function opDescription(op: TempoOp): string {
-  const both =
-    "The beat grid (.str) and the BPM of each track are rewritten together, so they always agree. Each track's previous beat grid is first copied off the device (the app's data folder, next to the music.db snapshots), because Restore from a snapshot does not bring beat grids back.";
+export function opDescription(op: TempoOp, lib: LibraryKind = "pacemaker"): string {
+  const both = bothNote(lib);
   switch (op.kind) {
     case "halve":
       return `Halves the tempo the way the grid editor's ½ BPM does: every second beat line is kept and the bar lines stay on the same beats. ${both}`;

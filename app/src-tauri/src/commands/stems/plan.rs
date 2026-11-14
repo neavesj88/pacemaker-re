@@ -79,9 +79,9 @@ impl Plan {
 /// location that is absolute, has a drive prefix or climbs with `..` is refused. The rule is
 /// `analysis::audio_path`'s, so a change to it lands in one place.
 pub fn audio_in_volume(lib: &Library, location: &str) -> Result<PathBuf, String> {
-    let audio = crate::commands::analysis::audio_path(lib.root(), location).map_err(|_| "The track's location points outside the device.".to_string())?;
+    let audio = crate::commands::analysis::audio_path(lib.root(), location).map_err(|_| "The track's location points outside the library.".to_string())?;
     if !audio.is_file() {
-        return Err("The audio file is missing from the device.".into());
+        return Err("The audio file is missing from the library.".into());
     }
     Ok(audio)
 }
@@ -151,7 +151,7 @@ pub fn build_plan(lib: &Library, track_ids: &[i64], dest: &Path, s: &StemSetting
         return Err(format!("{} is not a folder that exists.", dest.display()));
     }
     if same_or_inside(dest, lib.root()) {
-        return Err("Choose a folder on this computer, not on the device. To put the results on the card, make them here first and then add them (the same step as adding any audio files).".into());
+        return Err("Choose a folder on this computer, outside the library. To put the results in the library, make them here first and then add them (the same step as adding any audio files).".into());
     }
     let tracks: HashMap<i64, Track> = lib.tracks().map_err(|e| e.to_string())?.into_iter().map(|t| (t.track_id, t)).collect();
     let ext = s.out_format().extension();
@@ -449,10 +449,10 @@ mod tests {
         let (vol, ids) = library("dest", &[("A", "One", 100)]);
         let lib = Library::open_read_only(&vol).unwrap();
         let s = StemSettings::default();
-        assert!(build_plan(&lib, &ids, &vol, &s).unwrap_err().contains("not on the device"));
-        assert!(build_plan(&lib, &ids, &vol.join(".Pacemaker").join("Music"), &s).unwrap_err().contains("not on the device"));
+        assert!(build_plan(&lib, &ids, &vol, &s).unwrap_err().contains("outside the library"));
+        assert!(build_plan(&lib, &ids, &vol.join(".Pacemaker").join("Music"), &s).unwrap_err().contains("outside the library"));
         std::fs::create_dir_all(vol.join("sub")).unwrap();
-        assert!(build_plan(&lib, &ids, &vol.join("sub"), &s).unwrap_err().contains("not on the device"));
+        assert!(build_plan(&lib, &ids, &vol.join("sub"), &s).unwrap_err().contains("outside the library"));
         assert!(build_plan(&lib, &ids, &vol.join("missing-folder"), &s).unwrap_err().contains("not a folder that exists"));
         assert!(build_plan(&lib, &[], &temp_dir("dest-ok"), &s).unwrap_err().contains("at least one"));
     }

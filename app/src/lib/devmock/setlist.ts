@@ -42,7 +42,7 @@ export const handlers: Handlers = {
   setlist_save_html: (a) => {
     const dest = String(a.dest ?? "");
     if (!/\.html?$/i.test(dest)) throw "The file name must end in .html.";
-    if (/[\/]device[\/]/i.test(dest)) throw "Choose a folder outside the device: a setlist page is not part of its library.";
+    if (/[\/]device[\/]/i.test(dest)) throw "Choose a folder outside the library: a setlist page is not part of it.";
     return { path: dest, bytes: String(a.html ?? "").length };
   },
 };

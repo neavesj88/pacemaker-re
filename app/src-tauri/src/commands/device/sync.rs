@@ -172,6 +172,10 @@ pub fn summarise(rep: &SyncReport) -> String {
     if n > 0 {
         parts.push(format!("Updated {}", plural(n, "track")));
     }
+    let n = count(ItemKind::Track, |a| *a == SyncAction::Repair);
+    if n > 0 {
+        parts.push(format!("Repaired the missing files of {}", plural(n, "track")));
+    }
     let n = rep.items.iter().filter(|i| i.outcome == Outcome::Done && i.action == SyncAction::UpdatePlays).count();
     if n > 0 {
         parts.push(format!("Updated the play counts of {}", plural(n, "item")));
@@ -190,7 +194,7 @@ pub fn summarise(rep: &SyncReport) -> String {
     }
     let removed = rep.items.iter().filter(|i| i.outcome == Outcome::Done && i.action == SyncAction::Remove).count();
     if removed > 0 {
-        parts.push(format!("Removed {removed} items that the other side does not have"));
+        parts.push(format!("Removed {removed} items that the receiving library does not have"));
     }
     if rep.cancelled {
         parts.push("Stopped at your request; the rest were not touched".into());
@@ -395,8 +399,8 @@ mod tests {
         assert_eq!(summarise_selection(&rep), "Copied 2 tracks (3.0 MB). Added 2 tracks to case Crate");
         rep.items = vec![into("New case Fresh with 1 track", "into-case:fresh")];
         assert_eq!(summarise_selection(&rep), "Made new case Fresh with 1 track");
-        rep.items = vec![ItemResult { outcome: Outcome::Skipped { reason: "none of the tracks is on the target".into() }, ..into("Add 1 track to case X", "into-case:x") }];
-        assert_eq!(summarise_selection(&rep), "Add 1 track to case X: none of the tracks is on the target");
+        rep.items = vec![ItemResult { outcome: Outcome::Skipped { reason: "none of the tracks is in the receiving library".into() }, ..into("Add 1 track to case X", "into-case:x") }];
+        assert_eq!(summarise_selection(&rep), "Add 1 track to case X: none of the tracks is in the receiving library");
     }
 
     #[test]
@@ -407,6 +411,7 @@ mod tests {
             done(ItemKind::Track, SyncAction::Copy, "A - One"),
             done(ItemKind::Track, SyncAction::Copy, "B - Two"),
             done(ItemKind::Track, SyncAction::Update, "C - Three"),
+            done(ItemKind::Track, SyncAction::Repair, "E - Five"),
             done(ItemKind::Mix, SyncAction::Copy, "Set"),
             done(ItemKind::Case, SyncAction::UpdatePlays, "Crate"),
             done(ItemKind::Mix, SyncAction::Replace, "Old set"),
@@ -417,6 +422,7 @@ mod tests {
         rep.cancelled = true;
         let s = summarise(&rep);
         assert!(s.starts_with("Copied 2 tracks (5.0 MB), 1 mix"), "{s}");
+        assert!(s.contains("Repaired the missing files of 1 track"), "{s}");
         assert!(s.contains("Updated the play counts of 1 item"), "{s}");
         assert!(s.contains("Updated 1 track") && s.contains("Replaced 1 mix") && s.contains("Merged 1 case"), "{s}");
         assert!(s.contains("Stopped at your request"), "{s}");

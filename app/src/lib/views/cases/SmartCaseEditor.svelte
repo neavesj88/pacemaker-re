@@ -267,7 +267,7 @@
   <ConfirmDialog
     title={`Remove from ${session.place.the}?`}
     message={`Delete the case “${deviceName(sc.name)}” from ${session.place.the}? The smart case stays in this app and no track is deleted; you can put it back at any time.`}
-    confirmLabel="Delete device case"
+    confirmLabel={session.isComputer ? "Delete ★ case" : "Delete device case"}
     onconfirm={() => cases.setSmartOnDevice(id, false)}
     onclose={() => (takingOff = false)}
   />

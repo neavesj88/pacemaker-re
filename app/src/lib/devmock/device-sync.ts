@@ -59,16 +59,20 @@ function send(): Item[] {
     track(3, LIGHTS.label, 7.7, { type: "copy" }),
     track(4, MOON.label, 10.3, { type: "copy" }),
     track(5, "Demo Duo - Evening Train", 0.01, { type: "update" }),
-    track(9, MISSING.label, 0, { type: "skip", reason: "its audio file is missing" }),
+    track(10, "Demo Duo - Dusk", 6.4, { type: "repair" }, { target_id: 110, detail: "the audio file is missing in the receiving library" }),
+    track(11, "Sample Band - Lantern", 0.01, { type: "repair" }, { target_id: 111, detail: "the beat grid file (.str) is missing in the receiving library" }),
+    track(12, "Sample Band - Harbour Lights", 0, { type: "update_plays" }, { target_id: 112, detail: "played more in the sending library" }),
+    track(13, "Sample Band - Quiet Hours", 0, { type: "skip", reason: "the beat grid file (.str) is missing in both libraries" }, { target_id: 113 }),
+    track(9, MISSING.label, 0, { type: "skip", reason: "the audio file is missing in the sending library" }),
     track(6, "Demo Duo - Tidal", 0, { type: "skip", reason: SAME }),
     track(7, "Demo Duo - Morning Light", 0, { type: "skip", reason: SAME }),
-    track(8, "Example Artist - Low Tide", 0, { type: "skip", reason: "the target's copy is the same age or newer" }),
+    track(8, "Example Artist - Low Tide", 0, { type: "skip", reason: "the receiving library's copy is the same age or newer" }),
     {
       key: "mix:friday warm-up", kind: "mix", action: { type: "copy" }, label: "Friday warm-up", bytes: 0, needs: [NIGHT, GLASS, LIGHTS],
       detail: "", global_id: null, location: null, source_id: 1, target_id: null, blockers: [],
     },
     {
-      key: "mix:road trip", kind: "mix", action: { type: "skip", reason: `it needs "${MISSING.label}", which will not be on the target` }, label: "Road trip",
+      key: "mix:road trip", kind: "mix", action: { type: "skip", reason: `it needs "${MISSING.label}", which will not be in the receiving library` }, label: "Road trip",
       bytes: 0, needs: [NIGHT, MISSING], detail: "", global_id: null, location: null, source_id: 2, target_id: null, blockers: [],
     },
     {
@@ -164,10 +168,13 @@ export const handlers: Handlers = {
       parts.push(`Copied ${what.join(", ")}`);
     }
     if (copied("track", "update")) parts.push(`Updated ${plural(copied("track", "update"), "track")}`);
+    if (copied("track", "repair")) parts.push(`Repaired the missing files of ${plural(copied("track", "repair"), "track")}`);
+    const playsN = run.filter((i) => i.action.type === "update_plays").length;
+    if (playsN) parts.push(`Updated the play counts of ${plural(playsN, "item")}`);
     if (copied("mix", "replace")) parts.push(`Replaced ${plural(copied("mix", "replace"), "mix")}`);
     if (copied("case", "merge")) parts.push(`Merged ${plural(copied("case", "merge"), "case")}`);
     const removed = run.filter((i) => i.action.type === "remove").length;
-    if (removed) parts.push(`Removed ${removed} items that the other side does not have`);
+    if (removed) parts.push(`Removed ${removed} items that the receiving library does not have`);
     const owed = [...dropped.map((i) => `${i.label}: it needs tracks that were left out`), ...[...left].map((k) => `${plan.items.find((i) => i.key === k)?.label}: left out by you`)];
     if (owed.length) parts.push(`${plural(owed.length, "item")} left out: ${owed.join("; ")}`);
     const summary = parts.join(". ") || "Nothing to sync, the two libraries already match";

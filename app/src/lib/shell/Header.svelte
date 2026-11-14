@@ -29,7 +29,7 @@
       <select aria-label="Library" value={current} onchange={(e) => pick((e.currentTarget as HTMLSelectElement).value)}>
         <option value="" disabled>Choose a library…</option>
         {#each options as o (o.value)}
-          <option value={o.value}>{o.label}</option>
+          <option value={o.value} title={o.title}>{o.label}</option>
         {/each}
       </select>
     {/if}

@@ -48,7 +48,7 @@ pub async fn grid_analyse(root: String, track_id: i64) -> AppResult<GridDoc> {
     tauri::async_runtime::spawn_blocking(move || {
         let lib = Library::open_read_only(Path::new(&root))?;
         let load = lib.load_grid(track_id)?;
-        let (audio, _) = lib.track_paths(&load.location).ok_or("This track is not stored on the device.")?;
+        let (audio, _) = lib.track_paths(&load.location).ok_or("This track is not stored under the library's music folder.")?;
         if !audio.is_file() {
             return Err("The audio file is missing from the volume.".into());
         }

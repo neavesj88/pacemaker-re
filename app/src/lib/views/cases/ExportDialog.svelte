@@ -1,5 +1,6 @@
 <script lang="ts">
   import { session } from "$lib/state/session.svelte";
+  import { smartCopyName } from "./smartRefreshLogic";
   // Export cases and smart cases to a folder: one file per case in the chosen format, optionally
   // with the audio copied beside the playlists and the M3U8 pointing at the copies.
   //
@@ -77,7 +78,7 @@
                     <span class="nm">{c.name}</span>
                     <span class="muted">{plural(c.track_count, "track")}</span>
                   </label>
-                  {#if sc && ex.caseIds.has(c.id) && ex.smartIds.has(sc.id)}<div class="sub muted">Pacemaker copy of the smart case “{sc.name}”, which is ticked too: this one will not be written again.</div>{/if}
+                  {#if sc && ex.caseIds.has(c.id) && ex.smartIds.has(sc.id)}<div class="sub muted">{smartCopyName(session.library?.kind)} of the smart case “{sc.name}”, which is ticked too: this one will not be written again.</div>{/if}
                 </li>
               {:else}
                 <li class="muted">No cases.</li>

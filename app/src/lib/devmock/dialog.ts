@@ -10,7 +10,8 @@ export const handlers: Handlers = {
     // the folder for the library on this computer
     if (String(o.title ?? "").includes("on this computer")) return "C:\\Users\\demo\\Music\\My DJ Library";
     if (o.multiple) return ["C:\\Music\\New Artist - New Tune.mp3", "C:\\Music\\Another - Skip Me.flac", "C:\\Music\\bad file.wav"];
-    return "P:\\";
+    // "Open folder…": the fake drive, or the folder a preview session set in window.__devmockFolder
+    return (globalThis as { __devmockFolder?: string }).__devmockFolder ?? "P:\\";
   },
   // a save dialog returns a fake path under a made-up folder, named after the suggested file
   "plugin:dialog|save": (a) => {

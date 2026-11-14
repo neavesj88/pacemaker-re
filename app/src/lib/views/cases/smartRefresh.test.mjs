@@ -133,3 +133,11 @@ test("a deleted copy's note says when it comes back, per the setting", () => {
   assert.equal(remakeWhen("ask"), "when you answer yes to the refresh question");
   assert.equal(remakeWhen("auto"), "automatically straight afterwards");
 });
+
+test("for a library on this computer the sentences say ★ case and name the library, never the Pacemaker", () => {
+  const made = item({ action: "create", before: 0, after: 1, added: [tr(1)], recreated: true });
+  assert.equal(itemLine(made, true, "computer"), "“Example Rule”: “★ Example Rule” made again (it was deleted in this library) with 1 track");
+  assert.equal(doneSummary(report(item({ action: "unchanged" })), "computer"), "The ★ cases of your smart cases were already up to date.");
+  assert.match(doneSummary(report(item({ added: [tr(1)] })), "computer"), /^Refreshed 1 smart case in this library: /);
+  assert.doesNotMatch(loopMessage(report(item({ added: [tr(1)] })), "computer"), /Pacemaker/);
+});

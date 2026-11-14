@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { session } from "$lib/state/session.svelte";
   import Button from "$lib/ui/Button.svelte";
   import WideModal from "../device/WideModal.svelte";
   import { ROW_CAP, ROW_MORE, sizeText } from "../sync/syncLogic";
@@ -12,14 +13,17 @@
   const lines = $derived(p ? linesOf(p.plan) : { acting: [], skipped: [], same: [] });
   const space = $derived(p ? dialogSpace(p.plan) : null);
   const ok = $derived(!!p && canCopy(p.plan));
-  const targetName = $derived(p ? libraryNameFor(p.target) : "");
-  const sourceName = $derived(p ? libraryNameFor(p.source) : "");
+  const targetName = $derived(p ? libraryNameFor(p.target, session.computer?.path ?? null) : "");
+  const sourceName = $derived(p ? libraryNameFor(p.source, session.computer?.path ?? null) : "");
 
   // the tracks an "Add to case" row puts in, named (the first few, then how many more)
   const NAMES_SHOWN = 4;
   const namesText = (n: string[]) => n.slice(0, NAMES_SHOWN).join("; ") + (n.length > NAMES_SHOWN ? `; and ${n.length - NAMES_SHOWN} more` : "");
   // the plan note is about smart cases: only worth saying when a case is part of the copy
   const notes = $derived(p && p.plan.items.some((i) => i.kind === "case" && i.into_case === null) ? p.plan.notes : []);
+
+  // the case a "Copy into a case" goes to, named even when its row is a quiet "already there"
+  const intoName = $derived(p?.plan.items.find((i) => i.into_case !== null)?.into_case ?? null);
 
   let showSame = $state(false);
   let extra = $state(0);
@@ -39,7 +43,7 @@
   <WideModal title={dialogTitle(targetName)} onclose={() => libs.cancelPending()} width={660}>
     <p class="sum"><b>{copySummary(p.plan)}</b></p>
     <p class="muted line">
-      From {sourceName} to {targetName}.
+      From {sourceName} to {targetName}{#if intoName}, into the case “{intoName}”{/if}.
       {#if p.plan.bytes_to_copy > 0}<span class:bad={space.tone === "bad"} class:ok={space.tone === "ok"}>{space.text}</span>{/if}
     </p>
     {#if !space.fits}<p class="warn">It does not fit. Free some space on {targetName}, or pick fewer tracks.</p>{/if}
@@ -50,7 +54,7 @@
           <span class="act" class:no={!l.acts}>{l.action}</span>
           <span class="name" title={l.name}>{l.name}</span>
           {#if l.acts && l.kind === "track" && l.bytes > 0}<span class="size muted">{sizeText(l.bytes)}</span>{/if}
-          {#if l.why}<span class="why muted">{l.why}</span>{/if}
+          {#if l.why}<span class="why muted" title={l.why}>{l.why}</span>{/if}
           {#if l.names.length > 0}<span class="tracks muted" title={l.names.join(", ")}>{namesText(l.names)}</span>{/if}
         </li>
       {/each}
@@ -139,9 +143,7 @@
     flex: 0 1 auto;
     max-width: 45%;
     font-size: 12px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    overflow-wrap: anywhere;
   }
   .tracks {
     flex: 1 1 100%;

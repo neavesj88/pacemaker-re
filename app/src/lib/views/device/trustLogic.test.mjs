@@ -111,3 +111,11 @@ test("a removal is reported with what stayed and how to get it back", () => {
   assert.match(r, /^1 row removed from the library\. A copy/);
   assert.match(r, /1 row left alone: X: kept because the mix M uses it\.$/);
 });
+
+test("a library on this computer is named as the library, not the card", () => {
+  assert.equal(diffSummary(zero, "computer"), "Same as the library now");
+  const s = diffSentences({ ...zero, tracks_lost: 1 }, "computer");
+  assert.equal(s[0], "1 track added since will leave the library (their files stay in the library folder)");
+  assert.match(massWarning({ mass: true, dead_rows: [1, 2], kept_for_mixes: [], total_tracks: 3, guard_percent: 50 }, "computer"), /the library folder is not all there.*Check the folder before/);
+  assert.match(massWarning({ mass: true, dead_rows: [1, 2], kept_for_mixes: [], total_tracks: 3, guard_percent: 50 }), /the card is not fully mounted.*Check the drive before/);
+});

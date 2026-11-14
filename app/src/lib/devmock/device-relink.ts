@@ -160,7 +160,7 @@ export const handlers: Handlers = {
     const labels = ok.map((p) => `${/\.Pacemaker/i.test(p.path) ? "Relinking" : "Copying"} ${label(p.track_id)}`);
     const copies = ok.filter((p) => !/\.Pacemaker/i.test(p.path)).length;
     const parts = [`Relinked ${ok.length} track${ok.length === 1 ? "" : "s"}`];
-    if (copies) parts[0] += ` (${copies} copied onto the card, ${(copies * 7.6).toFixed(1)} MB)`;
+    if (copies) parts[0] += ` (${copies} copied into the library, ${(copies * 7.6).toFixed(1)} MB)`;
     if (stale.length) parts.push(`${stale.length} track${stale.length === 1 ? "" : "s"} left alone: ${stale.map((p) => `track ${p.track_id}: its audio is back, or it is not a track any more`).join("; ")}`);
     runSteps("device-relink", labels, "copying", parts.join(". "), () => restoreMockAudio(ok.map((p) => p.track_id)), (d, t) => `${d} of ${t}`);
   },

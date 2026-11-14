@@ -5,7 +5,9 @@
 //
 // Types only from the api module, so this runs under plain node:
 // `node --experimental-strip-types --test src/lib/views/vdj/vdjLogic.test.mjs`.
+import type { LibraryKind } from "$lib/api/types";
 import type { NameFiles, PlanEntry, VdjOptions, VdjPlan, VdjRequest } from "$lib/api/vdj";
+import { placeWords } from "../../state/place.ts";
 
 export const DEFAULT_OPTIONS: VdjOptions = { copy_audio: true, name_files: "artist_title", ordered: true, no_duplicates: true, path_base: "" };
 
@@ -42,28 +44,28 @@ export function formatBytes(n: number): string {
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
 /** What happens to one track, in words (rows never rely on a colour or an icon alone). */
-export function entryWords(e: PlanEntry): string {
+export function entryWords(e: PlanEntry, lib: LibraryKind = "pacemaker"): string {
   switch (e.status) {
     case "copy":
       return `Copied as ${e.file} (${formatBytes(e.size)})`;
     case "reuse":
       return `${e.file} is already in the folder: kept as it is, not copied again`;
     case "reference":
-      return "Listed where it is on the Pacemaker, not copied";
+      return `Listed where it is ${placeWords(lib).on}, not copied`;
     case "left_out":
       return `Left out of the list: ${e.reason || "it cannot be exported"}`;
   }
 }
 
 /** The one-line summary under the track list. */
-export function planLine(p: VdjPlan): string {
+export function planLine(p: VdjPlan, lib: LibraryKind = "pacemaker"): string {
   const listed = p.copy_count + p.reuse_count + p.reference_count;
   const parts: string[] = [];
   if (p.copy_audio) {
     parts.push(`copies ${plural(p.copy_count, "file", "files")} (${formatBytes(p.copy_bytes)})`);
     if (p.reuse_count > 0) parts.push(`keeps ${p.reuse_count} already in the folder`);
   } else {
-    parts.push(`points ${plural(p.reference_count, "track", "tracks")} at the Pacemaker, copies nothing`);
+    parts.push(`points ${plural(p.reference_count, "track", "tracks")} at ${placeWords(lib).the}, copies nothing`);
   }
   if (p.left_out_count > 0) parts.push(`leaves out ${p.left_out_count}`);
   return `The list holds ${plural(listed, "track", "tracks")}: ${parts.join(", ")}.`;
@@ -95,9 +97,9 @@ export function selectedInCase(selected: readonly number[], caseIds: readonly nu
 }
 
 /** A first list name from the case's name. */
-export function suggestListName(caseName: string): string {
+export function suggestListName(caseName: string, lib: LibraryKind = "pacemaker"): string {
   const n = caseName.replace(/\s+/g, " ").trim();
-  return n || "Pacemaker case";
+  return n || (lib === "computer" ? "Case" : "Pacemaker case");
 }
 
 export function buildRequest(args: { root: string; caseId: number; onlyTrackIds: number[]; listName: string; destDir: string; options: VdjOptions }): VdjRequest {

@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { PlayLogSettings } from "$lib/api/history";
   import { playlog } from "$lib/state/playlog.svelte";
+  import { session } from "$lib/state/session.svelte";
   import Button from "$lib/ui/Button.svelte";
   import { retentionLabel } from "./playlogLogic";
 
@@ -167,7 +168,7 @@
     <span class="muted">percent; 0 never refuses a library</span>
   </label>
   <p class="hint">
-    The log belongs to a drive or path. If fewer than this share of the played tracks it knows are on the card, it is taken for a different card
+    The log belongs to {session.isComputer ? "a library folder" : "a drive or path"}. If fewer than this share of the played tracks it knows are in {session.place.thisCard}, it is taken for a different {session.isComputer ? "library" : "card"}
     and nothing is logged until you choose "Keep this log and continue" or delete the log. Logs with fewer than five played tracks are never judged.
   </p>
 
@@ -178,10 +179,10 @@
       disabled={busy}
       onchange={(e) => commit({ ask_before_new_log: e.currentTarget.checked })}
     />
-    Ask before starting a new log for a card that matches the log of another drive
+    Ask before starting a new log for {session.isComputer ? "a library" : "a card"} that matches the log of another {session.isComputer ? "folder" : "drive"}
   </label>
   <p class="hint">
-    A card that turns up at a new drive letter has no log yet. With this on it is not logged until you choose between continuing the old drive's
+    {session.isComputer ? "A library that turns up in a new folder" : "A card that turns up at a new drive letter"} has no log yet. With this on it is not logged until you choose between continuing the old {session.isComputer ? "folder's" : "drive's"}
     log and starting a new one; off, a new log starts straight away.
   </p>
   {#if err}<p class="err" role="alert">{err}</p>{/if}

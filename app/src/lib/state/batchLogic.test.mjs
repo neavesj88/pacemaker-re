@@ -170,3 +170,11 @@ test("the filter explains a suspect in a few words", () => {
   assert.equal(suspectKinds({ tempo_flag: true, quality_flag: false, fix: null }), "tempo outside window");
   assert.equal(suspectKinds({ tempo_flag: false, quality_flag: true, fix: null }), "low grid confidence");
 });
+
+test("a grid change on a library on this computer says it copies grids out of the library, not off the device", () => {
+  assert.match(opDescription("halve", "computer"), /copied out of the library/);
+  assert.doesNotMatch(opDescription("reanalyse", "computer"), /device/);
+  assert.match(opDescription("halve"), /copied off the device/);
+  assert.match(opDescription("reanalyse", "pacemaker"), /already on the device/);
+  assert.match(opDescription("reanalyse", "computer"), /already in the library/);
+});

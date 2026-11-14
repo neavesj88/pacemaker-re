@@ -27,7 +27,7 @@
     return () => (current = false);
   });
 
-  const sentences = $derived(diff ? diffSentences(diff.counts) : []);
+  const sentences = $derived(diff ? diffSentences(diff.counts, session.library?.kind) : []);
   const same = $derived(!!diff && !diff.current_problem && sentences.length === 0);
 
   const holds = (c: { tracks: number; cases: number; mixes: number }) =>

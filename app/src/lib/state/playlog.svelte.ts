@@ -110,7 +110,7 @@ class PlayLogStore {
     } else if (rep.status === "mismatch" && once("mismatch")) {
       toast.show("This library does not match its play log. Nothing was logged; see History, Play log.", "bad", 8000);
     } else if (rep.status === "candidate" && once("candidate")) {
-      toast.show("A play log from another drive matches this card. Nothing is logged until you choose; see History, Play log.", "ok", 8000);
+      toast.show(`A play log from another drive matches ${session.place.thisCard}. Nothing is logged until you choose; see History, Play log.`, "ok", 8000);
     } else if (rep.status === "recovered" && once("recovered")) {
       toast.show("The old play log could not be read, so it was kept aside and a new one started.", "bad", 8000);
     }

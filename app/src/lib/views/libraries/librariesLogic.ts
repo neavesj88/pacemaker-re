@@ -191,6 +191,41 @@ export function parseDragFrom(from: string): { side: Side; tab: Tab } | null {
   return m ? { side: m[1] as Side, tab: m[2] as Tab } : null;
 }
 
+// ---- the click route into a case --------------------------------------------------------------------
+
+/** The longest case name the library takes (the engine refuses a longer one). */
+export const MAX_CASE_NAME = 255;
+/** The choice in the case picker that means "make a new case". */
+export const NEW_CASE = "\u0000new";
+
+/** "Copy into a case on Pacemaker (G:)…": the row menu item and the button for tracks. */
+export const intoCaseLabel = (targetName: string) => `Copy into a case on ${targetName}…`;
+
+/** What the case picker starts on: nothing chosen ("") when the other library has cases, so a case is
+ *  never picked by pressing on; a new case when it has none. */
+export const defaultCasePick = (cases: readonly Collection[]): string => (cases.length ? "" : NEW_CASE);
+
+/** What the picker's choice means for the plan: an existing case of the other library, or a new
+ *  case with the typed name. A typed name that is already a case there (compared as the engine
+ *  does) is that case, not a second one. The plan and the dialog that follow are the ones a drop on a
+ *  case row gives. */
+export function resolveIntoCase(
+  cases: readonly Collection[],
+  pick: string,
+  typed: string,
+): { into: { name: string; create: boolean } } | { error: string } {
+  if (!pick) return { error: "Choose a case, or a new one." };
+  if (pick !== NEW_CASE) {
+    const c = cases.find((x) => norm(x.name) === norm(pick));
+    return c ? { into: { name: c.name, create: false } } : { error: "That case is not on the other library any more. Pick another." };
+  }
+  const name = typed.trim();
+  if (!name) return { error: "Type a name for the new case." };
+  if (name.length > MAX_CASE_NAME) return { error: `A case name can have at most ${MAX_CASE_NAME} characters.` };
+  const same = cases.find((x) => norm(x.name) === norm(name));
+  return { into: same ? { name: same.name, create: false } : { name, create: true } };
+}
+
 // ---- which library on the right ------------------------------------------------------------------
 
 /** The libraries the right pane can show: all on offer except the open one. */
@@ -256,6 +291,7 @@ const ACTION: Record<string, string> = {
   copy: "Copy",
   update: "Update",
   update_plays: "Update play counts",
+  repair: "Repair",
   replace: "Replace",
   merge: "Merge",
   remove: "Remove",
@@ -278,7 +314,7 @@ export function lineOf(i: SyncItem, plan: SyncPlan): Line {
   let why = "";
   if (i.needed_by.length > 0) why = `Needed by ${i.needed_by.join(", ")}`;
   else if (a.type !== "copy" || i.kind !== "track") why = reasonText(i, plan.settings, plan.source_label);
-  if (i.detail && a.type !== "update_plays") why = why ? `${why} (${i.detail})` : i.detail;
+  if (i.detail && a.type !== "update_plays" && a.type !== "repair") why = why ? `${why} (${i.detail})` : i.detail;
   return { ...base, action, why, acts: true, same: false };
 }
 
@@ -302,13 +338,14 @@ const lowerFirst = (s: string) => s.charAt(0).toLowerCase() + s.slice(1);
 
 /** What the copy will do, in one sentence: "Will copy 3 tracks, bring 1 mix, add 3 tracks to case X." */
 export function copySummary(plan: SyncPlan): string {
-  let copy = 0, update = 0, plays = 0, mixes = 0, cases = 0;
+  let copy = 0, update = 0, repair = 0, plays = 0, mixes = 0, cases = 0;
   const into: string[] = [];
   for (const i of plan.items) {
     if (i.action.type === "skip") continue;
     if (i.into_case !== null) {
       into.push(i.action.type === "copy" ? `make ${lowerFirst(i.label)}` : lowerFirst(i.label));
     } else if (i.action.type === "update_plays") plays++;
+    else if (i.action.type === "repair") repair++;
     else if (i.kind === "track") i.action.type === "copy" ? copy++ : update++;
     else if (i.kind === "mix") mixes++;
     else cases++;
@@ -316,6 +353,7 @@ export function copySummary(plan: SyncPlan): string {
   const p: string[] = [];
   if (copy) p.push(`copy ${plural(copy, "track")}`);
   if (update) p.push(`update ${plural(update, "track")}`);
+  if (repair) p.push(`copy the missing files of ${plural(repair, "track")}`);
   if (plays) p.push(`update the play counts of ${plural(plays, "item")}`);
   if (mixes) p.push(`bring ${plural(mixes, "mix", "mixes")}`);
   if (cases) p.push(`bring ${plural(cases, "case")}`);
@@ -345,7 +383,7 @@ export const canCopy = (plan: SyncPlan) => plan.items.some((i) => i.action.type 
 export const dialogSpace = (plan: SyncPlan): SpaceVerdict => spaceLine(plan, plan.bytes_to_copy);
 
 /** How a library root is named in a sentence: "This computer", "Pacemaker (G:)". */
-export const libraryNameFor = (root: string) => libraryLabel(libraryKind(root), root);
+export const libraryNameFor = (root: string, computerRoot?: string | null) => libraryLabel(libraryKind(root), root, computerRoot);
 
 /** "Copy to Pacemaker (G:)?" */
 export const dialogTitle = (targetName: string) => `Copy to ${targetName}?`;

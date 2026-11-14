@@ -57,12 +57,12 @@ pub(super) fn check_dest(root: &Path, dest: &Path, ext: &str) -> AppResult<()> {
     if let Ok(r) = root.canonicalize()
         && parent.starts_with(&r)
     {
-        return Err("Choose a folder outside the device: a file written there is not part of its library.".into());
+        return Err("Choose a folder outside the library: a file written there is not part of it.".into());
     }
     Ok(())
 }
 
-/// Stops an export whose tracks include a file location outside the device's music folder;
+/// Stops an export whose tracks include a file location outside the library's music folder;
 /// `what` names the list in the message ("this case", "the library").
 pub(super) fn refuse_escaping(tracks: &[Track], what: &str) -> AppResult<()> {
     let bad: Vec<&Track> = tracks.iter().filter(|t| !plain_location(&t.location)).collect();
@@ -71,7 +71,7 @@ pub(super) fn refuse_escaping(tracks: &[Track], what: &str) -> AppResult<()> {
     }
     let names: Vec<String> = bad.iter().take(5).map(|t| format!("“{}” ({})", t.title, t.location)).collect();
     Err(format!(
-        "{} track{} in {what} ha{} a file location outside the device's music folder, so nothing was exported: {}{}",
+        "{} track{} in {what} ha{} a file location outside the library's music folder, so nothing was exported: {}{}",
         bad.len(),
         if bad.len() == 1 { "" } else { "s" },
         if bad.len() == 1 { "s" } else { "ve" },
@@ -91,7 +91,7 @@ pub(super) fn left_out_escaping(tracks: &[Track], what: &str) -> Option<(Vec<i64
     }
     let names: Vec<String> = bad.iter().map(|t| format!("“{}” ({})", t.title, t.location)).collect();
     let note = format!(
-        "{} track{} in {what} ha{} a file location outside the device's music folder and {} left out of the file: {}.",
+        "{} track{} in {what} ha{} a file location outside the library's music folder and {} left out of the file: {}.",
         bad.len(),
         if bad.len() == 1 { "" } else { "s" },
         if bad.len() == 1 { "s" } else { "ve" },

@@ -2,6 +2,7 @@
   import type { Rule } from "$lib/api/cases";
   import { cases } from "$lib/state/cases.svelte";
   import { session } from "$lib/state/session.svelte";
+  import { smartCopyName } from "./smartRefreshLogic";
   import { ENERGY_LEVELS, LABEL_COLOURS, colourName, parseTagInput } from "$lib/state/labels";
   import { labels } from "$lib/state/labels.svelte";
   import { KINDS, NO_CASE, NO_COLOUR, TAG_MATCHES, TEXT_OPS, caseNameDrift, defaultCaseId, defaultRule, formatDuration, kindId, parseDuration, stampCaseNames } from "$lib/state/smartRules";
@@ -138,10 +139,10 @@
       {#each offered as c (c.id)}<option value={c.id}>{c.name}</option>{/each}
     </select>
     {#if offered.length === 0}<span class="muted">there are no other cases yet: make one first</span>{/if}
-    {#if pointsAtOwnCopy}<span class="warn" role="status">This is the Pacemaker copy of this smart case, which it cannot read. Pick another case.</span>{/if}
+    {#if pointsAtOwnCopy}<span class="warn" role="status">This is the {smartCopyName(session.library?.kind)} of this smart case, which it cannot read. Pick another case.</span>{/if}
     {#if drift}
       <span class="warn" role="status">
-        Saved for a case called “{drift.saved}”; the case with this number is “{drift.now}” here (renamed, or the rule came from another card).
+        Saved for a case called “{drift.saved}”; the case with this number is “{drift.now}” here (renamed, or the rule came from another {session.isComputer ? "library" : "card"}).
         <Button small variant="ghost" onclick={acceptName}>Keep “{drift.now}”</Button>
       </span>
     {/if}

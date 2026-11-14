@@ -25,6 +25,8 @@ assert.equal(placeWords("computer").the, "this library");
 assert.equal(placeWords(undefined).the, "the Pacemaker", "no library open reads as a Pacemaker");
 assert.deepEqual([placeWords("computer").card, placeWords("computer").drive], ["the library", "the library folder"]);
 assert.deepEqual([placeWords("pacemaker").card, placeWords("pacemaker").drive], ["the card", "the drive"]);
+assert.deepEqual([placeWords("pacemaker").device, placeWords("pacemaker").thisCard], ["the device", "this card"]);
+assert.deepEqual([placeWords("computer").device, placeWords("computer").thisCard], ["the library", "this library"]);
 
 // how a library is named
 assert.equal(libraryLabel("computer", "C:\\Users\\me\\Music\\Pacemaker Revival"), "This computer");
@@ -40,15 +42,18 @@ assert.ok(!sameRoot("E:\\", "F:\\"));
 // the picker: This computer first, then the Pacemakers, plus a folder opened by hand
 const lib = "C:\\Users\\me\\Music\\Pacemaker Revival";
 assert.deepEqual(pickerOptions(lib, true, ["G:\\", "H:\\"]), [
-  { value: lib, label: "This computer" },
-  { value: "G:\\", label: "Pacemaker (G:)" },
-  { value: "H:\\", label: "Pacemaker (H:)" },
+  { value: lib, label: "This computer", title: lib },
+  { value: "G:\\", label: "Pacemaker (G:)", title: "G:\\" },
+  { value: "H:\\", label: "Pacemaker (H:)", title: "H:\\" },
 ]);
 assert.equal(pickerOptions(lib, false, [])[0].label, "This computer (new)", "a library that is not made yet says so");
-assert.deepEqual(pickerOptions(null, false, ["G:\\"]), [{ value: "G:\\", label: "Pacemaker (G:)" }], "no computer path, no entry");
+assert.deepEqual(pickerOptions(null, false, ["G:\\"]), [{ value: "G:\\", label: "Pacemaker (G:)", title: "G:\\" }], "no computer path, no entry");
 assert.equal(pickerOptions(lib, true, ["G:\\"], { root: "g:", kind: "pacemaker" }).length, 2, "an open Pacemaker is not listed twice");
 const hand = pickerOptions(lib, true, [], { root: "D:\\Other", kind: "computer" });
-assert.deepEqual(hand[1], { value: "D:\\Other", label: "This computer" }, "a folder opened by hand is added");
+assert.deepEqual(hand[1], { value: "D:\\Other", label: "Folder (Other)", title: "D:\\Other" }, "a folder opened by hand is added under its own name, not as a second This computer");
+assert.equal(libraryLabel("computer", "D:\\Other\\", lib), "Folder (Other)");
+assert.equal(libraryLabel("computer", lib.toLowerCase(), lib), "This computer", "the computer library by another spelling");
+assert.equal(libraryLabel("computer", "D:\\Other", null), "This computer", "computer library path not loaded yet: the real library is never mislabelled as a Folder");
 
 // start-up: only the library on this computer, only when it exists and the setting is on
 const info = (exists, open_at_start) => ({ exists, path: lib, settings: { open_at_start } });

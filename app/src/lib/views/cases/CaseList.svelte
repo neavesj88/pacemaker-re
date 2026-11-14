@@ -26,7 +26,7 @@
   import MergeDialog from "./MergeDialog.svelte";
   import NameDialog from "./NameDialog.svelte";
   import SmartSettingsDialog from "./SmartSettingsDialog.svelte";
-  import { remakeWhen } from "./smartRefreshLogic";
+  import { remakeWhen, smartCopyName } from "./smartRefreshLogic";
 
   const columns: Column[] = [
     { key: "pick", label: "" },
@@ -179,7 +179,7 @@
     const notes: string[] = [];
     if (list.some(isFav)) notes.push(`“Favourites” is the case the heart on a track uses: deleting it clears every heart, and the next heart click starts a new, empty Favourites case.`);
     const smart = list.filter(smartOf);
-    if (smart.length > 0) notes.push(`${smart.map((c) => `“${c.name}”`).join(", ")} ${smart.length === 1 ? "is the Pacemaker copy of a smart case, which will make it" : "are Pacemaker copies of smart cases, which will make them"} again ${remakeWhen(smartSettings.value.refresh_mode)}.`);
+    if (smart.length > 0) notes.push(`${smart.map((c) => `“${c.name}”`).join(", ")} ${smart.length === 1 ? `is the ${smartCopyName(session.library?.kind)} of a smart case, which will make it` : `are ${session.isComputer ? "★ cases" : "Pacemaker copies"} of smart cases, which will make them`} again ${remakeWhen(smartSettings.value.refresh_mode)}.`);
     const used = cases.smartCasesUsing(list.map((c) => c.id));
     if (used.length > 0) notes.push(`${used.map((n) => `“${n}”`).join(", ")} ${used.length === 1 ? "is a smart case that has" : "are smart cases that have"} a rule about ${list.length === 1 ? "this case" : "one of these cases"}; ${used.length === 1 ? "it" : "they"} will report an error until you pick another case in the rule.`);
     return notes.join(" ");
@@ -213,7 +213,7 @@
     <Button
       disabled={!jobs.canWrite || smartRefresh.checking || smartRefresh.applying}
       onclick={() => smartRefresh.review()}
-      title="Show what rewriting the Pacemaker copy of every smart case that is switched on would change, then do it if you agree"
+      title="Show what rewriting the {smartCopyName(session.library?.kind)} of every smart case that is switched on would change, then do it if you agree"
     >Refresh smart cases…</Button>
   {/if}
   <Button
@@ -221,7 +221,7 @@
     onclick={exportMany}
     title="Save several cases as playlist files in a folder, one file per case, with the audio copied alongside if you like"
   >Export{picked.size > 0 ? ` ${picked.size} ticked` : " all"}…</Button>
-  <Button onclick={() => (settingsOpen = true)} title="Whether the Pacemaker copies of smart cases refresh by themselves, and how smart cases are exported">Smart case settings…</Button>
+  <Button onclick={() => (settingsOpen = true)} title="Whether the {session.isComputer ? '★ cases' : 'Pacemaker copies'} of smart cases refresh by themselves, and how smart cases are exported">Smart case settings…</Button>
   <span class="muted">Cases are {session.isComputer ? 'playlists that can be sent to a Pacemaker' : "the Pacemaker's own playlists"}; the order here is the order {session.isComputer ? 'in the library' : 'on the device'}.</span>
 </div>
 {#if cases.infos.length > 0}

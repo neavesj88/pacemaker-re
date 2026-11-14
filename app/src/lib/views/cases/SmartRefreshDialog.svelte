@@ -21,13 +21,13 @@
     {#if todo.length > 0}
       <p>
         The {session.isComputer ? 'case' : 'Pacemaker copy'} of {plural(todo.length, "smart case")} no longer matches {todo.length === 1 ? "its" : "their"} rules. Each copy is rewritten
-        to hold exactly what the rules match now, in the order of the rules. Nothing else on the device is changed.
+        to hold exactly what the rules match now, in the order of the rules. Nothing else {session.place.on} is changed.
       </p>
       <ul class="items">
         {#each todo as i (i.id)}
           {@const lines = itemTrackLines(i)}
           <li>
-            <div class="head">{itemLine(i, false)}</div>
+            <div class="head">{itemLine(i, false, session.library?.kind)}</div>
             {#if i.renamed_from !== null}<div class="sub muted">Its name there is now “{i.renamed_from}”; it is named “{i.device_name}” again.</div>{/if}
             {#if i.reordered}<div class="sub muted">The tracks it keeps are put back in the order of the rules.</div>{/if}
             {#if lines.length > 0}
@@ -49,7 +49,7 @@
     {#if stuck.length > 0}
       <p class="warn">Cannot be refreshed, and left as they are:</p>
       <ul class="plain">
-        {#each stuck as i (i.id)}<li>{itemLine(i, false)}</li>{/each}
+        {#each stuck as i (i.id)}<li>{itemLine(i, false, session.library?.kind)}</li>{/each}
       </ul>
     {/if}
     {#if upToDate.length > 0}

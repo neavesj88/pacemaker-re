@@ -12,16 +12,16 @@ impl Fx {
         self.dst = d;
     }
 
-    fn plan_sel(&self, sel: &Selection, settings: &SyncSettings) -> SyncPlan {
+    pub(super) fn plan_sel(&self, sel: &Selection, settings: &SyncSettings) -> SyncPlan {
         plan_selection(&self.src, &self.dst, settings, "computer", sel, None).unwrap()
     }
 
-    fn run_sel(&mut self, p: &SyncPlan, sel: &Selection) -> Result<SyncReport, Error> {
+    pub(super) fn run_sel(&mut self, p: &SyncPlan, sel: &Selection) -> Result<SyncReport, Error> {
         apply_selection(&self.src, &mut self.dst, p, sel, &mut |_| {}, &|| false)
     }
 }
 
-fn sel(tracks: &[String], mixes: &[&str], cases: &[&str]) -> Selection {
+pub(super) fn sel(tracks: &[String], mixes: &[&str], cases: &[&str]) -> Selection {
     Selection { tracks: tracks.to_vec(), mixes: mixes.iter().map(|s| s.to_string()).collect(), cases: cases.iter().map(|s| s.to_string()).collect(), into_case: None }
 }
 
@@ -159,7 +159,7 @@ fn picked_tracks_go_into_an_existing_or_a_new_case() {
     assert_eq!(locs(&fx.dst, &fx.dst.case_track_ids(t_fresh.id).unwrap()), tracks);
     let missing = into(sel(&tracks, &[], &[]), "Nowhere", false);
     let p = fx.plan_sel(&missing, &SyncSettings::default());
-    assert!(reason(item(&p, "into-case:nowhere")).contains("not on the target"));
+    assert!(reason(item(&p, "into-case:nowhere")).contains("not in the receiving library"));
     assert!(fx.run_sel(&p, &missing).unwrap().done == 0);
     assert_eq!(fx.dst.case_infos().unwrap().len(), 2, "no case was made");
 }

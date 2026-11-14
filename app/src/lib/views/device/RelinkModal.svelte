@@ -36,9 +36,9 @@
   const sureCount = $derived(matched.filter((r) => relink.candidate(r)?.confidence === "sure").length);
   const tot = $derived(relink.totals);
   const free = $derived(device.overview?.storage.free_bytes);
-  const spaceProblem = $derived(freeSpaceProblem(tot.copyBytes, free));
+  const spaceProblem = $derived(freeSpaceProblem(tot.copyBytes, free, session.library?.kind));
   const chosen = $derived(relink.chosen);
-  const oddPaths = $derived(nonStandardNote(chosen.map((c) => c.cand)));
+  const oddPaths = $derived(nonStandardNote(chosen.map((c) => c.cand), session.library?.kind));
   const pct = $derived(scanPercent(relink.progress));
 
   onMount(() => {
@@ -72,8 +72,8 @@
           onkeydown={(e) => e.key === "Enter" && relink.search(root)}
         />
         <Button onclick={() => relink.browse()}>Browse…</Button>
-        <Button onclick={() => relink.useCardMusic(root)} title="Looks for files that are on the card but not where the library expects them">
-          The card's Music folder
+        <Button onclick={() => relink.useCardMusic(root)} title={`Looks for files that are ${session.isComputer ? "in the library" : "on the card"} but not where the library expects them`}>
+          {session.isComputer ? "The library's Music folder" : "The card's Music folder"}
         </Button>
       </div>
       {#if relink.settingsWarning}<p class="note">{relink.settingsWarning}</p>{/if}
@@ -128,7 +128,7 @@
               <span class="file">{cand.path}</span>
               <span class="num muted">{sizeText(cand.size)}</span>
             </div>
-            <div class="to">{actionLine(cand)}</div>
+            <div class="to">{actionLine(cand, session.library?.kind)}</div>
             <div class="to muted">{locationLine(row.location, cand.new_location)}</div>
             {#if cand.notes.length}
               <ul class="notes">{#each cand.notes as n (n)}<li>{n}</li>{/each}</ul>
@@ -161,7 +161,7 @@
       {/each}
     </ul>
     {#if chosen.length > 0}
-      <p class="sum">{totalsLine(tot)}</p>
+      <p class="sum">{totalsLine(tot, session.library?.kind)}</p>
       {#if spaceProblem}<p class="err" role="alert">{spaceProblem}</p>{/if}
     {/if}
   {:else if relink.stage === "confirm"}
@@ -170,7 +170,7 @@
       Restore from a snapshot puts the library rows back; files copied onto {session.place.card} stay and then show up under unused
       files. A track's format and length are updated where the file it now uses differs; its bit rate and sample rate stay as recorded.
     </p>
-    <p class="sum">{totalsLine(tot)}</p>
+    <p class="sum">{totalsLine(tot, session.library?.kind)}</p>
     {#if oddPaths}<p class="note">{oddPaths}</p>{/if}
     {#if spaceProblem}<p class="err" role="alert">{spaceProblem}</p>{/if}
     <ul class="rows plain" aria-label="Tracks to relink">
