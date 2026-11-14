@@ -9,6 +9,7 @@
   //
   // Only what is near the viewport is rendered (clips, blocks, ruler marks, waveform canvases),
   // so a long mix with many clips stays as cheap as a short one.
+  import { untrack } from "svelte";
   import type { Clip, EnvNode, ProcessDoc, TransitionDoc } from "$lib/api/mixes";
   import * as E from "$lib/state/mixedit";
   import { mixes } from "$lib/state/mixes.svelte";
@@ -29,9 +30,13 @@
 
   const RULER_H = 40;
   /** The bar: padding, then the clips (and the crossfades over their overlaps). It takes the height
-   * the pane has left, between a readable minimum and a maximum. */
-  const BAR_MIN = 190;
+   * the pane has left, between a floor and a maximum. The floor is below the comfortable height on
+   * purpose: on a short window the bar gives way, so the tool strip under it stays on screen (a bar kept at
+   * 190 px pushed the strip, its "+ Tool" button and any new tool below the fold). */
+  const BAR_MIN = 120;
   const BAR_MAX = 380;
+  /** The tool strip's lane is at least this high: its header holds the "Tools" label and the "+ Tool" button. */
+  const FX_MIN = 56;
   const PAD = 6;
   const FX_ROW = 24;
   const ENV_TOP = 18;
@@ -72,7 +77,8 @@
   });
   const fxH = $derived(fx.count * (FX_ROW + 2) + 8);
   let viewH = $state(0);
-  const BAR_H = $derived(Math.min(BAR_MAX, Math.max(BAR_MIN, viewH - RULER_H - Math.max(40, fxH) - 2)));
+  const fxLaneH = $derived(Math.max(FX_MIN, fxH));
+  const BAR_H = $derived(Math.min(BAR_MAX, Math.max(BAR_MIN, viewH - RULER_H - fxLaneH - 2)));
   const LANE_H = $derived(BAR_H - PAD * 2);
   const conflicts = $derived.by(() => {
     const out = new Set<string>();
@@ -147,6 +153,26 @@
       s.removeEventListener("wheel", wheel);
       ro.disconnect();
     };
+  });
+
+  // a tool that was just added (or picked) is shown: the strip may lie below the bar's fold on a short window
+  // or past the right edge when the playhead was elsewhere
+  $effect(() => {
+    const sel = mixes.selected;
+    const s = scroller;
+    if (!s || sel.length !== 1) return;
+    const it = fx.items.find((x) => x.p.id === sel[0]);
+    if (!it) return;
+    const top = RULER_H + BAR_H + 2;
+    const bottom = top + fxLaneH;
+    untrack(() => {
+      const x0 = mv.x(it.start);
+      const x1 = mv.x(it.end);
+      if (bottom > s.scrollTop + s.clientHeight) s.scrollTop = bottom - s.clientHeight;
+      const lo = mv.scrollLeft;
+      const hi = mv.scrollLeft + mv.viewW - HEADER_W;
+      if (x1 < lo || x0 > hi) mv.scrollLeft = Math.max(0, x0 - (mv.viewW - HEADER_W) * 0.2);
+    });
   });
 
   // keep the playhead in view while playing: scroll when it runs off the right edge
@@ -459,7 +485,7 @@
       </div>
 
       <!-- the tool strip, attached to the bar -->
-      <div class="row fxrow" style:height="{Math.max(40, fxH)}px">
+      <div class="row fxrow" style:height="{fxLaneH}px">
         <div class="hd">
           <span class="hrow"><b>Tools</b></span>
           <button class="mini" onclick={toolButton} title="Add a tool, loop, reverse or ignore to the selected clip (or the one under the playhead)">+ Tool ▾</button>

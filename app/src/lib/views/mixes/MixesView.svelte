@@ -11,6 +11,7 @@
   import { vocal } from "$lib/state/vocal.svelte";
   import { addTracks } from "./actions";
   import { openMix } from "./flow";
+  import { ADD_KEYS, addIdsFrom } from "./mixlist";
   import ConfirmDialog from "./ConfirmDialog.svelte";
   import ExportDialog from "./ExportDialog.svelte";
   import MixEditor from "./MixEditor.svelte";
@@ -43,18 +44,17 @@
     if (known) openMix(want);
   });
 
-  // accept the key with or without the area prefix
-  const KEYS = ["addTracks", "mixes.addTracks"];
-
+  // accept the key with or without the area prefix; both are taken so neither is acted on twice
   $effect(() => {
-    for (const key of KEYS) {
-      const ids = nav.params[key];
-      if (Array.isArray(ids)) {
+    const clean = addIdsFrom(nav.params);
+    let seen = false;
+    for (const key of ADD_KEYS) {
+      if (key in nav.params) {
+        seen = true;
         nav.take(key);
-        const clean = ids.filter((x): x is number => typeof x === "number");
-        if (clean.length > 0) mv.pending = [...mv.pending, ...clean];
       }
     }
+    if (seen && clean.length > 0) mv.pending = [...mv.pending, ...clean];
   });
 
   // once a mix is open, the waiting tracks go in at its end

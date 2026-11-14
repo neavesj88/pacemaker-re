@@ -75,11 +75,13 @@ pub fn setup(app: &mut tauri::App) {
 /// preview then plays at the level the export will have. Omitted = no loudness processing.
 /// `edge_fade_ms`: fade both ends of the window, as a partial export does at its cuts (previewing a
 /// range); omitted = no fade, so plain playback windows join seamlessly.
+/// `vocal_tool_ids`: the Wah tools (document ids) the app marks as Vocal tools; they render as the vocal
+/// filter, as in the live player and in an export given the same ids.
 #[tauri::command]
-pub async fn export_render_preview(app: AppHandle, root: String, mix: MixDoc, from_sec: f64, to_sec: f64, gains: Option<PreviewGains>, edge_fade_ms: Option<f64>) -> AppResult<RenderedAudio> {
+pub async fn export_render_preview(app: AppHandle, root: String, mix: MixDoc, from_sec: f64, to_sec: f64, gains: Option<PreviewGains>, edge_fade_ms: Option<f64>, vocal_tool_ids: Option<Vec<String>>) -> AppResult<RenderedAudio> {
     let out = tauri::async_runtime::spawn_blocking(move || -> AppResult<RenderedAudio> {
         let dest = render::next_preview_path()?;
-        render::render_preview_with(Path::new(&root), &mix, from_sec, to_sec, &dest, gains.as_ref(), edge_fade_ms)
+        render::render_preview_with(Path::new(&root), &mix, from_sec, to_sec, &dest, gains.as_ref(), edge_fade_ms, vocal_tool_ids.as_deref())
     })
     .await??;
     // the player streams the file over the asset protocol, whose scope starts empty
@@ -173,6 +175,7 @@ pub async fn export_mix_audio(
     levels: Option<LevelSettings>,
     encoding: Option<EncodingSpec>,
     tags: Option<TagSpec>,
+    vocal_tool_ids: Option<Vec<String>>,
 ) -> AppResult<ExportStarted> {
     let request = render::ExportRequest {
         range: range.unwrap_or_default(),
@@ -180,6 +183,7 @@ pub async fn export_mix_audio(
         levels: levels.unwrap_or_default(),
         encoding: encoding.unwrap_or_default(),
         tags,
+        vocal_tool_ids,
     };
     let label = if mix.name.trim().is_empty() { "mix".to_string() } else { mix.name.clone() };
     // Planning opens the library on the device, reads the cover file and builds the track list and
@@ -350,7 +354,7 @@ pub fn export_range_resolve(mix: MixDoc, range: RangeSpec, range_prefs: Option<R
 /// takes to play at that level) followed by `job-done` for the job `mix-loudness`. Progress is
 /// `job-progress` (`done` / `total` in seconds of audio). Cancel with `export_cancel`.
 #[tauri::command]
-pub async fn export_loudness_analyse(app: AppHandle, lock: State<'_, JobLock>, root: String, mix: MixDoc, range: Option<RangeSpec>, range_prefs: Option<RangePrefs>, levels: Option<LevelSettings>) -> AppResult<()> {
+pub async fn export_loudness_analyse(app: AppHandle, lock: State<'_, JobLock>, root: String, mix: MixDoc, range: Option<RangeSpec>, range_prefs: Option<RangePrefs>, levels: Option<LevelSettings>, vocal_tool_ids: Option<Vec<String>>) -> AppResult<()> {
     let levels = levels.unwrap_or_default();
     levels.validate()?;
     let prefs = range_prefs.unwrap_or_default();
@@ -358,22 +362,23 @@ pub async fn export_loudness_analyse(app: AppHandle, lock: State<'_, JobLock>, r
     let label = if mix.name.trim().is_empty() { "mix".to_string() } else { mix.name.clone() };
     // opening the library on the device and reading the settings belong on a blocking thread (see
     // `export_mix_audio`)
-    let (mix, resolved, parsed, res, peq, total) = tauri::async_runtime::spawn_blocking(move || -> AppResult<_> {
+    let (mix, resolved, parsed, res, peq, vocal_tools, total) = tauri::async_runtime::spawn_blocking(move || -> AppResult<_> {
         let resolved = range::resolve(&mix, &spec, &prefs)?;
         let parsed = mix.to_mix()?;
         let res = render::LibResolver::open(Path::new(&root), &parsed)?;
         let peq = render::peq_mode(Path::new(&root));
+        let vocal_tools = render::vocal_tools_for(&mix, peq, vocal_tool_ids.as_deref());
         let (from, to) = pm_mixer::engine::export_span(&parsed).ok_or("The mix has no audible clips.")?;
         let rate = f64::from(pm_mixer::RATE);
         let total = (resolved.as_ref().map_or((to - from) as f64 / rate, |r| (r.to.min(to) - r.from).max(0) as f64 / rate).ceil() as usize).max(1);
-        Ok((mix, resolved, parsed, res, peq, total))
+        Ok((mix, resolved, parsed, res, peq, vocal_tools, total))
     })
     .await??;
     spawn_job(app, &lock, JOB_MIX_LOUDNESS, move |app| {
         let mut last = Instant::now() - Duration::from_secs(1);
         let cancel = &app.state::<ExportCancel>().0;
         cancel.store(false, Ordering::SeqCst);
-        let subject = loudness::Subject { mix: &parsed, doc: &mix, res: &res, peq, range: resolved.as_ref() };
+        let subject = loudness::Subject { mix: &parsed, doc: &mix, res: &res, peq, vocal_tools, range: resolved.as_ref() };
         let report = loudness::analyse(&subject, &levels, "analysis", &mut |p| {
             if last.elapsed() >= Duration::from_millis(250) {
                 last = Instant::now();

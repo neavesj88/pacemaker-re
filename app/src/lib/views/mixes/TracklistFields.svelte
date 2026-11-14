@@ -39,7 +39,7 @@
     <option value="replace">replace it without asking</option>
   </select>
 </div>
-<div class="muted note">These settings are kept on this computer. Lists are text you copy or save; nothing here is written to the device.</div>
+<div class="muted note">These settings are kept on this computer. Lists are text you copy or save; nothing here changes your library.</div>
 
 <style>
   .grid {

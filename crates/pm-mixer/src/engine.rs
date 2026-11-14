@@ -196,6 +196,18 @@ pub(crate) fn make_slots(mix: &Mix, clip_gain_db: &[f64], warnings: &mut Vec<Str
     slots
 }
 
+/// How a warning names a clip: the track's artist and title when the mix carries them (the slot
+/// number counts audible clips only, which is not what a person sees), else the slot number.
+pub(crate) fn clip_label(t: &Track, slot: usize) -> String {
+    let (a, b) = (t.fuzzy_id.artist.trim(), t.fuzzy_id.title.trim());
+    match (a.is_empty(), b.is_empty()) {
+        (false, false) => format!("\"{a} - {b}\""),
+        (true, false) => format!("\"{b}\""),
+        (false, true) => format!("\"{a}\""),
+        _ => format!("clip {}", slot + 1),
+    }
+}
+
 /// Counters a block render keeps.
 #[derive(Default)]
 pub(crate) struct Tally {
@@ -239,14 +251,14 @@ pub(crate) fn mix_block(
             match get(&slot.track) {
                 SourceState::Ready(src) => {
                     if src.glitches > 0 {
-                        tally.warnings.push(format!("clip {}: {} corrupt audio frame(s) were replaced by silence", si + 1, src.glitches));
+                        tally.warnings.push(format!("{}: {} corrupt audio frame(s) were replaced by silence", clip_label(&slot.track, si), src.glitches));
                     }
                     tally.rendered += 1;
                     slot.stream = Some(ClipStream::new(&slot.track, src, lo - start, peq.clone()));
                 }
                 SourceState::Pending => continue,
                 SourceState::Failed(e) => {
-                    tally.warnings.push(format!("clip {} skipped: {e}", si + 1));
+                    tally.warnings.push(format!("Skipped {}: {e}", clip_label(&slot.track, si)));
                     tally.failed += 1;
                     slot.dead = true;
                     continue;
@@ -330,7 +342,7 @@ pub(crate) fn assign_fades(slots: &mut [Slot], mix: &Mix, warnings: &mut Vec<Str
         }
         let mut cand: Vec<usize> = (0..slots.len()).filter(|&i| slots[i].vs < te && slots[i].ve > ts).collect();
         if cand.len() < 2 {
-            warnings.push(format!("transition {} overlaps fewer than two clips and was ignored", ti + 1));
+            warnings.push(format!("Crossfade {} overlaps fewer than two clips and was ignored.", ti + 1));
             continue;
         }
         cand.sort_by_key(|&i| (slots[i].vs, i));

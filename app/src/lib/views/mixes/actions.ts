@@ -17,7 +17,7 @@ import {
   type RecipeId,
 } from "$lib/state/transitionRecipes";
 import { confirm } from "./confirm.svelte";
-import { SR, toolLabel } from "./layout";
+import { SR, mmss, toolLabel } from "./layout";
 import { recipePrefs } from "./recipePrefs.svelte";
 import { vocalTools } from "./vocalTools.svelte";
 import { mv } from "./view.svelte";
@@ -94,7 +94,7 @@ export function addProcessTo(type: string, clip: Clip | undefined, at: number = 
   }
   if (isRegion) mixes.addRegion(clip.id, type, start, length);
   else {
-    const tool = mixes.addTool(clip.id, type, start, length, type === "Trans" ? E.effectiveBpm(clip, start) || bpm : 0);
+    const tool = mixes.addTool(clip.id, type, start, length, type === "Trans" ? E.effectiveBpm(clip, start) || bpm : 0, asVocal ? "Vocal" : toolLabel(type, vocal.mode));
     if (asVocal) vocalTools.set(doc.id, tool.id, true);
   }
   return true;
@@ -110,6 +110,8 @@ export async function addTracks(ids: number[], at?: number) {
   let pos = at;
   let added = 0;
   const kept: string[] = [];
+  /** Tracks that went somewhere other than the asked-for spot (both decks were busy there). */
+  const moved: string[] = [];
   for (const id of ids) {
     try {
       const before = mixes.doc?.clips.length ?? 0;
@@ -125,13 +127,21 @@ export async function addTracks(ids: number[], at?: number) {
       if (r.choice && !r.matched) kept.push(`${clipTitle(mixes.doc?.clips.find((c) => mixes.selected.includes(c.id)))} (${stretchText(r.choice.stretchPct)} to reach ${r.choice.playsAt.toFixed(1)} BPM)`);
       if (pos !== undefined && mixes.doc) {
         const last = mixes.doc.clips.find((c) => mixes.selected.includes(c.id));
-        if (last) pos = last.visibleEnd;
+        if (last) {
+          if (Math.abs(last.visibleStart - pos) > SR) {
+            moved.push(`${clipTitle(last)} at ${mmss(last.visibleStart / SR)}`);
+            // show where it went: the clip is not under the playhead
+            mv.scrollLeft = Math.max(0, mv.x(last.visibleStart) - mv.viewW * 0.2);
+          }
+          pos = last.visibleEnd;
+        }
       }
     } catch (e) {
       toast.show(`Could not add track: ${errText(e)}`, "bad", 7000);
     }
   }
   if (added > 0) toast.show(added === 1 ? "Track added" : `${added} tracks added`, "ok");
+  if (moved.length > 0) toast.show(`Both decks were busy where you asked, so it went later: ${moved.join("; ")}.`, "info", 8000);
   if (kept.length > 0) toast.show(`Kept at its own tempo, since matching would stretch it too much: ${kept.join("; ")}. Use "Sync to mix tempo" in the clip's panel to match anyway.`, "info", 10000);
 }
 

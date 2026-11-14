@@ -178,7 +178,7 @@
     <Button disabled={chosen.length === 0} onclick={exportChosen} title="Write the saved mixes as .pmk files">
       {chosen.length > 1 ? `Export ${chosen.length}…` : "Export .pmk…"}
     </Button>
-    <Button disabled={chosen.length === 0} onclick={() => thingEditor.edit("mix", chosen.map((m) => m.id))} title="Tags and a colour label for the picked mixes. Kept by this app only; nothing is written to the device.">
+    <Button disabled={chosen.length === 0} onclick={() => thingEditor.edit("mix", chosen.map((m) => m.id))} title="Tags and a colour label for the picked mixes. Kept by this app only; your library is not changed.">
       Tags and colour…
     </Button>
     <Button disabled={chosen.length === 0} onclick={() => deleteMixes(chosen)}>
@@ -236,7 +236,7 @@
         <option value="replace">Replace it (the confirmation says which)</option>
       </select>
     </div>
-    <div class="muted small">Sort and these options are remembered on this computer. They do not change anything on the device.</div>
+    <div class="muted small">Sort and these options are remembered on this computer. They do not change your library.</div>
   </details>
 
   {#if mv.pending.length > 0}

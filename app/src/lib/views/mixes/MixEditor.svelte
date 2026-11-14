@@ -11,7 +11,7 @@
   import { describe, clipTitle, duplicateSelection, errText, pasteAtPlayhead } from "./actions";
   import BpmField from "./BpmField.svelte";
   import { confirm } from "./confirm.svelte";
-  import { cancelExport, closeMix, exportAudio, newMix, saveMix, saveMixAs } from "./flow";
+  import { cancelExport, closeMix, exportAudio, newMix, reloadChangedMix, saveMix, saveMixAs } from "./flow";
   import Inspector from "./Inspector.svelte";
   import { PPS_MAX, PPS_MIN, SR, clock, ppsFromSlider, sliderFromPps } from "./layout";
   import { preview } from "./preview.svelte";
@@ -281,6 +281,17 @@
     </div>
   </div>
   {#if mv.exporting}<div class="progress" role="progressbar" aria-label="Exporting audio"><i></i></div>{/if}
+  {#if mixes.libraryChange}
+    <div class="stale" role="alert">
+      {#if mixes.libraryChange === "gone"}
+        <span>“{doc.name}” is no longer in the library: a restore or sync removed it. Your edits are still here; use Save as to keep them as a new mix.</span>
+      {:else}
+        <span>“{doc.name}” was changed in the library by a restore or sync after you opened it. Saving now would overwrite that version with the one on screen.</span>
+        <Button onclick={reloadChangedMix} title="Read the mix from the library and drop the edits made here">Reload (drop my edits)</Button>
+        <Button onclick={() => mixes.keepEdits()} title="Allow Save to replace the library's version with this one">Keep my edits</Button>
+      {/if}
+    </div>
+  {/if}
 
   <div class="body">
     <div class="left">
@@ -370,6 +381,17 @@
     color: var(--bad);
     font-size: 12px;
     cursor: help;
+  }
+  .stale {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 12px;
+    background: var(--panel);
+    border-bottom: 1px solid var(--cue);
+    color: var(--text);
+    font-size: 12px;
   }
   .progress {
     height: 3px;

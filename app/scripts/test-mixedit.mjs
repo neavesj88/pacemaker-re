@@ -16,6 +16,7 @@ import * as R from "../src/lib/state/transitionRecipes.ts";
 import * as ST from "../src/lib/state/sectionTransition.ts";
 import * as L from "../src/lib/views/mixes/layout.ts";
 import * as ML from "../src/lib/views/mixes/mixlist.ts";
+import * as PS from "../src/lib/views/mixes/previewState.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 let n = 0;
@@ -1336,6 +1337,80 @@ test("a ramped clip synced to a target really starts at the target; half/double 
   const roomy = doc([clip("x", 0, 10 * BAR, 120, 1, null, { channel: 0 }), clip("y", 0, 10.5 * BAR, 120, 1, null, { channel: 1 })]);
   assert.equal(E.addClip(roomy, clip("n", 0, 4 * BAR, 120, 1, null), 2 * BAR).clips.at(-1).visibleStart, 10 * BAR, "a small overlap is fine");
   assert.equal(added.problems?.length ?? 0, busy.problems?.length ?? 0, "no new overlap problem");
+});
+
+// ---- Mix tab fixes (fx2) --------------------------------------------------------------------
+
+test("a tool's start or length typed as NaN leaves the mix alone", () => {
+  const a = clip("a", 0, 20 * BAR, 120, 1, null);
+  let d = doc([a]);
+  d = E.addProcess(d, "a", E.newTool("Echo", BAR, 4 * BAR, "e1"));
+  assert.equal(E.moveProcess(d, "a", "e1", Number.NaN), d, "move by NaN is a no-op");
+  assert.equal(E.moveProcess(d, "a", "e1", Number.POSITIVE_INFINITY), d);
+  assert.equal(E.resizeProcess(d, "a", "e1", "right", Number.NaN), d, "resize to NaN is a no-op");
+  const p = E.clipOf(E.moveProcess(d, "a", "e1", 2 * BAR), "a").processes[0];
+  assert.equal(p.start, 2 * BAR, "a real value still moves it");
+  assert.ok(Number.isFinite(p.length));
+});
+
+test("an emptied mix has no reference tempo, a mix with clips keeps it", () => {
+  const one = doc([clip("a", 0, 10 * BAR, 120, 1, null)]);
+  const empty = doc([]);
+  assert.equal(E.carryTempo(124, empty), null, "undo or delete to an empty mix drops the tempo");
+  assert.equal(E.carryTempo(124, one), 124, "with clips the tempo stays");
+  assert.equal(E.carryTempo(null, one), null);
+});
+
+test("a deep link that names the tracks under both keys adds them once", () => {
+  assert.deepEqual(ML.addIdsFrom({ "mixes.addTracks": [3, 4], addTracks: [3, 4] }), [3, 4]);
+  assert.deepEqual(ML.addIdsFrom({ addTracks: [9] }), [9]);
+  assert.deepEqual(ML.addIdsFrom({ "mixes.addTracks": [1, "x", 2] }), [1, 2]);
+  assert.deepEqual(ML.addIdsFrom({ other: [1] }), []);
+  assert.deepEqual(ML.addIdsFrom({ addTracks: "nope" }), []);
+});
+
+test("what a library reload means for the mix open in the editor", () => {
+  assert.equal(ML.openMixVerdict(100, 100, true), "same");
+  assert.equal(ML.openMixVerdict(undefined, 5, false), "same", "a mix opened without a stamp is not judged");
+  assert.equal(ML.openMixVerdict(100, 200, false), "reload", "no edits: read it again");
+  assert.equal(ML.openMixVerdict(100, 200, true), "changed", "edits: never throw them away, hold Save");
+  assert.equal(ML.openMixVerdict(100, null, false), "removed");
+  assert.equal(ML.openMixVerdict(100, null, true), "gone");
+});
+
+test("Play knows when nothing would be heard, and the Vocal marks reach the engine sorted", () => {
+  const aud = clip("a", 0, 10 * BAR, 120, 1, null);
+  const d = doc([aud, clip("b", 0, 10 * BAR, 120, 1, null, { clipBypassed: true })]);
+  assert.equal(PS.hasAudibleClips(d), true);
+  assert.equal(PS.hasAudibleClips(doc([clip("b", 0, 10 * BAR, 120, 1, null, { clipBypassed: true })])), false, "every clip muted");
+  assert.equal(PS.hasAudibleClips(doc([])), false);
+  let m = E.addProcess(d, "a", E.newTool("Wah", 0, BAR, "w2"));
+  m = E.addProcess(m, "a", E.newTool("Wah", 2 * BAR, BAR, "w1"));
+  assert.deepEqual(PS.markedToolIds(m, ["w2", "w1", "gone"]), ["w1", "w2"]);
+  assert.deepEqual(PS.markedToolIds(m, []), []);
+});
+
+test("clips that sit near each other on the bar never share a colour", () => {
+  // CIELAB distance (D65) between clipColour(i) and clipColour(j) for neighbours up to three apart
+  const lab = (hex) => {
+    const v = parseInt(hex.slice(1), 16);
+    const [r, g, b] = [(v >> 16) & 255, (v >> 8) & 255, v & 255].map((c) => {
+      c /= 255;
+      return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+    });
+    const x = (r * 0.4124 + g * 0.3576 + b * 0.1805) / 0.95047;
+    const y = r * 0.2126 + g * 0.7152 + b * 0.0722;
+    const z = (r * 0.0193 + g * 0.1192 + b * 0.9505) / 1.08883;
+    const f = (t) => (t > 0.008856 ? Math.cbrt(t) : 7.787 * t + 16 / 116);
+    return [116 * f(y) - 16, 500 * (f(x) - f(y)), 200 * (f(y) - f(z))];
+  };
+  for (let i = 0; i < 60; i++) {
+    for (let j = i + 1; j <= i + 3; j++) {
+      const a = lab(L.clipColour(i));
+      const b = lab(L.clipColour(j));
+      assert.ok(Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]) > 15, `clips ${i} and ${j} are too alike`);
+    }
+  }
 });
 
 console.log(`\n${n} tests passed`);

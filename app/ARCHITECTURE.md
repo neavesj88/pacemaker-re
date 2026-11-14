@@ -369,6 +369,8 @@ turn it off, so the editor, the preview and the export all show the stock Wah in
 version counts as unknown and leaves the flag in force. A rendered mix preview remembers the mode it was rendered with
 (`views/mixes/previewState.ts::sameRender`); a change of the flag marks it out of date like an edit. `device_vocal_set`
 treats an unreadable flag as unknown and writes anyway, so the card can be repaired from the app.
+The Vocal marks (Wah tools the app marks as Vocal, `vocalTools.svelte.ts`) go to the live player, the range preview and the export alike
+(`vocalToolIds`, resolved by `render::vocal_tools_for`: on stock Wah only the marked tools are the vocal filter, with the card's flag on the card decides for all), so a file sounds like the preview.
 
 A preview window that starts after 0 is rendered from a block boundary about 190 ms earlier and the lead-in is dropped
 (`pm-mixer` `engine.rs`, `PREROLL`), so filters, delays and the limiter are settled at the first kept frame and a mid-tool

@@ -3,6 +3,7 @@
 // file dialogs) and reports the outcome with a toast.
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { exportCancel, exportCueTarget, exportMixAudio, type AudioFormat, type ExportExtras } from "$lib/api/export";
+import { mixListMeta } from "$lib/api/mixes";
 import { extOf, needsDiskCheck, replacements, resolveDest, saveFilters } from "$lib/state/exportprefs";
 import {
   mixDeleteMany,
@@ -23,7 +24,7 @@ import { errText } from "./actions";
 import { confirm, guard, namer } from "./confirm.svelte";
 import { listMeta } from "./listmeta.svelte";
 import { listPrefs } from "./listPrefs.svelte";
-import { copyName, deleteLine, deleteSummary, exportSummary, planLine } from "./mixlist";
+import { copyName, deleteLine, deleteSummary, exportSummary, openMixVerdict, planLine } from "./mixlist";
 import { preview } from "./preview.svelte";
 import { vocalTools } from "./vocalTools.svelte";
 import { mv } from "./view.svelte";
@@ -319,4 +320,46 @@ async function startExport(root: string, doc: NonNullable<typeof mixes.doc>, des
     mv.exporting = false;
     toast.show(`Export failed: ${errText(e)}`, "bad", 12000);
   }
+}
+
+/** After the library was read again in place (a snapshot restore, a Sync, a relink): the mix open in the
+ * editor may have been replaced or removed in the library meanwhile. Without edits it is read again (or the
+ * editor goes back to the list); with edits nothing is thrown away, Save is held until the user chooses. */
+export async function checkOpenMixAfterReload(root: string) {
+  const doc = mixes.doc;
+  if (!doc || mixes.root !== root) return;
+  let stamp: number | null;
+  try {
+    const row = (await mixListMeta(root)).find((r) => r.id === doc.id);
+    stamp = row ? row.meta.dateModified : null;
+  } catch {
+    return; // not readable now: the next reload checks again
+  }
+  if (mixes.doc !== doc || mixes.root !== root) return;
+  const verdict = openMixVerdict(doc.meta?.dateModified, stamp, mixes.dirty);
+  const name = doc.name;
+  if (verdict === "reload") {
+    preview.stop();
+    try {
+      await mixes.open(doc.id);
+      toast.show(`“${name}” was changed in the library (a restore or sync), so it was read again.`, "info", 9000);
+    } catch (e) {
+      toast.show(`“${name}” changed in the library but could not be read again: ${errText(e)}`, "bad", 9000);
+    }
+  } else if (verdict === "removed") {
+    preview.stop();
+    mixes.close();
+    void mixes.refreshList();
+    toast.show(`“${name}” is no longer in the library (a restore or sync removed it), so the editor was closed.`, "info", 9000);
+  } else if (verdict === "changed" || verdict === "gone") {
+    mixes.libraryChange = verdict;
+  }
+}
+
+/** Reads the open mix again, discarding the edits (the choice in the banner after a restore or sync). */
+export function reloadChangedMix() {
+  const id = mixes.doc?.id;
+  if (id === undefined) return;
+  mixes.libraryChange = null;
+  openMix(id);
 }

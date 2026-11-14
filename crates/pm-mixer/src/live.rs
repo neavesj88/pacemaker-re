@@ -73,7 +73,7 @@ impl Live {
         let mut tally = Tally::default();
         let slots = make_slots(mix, &opts.clip_gain_db, &mut tally.warnings);
         if slots.is_empty() {
-            return Err(Error::Invalid("the mix has no audible clips".into()));
+            return Err(Error::Invalid("No clip in this mix can be heard: every clip is muted or has no length.".into()));
         }
         let end_all = slots.iter().map(|s| s.ve).max().unwrap();
         let g = engine::lin(opts.master_gain_db);
@@ -387,8 +387,21 @@ mod tests {
         let mut live = Live::new(&mix, &LiveOptions::default(), 0).unwrap();
         let _ = pull(&mut live, &res, usize::MAX, 4096);
         let w = live.take_warnings();
-        assert_eq!(w.iter().filter(|s| s.contains("skipped")).count(), 2, "{w:?}");
+        assert_eq!(w.iter().filter(|s| s.contains("Skipped")).count(), 2, "{w:?}");
         assert!(live.take_warnings().is_empty());
+    }
+
+    #[test]
+    fn a_skipped_clip_is_named_by_its_track_not_a_slot_number() {
+        let mut mix = mix3();
+        mix.tracks[1].fuzzy_id.artist = "Some Artist".into();
+        mix.tracks[1].fuzzy_id.title = "Some Title".into();
+        let res = Res(vec![(1, tone(220.0, 8.0, 0.6)), (3, tone(330.0, 8.0, 0.6))]);
+        let mut live = Live::new(&mix, &LiveOptions::default(), 0).unwrap();
+        let _ = pull(&mut live, &res, usize::MAX, 4096);
+        let w = live.take_warnings();
+        assert!(w.iter().any(|s| s.starts_with("Skipped \"Some Artist - Some Title\":")), "{w:?}");
+        assert!(w.iter().all(|s| !s.contains("clip 2")), "no slot number when the track has a name: {w:?}");
     }
 
     #[test]

@@ -26,8 +26,8 @@ export type RenderedMix = {
  * `gains`: the `gains` of a loudness report (per-clip levelling and master gain): the preview then
  * plays at the level an export with the same settings has. `edgeFadeMs`: the fade at both ends of
  * the window, to hear a range as a partial export makes it (omit for plain playback). */
-export const renderMixPreview = (root: string, mix: MixDoc, fromSec: number, toSec: number, gains?: PreviewGains, edgeFadeMs?: number) =>
-  invoke<RenderedMix>("export_render_preview", { root, mix, fromSec, toSec, gains: gains ?? null, edgeFadeMs: edgeFadeMs ?? null });
+export const renderMixPreview = (root: string, mix: MixDoc, fromSec: number, toSec: number, gains?: PreviewGains, edgeFadeMs?: number, vocalToolIds?: string[]) =>
+  invoke<RenderedMix>("export_render_preview", { root, mix, fromSec, toSec, gains: gains ?? null, edgeFadeMs: edgeFadeMs ?? null, vocalToolIds: vocalToolIds ?? null });
 
 /** What `exportMixAudio` returns the moment the job has started. */
 export type MixExportStarted = {
@@ -131,6 +131,7 @@ export const exportMixAudio = (root: string, mix: MixDoc, dest: string, format: 
     levels: extras.levels ?? null,
     encoding: extras.encoding ?? null,
     tags: extras.tags ?? null,
+    vocalToolIds: extras.vocalToolIds ?? null,
   });
 
 /** Asks the running mix export to stop. The render ends at its next block, no file is left, and
@@ -333,7 +334,15 @@ export type LoudnessReport = {
 };
 
 /** Optional parts of `exportMixAudio`. */
-export type ExportExtras = { range?: RangeSpec; rangePrefs?: RangePrefs; levels?: LevelSettings; encoding?: EncodingSpec; tags?: TagSpec | null };
+export type ExportExtras = {
+  range?: RangeSpec;
+  rangePrefs?: RangePrefs;
+  levels?: LevelSettings;
+  encoding?: EncodingSpec;
+  tags?: TagSpec | null;
+  /** The Wah tools (ids in `mix`) the app marks as Vocal tools: they are exported as the vocal filter, as the live player plays them. */
+  vocalToolIds?: string[];
+};
 
 /** The `job` name of loudness analyses in `job-progress` / `job-done`. */
 export const MIX_LOUDNESS_JOB = "mix-loudness";
@@ -344,8 +353,8 @@ export const MIX_LOUDNESS_JOB = "mix-loudness";
  * status "measuring"), the result one `mix-loudness-report` event (`onLoudnessReport`, source
  * "analysis") followed by `job-done`. Rejects when another job is running or the settings or range
  * are invalid. `exportCancel` stops it. */
-export const exportLoudnessAnalyse = (root: string, mix: MixDoc, range?: RangeSpec, rangePrefs?: RangePrefs, levels?: LevelSettings) =>
-  invoke<void>("export_loudness_analyse", { root, mix, range: range ?? null, rangePrefs: rangePrefs ?? null, levels: levels ?? null });
+export const exportLoudnessAnalyse = (root: string, mix: MixDoc, range?: RangeSpec, rangePrefs?: RangePrefs, levels?: LevelSettings, vocalToolIds?: string[]) =>
+  invoke<void>("export_loudness_analyse", { root, mix, range: range ?? null, rangePrefs: rangePrefs ?? null, levels: levels ?? null, vocalToolIds: vocalToolIds ?? null });
 
 /** Listens for loudness reports (an analysis finishing, or an export measuring its file). */
 export const onLoudnessReport = (cb: (r: LoudnessReport) => void) => listen<LoudnessReport>("mix-loudness-report", (e) => cb(e.payload));

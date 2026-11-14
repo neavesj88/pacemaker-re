@@ -255,7 +255,7 @@
       <fieldset>
         <legend>Tags</legend>
         <ExportTagFields mixTitle={doc.name} />
-        <div class="muted small">Tags are written into the exported file only; nothing is added to the device. These settings are kept on this computer.</div>
+        <div class="muted small">Tags are written into the exported file only; nothing in your library is changed. These settings are kept on this computer.</div>
       </fieldset>
 
       <label class="check">
@@ -269,7 +269,7 @@
       <details class="settings">
         <summary>More settings</summary>
         <ExportLimitFields />
-        <div class="muted small">These settings are kept on this computer. They change how the audio file is made; nothing is written to the device.</div>
+        <div class="muted small">These settings are kept on this computer. They change how the audio file is made; nothing in your library is changed.</div>
       </details>
 
       {#if X.problem}<div class="bad" role="alert">{X.problem}</div>{/if}

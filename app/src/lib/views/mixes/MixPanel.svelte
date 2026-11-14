@@ -46,7 +46,7 @@
 </div>
 <div class="field">
   <label for="mx-tempo">Mix tempo</label>
-  <BpmField id="mx-tempo" value={doc.tempoBpm} onset={(v) => mixes.setTempo(v)} label="Mix tempo" placeholder="first track" />
+  <BpmField id="mx-tempo" value={doc.tempoBpm} onset={(v) => mixes.setTempo(v)} label="Mix tempo" placeholder="first track" stack />
 </div>
 <div class="muted small">The tempo tracks are matched to when added or synced (or double or half of it). Not stored in the mix file.</div>
 {#if meta}
