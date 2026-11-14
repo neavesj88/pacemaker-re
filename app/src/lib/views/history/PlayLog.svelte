@@ -407,26 +407,31 @@
     <summary>How plays are worked out, and what cannot be known</summary>
     <ul>
       <li>
-        The Pacemaker stores only each track's play count and the time of its last play. Each time a library is opened here, any track whose
-        counters changed is written to the log. A play is a rise in the count; its time is the device's last-played time.
+        {session.isComputer ? "A library on this computer stores" : "The Pacemaker stores"} only each track's play count and the time of its last play. Each time a library is opened here, any track whose
+        counters changed is written to the log. A play is a rise in the count; its time is {session.isComputer ? "the library's" : "the device's"} last-played time.
       </li>
       <li>
-        The log only sees the device when it is opened in this app. If a track was played three times between two openings, it shows as three
+        The log only sees {session.isComputer ? "the library" : "the device"} when it is opened in this app. If a track was played three times between two openings, it shows as three
         plays at its latest time (marked ~); a track played on several nights between two openings looks like one night. Open the library more often for finer detail.
       </li>
       <li>
-        A session is plays whose times are within the pause chosen above; the device records no sessions, and a track played twice in one session
+        A session is plays whose times are within the pause chosen above; {session.isComputer ? "the library records" : "the device records"} no sessions, and a track played twice in one session
         is listed once with a count, not at each real position in the running order.
       </li>
       <li>
-        Times come from the device's clock; if it was wrong the log is wrong the same way. A count that goes down (a reset, or a track put back
-        on the card) is counted from zero. A play of a track that was added after the last snapshot is counted from zero too.
+        Times come from {session.isComputer ? "the clock of the library they were read from" : "the device's clock"}; if it was wrong the log is wrong the same way. A count that goes down (a reset, or a track put back
+        {session.isComputer ? "in the library" : "on the card"}) is counted from zero. A play of a track that was added after the last snapshot is counted from zero too.
       </li>
-      <li>Plays before logging began are only a count (shown in a track's History). Plays in this app's own player are not counted: the device writes the counters.</li>
+      <li>Plays before logging began are only a count (shown in a track's History). Plays in this app's own player are not counted: {session.isComputer ? "the counters come from the library" : "the device writes the counters"}.</li>
       <li>
-        The log is stored on this computer, not on the Pacemaker, and the device cannot show it. The card carries no identity the app can rely on, so the log is
-        tied to the drive letter or path it was opened at: a card that turns up at a new letter is offered the matching log of the old one (it is never merged
-        silently), and a different card at the same letter is detected and not mixed in. The checks and their thresholds are in Log settings.
+        {#if session.isComputer}
+          The log is stored on this computer, apart from the library. It is tied to the folder the library was opened at: a library that turns up in a new folder is offered the
+          matching log of the old one (it is never merged silently), and a different library in the same folder is detected and not mixed in. The checks and their thresholds are in Log settings.
+        {:else}
+          The log is stored on this computer, not on the Pacemaker, and the device cannot show it. The card carries no identity the app can rely on, so the log is
+          tied to the drive letter or path it was opened at: a card that turns up at a new letter is offered the matching log of the old one (it is never merged
+          silently), and a different card at the same letter is detected and not mixed in. The checks and their thresholds are in Log settings.
+        {/if}
       </li>
     </ul>
   </details>
@@ -451,7 +456,7 @@
       {/if}
     </ul>
     <p class="m">
-      It cannot be undone. The Pacemaker, its play counters, your cases and mixes are not changed.
+      It cannot be undone. {session.isComputer ? "The library" : "The Pacemaker"}, its play counters, your cases and mixes are not changed.
       {data.enabled ? "Logging is on, so a new log starts now from the counters as they are, with no dates for earlier plays." : "Logging is off, so no new log starts."}
     </p>
     {#snippet actions()}

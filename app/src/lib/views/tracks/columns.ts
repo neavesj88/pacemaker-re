@@ -78,7 +78,13 @@ export type ViewPrefs = {
   /** On a window wider than the columns, Title and Artist share the spare width (FLEX_COLUMNS);
    *  their saved widths are then the least they get. Off: every column keeps its exact width. */
   fillWidth: boolean;
+  /** Title/Artist columns the user has dragged to a width: drawn at exactly that width (the other
+   *  one takes the spare room). Cleared by "Reset columns" and by turning the setting back on. */
+  pinned: ColKey[];
 };
+
+/** The widest a column may be saved at; Title and Artist may be drawn wider on a very wide window. */
+export const maxWidth = (key: ColKey) => (FLEX_COLUMNS.includes(key) ? 2400 : 800);
 
 const STORAGE_KEY = "pm.tracks.view.v1";
 const PINNED_FIRST: ColKey = "fav";
@@ -94,6 +100,7 @@ export function defaultPrefs(): ViewPrefs {
     findClearsFilters: true,
     caseOrderOnPick: true,
     fillWidth: true,
+    pinned: [],
   };
 }
 
@@ -139,7 +146,7 @@ export function mergePrefs(saved: unknown, base: ViewPrefs = defaultPrefs()): Vi
     const v = s.visible?.[c.key];
     if (typeof v === "boolean" && !c.fixed) prefs.visible[c.key] = v;
     const w = s.widths?.[c.key];
-    if (typeof w === "number" && Number.isFinite(w)) prefs.widths[c.key] = Math.max(c.min, Math.min(800, Math.round(w)));
+    if (typeof w === "number" && Number.isFinite(w)) prefs.widths[c.key] = Math.max(c.min, Math.min(maxWidth(c.key), Math.round(w)));
   }
   prefs.order = cleanOrder(s.order);
   // the single-key shape of earlier builds: sortKey + sortAsc
@@ -149,14 +156,15 @@ export function mergePrefs(saved: unknown, base: ViewPrefs = defaultPrefs()): Vi
   if (typeof s.findClearsFilters === "boolean") prefs.findClearsFilters = s.findClearsFilters;
   if (typeof s.caseOrderOnPick === "boolean") prefs.caseOrderOnPick = s.caseOrderOnPick;
   if (typeof s.fillWidth === "boolean") prefs.fillWidth = s.fillWidth;
+  if (Array.isArray(s.pinned)) prefs.pinned = FLEX_COLUMNS.filter((k) => (s.pinned as unknown[]).includes(k));
   return prefs;
 }
 
 /** The CSS grid track of each shown column: its width, or (when `fillWidth` is on) at least that
- *  width and a share of any spare room in proportion to it, for Title and Artist only. */
-export function gridTemplate(cols: readonly ColDef[], widths: Readonly<Record<string, number>>, fillWidth: boolean, fixedKey: string | null = null): string {
-  // `fixedKey`: the column whose grip is being dragged is drawn at exactly its width meanwhile
-  return cols.map((c) => (fillWidth && FLEX_COLUMNS.includes(c.key) && c.key !== fixedKey ? `minmax(${widths[c.key]}px, ${widths[c.key]}fr)` : `${widths[c.key]}px`)).join(" ");
+ *  width and a share of any spare room in proportion to it, for Title and Artist only. A pinned
+ *  column (one the user dragged) and the column being dragged (`fixedKey`) are exactly their width. */
+export function gridTemplate(cols: readonly ColDef[], widths: Readonly<Record<string, number>>, fillWidth: boolean, fixedKey: string | null = null, pinned: readonly string[] = []): string {
+  return cols.map((c) => (fillWidth && FLEX_COLUMNS.includes(c.key) && c.key !== fixedKey && !pinned.includes(c.key) ? `minmax(${widths[c.key]}px, ${widths[c.key]}fr)` : `${widths[c.key]}px`)).join(" ");
 }
 
 /** The columns to draw: in the saved order, hidden ones left out. */

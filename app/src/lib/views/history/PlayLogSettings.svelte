@@ -98,7 +98,7 @@
     Record the play counters each time a library is opened
   </label>
   <p class="hint">
-    On by default. Only changes are stored, in a file on this computer (not on the Pacemaker). Turning it off keeps the log you have; it
+    On by default. Only changes are stored, in a file on this computer{session.isComputer ? ", apart from the library" : " (not on the Pacemaker)"}. Turning it off keeps the log you have; it
     just stops growing.
   </p>
 

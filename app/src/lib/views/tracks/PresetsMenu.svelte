@@ -166,7 +166,6 @@
     position: fixed;
     z-index: 40;
     box-sizing: border-box;
-    overflow-x: hidden;
     overflow-y: auto;
     padding: 8px 12px 10px;
     background: var(--panel);
@@ -249,6 +248,7 @@
     gap: 6px;
   }
   form input:not([type]) {
+    box-sizing: border-box;
     width: 100%;
   }
   .check {

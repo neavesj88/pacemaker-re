@@ -6,7 +6,7 @@
 import type { SvelteSet } from "svelte/reactivity";
 import { Filters } from "$lib/state/filters.svelte";
 import { freshLabelFilter, type LabelFilter } from "$lib/state/labels";
-import { COLUMNS, loadPrefs, moveColumn, savePrefs, shownColumns as columnsToShow, stepTarget, defaultPrefs, type ColKey, type ViewPrefs } from "./columns";
+import { COLUMNS, FLEX_COLUMNS, loadPrefs, maxWidth, moveColumn, savePrefs, shownColumns as columnsToShow, stepTarget, defaultPrefs, type ColKey, type ViewPrefs } from "./columns";
 import { parseBpm, sortClick, type SortField, type SortSpec, type TrackFilter } from "./trackLogic";
 
 export type TableOptions = {
@@ -96,7 +96,12 @@ export class TableState {
 
   setWidth(key: ColKey, width: number) {
     const col = COLUMNS.find((c) => c.key === key);
-    if (col) this.prefs.widths[key] = Math.max(col.min, Math.min(800, Math.round(width)));
+    if (col) this.prefs.widths[key] = Math.max(col.min, Math.min(maxWidth(key), Math.round(width)));
+  }
+
+  /** Keeps a Title/Artist column at the width it was dragged to (`fillWidth` then leaves it alone). */
+  pinColumn(key: ColKey) {
+    if (FLEX_COLUMNS.includes(key) && !this.prefs.pinned.includes(key)) this.prefs.pinned = [...this.prefs.pinned, key];
   }
 
   /** Moves a column to just before `before` (the end when null). */
@@ -123,11 +128,13 @@ export class TableState {
     this.prefs.visible = d.visible;
     this.prefs.widths = d.widths;
     this.prefs.order = d.order;
+    this.prefs.pinned = [];
     this.save();
   }
 
   setFillWidth(on: boolean) {
     this.prefs.fillWidth = on;
+    if (on) this.prefs.pinned = [];
     this.save();
   }
 

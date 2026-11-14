@@ -81,7 +81,7 @@
   const widthOf = (c: ColDef) => table.prefs.widths[c.key];
   const totalW = $derived(cols.reduce((sum, c) => sum + widthOf(c), 0));
   let resizing = $state<ColKey | null>(null);
-  const template = $derived(gridTemplate(cols, table.prefs.widths, table.prefs.fillWidth, resizing));
+  const template = $derived(gridTemplate(cols, table.prefs.widths, table.prefs.fillWidth, resizing, table.prefs.pinned));
   const bodyH = $derived(Math.max(0, viewH - HEAD));
   const start = $derived(Math.max(0, Math.floor(scrollTop / ROW) - OVERSCAN));
   const end = $derived(Math.min(rows.length, Math.ceil((scrollTop + bodyH) / ROW) + OVERSCAN));
@@ -300,18 +300,24 @@
     handle.setPointerCapture(e.pointerId);
     const x0 = e.clientX;
     // a Title/Artist column that is filling a wide window is drawn wider than its saved width:
-    // the drag starts from what is on screen, and the saved width follows it from there
+    // the drag starts from what is on screen. Nothing is saved until the pointer moves; on
+    // release the column stays at the width it ended on (pinned), the other one takes the spare room.
     const drawn = (handle.closest('[role="columnheader"]') as HTMLElement | null)?.getBoundingClientRect().width;
     const w0 = drawn && drawn > 0 ? Math.round(drawn) : widthOf(c);
+    let moved = false;
     resizing = c.key;
-    table.setWidth(c.key, w0);
-    const move = (m: PointerEvent) => table.setWidth(c.key, w0 + m.clientX - x0);
+    const move = (m: PointerEvent) => {
+      if (!moved && m.clientX === x0) return;
+      moved = true;
+      table.setWidth(c.key, w0 + m.clientX - x0);
+    };
     const stop = () => {
+      if (moved) table.pinColumn(c.key);
       resizing = null;
       handle.removeEventListener("pointermove", move);
       handle.removeEventListener("pointerup", stop);
       handle.removeEventListener("pointercancel", stop);
-      table.save();
+      if (moved) table.save();
     };
     handle.addEventListener("pointermove", move);
     handle.addEventListener("pointerup", stop);
