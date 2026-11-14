@@ -168,7 +168,7 @@ pub fn plan_selection(
             Some(s) => {
                 let mut it = track_item(source, target, s, t_rows.get(loc), settings);
                 if matches!(&it.action, SyncAction::Skip { reason } if reason == LEAVE_TRACK) {
-                    it.action = skip("it is already there, and a drag never changes a track on the target");
+                    it.action = skip("it is already there, and a drag never changes a track in the receiving library");
                 }
                 it
             }
@@ -248,7 +248,7 @@ pub fn plan_selection(
                 (it, avail.len())
             }
             None => {
-                let it = blank_item(format!("into-case:{}", norm(&name)), ItemKind::Case, format!("Add {} to case {name}", plural(avail.len(), "track")), skip("the case is not on the target any more"));
+                let it = blank_item(format!("into-case:{}", norm(&name)), ItemKind::Case, format!("Add {} to case {name}", plural(avail.len(), "track")), skip("the case is not in the receiving library any more"));
                 (it, 0)
             }
         };
@@ -256,7 +256,7 @@ pub fn plan_selection(
         if name.is_empty() || name.chars().count() > crate::library::MAX_CASE_NAME_CHARS {
             item.action = skip("that is not a usable case name");
         } else if avail.is_empty() && item.action.acts() {
-            item.action = skip("none of the tracks will be on the target");
+            item.action = skip("none of the tracks will be in the receiving library");
         } else if new == 0 && item.action.acts() {
             item.action = skip(SAME);
         }

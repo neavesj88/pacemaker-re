@@ -159,7 +159,7 @@ fn picked_tracks_go_into_an_existing_or_a_new_case() {
     assert_eq!(locs(&fx.dst, &fx.dst.case_track_ids(t_fresh.id).unwrap()), tracks);
     let missing = into(sel(&tracks, &[], &[]), "Nowhere", false);
     let p = fx.plan_sel(&missing, &SyncSettings::default());
-    assert!(reason(item(&p, "into-case:nowhere")).contains("not on the target"));
+    assert!(reason(item(&p, "into-case:nowhere")).contains("not in the receiving library"));
     assert!(fx.run_sel(&p, &missing).unwrap().done == 0);
     assert_eq!(fx.dst.case_infos().unwrap().len(), 2, "no case was made");
 }

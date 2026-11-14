@@ -1,6 +1,7 @@
 // Run: node src/lib/views/tracks/columns.test.mjs
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { mmss } from "../../format.ts";
 import { cleanOrder, cleanSort, COLUMNS, defaultPrefs, mergePrefs, moveColumn, shownColumns, stepTarget } from "./columns.ts";
 
 const KEYS = COLUMNS.map((c) => c.key);
@@ -136,9 +137,12 @@ test("the energy label and the auto energy estimate are two columns with two sor
   assert.deepEqual(cleanSort([{ field: "auto_energy", asc: false }, { field: "energy", asc: true }]), [{ field: "auto_energy", asc: false }, { field: "energy", asc: true }]);
 });
 
-test("the Time column cannot be narrowed below what 59:59 and 123:45 need", () => {
-  // 13px tabular digits: 6 characters are about 52 px, plus the cell's 12 px of padding
+test("the Time column cannot be narrowed below what 59:59 and 1:12:05 need", () => {
+  // 13px tabular digits: 7 characters are about 61 px, plus the cell's 12 px of padding
   const time = COLUMNS.find((c) => c.key === "time");
-  assert.ok(time.min >= 64 && time.width >= time.min);
+  assert.ok(time.min >= 72 && time.width >= time.min);
+  assert.equal(mmss(4325), "1:12:05", "the Tracks table and the Libraries pane show a long track alike");
+  assert.equal(mmss(3599), "59:59");
+  assert.equal(mmss(215), "3:35");
   assert.equal(mergePrefs({ widths: { time: 40 } }).widths.time, time.min, "a width saved by an older version is raised");
 });

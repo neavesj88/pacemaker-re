@@ -53,7 +53,7 @@ const hand = pickerOptions(lib, true, [], { root: "D:\\Other", kind: "computer" 
 assert.deepEqual(hand[1], { value: "D:\\Other", label: "Folder (Other)", title: "D:\\Other" }, "a folder opened by hand is added under its own name, not as a second This computer");
 assert.equal(libraryLabel("computer", "D:\\Other\\", lib), "Folder (Other)");
 assert.equal(libraryLabel("computer", lib.toLowerCase(), lib), "This computer", "the computer library by another spelling");
-assert.equal(libraryLabel("computer", "D:\\Other", null), "Folder (Other)", "computer library path unknown");
+assert.equal(libraryLabel("computer", "D:\\Other", null), "This computer", "computer library path not loaded yet: the real library is never mislabelled as a Folder");
 
 // start-up: only the library on this computer, only when it exists and the setting is on
 const info = (exists, open_at_start) => ({ exists, path: lib, settings: { open_at_start } });

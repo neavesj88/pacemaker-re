@@ -26,8 +26,8 @@
       value={s.tracks_on_both}
       onchange={(e) => set("tracks_on_both", e.currentTarget.value as SyncSettings["tracks_on_both"])}
     >
-      <option value="newer">Take the sending side's details when they are newer</option>
-      <option value="source">Always take the sending side's details</option>
+      <option value="newer">Take the sending library's details when they are newer</option>
+      <option value="source">Always take the sending library's details</option>
       <option value="leave">Leave both as they are</option>
     </select>
   </label>
@@ -38,7 +38,7 @@
       value={s.mixes_same_name}
       onchange={(e) => set("mixes_same_name", e.currentTarget.value as SyncSettings["mixes_same_name"])}
     >
-      <option value="newer">Replace it when the sending side's is newer</option>
+      <option value="newer">Replace it when the sending library's is newer</option>
       <option value="replace">Always replace it</option>
       <option value="keep_both">Keep both: copy the new one with a different name</option>
       <option value="skip">Leave the one that is there</option>
@@ -52,7 +52,7 @@
       onchange={(e) => set("cases_same_name", e.currentTarget.value as SyncSettings["cases_same_name"])}
     >
       <option value="merge">Merge: keep its order, add the tracks it lacks</option>
-      <option value="replace">Replace it with the sending side's</option>
+      <option value="replace">Replace it with the sending library's</option>
       <option value="skip">Leave the one that is there</option>
     </select>
   </label>
@@ -75,7 +75,7 @@
 
   <label class="check danger">
     <input type="checkbox" checked={s.remove_missing} onchange={(e) => set("remove_missing", e.currentTarget.checked)} />
-    List what the other side has and the sending side has not, so it can be removed
+    List what the receiving library has and the sending library has not, so it can be removed
   </label>
   <p class="muted note">
     Off by default: nothing is ever removed. When it is on, those items are listed under Removals when you check, each named,

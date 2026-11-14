@@ -149,18 +149,18 @@ export function actionText(a: SyncAction): string {
 export function reasonText(i: SyncItem, s: Omit<SyncSettings, "labels_follow">, sourceLabel: string): string {
   const a = i.action;
   if (a.type === "skip") return a.reason;
-  if (a.type === "update_plays") return "played more on the sending side";
+  if (a.type === "update_plays") return "played more in the sending library";
   // the engine's detail names which file; it is the whole reason, so the list does not repeat it
-  if (a.type === "repair") return i.detail || "a file of the track is missing on the target";
+  if (a.type === "repair") return i.detail || "a file of the track is missing in the receiving library";
   if (a.type === "remove") return `not in ${sourceLabel === "computer" ? "the library on this computer" : "the Pacemaker's library"}`;
   if (i.kind === "track") {
-    if (a.type === "copy") return "not on the other side yet";
-    return s.tracks_on_both === "source" ? "the setting always takes the sending side's details" : "the sending side's details are newer";
+    if (a.type === "copy") return "not in the receiving library yet";
+    return s.tracks_on_both === "source" ? "the setting always takes the sending library's details" : "the sending library's details are newer";
   }
   if (i.kind === "mix") {
     if (a.type === "copy") return "no mix with this name there";
     if (a.type === "copy_as_new") return "a mix with this name is there and the setting keeps both";
-    return s.mixes_same_name === "replace" ? "a mix with this name is there, and the setting always replaces it" : "a mix with this name is there and the sending side's is newer";
+    return s.mixes_same_name === "replace" ? "a mix with this name is there, and the setting always replaces it" : "a mix with this name is there and the sending library's is newer";
   }
   if (a.type === "copy") return "no case with this name there";
   if (a.type === "merge") return "a case with this name is there; the missing tracks are added";

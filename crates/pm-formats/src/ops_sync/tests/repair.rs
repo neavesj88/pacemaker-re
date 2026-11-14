@@ -36,7 +36,7 @@ fn a_missing_audio_file_is_repaired_and_the_row_is_left_alone() {
     let p = fx.plan(&SyncSettings::default());
     let it = item(&p, &format!("track:{loc}"));
     assert_eq!(it.action, SyncAction::Repair);
-    assert_eq!(it.detail, "the audio file is missing on the target");
+    assert_eq!(it.detail, "the audio file is missing in the receiving library");
     assert_eq!(it.bytes, std::fs::metadata(&s_audio).unwrap().len());
     assert_eq!(p.bytes_to_copy, it.bytes, "the needed bytes count toward the space line");
     let r = fx.run(&p, &[]).unwrap();
@@ -57,7 +57,7 @@ fn a_missing_str_file_is_repaired() {
     let p = fx.plan(&SyncSettings::default());
     let it = item(&p, &format!("track:{loc}"));
     assert_eq!(it.action, SyncAction::Repair);
-    assert_eq!(it.detail, "the beat grid file (.str) is missing on the target");
+    assert_eq!(it.detail, "the beat grid file (.str) is missing in the receiving library");
     assert_eq!(it.bytes, std::fs::metadata(&s_side).unwrap().len());
     fx.run(&p, &[]).unwrap();
     assert_eq!(std::fs::read(&t_side).unwrap(), std::fs::read(&s_side).unwrap());
@@ -88,7 +88,7 @@ fn a_file_missing_on_both_sides_stays_a_skip_that_says_so() {
     std::fs::remove_file(&t_audio).unwrap();
     std::fs::remove_file(&s_audio).unwrap();
     let p = fx.plan(&SyncSettings::default());
-    assert_eq!(reason(item(&p, &format!("track:{loc}"))), "the audio file is missing on both sides");
+    assert_eq!(reason(item(&p, &format!("track:{loc}"))), "the audio file is missing in both libraries");
     assert_eq!(p.bytes_to_copy, 0);
     // the audio is lacking everywhere but the target's grid is gone and the source's is there: that part is repaired
     std::fs::remove_file(&t_side).unwrap();
@@ -96,7 +96,7 @@ fn a_file_missing_on_both_sides_stays_a_skip_that_says_so() {
     let it = item(&p, &format!("track:{loc}"));
     assert_eq!(it.action, SyncAction::Repair);
     assert_eq!(it.bytes, std::fs::metadata(&s_side).unwrap().len());
-    assert!(it.detail.contains("(.str) is missing on the target") && it.detail.contains("audio file is missing on both sides"), "{}", it.detail);
+    assert!(it.detail.contains("(.str) is missing in the receiving library") && it.detail.contains("audio file is missing in both libraries"), "{}", it.detail);
     fx.run(&p, &[]).unwrap();
     assert!(t_side.exists() && !t_audio.exists());
 }
@@ -122,7 +122,7 @@ fn the_drag_plan_repairs_too_and_only_adds_files() {
     let p = fx.plan_sel(&pick, &SyncSettings::default());
     let it = item(&p, &format!("track:{loc}"));
     assert_eq!(it.action, SyncAction::Repair);
-    assert_eq!(it.detail, "the audio file is missing on the target");
+    assert_eq!(it.detail, "the audio file is missing in the receiving library");
     assert_eq!(p.bytes_to_copy, std::fs::metadata(&s_audio).unwrap().len());
     let r = fx.run_sel(&p, &pick).unwrap();
     assert_eq!((r.done, r.failed), (1, 0));
@@ -134,4 +134,19 @@ fn the_drag_plan_repairs_too_and_only_adds_files() {
     let p = fx.plan_sel(&pick, &SyncSettings::default());
     std::fs::copy(&s_audio, &t_audio).unwrap();
     assert!(fx.run_sel(&p, &pick).unwrap_err().to_string().contains(STALE));
+}
+
+#[test]
+fn a_repair_says_the_play_counts_come_on_the_next_sync() {
+    let mut fx = Fx::new();
+    let (loc, _, (t_audio, _)) = both_sides(&mut fx);
+    std::fs::remove_file(&t_audio).unwrap();
+    fx.src.con.execute("UPDATE tracks SET times_played = 50, last_played = 9999999999999", []).unwrap();
+    let p = fx.plan(&SyncSettings::default());
+    let it = item(&p, &format!("track:{loc}"));
+    assert_eq!(it.action, SyncAction::Repair, "one action per track: the files first");
+    assert_eq!(it.detail, "the audio file is missing in the receiving library; the play counts follow on the next sync");
+    fx.run(&p, &[]).unwrap();
+    fx.dst = Library::open(fx.dst.root()).unwrap();
+    assert_eq!(item(&fx.plan(&SyncSettings::default()), &format!("track:{loc}")).action, SyncAction::UpdatePlays, "the next sync brings them");
 }

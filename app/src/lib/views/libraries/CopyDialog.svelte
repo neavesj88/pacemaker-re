@@ -22,6 +22,9 @@
   // the plan note is about smart cases: only worth saying when a case is part of the copy
   const notes = $derived(p && p.plan.items.some((i) => i.kind === "case" && i.into_case === null) ? p.plan.notes : []);
 
+  // the case a "Copy into a case" goes to, named even when its row is a quiet "already there"
+  const intoName = $derived(p?.plan.items.find((i) => i.into_case !== null)?.into_case ?? null);
+
   let showSame = $state(false);
   let extra = $state(0);
   $effect(() => {
@@ -40,7 +43,7 @@
   <WideModal title={dialogTitle(targetName)} onclose={() => libs.cancelPending()} width={660}>
     <p class="sum"><b>{copySummary(p.plan)}</b></p>
     <p class="muted line">
-      From {sourceName} to {targetName}.
+      From {sourceName} to {targetName}{#if intoName}, into the case “{intoName}”{/if}.
       {#if p.plan.bytes_to_copy > 0}<span class:bad={space.tone === "bad"} class:ok={space.tone === "ok"}>{space.text}</span>{/if}
     </p>
     {#if !space.fits}<p class="warn">It does not fit. Free some space on {targetName}, or pick fewer tracks.</p>{/if}

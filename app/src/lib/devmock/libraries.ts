@@ -69,7 +69,7 @@ const UPDATES = new Set([demoTracks[4].location, demoTracks[5].location]);
 
 // tracks the Pacemaker holds a row for but not all of the files: a drag from the computer repairs them
 const REPAIRS = new Map<string, "audio" | "side">([[demoTracks[2].location, "audio"], [demoTracks[7].location, "side"]]);
-const REPAIR_WORDS = { audio: "the audio file is missing on the target", side: "the beat grid file (.str) is missing on the target" };
+const REPAIR_WORDS = { audio: "the audio file is missing in the receiving library", side: "the beat grid file (.str) is missing in the receiving library" };
 
 export const libraryFor = (root: string): MockLib => (libraryKind(root) === "pacemaker" ? pm : computer);
 export const stripIds = (c: MColl): Coll => ({ id: c.id, name: c.name, play_time_secs: c.play_time_secs, track_count: c.track_count });
@@ -152,7 +152,7 @@ function planOf(a: Record<string, any>) {
       } else {
         it.target_id = t.track_id;
         // the engine never changes a track the target has, even with other details (drag_settings)
-        it.action = UPDATES.has(loc) && S === computer ? skip("it is already there, and a drag never changes a track on the target") : skip(SAME);
+        it.action = UPDATES.has(loc) && S === computer ? skip("it is already there, and a drag never changes a track in the receiving library") : skip(SAME);
         const lack = S === computer && T === pm ? REPAIRS.get(loc) : undefined;
         if (lack) {
           // only the missing file is copied: the row, its grid and its plays stay as they are
@@ -192,7 +192,7 @@ function planOf(a: Record<string, any>) {
       it.action = skip(SAME);
     }
     const missing = it.needs.filter((x) => !willExist(x.location)).map((x) => x.label);
-    if (missing.length && it.action.type === "copy") it.action = skip(`it needs ${missing.slice(0, 3).map((x) => `"${x}"`).join(", ")}${missing.length > 3 ? ` and ${missing.length - 3} more` : ""}, which will not be on the target`);
+    if (missing.length && it.action.type === "copy") it.action = skip(`it needs ${missing.slice(0, 3).map((x) => `"${x}"`).join(", ")}${missing.length > 3 ? ` and ${missing.length - 3} more` : ""}, which will not be in the receiving library`);
     items.push(it);
   }
 
@@ -235,9 +235,9 @@ function planOf(a: Record<string, any>) {
     } else if (sel.into_case.create) {
       it = blank(`into-case:${norm(name)}`, "case", `New case ${name} with ${plural(avail.length, "track")}`, { type: "copy" });
     } else {
-      it = blank(`into-case:${norm(name)}`, "case", `Add ${plural(avail.length, "track")} to case ${name}`, skip("the case is not on the target any more"));
+      it = blank(`into-case:${norm(name)}`, "case", `Add ${plural(avail.length, "track")} to case ${name}`, skip("the case is not in the receiving library any more"));
     }
-    if (avail.length === 0 && it.action.type !== "skip") it.action = skip("none of the tracks will be on the target");
+    if (avail.length === 0 && it.action.type !== "skip") it.action = skip("none of the tracks will be in the receiving library");
     it.into_case = name;
     it.needs = needsHere;
     if (avail.length < needsHere.length) it.detail = `${needsHere.length - avail.length} of ${needsHere.length} tracks will not be there and are left out`;

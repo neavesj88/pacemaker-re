@@ -37,7 +37,7 @@ export const COLUMNS: ColDef[] = [
   { key: "autoenergy", label: "Energy (auto)", width: 112, min: 70, sort: "auto_energy", defaultOn: true },
   { key: "rating", label: "Rating", width: 92, min: 90, sort: "rating", defaultOn: true },
   { key: "plays", label: "Plays", width: 48, min: 44, num: true, sort: "times_played", defaultOn: true },
-  { key: "time", label: "Time", width: 68, min: 64, num: true, sort: "play_time_secs", defaultOn: true },
+  { key: "time", label: "Time", width: 76, min: 72, num: true, sort: "play_time_secs", defaultOn: true },
   { key: "genre", label: "Genre", width: 100, min: 60, sort: "genre", defaultOn: true },
   { key: "tags", label: "Tags", width: 170, min: 70, sort: "tags", defaultOn: true },
   // columns for what music.db holds beyond the above; hidden until chosen

@@ -162,10 +162,10 @@ test("space line", () => {
 
 test("the finished line splits into parts, keeping the items of a list together", () => {
   const s =
-    "Copied 4 tracks (35.5 MB), 1 mix. Updated 1 track. 2 items left out: Road trip: it needs Track 9, which is not on the target; Old. Mix: left out by you. 1 item could not be synced: Track 5: disk full. Tags and labels came with 4 tracks";
+    "Copied 4 tracks (35.5 MB), 1 mix. Updated 1 track. 2 items left out: Road trip: it needs Track 9, which is not in the receiving library; Old. Mix: left out by you. 1 item could not be synced: Track 5: disk full. Tags and labels came with 4 tracks";
   const p = resultParts(s);
   assert.deepEqual(p.map((x) => x.heading), ["Copied 4 tracks (35.5 MB), 1 mix", "Updated 1 track", "2 items left out", "1 item could not be synced", "Tags and labels came with 4 tracks"]);
-  assert.deepEqual(p[2].items, ["Road trip: it needs Track 9, which is not on the target", "Old. Mix: left out by you"]);
+  assert.deepEqual(p[2].items, ["Road trip: it needs Track 9, which is not in the receiving library", "Old. Mix: left out by you"]);
   assert.equal(p[3].tone, "bad");
   assert.deepEqual(p[3].items, ["Track 5: disk full"]);
   assert.deepEqual(resultParts("Nothing to sync, the two libraries already match").map((x) => x.heading), ["Nothing to sync, the two libraries already match"]);

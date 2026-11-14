@@ -211,10 +211,10 @@ test("the summary sentence and whether the copy can run", () => {
   assert.equal(copySummary(fresh), "Will make new case F with 2 tracks.");
   const plays = plan([item("track:/t/1", "track", { type: "update_plays" }), item("mix:a", "mix", { type: "update_plays" })]);
   assert.equal(copySummary(plays), "Will update the play counts of 2 items.");
-  const rep = plan([item("track:/t/1", "track", { type: "repair" }, { bytes: MB, detail: "the audio file is missing on the target" })]);
+  const rep = plan([item("track:/t/1", "track", { type: "repair" }, { bytes: MB, detail: "the audio file is missing in the receiving library" })]);
   assert.equal(copySummary(rep), "Will copy the missing files of 1 track.");
   assert.equal(canCopy(rep), true);
-  assert.deepEqual([linesOf(rep).acting[0].action, linesOf(rep).acting[0].why], ["Repair", "the audio file is missing on the target"]);
+  assert.deepEqual([linesOf(rep).acting[0].action, linesOf(rep).acting[0].why], ["Repair", "the audio file is missing in the receiving library"]);
   assert.match(footerText(rep, "Pacemaker (G:)"), /^Nothing on Pacemaker \(G:\) is removed or overwritten\./, "a repair only adds files");
   const nothing = plan([item("track:/t/1", "track", { type: "skip", reason: "already the same" })]);
   assert.equal(copySummary(nothing), "Nothing will be copied: all of it is there already.");

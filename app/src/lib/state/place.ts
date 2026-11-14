@@ -51,10 +51,10 @@ export const placeWords = (kind: LibraryKind | undefined): Place => WORDS[kind ?
 /** "This computer", "Folder (Gigs)" or "Pacemaker (G:)": how a library is named in the header and the
  *  pickers. `computerRoot` is where the library on this computer is: a library on this computer at
  *  any other path is a folder opened by hand and is named by its folder, so two entries are never
- *  both "This computer". Left out (undefined), any library on this computer is "This computer". */
+ *  both "This computer". Left out or null (not loaded yet), any library on this computer is "This computer". */
 export function libraryLabel(kind: LibraryKind, root: string, computerRoot?: string | null): string {
   if (kind === "computer") {
-    if (computerRoot === undefined || (computerRoot && sameRoot(root, computerRoot))) return "This computer";
+    if (computerRoot == null || sameRoot(root, computerRoot)) return "This computer";
     return `Folder (${root.replace(/[\\/]+$/, "").split(/[\\/]/).pop() || root})`;
   }
   const m = /^([A-Za-z]:)[\\/]*$/.exec(root.trim());

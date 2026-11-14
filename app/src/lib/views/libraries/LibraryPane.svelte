@@ -199,6 +199,8 @@
     menu = { x: e.clientX, y: e.clientY };
   }
 
+  // the Time column only pays for h:mm:ss when this list has a track or mix of an hour or more
+  const longTimes = $derived(tab !== "cases" && rows.some((r) => (r as Track | Collection).play_time_secs >= 3600));
   const clockOf = (r: Row) => clock(tab === "tracks" ? (r as Track).play_time_secs : (r as Collection).play_time_secs);
 </script>
 
@@ -288,6 +290,7 @@
       class:tracks={tab === "tracks"}
       class:cols-mix={tab === "mixes"}
       class:cols-case={tab === "cases"}
+      class:long={longTimes}
       role="listbox"
       aria-multiselectable="true"
       aria-label={`${tab} of ${nameOf(data)}`}
@@ -488,12 +491,16 @@
     scrollbar-gutter: stable;
     --cols: var(--both) minmax(60px, 1fr) 44px 38px;
     --both: 34px;
+    --time: 44px;
+  }
+  .scroller.long {
+    --time: 62px;
   }
   .scroller.tracks {
-    --cols: var(--both) minmax(70px, 1.5fr) minmax(48px, 1fr) 36px 38px 76px;
+    --cols: var(--both) minmax(70px, 1.5fr) minmax(48px, 1fr) 36px 38px var(--time);
   }
   .scroller.cols-mix {
-    --cols: var(--both) minmax(70px, 1fr) 76px 48px;
+    --cols: var(--both) minmax(70px, 1fr) var(--time) 48px;
   }
   .scroller.cols-case {
     --cols: var(--both) minmax(70px, 1fr) 54px;
@@ -501,7 +508,7 @@
   /* a narrow pane (the window at its smallest) drops the artist column so titles stay readable */
   @container (max-width: 400px) {
     .scroller.tracks {
-      --cols: var(--both) minmax(70px, 1fr) 36px 38px 76px;
+      --cols: var(--both) minmax(70px, 1fr) 36px 38px var(--time);
     }
     .artist {
       display: none;
