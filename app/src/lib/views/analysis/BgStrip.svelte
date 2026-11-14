@@ -79,7 +79,23 @@
     width: 100%;
     height: 4px;
     margin-top: 2px;
+    appearance: none;
+    border: 0;
+    border-radius: 2px;
+    background: var(--line);
     accent-color: var(--accent);
+  }
+  progress::-webkit-progress-bar {
+    background: var(--line);
+    border-radius: 2px;
+  }
+  progress::-webkit-progress-value {
+    background: var(--accent);
+    border-radius: 2px;
+  }
+  progress::-moz-progress-bar {
+    background: var(--accent);
+    border-radius: 2px;
   }
   .fails {
     margin: 4px 0 0;

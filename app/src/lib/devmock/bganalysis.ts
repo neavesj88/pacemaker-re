@@ -180,6 +180,7 @@ export const handlers: Handlers = {
   },
   bganalysis_retry_failures: () => {
     failures = [];
+    publish();
     replan();
     return null;
   },

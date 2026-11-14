@@ -635,6 +635,10 @@ impl Bg {
         }
     }
 
+    pub(crate) fn has_pending(&self) -> bool {
+        !self.fresh.is_empty()
+    }
+
     pub(crate) fn due(&self) -> bool {
         !self.fresh.is_empty() && (self.fresh.len() >= FLUSH_EVERY || self.last_save.elapsed() >= std::time::Duration::from_secs(2 + self.cached as u64 / 2000))
     }

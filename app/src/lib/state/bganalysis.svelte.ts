@@ -119,6 +119,8 @@ class Bg {
       await bgRetryFailures();
       this.failures = [];
       this.dismissedAt = 0;
+      // so a retry that fails again (status failures > 0) is seen as a change and the list is read
+      this.#lastFailures = 0;
     } catch (e) {
       toast.show(String(e), "bad");
     }

@@ -332,6 +332,9 @@ struct Real {
     save_failed: Option<String>,
     /// Every location in the library at the first scan, for forgetting failures of removed tracks.
     present: Option<HashSet<String>>,
+    /// Set when a save was skipped because a user job holds the library: the run's results were
+    /// dropped with this struct, so the caller replans and they are made again afterwards.
+    deferred: bool,
 }
 
 impl Real {
@@ -349,7 +352,20 @@ impl Real {
             last_key_save: Instant::now(),
             save_failed: None,
             present: None,
+            deferred: false,
         }
+    }
+
+    /// True while a job the user started holds the library. The worker then writes nothing (the
+    /// job may be writing the same music.db or cache file); what it holds is dropped and redone.
+    fn held_by_job(&mut self) -> bool {
+        if !self.env.job_running() {
+            return false;
+        }
+        if !self.pending_keys.is_empty() || self.energy.has_pending() || self.sections.has_pending() {
+            self.deferred = true;
+        }
+        true
     }
 
     fn peak_id(&self, location: &str) -> String {
@@ -362,11 +378,16 @@ impl Real {
         }
         let ticket = self.env.begin_write(&self.root_path)?;
         let mut lib = Library::open(&self.root_path).map_err(|e| e.to_string())?;
-        let (_, bad) = analysis::write_keys(&mut lib, &self.pending_keys);
+        // a key is only ever filled in: one the user set (or re-detected) while this result waited
+        // is not replaced by the older one
+        let blank: HashSet<i64> = lib.track_ids_without_key().map_err(|e| e.to_string())?.into_iter().collect();
+        let todo: Vec<(i64, String)> = self.pending_keys.iter().filter(|(id, _)| blank.contains(id)).cloned().collect();
+        let (_, bad) = if todo.is_empty() { (0, Vec::new()) } else { analysis::write_keys(&mut lib, &todo) };
         drop(lib);
         drop(ticket);
-        // a track removed meanwhile cannot be keyed; everything else was written
-        let keys: Vec<KeyAt> = self.pending_keys.drain(..).filter(|(id, _)| !bad.iter().any(|(b, _)| b == id)).map(|(track_id, key)| KeyAt { track_id, key }).collect();
+        // a track removed meanwhile cannot be keyed, one that got a key meanwhile keeps it
+        let keys: Vec<KeyAt> = todo.into_iter().filter(|(id, _)| !bad.iter().any(|(b, _)| b == id)).map(|(track_id, key)| KeyAt { track_id, key }).collect();
+        self.pending_keys.clear();
         self.last_key_save = Instant::now();
         if !keys.is_empty() {
             self.env.changed(Changed::Keys { root: self.root.clone(), keys });
@@ -390,6 +411,9 @@ impl Real {
 
     /// Saves everything held back. The first error is returned, but every part is tried.
     fn save_all(&mut self) -> Result<(), String> {
+        if self.held_by_job() {
+            return Ok(());
+        }
         let (a, b, c) = (self.save_keys(), self.save_energy(), self.save_sections());
         a.and(b).and(c)
     }
@@ -397,6 +421,9 @@ impl Real {
     /// Saves what has gathered enough (or waited long enough). A failure is remembered, not
     /// returned: the track that was just made is done, the run stops before the next one.
     fn save_due(&mut self) {
+        if self.held_by_job() {
+            return;
+        }
         let keys_due = !self.pending_keys.is_empty() && (self.pending_keys.len() >= KEY_BATCH || self.last_key_save.elapsed() >= KEY_MAX_WAIT);
         let mut err = None;
         if keys_due {
@@ -681,6 +708,10 @@ impl Worker {
         status.failures = self.engine.failures.len();
         let mut ctl = Ctl { env: &self.env, shared: &self.shared, root: root.clone(), epoch, status, lanes: Vec::new(), seen: Vec::new(), last_emit: Instant::now() - STATUS_EVERY };
         let end = self.engine.run(&settings, &mut real, &mut ctl);
+        if real.deferred {
+            // results held back for a user job are gone: find those tracks missing again later
+            self.engine.replan();
+        }
 
         // what the engine now holds is the truth; the list the frontend reads is rebuilt from it
         if let Some(present) = real.present.take() {
@@ -1207,6 +1238,56 @@ mod tests {
         assert_eq!(keys_of(&vol), vec!["", "", "", ""]);
         let v = view_of(&shared);
         assert!(v.failures.iter().any(|f| f.reason.starts_with("low confidence")), "{:?}", v.failures);
+        std::fs::remove_dir_all(&base).unwrap();
+    }
+
+    fn real_for(env: &Arc<TestEnv>, base: &Path, vol: &Path) -> Real {
+        std::fs::create_dir_all(base.join("cfg")).unwrap();
+        Real::new(env.clone(), &base.join("cfg"), &base.join("cache"), Arc::new(PeaksState::default()), &vol.display().to_string(), &Settings::default())
+    }
+
+    #[test]
+    fn a_key_set_while_a_result_waited_is_not_replaced() {
+        let (base, vol, ids) = library("keep-key");
+        let env = TestEnv::new();
+        let mut real = real_for(&env, &base, &vol);
+        let items = real.missing(Kind::Keys).unwrap();
+        assert!(items.iter().any(|i| i.id == ids[0]));
+        let a = items.iter().find(|i| i.id == ids[0]).unwrap().clone();
+        let b = items.iter().find(|i| i.id == ids[1]).unwrap().clone();
+        // process() holds the detected keys back, the user sets one of them meanwhile
+        assert!(matches!(real.process(Kind::Keys, &a, &Settings::default()), Outcome::Done { .. }));
+        assert!(matches!(real.process(Kind::Keys, &b, &Settings::default()), Outcome::Done { .. }));
+        assert_eq!(real.pending_keys.len(), 2, "both are still waiting");
+        Library::open(&vol).unwrap().set_track_key(ids[0], "F#m").unwrap();
+        real.flush();
+        let keys = keys_of(&vol);
+        assert_eq!(keys[0], "F#m", "the user's key survives the worker's older result");
+        assert!(!keys[1].is_empty(), "the other track still got its key");
+        let events: Vec<i64> = env.key_events().iter().map(|k| k.track_id).collect();
+        assert_eq!(events, vec![ids[1]], "only what was written is announced");
+        std::fs::remove_dir_all(&base).unwrap();
+    }
+
+    #[test]
+    fn nothing_is_written_while_a_user_job_holds_the_library_and_the_tracks_are_redone() {
+        let (base, vol, _) = library("job-flush");
+        let env = TestEnv::new();
+        let s = Settings { waveforms: false, energy: false, sections: false, ..Settings::default() };
+        let (mut w, _) = worker(&env, &base, &vol, s);
+        let mut real = real_for(&env, &base, &vol);
+        let item = real.missing(Kind::Keys).unwrap().remove(0);
+        // a job starts while the track is being made: its result must not be saved
+        assert!(matches!(real.process(Kind::Keys, &item, &s), Outcome::Done { .. }));
+        env.job.store(true, Ordering::SeqCst);
+        real.flush();
+        assert!(real.deferred);
+        assert_eq!(keys_of(&vol), vec!["", "", "", ""], "the job's library was not touched");
+        assert!(env.key_events().is_empty());
+        // once the job is over the worker finds the track missing again and keys it
+        env.job.store(false, Ordering::SeqCst);
+        w.step();
+        assert!(keys_of(&vol).iter().filter(|k| !k.is_empty()).count() >= 1);
         std::fs::remove_dir_all(&base).unwrap();
     }
 
