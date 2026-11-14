@@ -72,6 +72,6 @@ test("an undo covers only tracks still at the tempo the edit wrote", () => {
     { track_id: 3, label: "C", before: null, after: null, skip: "no readable beat grid" },
   ];
   assert.deepEqual(stillAsWritten(run, now), [1]);
-  assert.doesNotMatch(undoDescription({ kind: "halve" }, "computer"), /device|${/);
+  assert.doesNotMatch(undoDescription({ kind: "halve" }, "computer"), /device|\$\{/);
   assert.match(undoDescription({ kind: "halve" }, "computer"), /copied out of the library before the halving/);
 });
