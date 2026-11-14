@@ -4,6 +4,9 @@
 // See: https://v2.tauri.app/start/frontend/sveltekit/ for more info
 export const ssr = false;
 
+// Reads the saved interface size and applies it now, before the first view is built.
+import "$lib/state/appearance.svelte";
+
 // Outside the Tauri shell (browser preview during UI work) answer commands with a synthetic
 // library; inside Tauri this branch never runs.
 if (typeof window !== "undefined" && !("__TAURI_INTERNALS__" in window)) {
