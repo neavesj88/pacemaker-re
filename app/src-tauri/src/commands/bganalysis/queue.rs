@@ -179,6 +179,8 @@ pub trait Backend {
 /// Why a run stopped before the work was done.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Stop {
+    /// No library is open.
+    NoLibrary,
     /// The user paused it.
     Paused,
     /// The master switch is off, or no kind is switched on.
@@ -252,7 +254,8 @@ impl Engine {
         self.planned = false;
     }
 
-    /// Tracks still waiting, per kind, in lane order.
+    /// Tracks still waiting, per kind, in lane order (the tests read it).
+    #[cfg(test)]
     pub fn remaining(&self) -> Vec<(Kind, usize)> {
         self.lanes.iter().map(|l| (l.kind, l.items.len())).collect()
     }

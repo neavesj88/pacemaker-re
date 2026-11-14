@@ -217,7 +217,7 @@ fn check_key_args(track_ids: Option<&[i64]>, overwrite: bool) -> AppResult<()> {
 /// Writes a batch of keys. `set_track_keys` is all-or-nothing, so if it fails (a track removed
 /// meanwhile, say) the entries are written one by one and only the bad ones are returned, with
 /// the reason. Returns (rows changed, failures).
-fn write_keys(lib: &mut Library, pending: &[(i64, String)]) -> (usize, Vec<(i64, String)>) {
+pub(crate) fn write_keys(lib: &mut Library, pending: &[(i64, String)]) -> (usize, Vec<(i64, String)>) {
     if let Ok(n) = lib.set_track_keys(pending) {
         return (n, Vec::new());
     }

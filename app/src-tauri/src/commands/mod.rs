@@ -10,6 +10,7 @@
 
 pub mod cases;
 pub mod analysis;
+pub mod bganalysis;
 pub mod device;
 pub mod export;
 pub mod grid;
@@ -35,6 +36,7 @@ pub fn setup(app: &mut tauri::App) {
     playback::setup(app);
     metadata::setup(app);
     analysis::setup(app);
+    bganalysis::setup(app);
     export::setup(app);
     tags::setup(app);
     stems::setup(app);
@@ -64,6 +66,7 @@ macro_rules! register_handlers {
             playback_commands,
             metadata_commands,
             analysis_commands,
+            bganalysis_commands,
             export_commands,
             tags_commands,
             stems_commands,
