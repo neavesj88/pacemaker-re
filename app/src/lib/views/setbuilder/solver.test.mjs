@@ -580,9 +580,9 @@ await test("building a mix: hops that cannot blend start after the last track an
     assert.equal(E.clipOf(r.doc, id).visibleStart, prev.visibleEnd, "starts when the last one ends");
   });
   assert.equal(r.notes.length, 4);
-  assert.match(r.notes[0], /"T2".*no beat grid/);
-  assert.match(r.notes[2], /"T4".*could not be blended.*do not overlap/);
-  assert.match(r.notes[3], /"T5".*half or double/);
+  assert.match(r.notes[0], /“T2”.*no beat grid/);
+  assert.match(r.notes[2], /“T4”.*could not be blended.*do not overlap/);
+  assert.match(r.notes[3], /“T5”.*half or double/);
   // the half-time track kept its own tempo and the refused one was not stretched
   close(E.effectiveBpm(E.clipOf(r.doc, r.clipIds[4]), 0), 63, 1e-3);
   close(E.effectiveBpm(E.clipOf(r.doc, r.clipIds[3]), 0), 126, 1e-3);
@@ -726,7 +726,7 @@ await test("building a mix: a hop beyond the limit starts after the last track a
   const r = await B.buildSetDoc(emptyDoc(), t.map((x) => ({ id: x.id, title: `T${x.id}` })), plan, bopts(), fakeDeps(specs), kit);
   assert.equal(r.doc.transitions.length, 0);
   assert.equal(E.clipOf(r.doc, r.clipIds[1]).visibleStart, E.clipOf(r.doc, r.clipIds[0]).visibleEnd);
-  assert.match(r.notes[0], /"T2".*75\.0 % above.*limit for beat-matching/);
+  assert.match(r.notes[0], /“T2”.*75\.0 % above.*limit for beat-matching/);
   close(r.stretchPct[1], 0, 1e-6);
 });
 
@@ -839,6 +839,36 @@ await test("solve limit: the size of a set that is ordered as it loads is a sett
   for (const v of [10, 100000, "many", null, NaN]) assert.equal(S.mergePrefs({ solveLimit: v }).solveLimit, 600, String(v));
   assert.equal(S.PREF_RANGES.solveLimit[1], S.MAX_SOLVE_TRACKS);
   assert.equal(S.clampPref("solveLimit", 99999), S.MAX_SOLVE_TRACKS);
+});
+
+await test("tempo runs: each blended stretch has its own tempo, and the wording says so", () => {
+  const all = () => true;
+  const po = { beatmatch: true, mixTempo: null, halfDouble: true };
+  // the case seen in use: a lone first track (its tempo wrong), then a blended stretch of three
+  const t = [tr(1, 277, "8A"), tr(2, 126, "8A"), tr(3, 124, "8A"), tr(4, 124, "9A")];
+  const p = S.planMix(t, all, { ...po, maxJumpPct: 5 });
+  assert.deepEqual(p.pairs.map((x) => x.mode), ["sequence", "blend", "blend"]);
+  assert.deepEqual(S.planRuns(p), [{ first: 0, count: 1, tempo: 277 }, { first: 1, count: 3, tempo: 124 }]);
+  assert.equal(S.longestRunTempo(p), 124, "the mix tempo is the longest run, not the first track");
+  const words = S.tempoSentence(p, true);
+  assert.ok(!words.includes("277"), words);
+  assert.match(words, /1 beat-matched stretch \(3 tracks at 124\.0 BPM\), and 1 track that keeps its own tempo/);
+  // one run over the whole set keeps the plain sentence
+  const one = S.planMix([tr(1, 124, "8A"), tr(2, 126, "8A"), tr(3, 128, "9A")], all, po);
+  assert.equal(S.tempoSentence(one, true), "Every track is stretched to the tempo of the one before it, so the whole mix runs at 126.0 BPM (the middle tempo of the set).");
+  assert.ok(!S.tempoSentence(one, false).includes("middle tempo"));
+  // two runs, three lone tracks
+  const two = S.planMix([tr(1, 100, "8A"), tr(2, 124, "8A"), tr(3, 126, "8A"), tr(4, 90, "8A"), tr(5, 130, "8A"), tr(6, 132, "8A"), tr(7, 60, "8A")], all, { ...po, maxJumpPct: 5 });
+  assert.match(S.tempoSentence(two, true), /2 beat-matched stretches \(2 tracks at 125\.0 BPM, 2 tracks at 131\.0 BPM\), and 3 tracks that keep their own tempo/);
+  assert.equal(S.longestRunTempo(two), 125, "equal lengths: the first run");
+  // nothing can be blended: no mix tempo, honest wording
+  const lone = S.planMix([tr(1, 124, "8A"), tr(2, 70, "8A")], all, po);
+  assert.equal(S.longestRunTempo(lone), null);
+  assert.match(S.tempoSentence(lone, true), /^No two neighbouring tracks can be beat-matched/);
+  // without beat-matching the tracks share no tempo, so no run has one
+  const nb = S.planMix(t, all, { ...po, beatmatch: false });
+  assert.equal(S.longestRunTempo(nb), null);
+  assert.deepEqual(S.planRuns({ pairs: [], tempos: [], stretchPct: [] }), []);
 });
 
 console.log(`\n${n} set builder tests passed`);

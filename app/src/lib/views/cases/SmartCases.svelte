@@ -4,6 +4,7 @@
   // favourites and smart cases whenever a library is opened (this component is always mounted
   // while one is).
   import { untrack } from "svelte";
+  import { bg } from "$lib/state/bganalysis.svelte";
   import { cases } from "$lib/state/cases.svelte";
   import { nav } from "$lib/state/nav.svelte";
   import { session } from "$lib/state/session.svelte";
@@ -14,6 +15,38 @@
     untrack(() => {
       cases.refresh();
       cases.loadSmart();
+    });
+  });
+
+  // A rating, a key or a play count changes the library's tracks without reopening it, and a smart
+  // case can rule on any of them: count again (after a pause, so a run of edits is one count).
+  // Not on the first run for a library: opening it already counts. While background analysis is
+  // still working it writes a key per track, so the count waits and runs once when the queue drains.
+  let seen: { root: string; tracks: unknown } | null = null;
+  let waiting = false;
+  const busy = $derived(bg.status.left > 0);
+  $effect(() => {
+    const root = session.library?.root;
+    const tracks = session.library?.tracks;
+    untrack(() => {
+      if (!root || !tracks) {
+        seen = null;
+        waiting = false;
+      } else {
+        if (seen && seen.root === root && seen.tracks !== tracks) {
+          if (busy) waiting = true;
+          else cases.scheduleSmartCounts();
+        }
+        seen = { root, tracks };
+      }
+    });
+  });
+  $effect(() => {
+    if (busy) return;
+    untrack(() => {
+      if (!waiting) return;
+      waiting = false;
+      cases.scheduleSmartCounts();
     });
   });
 

@@ -11,7 +11,7 @@
   import { blendLimit, createMix, planFor, preflight, transitionWords, type Created, type Preflight } from "./createMix";
   import { setPrefs } from "./prefs.svelte";
   import { setBuilder } from "./setbuilder.svelte";
-  import { clock, playSecs, solverOptions, type SetTrack } from "./solver";
+  import { clock, longestRunTempo, planRuns, playSecs, solverOptions, tempoSentence, type SetTrack } from "./solver";
 
   // Lays the set out as a NEW mix: every track a clip, each beat-matched to the one before and
   // joined with the Mixes view's auto-transition recipe. The dialog first asks the backend about
@@ -68,11 +68,45 @@
 
   const sign = (n: number) => `${n >= 0 ? "+" : "−"}${Math.abs(n).toFixed(1)} %`;
 
-  function why(p: { why: string | null; culprit: number | null; jumpPct?: number }): string {
-    if (p.why === "noGrid") return `“${titleOf(p.culprit ?? 0)}” has no beat grid`;
-    if (p.why === "noTempo") return `“${titleOf(p.culprit ?? 0)}” has no tempo`;
-    if (p.why === "bigJump") return `“${titleOf(p.culprit ?? 0)}” is ${Math.abs(p.jumpPct ?? 0).toFixed(1)} % ${(p.jumpPct ?? 0) >= 0 ? "faster" : "slower"} than the track before it, over the ${blendLimit(prefs)} % limit for beat-matching`;
-    return `“${titleOf(p.culprit ?? 0)}” is at half or double the tempo of the track before it`;
+  // The row already names the track the hop goes to ("“T”: ..."), so a reason about that same track
+  // says "this track" instead of repeating the title.
+  function why(p: { to: number; why: string | null; culprit: number | null; jumpPct?: number }): string {
+    const who = p.culprit === p.to ? "This track" : `“${titleOf(p.culprit ?? 0)}”`;
+    if (p.why === "noGrid") return `${who} has no beat grid`;
+    if (p.why === "noTempo") return `${who} has no tempo`;
+    if (p.why === "bigJump") return `${who} is ${Math.abs(p.jumpPct ?? 0).toFixed(1)} % ${(p.jumpPct ?? 0) >= 0 ? "faster" : "slower"} than the track before it, over the ${blendLimit(prefs)} % limit for beat-matching`;
+    return `${who} is at half or double the tempo of the track before it`;
+  }
+
+  /** A mix opens with its first clip's tempo as the reference tempo ("Match all" pulls the others
+   *  toward it), which is wrong when that clip is a run of one at its own, perhaps mis-analysed,
+   *  tempo. The reference is not saved, so it is set once the new mix is open (the Mixes view opens
+   *  it through the deep link): the tempo of the longest beat-matched run. Gives up after 20 s. */
+  function setTempoWhenOpen(id: number, bpm: number) {
+    let stop: (() => void) | null = null;
+    let done = false;
+    const finish = () => {
+      done = true;
+      clearTimeout(timer);
+      queueMicrotask(() => stop?.());
+    };
+    const timer = setTimeout(finish, 20000);
+    stop = $effect.root(() => {
+      $effect(() => {
+        if (done || mixes.doc?.id !== id) return;
+        untrack(() => mixes.setTempo(Math.round(bpm * 100) / 100));
+        finish();
+      });
+    });
+  }
+
+  function goToMixes() {
+    if (created) {
+      const t = prefs.beatmatch && plan ? longestRunTempo(plan) : null;
+      if (t !== null) setTempoWhenOpen(created.saved.id, t);
+      nav.go("mixes", { "mixes.mixId": created.saved.id });
+    } else nav.go("mixes");
+    onclose();
   }
 
   async function go() {
@@ -148,7 +182,7 @@
       </label>
       <label class="row">
         <span>Tempo the mix runs at (BPM)</span>
-        <input type="number" min="40" max="250" step="0.1" placeholder="middle tempo of the set" disabled={!prefs.beatmatch || phase === "building"} value={prefs.mixTempo ?? ""} onchange={(e) => setPrefs.commitNumber(e.currentTarget, "mixTempo", true)} />
+        <input type="number" min="40" max="250" step="0.1" placeholder={planRuns(plan).filter((r) => r.count > 1 && r.tempo !== null).length > 1 ? "middle tempo of each stretch" : "middle tempo of the set"} disabled={!prefs.beatmatch || phase === "building"} value={prefs.mixTempo ?? ""} onchange={(e) => setPrefs.commitNumber(e.currentTarget, "mixTempo", true)} />
       </label>
       <label class="row">
         <span>Do not beat-match a hop bigger than (%)</span>
@@ -156,7 +190,7 @@
       </label>
 
       {#if prefs.beatmatch && biggest && Math.abs(biggest.pct) >= 0.05}
-        <p class="muted">Every track is stretched to the tempo of the one before it, so the whole mix runs at {plan.tempos[0]?.toFixed(1)} BPM{prefs.mixTempo == null ? " (the middle tempo of the set)" : ""}. Largest change: {sign(biggest.pct)} on “{titleOf(biggest.id)}”.</p>
+        <p class="muted">{tempoSentence(plan, prefs.mixTempo == null)} Largest change: {sign(biggest.pct)} on “{titleOf(biggest.id)}”.</p>
       {:else if !prefs.beatmatch}
         <p class="muted">Tracks keep their own tempo and are only overlapped and crossfaded, so the beats will not line up.</p>
       {/if}
@@ -174,7 +208,7 @@
   {#snippet actions()}
     {#if phase === "done"}
       <Button onclick={onclose}>Close</Button>
-      <Button variant="primary" onclick={() => (nav.go("mixes"), onclose())}>Go to Mixes</Button>
+      <Button variant="primary" onclick={goToMixes}>Go to Mixes</Button>
     {:else}
       <Button onclick={onclose} disabled={phase === "building"}>Cancel</Button>
       <Button variant="primary" disabled={phase !== "ready" || !pre || pre.usable.length === 0 || !nameOk || !jobs.canWrite} onclick={go}>

@@ -6,7 +6,7 @@ import { test } from "node:test";
 import { planMerge, planTransfer } from "../../state/casePlan.ts";
 import { sortTracks } from "../tracks/trackLogic.ts";
 import {
-  CASE_COLUMNS, copyName, defaultCasePrefs, mergeCasePrefs, mergeSummary, plural, searchRows, sortRows, trackLabel, transferLine,
+  CASE_COLUMNS, copyName, defaultCasePrefs, mergeCasePrefs, mergeSummary, plural, searchRows, sortRows, trackLabel, transferLine, addSummary, smartCopyOf,
 } from "./caseLogic.ts";
 
 const t = (id, title, extra = {}) => ({
@@ -112,4 +112,23 @@ test("sentences name what happens", () => {
   assert.equal(transferLine(2, copy, "To", "From", false), "is already in “To”: nothing to do");
   assert.equal(trackLabel(5, undefined), "track #5 (no longer in the library)");
   assert.equal(trackLabel(5, t(5, "Song")), "Song by Synthetic Artist");
+});
+
+test("the picker names what Add will do: new tracks only, repeats counted and skipped", () => {
+  const pick = [1, 2, 3, 4, 5].map((id) => ({ id, label: `T${id}` }));
+  const s = addSummary(pick, new Set([2, 9]));
+  assert.deepEqual(s.fresh, [1, 3, 4, 5]);
+  assert.equal(s.skipped, 1);
+  assert.equal(s.list, "T1, T3, T4 and 1 more");
+  assert.equal(addSummary(pick.slice(0, 2), new Set()).list, "T1, T2");
+  const none = addSummary(pick.slice(1, 2), new Set([2]));
+  assert.deepEqual([none.fresh, none.skipped, none.list], [[], 1, ""]);
+  assert.deepEqual(addSummary([], new Set()).fresh, []);
+});
+
+test("the copy of a smart case is found by its case id", () => {
+  const smart = [{ id: 1, name: "A", device_case_id: 7 }, { id: 2, name: "B", device_case_id: null }];
+  assert.equal(smartCopyOf(smart, 7)?.name, "A");
+  assert.equal(smartCopyOf(smart, 8), undefined);
+  assert.equal(smartCopyOf(smart, 0), undefined);
 });

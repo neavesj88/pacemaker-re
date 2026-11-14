@@ -1,7 +1,7 @@
 // Pure logic of the Cases views: the case table's columns and saved view, sorting and searching
 // its rows, default names, and the sentences the merge / copy / move dialogs show. No store or
 // component imports (types only) so `caseLogic.test.mjs` can run it with plain node.
-import type { MergePlan, TransferPlan } from "$lib/api/cases";
+import type { MergePlan, SmartCase, TransferPlan } from "$lib/api/cases";
 import type { Track } from "$lib/api/types";
 import type { SortField } from "../tracks/trackLogic";
 
@@ -121,3 +121,20 @@ export function transferLine(id: number, plan: TransferPlan, destName: string, s
   if (there) return out ? `is already in “${destName}”: only removed from “${sourceName}”` : `is already in “${destName}”: nothing to do`;
   return out ? `will move from “${sourceName}” to “${destName}”` : `will be added to “${destName}”`;
 }
+
+// ---- the case "Add tracks" picker and smart-case copies ---------------------------------------
+
+/** The line under the table that names what Add will do: how many tracks, which ones, and how many
+ *  are skipped because the case already holds them. */
+export function addSummary(picked: { id: number; label: string }[], existing: ReadonlySet<number>, show = 3) {
+  const fresh = picked.filter((p) => !existing.has(p.id));
+  const skipped = picked.length - fresh.length;
+  const names = fresh.slice(0, show).map((p) => p.label);
+  const more = fresh.length - names.length;
+  const list = names.length === 0 ? "" : names.join(", ") + (more > 0 ? ` and ${more} more` : "");
+  return { fresh: fresh.map((p) => p.id), skipped, list };
+}
+
+/** The smart case whose Pacemaker (or ★) copy is the case `caseId`, if any: the copy is rewritten from
+ *  the rules, so it cannot be edited by hand. */
+export const smartCopyOf = (smart: readonly SmartCase[], caseId: number): SmartCase | undefined => smart.find((s) => s.device_case_id === caseId);
