@@ -25,7 +25,7 @@
 </fieldset>
 <p class="muted note">
   Applies to tracks analysed from now on: adding tracks, Re-analyse, the grid editor's Re-analyse and the grid batch.
-  The device syncs by BPM, so tracks the original Editor analysed (drum &amp; bass at about 87) and tracks analysed here (about 174) can disagree.
+  The Pacemaker syncs by BPM, so tracks the original Editor analysed (drum &amp; bass at about 87) and tracks analysed here (about 174) can disagree.
 </p>
 <div class="offer">
   {#if n > 0}

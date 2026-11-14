@@ -45,11 +45,11 @@
   </label>
   <label class="opt">
     <input type="checkbox" checked={s.energy} disabled={!s.enabled} onchange={(e) => bg.save({ energy: e.currentTarget.checked })} />
-    <span>Energy <small class="muted">Kept by this app, not written to the device.</small></span>
+    <span>Energy <small class="muted">Kept by this app, not written into the library.</small></span>
   </label>
   <label class="opt">
     <input type="checkbox" checked={s.sections} disabled={!s.enabled} onchange={(e) => bg.save({ sections: e.currentTarget.checked })} />
-    <span>Sections <small class="muted">Kept by this app, not written to the device. Needs the track's beat grid.</small></span>
+    <span>Sections <small class="muted">Kept by this app, not written into the library. Needs the track's beat grid.</small></span>
   </label>
 </div>
 
@@ -74,8 +74,8 @@
   <span>
     Confidence floor for background keys, per cent
     <small class="muted">
-      Applies to background analysis only; the manual Key detection section has its own floor. A key found below this is not written; the track is listed under
-      "Held back by the floor" instead, and is looked at again as soon as you change the floor. 0 writes every result.
+      Applies to background analysis only; the manual Key detection section has its own floor. A key found below this is not written; the track is listed below as a
+      key held back by the confidence floor instead, and is looked at again as soon as you change the floor. 0 writes every result.
     </small>
   </span>
 </label>
@@ -112,9 +112,9 @@
   {#if heldBack.length > 0}
     <details class="nokey" data-testid="bg-held-back">
       <summary>{heldBack.length} {heldBack.length === 1 ? "track has" : "tracks have"} a key held back by the confidence floor</summary>
-      <p class="muted small">A key was found but it is under the floor above, so it was not written. Lower the floor to write it.</p>
+      <p class="muted small">A key was found but it is under the floor set here, so it was not written. Lower the floor to write it.</p>
       <ul>
-        {#each heldBack as r (r.track_id)}<li><b>{r.label}</b>: {r.reasons}</li>{/each}
+        {#each heldBack as r (r.track_id)}<li><b>{r.label}</b> ({r.kinds}): {r.reasons}</li>{/each}
       </ul>
     </details>
   {/if}

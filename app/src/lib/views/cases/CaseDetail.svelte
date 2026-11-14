@@ -95,9 +95,11 @@
       (tbody?.children[n] as HTMLElement | undefined)?.focus();
     } else if (e.key === " ") {
       e.preventDefault();
+      // Space plays or pauses the row, as in the Tracks view and the picker; Ctrl+click still toggles a row
       const id = rows[i].id;
-      selection.trackIds = selected.has(id) ? selection.trackIds.filter((x) => x !== id) : [...selection.trackIds, id];
-      anchor = i;
+      if (!rows[i].t) return;
+      if (playback.trackId === id) playback.toggle();
+      else play(id);
     } else if (e.key === "Enter" && rows[i].t) {
       e.preventDefault();
       play(rows[i].id);

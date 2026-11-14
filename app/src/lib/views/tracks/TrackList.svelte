@@ -174,7 +174,11 @@
         if (!mod) return;
         select(rows.map((r) => r.track_id), table.focusId ?? rows[0]?.track_id ?? null);
         break;
-      case "Escape": select([], null); break;
+      // with nothing selected the key is left alone, so a dialog around the table (the case picker) still sees it
+      case "Escape":
+        if (table.selectedIds.length === 0 && table.focusId === null) return;
+        select([], null);
+        break;
       case "Enter":
         if (table.focusId === null) return;
         if (onopen) {

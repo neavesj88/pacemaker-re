@@ -115,3 +115,18 @@ test("the remembered hidden-note counts survive bad storage", () => {
   assert.deepEqual(parseDismissed({ "C:\Lib": 3, "D:\Other": 0, x: "2", y: 1.5 }), { "C:\Lib": 3 });
   for (const bad of [null, undefined, 5, "text", [1, 2]]) assert.deepEqual(parseDismissed(bad), {});
 });
+
+test("only a running worker with work left holds back the smart-case counts", async () => {
+  const { writingNow } = await import("./bgLogic.ts");
+  assert.ok(writingNow({ state: "running", left: 5 }));
+  assert.ok(!writingNow({ state: "running", left: 0 }));
+  for (const state of ["paused", "playing", "waiting", "held", "blocked", "error", "idle", "off", "manual", "no-library"]) assert.ok(!writingNow({ state, left: 500 }), state);
+});
+
+test("the failure list is read again when the worker changes state, not only when the count moves", async () => {
+  const { failuresStale } = await import("./bgLogic.ts");
+  assert.ok(!failuresStale({ failures: 0, state: "idle" }, { failures: 0, state: "idle" }));
+  assert.ok(failuresStale({ failures: 0, state: "idle" }, { failures: 1, state: "idle" }));
+  // floor lowered to 0: the held-back record goes, the real count stays 0, the worker runs then goes idle
+  assert.ok(failuresStale({ failures: 0, state: "running" }, { failures: 0, state: "idle" }));
+});

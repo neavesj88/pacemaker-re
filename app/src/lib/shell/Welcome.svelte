@@ -5,10 +5,16 @@
   import Button from "$lib/ui/Button.svelte";
   import RMark from "$lib/ui/RMark.svelte";
 
-  const offer = $derived(welcomeOffer(session.computer, session.volumes));
+  const offer = $derived(welcomeOffer(session.computer, session.volumes, session.pickedPath));
 
   // a library on a drive that was not connected a moment ago may be there now
-  const rescan = () => Promise.all([session.refreshVolumes(), session.refreshComputer()]);
+  // Rescan with nothing to show must still say it looked
+  let checkedAt = $state(0);
+  const rescan = async () => {
+    await Promise.all([session.refreshVolumes(), session.refreshComputer()]);
+    checkedAt = Date.now();
+  };
+  const checkedTime = $derived(new Date(checkedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }));
 </script>
 
 <div class="welcome">
@@ -16,8 +22,8 @@
   {#if offer.unreadable}
     <h1>Your library settings could not be read</h1>
     <p>
-      Nothing was opened, because the file that says where your library is cannot be trusted. The message above names the file.
-      Open a folder or a Pacemaker below, or save the settings again to use the default location. A copy of the damaged file is
+      Nothing was opened, because the file that says where your library is cannot be trusted. The message above has the details.
+      Open a folder or a Pacemaker below, or save the settings again to use the default location{session.computer?.default_path ? ` (${session.computer.default_path})` : ""}. A copy of the damaged file is
       kept next to it, with <code>.bad</code> added to its name.
     </p>
     <div class="actions">
@@ -50,6 +56,9 @@
         </Button>
       {/if}
     </div>
+    {#if offer.missingPath && checkedAt}
+      <p class="where" role="status" data-testid="welcome-checked">Still not found in <code>{offer.missingPath}</code> (checked at {checkedTime}).</p>
+    {/if}
     {#if offer.missingPath}
       <p class="where">Starting a new library makes a second, empty one in that folder, so use it only if the first is gone.</p>
     {:else}

@@ -142,3 +142,21 @@ export function clampPct(v: number): number {
   if (!Number.isFinite(v)) return 0;
   return Math.min(100, Math.max(0, Math.round(v)));
 }
+
+/**
+ * True while the worker is actually writing keys and other results into the library. Paused,
+ * playing, waiting, held, blocked and error all keep a non-zero `left` but write nothing, so
+ * they must not hold back the smart-case counts.
+ */
+export function writingNow(s: Pick<BgStatus, "state" | "left">): boolean {
+  return s.state === "running" && s.left > 0;
+}
+
+/**
+ * Whether the failure list must be read again after a status tick. The status count leaves out
+ * held-back and no-result records, so a change in them shows only as the worker changing state
+ * (a run starts or ends after the confidence floor moves or Try again is pressed).
+ */
+export function failuresStale(last: { failures: number; state: string }, s: Pick<BgStatus, "failures" | "state">): boolean {
+  return s.failures !== last.failures || s.state !== last.state;
+}

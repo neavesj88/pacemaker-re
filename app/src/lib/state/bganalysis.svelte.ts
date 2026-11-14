@@ -19,7 +19,7 @@ import {
 } from "$lib/api/bganalysis";
 import { forgetPeaks } from "$lib/views/tracks/peakCache";
 import { peakTick } from "$lib/views/tracks/peakTick.svelte";
-import { failureCount, groupKeys, libraryChanged, parseDismissed } from "$lib/views/analysis/bgLogic";
+import { failureCount, failuresStale, groupKeys, libraryChanged, parseDismissed } from "$lib/views/analysis/bgLogic";
 import { energy } from "./energy.svelte";
 import { sections } from "./sections.svelte";
 import { loadPref, savePref } from "./prefStore";
@@ -74,6 +74,7 @@ class Bg {
   #peaks = new Set<string>();
   #peaksTimer: ReturnType<typeof setTimeout> | null = null;
   #lastFailures = -1;
+  #lastState = "";
   /** The library the last status was about: the failure list and its "Hide" belong to it. */
   #root: string | null = null;
 
@@ -84,7 +85,8 @@ class Bg {
       this.settings = v.settings;
       this.status = v.status;
       this.failures = v.failures;
-      this.#lastFailures = v.failures.length;
+      this.#lastFailures = v.status.failures;
+      this.#lastState = v.status.state;
       this.loaded = true;
     } catch (e) {
       toast.show(`Could not read the background analysis settings: ${e}`, "bad");
@@ -98,6 +100,11 @@ class Bg {
     this.settings = next;
     try {
       this.settings = await bgSaveSettings(next);
+      // a new floor forgets or writes held-back records; the status count does not show that
+      if (patch.key_min_confidence_pct !== undefined && patch.key_min_confidence_pct !== before.key_min_confidence_pct) {
+        void this.refreshFailures();
+        setTimeout(() => void this.refreshFailures(), 2000);
+      }
       return true;
     } catch (e) {
       this.settings = before;
@@ -150,8 +157,10 @@ class Bg {
       await bgRetryFailures();
       this.failures = [];
       this.dismissedAt = 0;
-      // so a retry that fails again (status failures > 0) is seen as a change and the list is read
+      // the retry starts a run: the list is read again when the worker changes state (held-back and
+      // no-result records are not in the status count), and once now for what was recorded at once
       this.#lastFailures = 0;
+      void this.refreshFailures();
     } catch (e) {
       toast.show(String(e), "bad");
     }
@@ -167,15 +176,17 @@ class Bg {
   private forgetFailures() {
     this.failures = [];
     this.#lastFailures = -1;
+    this.#lastState = "";
   }
 
   onStatus(s: BgStatus) {
     this.status = s;
     if (libraryChanged(this.#root, s.root)) this.forgetFailures();
     this.#root = s.root;
-    // the list is read again only when its length moved, not on every status tick
-    if (s.failures !== this.#lastFailures) {
+    // the list is read again only when its count or the worker's state moved, not on every status tick
+    if (failuresStale({ failures: this.#lastFailures, state: this.#lastState }, s)) {
       this.#lastFailures = s.failures;
+      this.#lastState = s.state;
       void this.refreshFailures();
     }
   }

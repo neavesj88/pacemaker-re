@@ -19,9 +19,11 @@
 
 {#if session.computer?.warning}
   <div class="banner bad" role="alert">
-    The settings for the library on this computer could not be used, so no library was opened by itself and the default
-    location is shown until you save the settings again.
-    <div class="detail">{session.computer.warning}</div>
+    The settings for the library on this computer could not be read, so no library was opened by itself.
+    <details class="detail">
+      <summary>Details</summary>
+      {session.computer.warning}
+    </details>
   </div>
 {/if}
 
@@ -36,7 +38,7 @@
   {#if session.isDetached}
     <div class="banner warn">{label} · {session.library.root} · ejected: it is safe to unplug. Nothing can be written to it any more. To keep working, {session.computerOffer?.exists ? "open the library on this computer, " : ""}dock a Pacemaker and press Rescan, or open a folder.</div>
   {:else if session.library.problems.length === 0}
-    <div class="banner ok">{label} · {session.library.root} · music.db is device-compatible</div>
+    <div class="banner ok">{label} · {session.library.root} · music.db is {session.isComputer ? "compatible with a Pacemaker" : "device-compatible"}</div>
   {:else}
     <div class="banner bad">
       {session.isComputer ? "This library is not in the format the Pacemaker needs, so it stays read-only here:" : "This library would not load on the device:"}
@@ -90,6 +92,9 @@
     margin-top: 2px;
     overflow-wrap: anywhere;
     opacity: 0.85;
+  }
+  .detail summary {
+    cursor: pointer;
   }
   ul {
     margin: 4px 0 0;

@@ -64,7 +64,7 @@
         ? session.isComputer
           ? "Analyse audio files and copy them into the library on this computer"
           : "Analyse audio files and copy them to the Pacemaker"
-        : "Unavailable while a job runs, the library is not device-compatible or the Pacemaker was ejected"}
+        : "Unavailable while a job runs, the library is not compatible with a Pacemaker or the Pacemaker was ejected"}
     >Add tracks…</Button>
     <input
       class="search"

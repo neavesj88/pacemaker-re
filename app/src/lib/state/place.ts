@@ -111,6 +111,7 @@ export function startupRoot(info: StartupInfo): string | null {
 export function welcomeOffer(
   info: StartupInfo,
   volumes: string[],
+  pickedPath: string | null = null,
 ): { start: boolean; open: boolean; copyFrom: string | null; unreadable: boolean; missingPath: string | null } {
   if (info?.unreadable) return { start: false, open: false, copyFrom: null, unreadable: true, missingPath: null };
   const start = !!info && !info.exists;
@@ -119,6 +120,10 @@ export function welcomeOffer(
     open: !!info && info.exists,
     copyFrom: start && volumes.length > 0 ? volumes[0] : null,
     unreadable: false,
-    missingPath: missingComputerPath(info),
+    // a folder the user has just picked on this screen is a place to make a library, not one that went missing
+    missingPath: pickedPath && info && sameRoot(pickedPath, info.path) ? null : missingComputerPath(info),
   };
 }
+
+/** A picker label inside a sentence: "This computer" is only capitalised at the start of one. */
+export const midSentence = (label: string): string => label.replace(/^This computer/, "this computer");

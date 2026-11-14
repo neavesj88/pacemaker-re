@@ -183,6 +183,8 @@
       const lo = mv.scrollLeft;
       const hi = mv.scrollLeft + mv.viewW - HEADER_W;
       if (x1 < lo || x0 > hi) mv.scrollLeft = Math.max(0, x0 - (mv.viewW - HEADER_W) * 0.2);
+      // on a short window the Mix pane itself scrolls and the whole timeline can lie below its fold
+      root?.scrollIntoView({ block: "nearest", inline: "nearest" });
     });
   });
 

@@ -52,7 +52,7 @@
       <p class="muted small">
         Finds the intro, builds, drops, breakdowns and outro of each track from its beat grid and its audio, and snaps them to
         8, 16 or 32 bar phrases. They are shown as coloured markers on the waveforms and are kept by this app, per library:
-        they do not appear on the device. Estimates, not facts.
+        they are not written into the library. Estimates, not facts.
       </p>
       <p class="legend" aria-label="Marker colours">
         {#each KINDS as k (k)}<span><i style:background={kindColor(k)}></i>{KIND_LABEL[k]}</span>{/each}
@@ -86,7 +86,7 @@
         >Analyse all {s.total} again…</Button>
         {#if confirmForget}
           <span class="forget" role="alert">
-            Forget the {saved} saved results? The audio and the device are not touched; the markers disappear until you analyse again.
+            Forget the {saved} saved results? The audio and the library are not touched; the markers disappear until you analyse again.
             <Button small data-autofocus onclick={() => (confirmForget = false)}>Keep them</Button>
             <Button small variant="primary" onclick={forget}>Forget</Button>
           </span>

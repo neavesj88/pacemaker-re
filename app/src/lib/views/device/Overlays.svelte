@@ -24,9 +24,9 @@
 <style>
   .pill {
     position: fixed;
-    left: 50%;
-    transform: translateX(-50%);
-    bottom: 56px;
+    /* left, where toasts (right) are not, and just above the player bar whatever height it has */
+    left: 14px;
+    bottom: calc(var(--player-h, 48px) + 8px);
     z-index: 50;
     display: flex;
     align-items: center;

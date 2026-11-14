@@ -8,6 +8,7 @@
   import { cases } from "$lib/state/cases.svelte";
   import { nav } from "$lib/state/nav.svelte";
   import { session } from "$lib/state/session.svelte";
+  import { writingNow } from "../analysis/bgLogic";
   import CaseDrops from "./CaseDrops.svelte";
 
   $effect(() => {
@@ -21,10 +22,10 @@
   // A rating, a key or a play count changes the library's tracks without reopening it, and a smart
   // case can rule on any of them: count again (after a pause, so a run of edits is one count).
   // Not on the first run for a library: opening it already counts. While background analysis is
-  // still working it writes a key per track, so the count waits and runs once when the queue drains.
+  // running (not paused, held or blocked, which write nothing) it writes a key per track, so the count waits and runs once when the queue drains.
   let seen: { root: string; tracks: unknown } | null = null;
   let waiting = false;
-  const busy = $derived(bg.status.left > 0);
+  const busy = $derived(writingNow(bg.status));
   $effect(() => {
     const root = session.library?.root;
     const tracks = session.library?.tracks;

@@ -63,6 +63,8 @@ class Session {
   /** An in-place reload (after a job or an edit) was refused because a switch was being read: if the
    *  switch fails, the library that stays open is re-read so it does not show stale data. */
   #pendingReload = false;
+  /** The error of a failed switch, kept through the re-read it owes (that read starts by clearing errors). */
+  #carryError = "";
   /** Shown in the red banner under the header. Any area may set it; "" clears it. */
   error = $state("");
 
@@ -188,8 +190,13 @@ class Session {
   async chooseComputerFolder(): Promise<boolean> {
     const dir = await chooseComputerLibraryFolder();
     if (!dir) return false;
-    return this.saveComputer({ path: dir, open_at_start: this.computer?.settings.open_at_start ?? true });
+    const ok = await this.saveComputer({ path: dir, open_at_start: this.computer?.settings.open_at_start ?? true });
+    // the Welcome screen then offers to make a library there, rather than saying it was not found
+    if (ok) this.pickedPath = dir;
+    return ok;
   }
+  /** A folder picked for the library on this computer in this run of the app. */
+  pickedPath = $state<string | null>(null);
 
   /** Makes the library on this computer (when it is not there) and returns its root, null on failure. */
   async createComputer(): Promise<string | null> {
@@ -257,13 +264,15 @@ class Session {
     const ticket = this.#seq.begin(keepView);
     if (ticket === null) {
       this.#pendingReload = true;
+      this.#carryError = "";
       return;
     }
     let opened = false;
     this.loading = true;
     this.switching = !keepView;
     this.loadingRoot = root;
-    this.error = "";
+    this.error = keepView ? this.#carryError : "";
+    this.#carryError = "";
     try {
       const view = await openLibrary(root);
       if (!this.#seq.current(ticket)) return;
@@ -285,7 +294,10 @@ class Session {
         // (an ejected Pacemaker is not re-read: it is gone, and the read would only raise an error)
         const redo = reloadAfter(this.#pendingReload, opened, keepView, this.attached?.root ?? null);
         this.#pendingReload = false;
-        if (redo) void this.load(redo, true);
+        if (redo) {
+          this.#carryError = this.error;
+          void this.load(redo, true);
+        }
       }
     }
   }

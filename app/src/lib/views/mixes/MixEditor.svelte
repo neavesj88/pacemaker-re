@@ -45,6 +45,7 @@
   });
   // fit a mix to the window when it is opened
   let fittedFor = -1;
+  let tlEl = $state<HTMLDivElement | null>(null);
   $effect(() => {
     const id = mixes.doc?.id ?? -1;
     if (id !== fittedFor) {
@@ -53,7 +54,9 @@
       // wait for the timeline to measure itself, then fit
       void tick()
         .then(() => new Promise((r) => requestAnimationFrame(r)))
-        .then(() => (len > 0 ? mv.fit(len) : (mv.pps = 24)));
+        .then(() => (len > 0 ? mv.fit(len) : (mv.pps = 24)))
+        // on a short window the pane scrolls: bring the timeline and its Tools strip (+ Tool) into view
+        .then(() => tlEl?.scrollIntoView({ block: "nearest", inline: "nearest" }));
     }
   });
 
@@ -303,7 +306,7 @@
 
   <div class="body">
     <div class="left">
-      <div class="tl"><Timeline ondelete={requestDelete} /></div>
+      <div class="tl" bind:this={tlEl}><Timeline ondelete={requestDelete} /></div>
 
       <div class="transport">
         <Button aria-label="Back to start" onclick={() => { void preview.seek(0); mv.scrollLeft = 0; }}>⏮</Button>
@@ -486,5 +489,18 @@
     margin-left: auto;
     color: var(--muted);
     font-size: 12px;
+  }
+  /* a short window: a tighter toolbar and no hint line, so more of the timeline shows without scrolling */
+  @media (max-height: 700px) {
+    .bar {
+      padding: 4px 12px;
+      gap: 4px 8px;
+    }
+    .legend {
+      display: none;
+    }
+    .transport {
+      padding: 4px 12px;
+    }
   }
 </style>

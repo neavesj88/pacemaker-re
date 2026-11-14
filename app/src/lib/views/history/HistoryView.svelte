@@ -186,7 +186,7 @@
 
 <div class="bar">
   <h2>History</h2>
-  <span class="muted">{session.isComputer ? "Plays are counted by the library itself, not by this app" : "What the Pacemaker played, read back from its library"}</span>
+  <span class="muted">{session.isComputer ? "Play counts come from the Pacemaker (brought here with Sync), not from this app" : "What the Pacemaker played, read back from its library"}</span>
   {#if data?.any_plays}
     <span class="chip">{data.total_plays} plays</span>
     <span class="chip">{data.tracks_played} of {data.tracks_total} tracks played</span>

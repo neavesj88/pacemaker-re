@@ -3,6 +3,7 @@
   // beat ticks with the bar starts brighter, the cue flag, the beat loop and the playhead.
   // Click or drag to seek. Copied from ui/Waveform (single colour, integration-owned) rather
   // than extended, as ARCHITECTURE.md rule 7 asks.
+  import { tickTier } from "./waveTicks";
   import type { Peak } from "$lib/api/analysis";
 
   let {
@@ -108,16 +109,15 @@
         g.fillRect(Math.round(px(loop.start)), 0, 1, HEIGHT);
         g.fillRect(Math.round(px(loop.end)), 0, 1, HEIGHT);
       }
-      if (beats.length > 1) {
-        // below ~3 px per beat the ticks turn to a smear: draw the bar starts only
-        const dense = (px(beats[beats.length - 1]) - px(beats[0])) / (beats.length - 1) < 3;
+      const tier = beats.length > 1 ? tickTier((px(beats[beats.length - 1]) - px(beats[0])) / (beats.length - 1)) : "none";
+      if (tier !== "none") {
         const first = firstDownbeat ?? 0;
         const barColour = css("--text");
         const beatColour = css("--line-hi");
         g.globalAlpha = 0.8;
         for (let i = 0; i < beats.length; i++) {
           const bar = (((i - first) % 4) + 4) % 4 === 0;
-          if (dense && !bar) continue;
+          if (tier === "bars" && !bar) continue;
           g.fillStyle = bar ? barColour : beatColour;
           g.fillRect(Math.round(px(beats[i])), 0, bar ? 2 : 1, HEIGHT);
         }
