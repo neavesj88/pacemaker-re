@@ -1,7 +1,7 @@
 <script lang="ts">
   // The label part of the Tracks filter bar: colour swatches, a tag picker (any / all) with the
   // chosen tags shown as chips, and an energy range. The conditions live in
-  // `tracksState.labelFilter` and are applied by `filterByLabels` (state/labels.ts); these are
+  // `table.labelFilter` and are applied by `filterByLabels` (state/labels.ts); these are
   // app-side labels, so tracks without them simply do not match a condition on them.
   import {
     ENERGY_LEVELS,
@@ -13,9 +13,12 @@
   import { labelEditor, labels } from "$lib/state/labels.svelte";
   import Button from "$lib/ui/Button.svelte";
   import ColourSwatch from "./ColourSwatch.svelte";
+  import type { TableState } from "./tableState.svelte";
   import { tracksState } from "./tracksState.svelte";
 
-  const f = $derived(tracksState.labelFilter);
+  let { table = tracksState }: { table?: TableState } = $props();
+
+  const f = $derived(table.labelFilter);
   let open = $state(false);
   let find = $state("");
   let wrap = $state<HTMLElement | null>(null);
@@ -36,25 +39,25 @@
   $effect(() => {
     if (!labels.root) return;
     const live = new Set(labels.vocabulary.map((v) => tagKey(v.tag)));
-    if (f.tags.some((t) => !live.has(tagKey(t)))) tracksState.labelFilter.tags = f.tags.filter((t) => live.has(tagKey(t)));
+    if (f.tags.some((t) => !live.has(tagKey(t)))) table.labelFilter.tags = f.tags.filter((t) => live.has(tagKey(t)));
   });
 
   function toggleColour(c: LabelColour) {
-    tracksState.labelFilter.colours = f.colours.includes(c) ? f.colours.filter((x) => x !== c) : [...f.colours, c];
+    table.labelFilter.colours = f.colours.includes(c) ? f.colours.filter((x) => x !== c) : [...f.colours, c];
   }
   function toggleTag(tag: string) {
-    tracksState.labelFilter.tags = chosen.has(tagKey(tag)) ? f.tags.filter((t) => tagKey(t) !== tagKey(tag)) : [...f.tags, tag];
+    table.labelFilter.tags = chosen.has(tagKey(tag)) ? f.tags.filter((t) => tagKey(t) !== tagKey(tag)) : [...f.tags, tag];
   }
   function setMin(v: string) {
     const n = v === "" ? null : Number(v);
-    tracksState.labelFilter.energyMin = n;
+    table.labelFilter.energyMin = n;
     // the range can't be upside down: pushing the minimum past the maximum drags the maximum along
-    if (n !== null && f.energyMax !== null && f.energyMax < n) tracksState.labelFilter.energyMax = n;
+    if (n !== null && f.energyMax !== null && f.energyMax < n) table.labelFilter.energyMax = n;
   }
   function setMax(v: string) {
     const n = v === "" ? null : Number(v);
-    tracksState.labelFilter.energyMax = n;
-    if (n !== null && f.energyMin !== null && f.energyMin > n) tracksState.labelFilter.energyMin = n;
+    table.labelFilter.energyMax = n;
+    if (n !== null && f.energyMin !== null && f.energyMin > n) table.labelFilter.energyMin = n;
   }
 </script>
 
@@ -77,8 +80,8 @@
     <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
     <div class="pop" class:right={alignRight} onclick={(e) => e.stopPropagation()}>
       <div class="mode" role="group" aria-label="Match">
-        <Button small active={f.tagMode === "any"} onclick={() => (tracksState.labelFilter.tagMode = "any")} title="A track needs at least one of the chosen tags">Any</Button>
-        <Button small active={f.tagMode === "all"} onclick={() => (tracksState.labelFilter.tagMode = "all")} title="A track needs every chosen tag">All</Button>
+        <Button small active={f.tagMode === "any"} onclick={() => (table.labelFilter.tagMode = "any")} title="A track needs at least one of the chosen tags">Any</Button>
+        <Button small active={f.tagMode === "all"} onclick={() => (table.labelFilter.tagMode = "all")} title="A track needs every chosen tag">All</Button>
         <span class="muted hint">of the chosen tags</span>
       </div>
       <input type="search" aria-label="Find a tag" placeholder="Find a tag" bind:value={find} />
@@ -97,7 +100,7 @@
       </ul>
       <div class="foot">
         <Button variant="link" onclick={() => ((open = false), labelEditor.manage())}>Manage tags…</Button>
-        {#if f.tags.length}<Button variant="link" onclick={() => (tracksState.labelFilter.tags = [])}>Clear tags</Button>{/if}
+        {#if f.tags.length}<Button variant="link" onclick={() => (table.labelFilter.tags = [])}>Clear tags</Button>{/if}
       </div>
     </div>
   {/if}

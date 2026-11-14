@@ -25,6 +25,7 @@ import type {
 import type { SectionKind, SectionOut } from "../api/analysis";
 import type { VocalMode } from "../api/device";
 import type { Kit } from "./transitionRecipes";
+import { chooseTempo, exceeds, type TempoChoice } from "./tempoMatch.ts";
 
 /** Engine sample rate (same as SAMPLE_RATE in api/mixes.ts; duplicated so this file imports no value). */
 export const SR = 44100;
@@ -740,6 +741,103 @@ export function setClipBpm(doc: MixDoc, clipId: string, bpm: number): MixDoc {
   const c = clipOf(doc, clipId);
   if (!c || !(bpm > 0) || !(c.bpm > 0)) return doc;
   return replaceClip(doc, clipId, (x) => retempoClip(x, [{ pos: 0, speed: bpm / x.bpm }]));
+}
+
+/** The tempo (BPM) a clip plays at where its audible part starts. */
+export const clipPlaysAt = (c: Clip): number => effectiveBpm(c, c.trimStart);
+
+/** Speed of a clip against its track's own tempo where its audible part starts (1 = unstretched). */
+export const clipSpeed = (c: Clip): number => (c.bpm > 0 ? clipPlaysAt(c) / c.bpm : 1);
+
+export type SyncResult = { doc: MixDoc; choice: TempoChoice | null; applied: boolean };
+
+/** Plays a clip at `target` BPM, or at double or half of it, whichever stretches the track least.
+ * When that still stretches it by more than `thresholdPct` per cent and `force` is not set, the
+ * document is returned unchanged with `applied: false` and the choice, so the caller can warn. */
+export function syncClipTo(doc: MixDoc, clipId: string, target: number, thresholdPct: number, force = false): SyncResult {
+  const c = clipOf(doc, clipId);
+  const choice = c ? chooseTempo(c.bpm, target) : null;
+  if (!c || !choice) return { doc, choice, applied: false };
+  if (!force && exceeds(choice.speed, thresholdPct)) return { doc, choice, applied: false };
+  return { doc: setClipBpm(doc, clipId, choice.playsAt), choice, applied: true };
+}
+
+/** Sets the pitch / tempo percentage of a clip: it plays at its track tempo times (1 + pct / 100). */
+export function setClipPercent(doc: MixDoc, clipId: string, pct: number): MixDoc {
+  const c = clipOf(doc, clipId);
+  if (!c || !(c.bpm > 0) || !(pct > -90)) return doc;
+  return setClipBpm(doc, clipId, c.bpm * (1 + pct / 100));
+}
+
+/** Adds a tempo node to a clip's tempo curve at clip-local `pos` (speed from the curve there), or
+ * moves the speed of the node at `pos`. Nodes stay in order; a ramp is linear between nodes. */
+export function setTempoNodeAt(doc: MixDoc, clipId: string, pos: number, speed: number): MixDoc {
+  const c = clipOf(doc, clipId);
+  if (!c || !(speed > 0.1) || speed > 4) return doc;
+  const p = Math.max(0, Math.round(pos));
+  const rest = c.tempo.filter((n) => n.pos !== p);
+  const tempo = [...rest, { pos: p, speed }].sort((a, b) => a.pos - b.pos);
+  return replaceClip(doc, clipId, (x) => retempoClip(x, tempo));
+}
+
+/** Removes a tempo node (the curve keeps at least one). */
+export function removeTempoNode(doc: MixDoc, clipId: string, index: number): MixDoc {
+  const c = clipOf(doc, clipId);
+  if (!c || c.tempo.length <= 1 || index < 0 || index >= c.tempo.length) return doc;
+  const tempo = c.tempo.filter((_, i) => i !== index);
+  return replaceClip(doc, clipId, (x) => retempoClip(x, tempo));
+}
+
+// ---------------------------------------------------------------------------------------------
+// Decks. The user never manages decks: overlapping clips are moved to different ones here.
+// ---------------------------------------------------------------------------------------------
+
+/** True when two clips are audible together for more than a short moment. */
+const overlaps = (a: Clip, b: Clip) => Math.min(a.visibleEnd, b.visibleEnd) - Math.max(a.visibleStart, b.visibleStart) > MIN_LENGTH;
+
+/** Keeps the rule "clips that overlap sit on different decks" without the user touching decks. A
+ * clip that overlaps another on its own deck (and has no crossfade over that overlap) moves to the
+ * other deck when that one is free there. Clips that already satisfy the rule are never changed,
+ * so a document that opened fine is not rewritten. */
+export function normalizeChannels(doc: MixDoc): MixDoc {
+  const order = sortedClips(doc);
+  const chan = new Map(doc.clips.map((c) => [c.id, c.channel]));
+  const covered = (a: Clip, b: Clip) => doc.transitions.some((t) => t.between && ((t.between.from === a.id && t.between.to === b.id) || (t.between.from === b.id && t.between.to === a.id)));
+  let changed = false;
+  for (const c of order) {
+    const mine = chan.get(c.id) ?? 0;
+    const clash = (deck: number) => order.some((o) => o.id !== c.id && (chan.get(o.id) ?? 0) === deck && overlaps(c, o) && !(deck === mine && covered(c, o)));
+    if (!clash(mine)) continue;
+    const other = mine === 1 ? 0 : 1;
+    if (!clash(other)) {
+      chan.set(c.id, other);
+      changed = true;
+    }
+  }
+  if (!changed) return doc;
+  return refresh({ ...doc, clips: doc.clips.map((c) => ((chan.get(c.id) ?? c.channel) === c.channel ? c : { ...c, channel: chan.get(c.id) ?? c.channel }) ) });
+}
+
+/** The slices of a clip's audible part by how many clips are audible together there, for drawing
+ * overlaps split by height: for each slice, which band of `count` (0 = top) belongs to `clip`.
+ * Clips are ranked by audible start (ties by document order), the earlier on top. */
+export function overlapSlices(doc: MixDoc, clip: Clip): { from: number; to: number; band: number; count: number }[] {
+  const order = [...doc.clips].sort((a, b) => a.visibleStart - b.visibleStart || doc.clips.indexOf(a) - doc.clips.indexOf(b));
+  const others = order.filter((o) => o.id !== clip.id && o.visibleEnd > clip.visibleStart && o.visibleStart < clip.visibleEnd);
+  const cuts = new Set<number>([clip.visibleStart, clip.visibleEnd]);
+  for (const o of others) {
+    if (o.visibleStart > clip.visibleStart && o.visibleStart < clip.visibleEnd) cuts.add(o.visibleStart);
+    if (o.visibleEnd > clip.visibleStart && o.visibleEnd < clip.visibleEnd) cuts.add(o.visibleEnd);
+  }
+  const xs = [...cuts].sort((a, b) => a - b);
+  const out: { from: number; to: number; band: number; count: number }[] = [];
+  for (let i = 0; i + 1 < xs.length; i++) {
+    const [from, to] = [xs[i], xs[i + 1]];
+    const mid = (from + to) / 2;
+    const active = order.filter((o) => o.visibleStart <= mid && o.visibleEnd > mid);
+    out.push({ from, to, band: Math.max(0, active.findIndex((o) => o.id === clip.id)), count: Math.max(1, active.length) });
+  }
+  return out;
 }
 
 /** Applies a `mixBeatmatch` suggestion. */

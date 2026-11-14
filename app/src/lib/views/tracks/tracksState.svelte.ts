@@ -11,36 +11,18 @@ import { SvelteSet } from "svelte/reactivity";
 import { favouriteIds, toggleFavourite } from "$lib/api/cases";
 import { tracksViewsDeletePreset, tracksViewsLoad, tracksViewsSavePreset, tracksViewsSetState, type ViewPreset } from "$lib/api/tracks";
 import { filters } from "$lib/state/filters.svelte";
-import { freshLabelFilter, type LabelFilter } from "$lib/state/labels";
 import { jobs } from "$lib/state/jobs.svelte";
 import { session } from "$lib/state/session.svelte";
 import { toast } from "$lib/state/toast.svelte";
-import { COLUMNS, loadPrefs, moveColumn, savePrefs, shownColumns as columnsToShow, stepTarget, defaultPrefs, type ColKey, type ViewPrefs } from "./columns";
-import { parseBpm, sortClick, type SortField, type TrackFilter } from "./trackLogic";
+import { TRACKS_KEY } from "./columns";
+import { selection } from "$lib/state/selection.svelte";
+import { TableState } from "./tableState.svelte";
 import { emptyViewState, sanitiseViewState, type ViewState } from "./viewState";
 
 /** How long a change waits before it is written, so typing a query writes once. */
 const SAVE_DELAY_MS = 600;
 
-class TracksState {
-  prefs = $state<ViewPrefs>(loadPrefs());
-
-  genre = $state("");
-  bpmMin = $state("");
-  bpmMax = $state("");
-  /** "", "compat:8A" or "is:8A" (see trackLogic.KeyFilter). */
-  keyFilter = $state("");
-  onlyAnalysed = $state(false);
-  /** Tag, colour and energy conditions (app-side labels, see state/labels.ts). */
-  labelFilter = $state<LabelFilter>(freshLabelFilter());
-  /** Only tracks flagged by the suspect-grid rules (state/gridSuspects.svelte.ts). */
-  onlySuspect = $state(false);
-
-  /** Tracks in the "Favourites" case. */
-  favourites = new SvelteSet<number>();
-  /** The track the inspector describes (the last one clicked). */
-  focusId = $state<number | null>(null);
-
+class TracksState extends TableState {
   /** Saved filter presets of the open library (app-side, not on the device). */
   presets = $state.raw<ViewPreset[]>([]);
   /** Set when the saved-filters file could not be read. */
@@ -48,64 +30,14 @@ class TracksState {
   /** The library whose saved views have been read; nothing is written until it is the open one. */
   viewsRoot = $state<string | null>(null);
 
-  filter = $derived<TrackFilter>({
-    genre: this.genre,
-    bpmMin: parseBpm(this.bpmMin),
-    bpmMax: parseBpm(this.bpmMax),
-    key: this.keyFilter,
-    onlyAnalysed: this.onlyAnalysed,
-  });
-
-  /** Columns in table order, with the hidden ones left out. */
-  shownColumns = $derived(columnsToShow(this.prefs));
+  constructor() {
+    super({ storageKey: TRACKS_KEY, search: filters, selection, favourites: new SvelteSet<number>() });
+  }
 
   #lastJson = "";
   #timer: ReturnType<typeof setTimeout> | null = null;
   #pending: { root: string; state: ViewState } | null = null;
   #saveFailed = false;
-
-  /** A click (or shift-click, `additive`) on a column header. */
-  sortBy(field: SortField, additive = false) {
-    this.prefs.sort = sortClick(this.prefs.sort, field, additive);
-    this.save();
-  }
-
-  toggleColumn(key: ColKey) {
-    this.prefs.visible[key] = !this.prefs.visible[key];
-    this.save();
-  }
-
-  setWidth(key: ColKey, width: number) {
-    const col = COLUMNS.find((c) => c.key === key);
-    if (col) this.prefs.widths[key] = Math.max(col.min, Math.min(800, Math.round(width)));
-  }
-
-  /** Moves a column to just before `before` (the end when null). */
-  moveColumn(key: ColKey, before: ColKey | null) {
-    this.prefs.order = moveColumn(this.prefs.order, key, before);
-    this.save();
-  }
-
-  /** Moves a column one step along among the shown columns (the keyboard way); false at the edge. */
-  stepColumn(key: ColKey, step: -1 | 1): boolean {
-    const t = stepTarget(
-      this.shownColumns.map((c) => c.key),
-      key,
-      step,
-    );
-    if (!t.ok) return false;
-    this.moveColumn(key, t.before);
-    return true;
-  }
-
-  /** Back to the default columns, order and widths (the sort and the two settings stay). */
-  resetColumns() {
-    const d = defaultPrefs();
-    this.prefs.visible = d.visible;
-    this.prefs.widths = d.widths;
-    this.prefs.order = d.order;
-    this.save();
-  }
 
   setRememberView(on: boolean) {
     this.prefs.rememberView = on;
@@ -116,28 +48,6 @@ class TracksState {
   setFindClearsFilters(on: boolean) {
     this.prefs.findClearsFilters = on;
     this.save();
-  }
-
-  save() {
-    savePrefs($state.snapshot(this.prefs));
-  }
-
-  /** The toolbar's own filters; the search box and "Missing" are the shared `filters`. */
-  clearFilters() {
-    this.genre = "";
-    this.bpmMin = "";
-    this.bpmMax = "";
-    this.keyFilter = "";
-    this.onlyAnalysed = false;
-    this.labelFilter = freshLabelFilter();
-    this.onlySuspect = false;
-  }
-
-  /** Every condition that hides tracks: the toolbar, "Missing" and the search box. */
-  clearAllFilters() {
-    this.clearFilters();
-    filters.onlyNeeds = false;
-    filters.query = "";
   }
 
   // ---- saved views ----------------------------------------------------------------------
@@ -155,7 +65,7 @@ class TracksState {
       bpmMax: this.bpmMax,
       keyFilter: this.keyFilter,
       labelFilter: $state.snapshot(this.labelFilter),
-      ...(withSort ? { sort: $state.snapshot(this.prefs.sort) } : {}),
+      ...(withSort ? { sort: $state.snapshot(this.persistentSort) } : {}),
     };
   }
 

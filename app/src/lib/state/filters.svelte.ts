@@ -7,7 +7,7 @@ export const SEARCH_PAUSE_MS = 150;
 
 export type SortKey = "title" | "artist" | "album" | "genre" | "bpm" | "key" | "play_time_secs";
 
-class Filters {
+export class Filters {
   #text = $state("");
   #applied = $state("");
   #timer: ReturnType<typeof setTimeout> | null = null;

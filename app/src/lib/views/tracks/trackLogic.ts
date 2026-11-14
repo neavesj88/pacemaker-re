@@ -121,12 +121,17 @@ export function uniqueGenres(list: Track[]): string[] {
 
 export type SortField =
   | "fav" | "title" | "artist" | "album" | "genre" | "bpm" | "key" | "rating" | "times_played" | "play_time_secs" | "colour" | "energy" | "auto_energy" | "tags"
-  | "year" | "label" | "remixer" | "composer" | "comments" | "date_added" | "last_played" | "format" | "bit_rate" | "file_size";
+  | "year" | "label" | "remixer" | "composer" | "comments" | "date_added" | "last_played" | "format" | "bit_rate" | "file_size" | "cases" | "case_order";
 
 /** One key of a sort: the column and its direction. */
 export type SortSpec = { field: SortField; asc: boolean };
 
 const collator = new Intl.Collator(undefined, { sensitivity: "base", numeric: true });
+
+/** What the case columns and the case sort need to know: where a track sits in the chosen case
+ *  (null when it is not in it or none is chosen) and the names of every case that holds it. */
+export type CaseLookup = { position: (id: number) => number | null; names: (id: number) => string[] };
+export const NO_CASES: CaseLookup = { position: () => null, names: () => [] };
 
 // The palette order of state/labels.ts LABEL_COLOURS, repeated here because this file is run by
 // plain node in the tests and so cannot import a value through the `$lib` alias; the test file
@@ -156,8 +161,9 @@ export function sortTracksBy(
   isFavourite: (id: number) => boolean,
   labelOf: (id: number) => TrackLabels | undefined = () => undefined,
   autoEnergyOf: (id: number) => number | null = () => null,
+  caseOf: CaseLookup = NO_CASES,
 ): Track[] {
-  const comparators = keys.map((k) => comparatorFor(k, rows, isFavourite, labelOf, autoEnergyOf));
+  const comparators = keys.map((k) => comparatorFor(k, rows, isFavourite, labelOf, autoEnergyOf, caseOf));
   return [...rows].sort((a, b) => {
     for (const c of comparators) {
       const r = c(a, b);
@@ -174,6 +180,7 @@ function comparatorFor(
   isFavourite: (id: number) => boolean,
   labelOf: (id: number) => TrackLabels | undefined,
   autoEnergyOf: (id: number) => number | null,
+  caseOf: CaseLookup,
 ): (a: Track, b: Track) => number {
   const { field } = spec;
   const dir = spec.asc ? 1 : -1;
@@ -189,6 +196,10 @@ function comparatorFor(
     case "energy": return withMissing((t) => labelOf(t.track_id)?.energy ?? null, (x, y) => x - y);
     case "auto_energy": return withMissing((t) => autoEnergyOf(t.track_id), (x, y) => x - y);
     case "tags": return withMissing((t) => { const l = labelOf(t.track_id)?.tags; return l && l.length > 0 ? l.join(", ") : null; }, (x, y) => collator.compare(x, y));
+    // position in the case chosen in the filter bar; tracks outside it (no case chosen) come last
+    case "case_order": return withMissing((t) => caseOf.position(t.track_id), (x, y) => x - y);
+    // the names of the cases that hold the track, alphabetically joined; tracks in no case come last
+    case "cases": return withMissing((t) => { const n = caseOf.names(t.track_id); return n.length > 0 ? n.join(", ") : null; }, (x, y) => collator.compare(x, y));
     case "fav": return (a, b) => (Number(isFavourite(a.track_id)) - Number(isFavourite(b.track_id))) * dir;
     case "key": {
       const rank = new Map<number, number>();

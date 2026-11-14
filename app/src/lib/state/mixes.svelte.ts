@@ -62,6 +62,19 @@ export type EditOptions = {
   dirties?: boolean;
 };
 
+/** After an edit that moved, resized or added a clip, overlapping clips are put on different decks
+ * (the user never manages decks). Edits that leave every audible range alone are not touched, so
+ * a mix that opened fine is not rewritten. */
+function settleDecks(before: MixDoc, after: MixDoc): MixDoc {
+  if (after.clips === before.clips) return after;
+  const old = new Map(before.clips.map((c) => [c.id, c]));
+  const moved = after.clips.some((c) => {
+    const o = old.get(c.id);
+    return !o || o.visibleStart !== c.visibleStart || o.visibleEnd !== c.visibleEnd;
+  });
+  return moved ? E.normalizeChannels(after) : after;
+}
+
 class Mixes {
   /** The open document, or null. Replace it through the actions below, never mutate it. */
   doc = $state.raw<MixDoc | null>(null);
@@ -226,8 +239,9 @@ class Mixes {
   edit(label: string, fn: (doc: MixDoc) => MixDoc, opts: EditOptions = {}) {
     const before = this.doc;
     if (!before) return;
-    const after = fn(before);
+    let after = fn(before);
     if (after === before) return;
+    after = settleDecks(before, after);
     const now = Date.now();
     if (opts.dirties === false) {
       // not part of the saved document (the reference tempo): no undo step, history untouched
