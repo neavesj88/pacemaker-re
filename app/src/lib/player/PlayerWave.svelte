@@ -4,6 +4,7 @@
   // Click or drag to seek. Copied from ui/Waveform (single colour, integration-owned) rather
   // than extended, as ARCHITECTURE.md rule 7 asks.
   import { tickTier } from "./waveTicks";
+  import { appearance } from "$lib/state/appearance.svelte";
   import type { Peak } from "$lib/api/analysis";
 
   let {
@@ -47,15 +48,15 @@
   let frame = 0;
   $effect(() => {
     if (!canvas || width === 0 || height === 0) return;
-    const args = { canvas, width, height, peaks, beats, firstDownbeat, duration, cue, loop };
+    const args = { canvas, width, height, peaks, beats, firstDownbeat, duration, cue, loop, gridMin: appearance.gridMinBarPx };
     cancelAnimationFrame(frame);
     frame = requestAnimationFrame(() => draw(args));
     return () => cancelAnimationFrame(frame);
   });
 
-  function draw({ canvas, width, height, peaks, beats, firstDownbeat, duration, cue, loop }: {
+  function draw({ canvas, width, height, peaks, beats, firstDownbeat, duration, cue, loop, gridMin }: {
     canvas: HTMLCanvasElement; width: number; height: number; peaks: Peak[] | null; beats: number[];
-    firstDownbeat: number | null; duration: number; cue: number | null; loop: { start: number; end: number } | null;
+    firstDownbeat: number | null; duration: number; cue: number | null; loop: { start: number; end: number } | null; gridMin: number;
   }) {
     const HEIGHT = height;
     const dpr = window.devicePixelRatio || 1;
@@ -109,7 +110,7 @@
         g.fillRect(Math.round(px(loop.start)), 0, 1, HEIGHT);
         g.fillRect(Math.round(px(loop.end)), 0, 1, HEIGHT);
       }
-      const tier = beats.length > 1 ? tickTier((px(beats[beats.length - 1]) - px(beats[0])) / (beats.length - 1)) : "none";
+      const tier = beats.length > 1 ? tickTier((px(beats[beats.length - 1]) - px(beats[0])) / (beats.length - 1), gridMin) : "none";
       if (tier !== "none") {
         const first = firstDownbeat ?? 0;
         const barColour = css("--text");
@@ -119,7 +120,7 @@
           const bar = (((i - first) % 4) + 4) % 4 === 0;
           if (tier === "bars" && !bar) continue;
           g.fillStyle = bar ? barColour : beatColour;
-          g.fillRect(Math.round(px(beats[i])), 0, bar ? 2 : 1, HEIGHT);
+          g.fillRect(Math.round(px(beats[i])), 0, bar && tier === "all" ? 2 : 1, HEIGHT);
         }
         g.globalAlpha = 1;
       }

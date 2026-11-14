@@ -1,6 +1,6 @@
 // Run: node --experimental-strip-types src/lib/state/appearanceLogic.test.mjs
 import assert from "node:assert/strict";
-import { ERROR_SECS_DEFAULT, MAX_TOASTS, clampScale, normaliseErrorSecs, normaliseScale, scaleKey, stepScale, toastMs, zoomFactor } from "./appearanceLogic.ts";
+import { ERROR_SECS_DEFAULT, GRID_MIN_DEFAULT, MAX_TOASTS, normaliseGridMin, clampScale, normaliseErrorSecs, normaliseScale, scaleKey, stepScale, toastMs, zoomFactor } from "./appearanceLogic.ts";
 
 // size: 80 to 200 %, default 100, junk gives the default
 assert.equal(clampScale(100), 100);
@@ -45,3 +45,9 @@ assert.equal(toastMs("bad", 4000, 0), null, "until closed");
 assert.ok(MAX_TOASTS >= 3);
 
 console.log("appearanceLogic.test.mjs ok");
+
+// beat grid cutoff: only the offered choices, junk gives the default
+assert.equal(normaliseGridMin(0), 0);
+assert.equal(normaliseGridMin(4), 4);
+assert.equal(normaliseGridMin(3), GRID_MIN_DEFAULT);
+assert.equal(normaliseGridMin(null), GRID_MIN_DEFAULT);

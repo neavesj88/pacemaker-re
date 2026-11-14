@@ -5,6 +5,9 @@ import { loadPref, savePref } from "./prefStore";
 import {
   ERROR_SECS_DEFAULT,
   ERROR_SECS_KEY,
+  GRID_MIN_DEFAULT,
+  GRID_MIN_KEY,
+  normaliseGridMin,
   SCALE_DEFAULT,
   SCALE_KEY,
   clampScale,
@@ -19,6 +22,8 @@ class Appearance {
   scale = $state(loadPref(SCALE_KEY, normaliseScale, () => SCALE_DEFAULT));
   /** Seconds an error message stays; 0 = until closed. */
   errorSecs = $state(loadPref(ERROR_SECS_KEY, normaliseErrorSecs, () => ERROR_SECS_DEFAULT));
+  /** Least width of one bar (px) that still gets a bar line on the player waveform; 0 = no grid. */
+  gridMinBarPx = $state(loadPref(GRID_MIN_KEY, normaliseGridMin, () => GRID_MIN_DEFAULT));
   /** The webview could not be zoomed (the browser preview, or the permission is missing). */
   zoomProblem = $state("");
 
@@ -50,6 +55,11 @@ class Appearance {
 
   reset() {
     this.setScale(SCALE_DEFAULT);
+  }
+
+  setGridMinBarPx(px: number) {
+    this.gridMinBarPx = normaliseGridMin(px);
+    savePref(GRID_MIN_KEY, this.gridMinBarPx);
   }
 
   setErrorSecs(secs: number) {

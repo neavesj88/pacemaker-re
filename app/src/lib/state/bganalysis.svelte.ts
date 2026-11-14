@@ -45,6 +45,7 @@ const DISMISSED_KEY = "pm.bg.noteHidden.v1";
 /** Waits this long after the last finished result before reading energy / sections again. */
 const RELOAD_AFTER_MS = 1500;
 const PEAKS_BATCH_MS = 250;
+const POLL_WHILE_RUNNING_MS = 15000;
 
 class Bg {
   settings = $state<BgSettings>({ ...DEFAULT_BG_SETTINGS });
@@ -75,6 +76,9 @@ class Bg {
   #peaksTimer: ReturnType<typeof setTimeout> | null = null;
   #lastFailures = -1;
   #lastState = "";
+  /** Re-reads the list now and then during one long run: held-back records that accrue then do not
+   *  move the status count or state, so nothing else would show them until the run ends. */
+  #poll: ReturnType<typeof setInterval> | null = null;
   /** The library the last status was about: the failure list and its "Hide" belong to it. */
   #root: string | null = null;
 
@@ -183,6 +187,11 @@ class Bg {
     this.status = s;
     if (libraryChanged(this.#root, s.root)) this.forgetFailures();
     this.#root = s.root;
+    if (s.state === "running" && !this.#poll) this.#poll = setInterval(() => void this.refreshFailures(), POLL_WHILE_RUNNING_MS);
+    else if (s.state !== "running" && this.#poll) {
+      clearInterval(this.#poll);
+      this.#poll = null;
+    }
     // the list is read again only when its count or the worker's state moved, not on every status tick
     if (failuresStale({ failures: this.#lastFailures, state: this.#lastState }, s)) {
       this.#lastFailures = s.failures;

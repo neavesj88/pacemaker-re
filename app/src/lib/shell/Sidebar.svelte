@@ -26,8 +26,12 @@
 </nav>
 
 <style>
+  /* published so the undo prompt can sit past it */
+  :global(:root) {
+    --nav-w: 190px;
+  }
   nav {
-    width: 190px;
+    width: var(--nav-w);
     flex: none;
     display: flex;
     flex-direction: column;

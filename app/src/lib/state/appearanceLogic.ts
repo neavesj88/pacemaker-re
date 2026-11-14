@@ -40,6 +40,15 @@ export function scaleKey(e: { key: string; ctrlKey: boolean; metaKey: boolean; a
   return null;
 }
 
+/** The beat grid on the player waveform: the least width of one bar (px) that still gets a bar line. 0 = no grid. */
+export const GRID_MIN_KEY = "pacemaker-revival.waveGridMinBarPx";
+export const GRID_MIN_CHOICES = [0, 2, 4, 8] as const;
+export const GRID_MIN_DEFAULT = 2;
+
+export function normaliseGridMin(raw: unknown): number {
+  return finite(raw) && (GRID_MIN_CHOICES as readonly number[]).includes(raw) ? raw : GRID_MIN_DEFAULT;
+}
+
 /** How long an error message stays, in seconds; 0 = until it is closed. The choices the Settings offer. */
 export const ERROR_SECS_CHOICES = [10, 20, 60, 0] as const;
 export const ERROR_SECS_DEFAULT = 20;

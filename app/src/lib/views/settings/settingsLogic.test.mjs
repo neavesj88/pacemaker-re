@@ -113,6 +113,7 @@ const PREF_ENTRIES = {
   "pacemaker.grid.vtempo.v1": "tempo-tools",
   "pacemaker-revival.interfaceSize": "interface",
   "pacemaker-revival.errorSeconds": "interface",
+  "pacemaker-revival.waveGridMinBarPx": "interface",
 };
 const VIEW_STATE = {
   "pm.tracks.view.v1": "which columns the track table shows and how it is sorted",

@@ -1,6 +1,6 @@
 <script lang="ts">
   import { appearance } from "$lib/state/appearance.svelte";
-  import { ERROR_SECS_CHOICES, SCALE_DEFAULT, SCALE_MAX, SCALE_MIN, SCALE_STEP } from "$lib/state/appearanceLogic";
+  import { ERROR_SECS_CHOICES, GRID_MIN_CHOICES, SCALE_DEFAULT, SCALE_MAX, SCALE_MIN, SCALE_STEP } from "$lib/state/appearanceLogic";
   import Button from "$lib/ui/Button.svelte";
 
   // The size of the whole window (text, tables, the player), for a big monitor or a small laptop. It
@@ -11,6 +11,7 @@
   let dragging = $state<number | null>(null);
   const shown = $derived(dragging ?? appearance.scale);
 
+  const gridText = (g: number) => (g === 0 ? "No beat grid" : `Bar lines down to ${g} px per bar${g === 2 ? " (most)" : ""}`);
   const secsText = (s: number) => (s === 0 ? "until I close them" : `${s} seconds`);
 </script>
 
@@ -48,6 +49,16 @@
       {#each ERROR_SECS_CHOICES as s (s)}<option value={s}>{secsText(s)}</option>{/each}
     </select>
   </div>
+  <div class="row">
+    <label for="grid-min" class="k">Beat grid on the player</label>
+    <select id="grid-min" value={appearance.gridMinBarPx} onchange={(e) => appearance.setGridMinBarPx(Number(e.currentTarget.value))}>
+      {#each GRID_MIN_CHOICES as g (g)}<option value={g}>{gridText(g)}</option>{/each}
+    </select>
+  </div>
+  <p class="muted note">
+    Bar lines on the player's waveform stop being drawn when a bar gets narrower than this, so a long track on a narrow window
+    is not covered in lines. A lower number keeps the grid on longer tracks.
+  </p>
   <p class="muted note">Other messages (saved, copied) disappear by themselves after a few seconds. Any message has a × to close it.</p>
 </div>
 
