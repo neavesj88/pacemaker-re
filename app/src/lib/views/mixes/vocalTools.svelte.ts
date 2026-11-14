@@ -9,7 +9,7 @@
 import { loadPref, savePref } from "$lib/state/prefStore";
 import { session } from "$lib/state/session.svelte";
 
-const KEY = "pm.mixes.vocalTools.v1";
+const STORAGE_KEY = "pm.mixes.vocalTools.v1";
 
 type Saved = Record<string, string[]>;
 
@@ -23,7 +23,7 @@ function normalise(raw: unknown): Saved {
 }
 
 class VocalTools {
-  #all = $state<Saved>(loadPref(KEY, normalise, () => ({})));
+  #all = $state<Saved>(loadPref(STORAGE_KEY, normalise, () => ({})));
 
   #key(mixId: number): string {
     return `${session.library?.root ?? ""}#${mixId}`;
@@ -39,7 +39,7 @@ class VocalTools {
     const cur = this.#all[key] ?? [];
     const next = on ? [...new Set([...cur, processId])] : cur.filter((x) => x !== processId);
     this.#all = { ...this.#all, [key]: next };
-    savePref(KEY, this.#all);
+    savePref(STORAGE_KEY, this.#all);
   }
 
   /** The ids marked Vocal in a mix (for the live engine's labels). */

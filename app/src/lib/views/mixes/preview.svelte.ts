@@ -21,6 +21,9 @@ const MAX_RANGE_PREVIEW = 900;
 
 export type PreviewStatus = "idle" | "rendering" | "playing" | "paused";
 
+/** How long an edit waits before it is sent to the engine, so a drag sends one update per 30 ms. */
+const SYNC_MS = 30;
+
 const IDLE: MixLiveStatus = { state: "idle", loaded: 0, total: 0, message: "" };
 
 /** Preview level 0..1 as dB for the engine (0 is silence: -90). */
@@ -34,7 +37,7 @@ class Preview {
   engine = $state<MixLiveStatus>({ ...IDLE });
 
   #unsubs: (() => void)[] = [];
-  #raf = 0;
+  #timer: ReturnType<typeof setTimeout> | null = null;
   #queued: MixDoc | null = null;
   /** A range preview (rendered, played by the shared player) is running. */
   #range = false;
@@ -98,16 +101,18 @@ class Preview {
     }
   }
 
-  /** Sends an edit to the engine (at most once per frame, so a drag costs one update per frame). */
+  /** Sends an edit to the engine, at most once every 30 ms (a drag costs one update per 30 ms, and the
+   * last state always goes). A timer rather than an animation frame: a window in the background
+   * does not get frames, and the edit must still reach the engine. */
   sync(doc: MixDoc) {
     this.#queued = doc;
-    if (this.#raf) return;
-    this.#raf = requestAnimationFrame(() => {
-      this.#raf = 0;
+    if (this.#timer) return;
+    this.#timer = setTimeout(() => {
+      this.#timer = null;
       const d = this.#queued;
       this.#queued = null;
       if (d) void mixLiveUpdate(d, vocalToolIds(d)).catch(() => {});
-    });
+    }, SYNC_MS);
   }
 
   /** Plays from the playhead (or `fromSamples`). */
@@ -207,8 +212,8 @@ class Preview {
   #detach() {
     for (const u of this.#unsubs) u();
     this.#unsubs = [];
-    cancelAnimationFrame(this.#raf);
-    this.#raf = 0;
+    if (this.#timer) clearTimeout(this.#timer);
+    this.#timer = null;
     this.#queued = null;
   }
 

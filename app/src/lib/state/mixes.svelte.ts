@@ -30,10 +30,12 @@ import {
   type TransitionSuggestion,
 } from "$lib/api/mixes";
 import { renderMixPreview, type PreviewGains } from "$lib/api/export";
+import { tempoPrefs } from "$lib/views/mixes/tempoPrefs.svelte";
 import { sections } from "./sections.svelte";
 import { session } from "./session.svelte";
 import { toast } from "./toast.svelte";
 import * as E from "./mixedit";
+import { chooseTempo, exceeds, stretchText, type TempoChoice } from "./tempoMatch";
 
 /** Undo steps kept. Snapshots share structure, so this is generous; the oldest go first. */
 const MAX_UNDO = 2000;
@@ -361,12 +363,21 @@ class Mixes {
   }
 
   /** Fetches a clip for a library track and adds it with its audible start at `at` (samples;
-   * default: right after the last clip). Selects it. */
-  async addTrack(trackId: number, at?: number, channel?: number) {
+   * default: right after the last clip). Selects it. With a mix tempo and the setting "match to
+   * the mix tempo when added" on, the clip plays at the mix tempo or at double or half of it,
+   * whichever stretches the track least; when even that is more than the setting's stretch limit
+   * the clip keeps its own tempo (the other choice of that setting matches it anyway). */
+  async addTrack(trackId: number, at?: number, channel?: number): Promise<{ choice: TempoChoice | null; matched: boolean }> {
     const root = this.root;
-    if (!root || !this.doc) return;
-    const clip = await mixMakeClip(root, trackId, this.doc.tempoBpm);
+    if (!root || !this.doc) return { choice: null, matched: false };
+    let clip = await mixMakeClip(root, trackId, null);
+    const target = this.doc.tempoBpm;
+    const prefs = tempoPrefs.value;
+    const choice = target && prefs.matchOnAdd ? chooseTempo(clip.bpm, target) : null;
+    const matched = !!choice && (!exceeds(choice.speed, prefs.warnPct) || prefs.overOnAdd === "match");
+    if (choice && matched) clip = E.retempoClip(clip, [{ pos: 0, speed: choice.speed }]);
     this.addClip(clip, at, channel);
+    return { choice, matched };
   }
 
   addClip(clip: Clip, at?: number, channel?: number) {
@@ -522,8 +533,46 @@ class Mixes {
     const root = this.root;
     if (!root || !this.doc) throw new Error("no mix is open");
     const s = await mixBeatmatch(root, this.doc, clipId);
+    const c = E.clipOf(this.doc, clipId);
+    const choice = c ? chooseTempo(c.bpm, s.targetBpm) : null;
+    if (c && choice && choice.factor !== 1) {
+      // the backend lines the beats up at the reference tempo itself; this clip is closer to half
+      // or double of it, so it plays at that instead and keeps its place (the beats are not
+      // re-aligned: that needs the grids matched at the other ratio)
+      this.edit("Match tempo", (d) => E.setClipBpm(d, clipId, choice.playsAt));
+      return { ...s, targetBpm: choice.playsAt, speed: choice.speed, notes: [...s.notes, `Matched at ${choice.factor === 2 ? "double" : "half"} time (${stretchText(choice.stretchPct)}); the beats were not re-aligned`] };
+    }
     this.edit("Beat-match", (d) => E.applyBeatmatch(d, s));
     return s;
+  }
+
+  /** Plays a clip at `target` BPM (or double / half of it, whichever stretches it least). A match
+   * that stretches more than the setting allows is not applied unless `force`: the result says so,
+   * so the caller can show the choice. */
+  syncClip(clipId: string, target: number, force = false): E.SyncResult {
+    const r = E.syncClipTo(this.doc!, clipId, target, tempoPrefs.value.warnPct, force);
+    if (r.applied) this.edit("Match tempo", () => r.doc);
+    return r;
+  }
+
+  /** Plays every clip at `target` BPM (or double / half of it), one undo step. Clips that would be
+   * stretched more than the setting allows are left as they are and returned, so the caller can
+   * name them. */
+  syncAll(target: number): { applied: number; kept: { clip: Clip; choice: TempoChoice }[] } {
+    const start = this.doc;
+    if (!start) return { applied: 0, kept: [] };
+    let d = start;
+    let applied = 0;
+    const kept: { clip: Clip; choice: TempoChoice }[] = [];
+    for (const c of start.clips) {
+      const r = E.syncClipTo(d, c.id, target, tempoPrefs.value.warnPct);
+      if (r.applied) {
+        d = r.doc;
+        applied++;
+      } else if (r.choice && r.choice.stretchPct !== 0 && exceeds(r.choice.speed, tempoPrefs.value.warnPct)) kept.push({ clip: c, choice: r.choice });
+    }
+    if (d !== start) this.edit("Match all to the mix tempo", () => d);
+    return { applied, kept };
   }
 
   /** Asks for a transition between two clips, `bars` long (null = the backend's default of 16).

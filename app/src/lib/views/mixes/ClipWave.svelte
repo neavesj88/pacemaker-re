@@ -8,7 +8,15 @@
   import { BAND_COLOURS, SR } from "./layout";
   import { peakCache } from "./peaks.svelte";
 
-  let { clip, pps, from, to, height }: { clip: Clip; pps: number; from: number; to: number; height: number } = $props();
+  let {
+    clip,
+    pps,
+    from,
+    to,
+    height,
+    top = 0,
+    bands = BAND_COLOURS,
+  }: { clip: Clip; pps: number; from: number; to: number; height: number; top?: number; bands?: { low: string; mid: string; high: string } } = $props();
 
   let canvas = $state<HTMLCanvasElement | null>(null);
   const width = $derived(Math.max(1, Math.ceil(to - from)));
@@ -20,7 +28,7 @@
   $effect(() => {
     const cv = canvas;
     if (!cv) return;
-    const key = [cv, clip.tempo, clip.trimStart, clip.trimEnd, clip.length, clip.track?.grid, pps, from, to, height, peaks];
+    const key = [cv, clip.tempo, clip.trimStart, clip.trimEnd, clip.length, clip.track?.grid, pps, from, to, height, peaks, bands.low];
     if (last && key.every((v, i) => v === last![i])) return;
     last = key;
     untrack(() => draw(cv));
@@ -62,13 +70,13 @@
         }
         prev = next;
         const amp = height - 4;
-        g.fillStyle = BAND_COLOURS.low;
+        g.fillStyle = bands.low;
         let h = Math.max(1, (lo / 255) * amp);
         g.fillRect(x, mid - h / 2, 1, h);
-        g.fillStyle = BAND_COLOURS.mid;
+        g.fillStyle = bands.mid;
         h = Math.max(0, (md / 255) * amp);
         g.fillRect(x, mid - h / 2, 1, h);
-        g.fillStyle = BAND_COLOURS.high;
+        g.fillStyle = bands.high;
         h = Math.max(0, (hi / 255) * amp);
         g.fillRect(x, mid - h / 2, 1, h);
       }
@@ -96,12 +104,11 @@
   }
 </script>
 
-<canvas bind:this={canvas} style:left="{from}px" style:width="{width}px" style:height="{height}px" aria-hidden="true"></canvas>
+<canvas bind:this={canvas} style:left="{from}px" style:top="{top}px" style:width="{width}px" style:height="{height}px" aria-hidden="true"></canvas>
 
 <style>
   canvas {
     position: absolute;
-    top: 0;
     pointer-events: none;
   }
 </style>

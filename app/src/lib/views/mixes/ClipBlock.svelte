@@ -1,26 +1,30 @@
 <script lang="ts">
-  // One clip on a channel lane: colour waveform, title, drag to move (snapped; between decks by
-  // dragging up or down), drag an edge to trim. Shift / Ctrl-click adds to the selection.
+  // One clip on the single mix bar, in its own colour. Where another clip overlaps it, the bar is
+  // split by height inside the overlap (the earlier clip on top, the later below), so both
+  // waveforms stay visible and each clip's boundary is clear. Drag to move (snapped), drag an edge
+  // to trim; Shift / Ctrl-click adds to the selection. Decks are automatic (state/mixes.svelte.ts).
   import type { Clip } from "$lib/api/mixes";
   import * as E from "$lib/state/mixedit";
-  import { effectiveBpm } from "$lib/state/mixedit";
+  import { effectiveBpm, overlapSlices } from "$lib/state/mixedit";
   import { mixes } from "$lib/state/mixes.svelte";
   import { sections } from "$lib/state/sections.svelte";
-  import { HEADER_W, SR } from "./layout";
+  import { exceeds, stretchText } from "$lib/state/tempoMatch";
+  import { HEADER_W, SR, clipBands } from "./layout";
   import ClipSections from "./ClipSections.svelte";
   import ClipWave from "./ClipWave.svelte";
+  import { tempoPrefs } from "./tempoPrefs.svelte";
   import { mv } from "./view.svelte";
 
   let {
     clip,
+    colour,
     height,
-    laneAt,
     oncontext,
   }: {
     clip: Clip;
+    /** This clip's colour on the bar (clipColour of its place in the mix). */
+    colour: string;
     height: number;
-    /** Deck (0 or 1) whose lane is under a viewport y, or null. */
-    laneAt: (clientY: number) => number | null;
     oncontext: (e: MouseEvent, clip: Clip) => void;
   } = $props();
 
@@ -29,6 +33,26 @@
   const width = $derived(Math.max(2, mv.x(clip.visibleEnd - clip.visibleStart)));
   const selected = $derived(mixes.selected.includes(clip.id));
   const broken = $derived(!clip.track || !clip.track.available || clip.trackId < 0);
+  const bands = $derived(clipBands(colour));
+  const speed = $derived(clip.bpm > 0 ? effectiveBpm(clip, clip.trimStart) / clip.bpm : 1);
+  const stretchBadge = $derived(exceeds(speed, tempoPrefs.value.warnPct) ? `${stretchText((speed - 1) * 100)} stretch` : "");
+
+  /** The audible part cut into slices by how many clips are heard together: each slice is drawn in
+   * its own band of the bar's height. In pixels from the clip's left edge. */
+  const segs = $derived.by(() => {
+    const doc = mixes.doc;
+    if (!doc) return [];
+    const list = overlapSlices(doc, clip);
+    return list.map((sl, i) => {
+      const x0 = mv.x(sl.from - clip.visibleStart);
+      const x1 = mv.x(sl.to - clip.visibleStart);
+      const bh = height / sl.count;
+      return { ...sl, x0, x1: Math.max(x0 + 1, x1), top: sl.band * bh, bh, first: i === 0, last: i === list.length - 1 };
+    });
+  });
+  /** Where the title goes: the top of the band the clip starts in. */
+  const titleTop = $derived((segs[0]?.top ?? 0) + 3);
+  let box = $state<HTMLDivElement | null>(null);
 
   // The canvas covers the viewport plus half a screen each side, in 256 px steps, so scrolling
   // redraws rarely.
@@ -49,8 +73,9 @@
   });
 
   let hover = $state<"left" | "right" | "move">("move");
+  /** Which part of the whole clip (not of the slice under the pointer) a pointer is on. */
   function zone(e: PointerEvent | MouseEvent): "left" | "right" | "move" {
-    const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const r = (box ?? (e.currentTarget as HTMLElement)).getBoundingClientRect();
     const x = e.clientX - r.left;
     if (r.width > EDGE * 3) {
       if (x < EDGE) return "left";
@@ -89,15 +114,9 @@
           ? E.snapClipStart(doc0, clip.id, primary, { mode: mixes.snap, threshold: mixes.threshold, exclude: ids, sections: mixes.sectionLookup })
           : primary;
         const d = snapped - orig.get(clip.id)!;
-        const deck = ids.length === 1 ? laneAt(ev.clientY) : null;
         mixes.edit(
           "Move clips",
-          (doc) =>
-            ids.reduce(
-              (acc, id) =>
-                E.moveClip(acc, id, orig.get(id)! + d, { mode: "off", threshold: 0, channel: id === clip.id && deck !== null ? deck : undefined }),
-              doc,
-            ),
+          (doc) => ids.reduce((acc, id) => E.moveClip(acc, id, orig.get(id)! + d, { mode: "off", threshold: 0 }), doc),
           { group: `move:${ids.join(",")}` },
         );
       };
@@ -109,7 +128,7 @@
       const base = edge === "left" ? clip.visibleStart : clip.visibleEnd;
       const rs = (ev: PointerEvent) => {
         moved = true;
-        let pos = base + mv.samples(ev.clientX - startX);
+        const pos = base + mv.samples(ev.clientX - startX);
         if (ev.altKey) {
           // no snapping: resize against the unsnapped position
           const keep = mixes.snap;
@@ -157,77 +176,138 @@
   class:selected
   class:broken
   class:bypass={clip.clipBypassed}
-  class:edge={hover !== "move"}
-  role="button"
-  tabindex="0"
-  aria-label="Clip {title}"
-  aria-pressed={selected}
+  bind:this={box}
   data-clip={clip.id}
   style:left="{left}px"
   style:width="{width}px"
   style:height="{height}px"
-  onpointerdown={down}
-  onpointermove={(e) => (hover = zone(e))}
-  onkeydown={key}
-  oncontextmenu={ctx}
+  style:--c={colour}
 >
-  <ClipWave {clip} pps={mv.pps} from={win.from} to={win.to} {height} />
+  {#each segs as sg (sg.from)}
+    <div
+      class="seg"
+      class:edge={hover !== "move"}
+      class:overlap={sg.count > 1}
+      class:first={sg.first}
+      class:last={sg.last}
+      role="button"
+      tabindex={sg.first ? 0 : -1}
+      aria-label="Clip {title}"
+      aria-pressed={selected}
+      style:left="{sg.x0}px"
+      style:width="{sg.x1 - sg.x0}px"
+      style:top="{sg.top}px"
+      style:height="{sg.bh}px"
+      onpointerdown={down}
+      onpointermove={(e) => (hover = zone(e))}
+      onkeydown={key}
+      oncontextmenu={ctx}
+    ></div>
+  {/each}
+  {#each segs as sg (sg.from)}
+    {@const wf = Math.max(sg.x0, win.from)}
+    {@const wt = Math.min(sg.x1, win.to)}
+    {#if wt > wf}<ClipWave {clip} pps={mv.pps} from={wf} to={wt} height={sg.bh - 2} top={sg.top + 1} {bands} />{/if}
+  {/each}
   {#if mv.sectionMarkers && sections.showMarkers}<ClipSections {clip} pps={mv.pps} />{/if}
-  <span class="grip left"></span>
-  <span class="grip right"></span>
-  <span class="title" style:max-width="{Math.max(0, width - 8)}px">{title}<em>{tempoText}</em></span>
+  <span class="title" style:top="{titleTop}px" style:max-width="{Math.max(0, width - 8)}px">{title}<em>{tempoText}</em></span>
+  {#if stretchBadge}
+    <span class="stretch" style:top="{titleTop + 16}px" title="This track plays {Math.abs(speed * 100 - 100).toFixed(1)} % {speed > 1 ? 'faster' : 'slower'} than its own tempo, more than the stretch limit in the settings. The clip's panel offers to keep its own tempo.">{stretchBadge}</span>
+  {/if}
   {#if broken}<span class="warn" title={clip.track?.problem ?? "track unavailable"}>{clip.track?.problem ?? "track unavailable"}</span>{/if}
-  {#if clip.trimStart > SR * 0.05}<span class="cue" title="Cue point: audio before it is hidden"></span>{/if}
+  {#if clip.trimStart > SR * 0.05}<span class="cue" style:top="{segs[0]?.top ?? 0}px" title="Cue point: audio before it is hidden"></span>{/if}
 </div>
 
 <style>
+  /* the clip box only positions things; the pieces (.seg) take the pointer */
   .clip {
     position: absolute;
-    top: 6px;
+    top: 0;
+    pointer-events: none;
+  }
+  .seg {
+    position: absolute;
     box-sizing: border-box;
-    border: 1px solid var(--line-hi);
-    border-radius: 5px;
-    background: var(--row);
-    overflow: hidden;
+    pointer-events: auto;
     cursor: grab;
     outline: none;
+    background: color-mix(in srgb, var(--c) 15%, var(--deep));
+    border-top: 1px solid var(--c);
+    border-bottom: 1px solid var(--c);
   }
-  .clip:active {
+  .seg.first {
+    border-left: 2px solid var(--c);
+    border-top-left-radius: 4px;
+    border-bottom-left-radius: 4px;
+  }
+  .seg.last {
+    border-right: 2px solid var(--c);
+    border-top-right-radius: 4px;
+    border-bottom-right-radius: 4px;
+  }
+  .seg.overlap {
+    background: color-mix(in srgb, var(--c) 24%, var(--deep));
+  }
+  .seg:active {
     cursor: grabbing;
   }
-  .clip.edge {
+  .seg.edge {
     cursor: ew-resize;
   }
-  .clip.selected {
-    border-color: var(--accent);
-    box-shadow: 0 0 0 1px var(--accent);
+  .selected .seg {
+    border-color: #fff;
+    box-shadow: inset 0 0 0 1px var(--c);
   }
-  .clip:focus-visible {
-    border-color: var(--text);
+  .seg:focus-visible {
+    box-shadow: inset 0 0 0 2px var(--text);
   }
-  .clip.bypass {
+  .bypass .seg {
     opacity: 0.5;
   }
-  .clip.broken {
+  .broken .seg {
     background: repeating-linear-gradient(135deg, var(--bad-bg) 0 8px, var(--deep) 8px 16px);
     border-color: var(--bad);
   }
   .title {
     position: absolute;
-    left: 6px;
-    top: 2px;
+    left: 7px;
     font-size: 11px;
+    font-weight: 600;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    text-shadow: 0 0 3px #000, 0 0 3px #000;
+    color: var(--text);
+    text-shadow: 0 0 3px #000, 0 0 3px #000, 0 0 5px #000;
     pointer-events: none;
     z-index: 2;
+  }
+  .title::before {
+    content: "";
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    margin-right: 5px;
+    border-radius: 2px;
+    background: var(--c);
   }
   .title em {
     margin-left: 8px;
     font-style: normal;
+    font-weight: 400;
     color: var(--muted);
+  }
+  .stretch {
+    position: absolute;
+    left: 7px;
+    font-size: 10px;
+    font-weight: 700;
+    color: #000;
+    background: var(--warn);
+    border-radius: 3px;
+    padding: 0 5px;
+    z-index: 2;
+    pointer-events: none;
+    white-space: nowrap;
   }
   .warn {
     position: absolute;
@@ -238,28 +318,9 @@
     z-index: 2;
     pointer-events: none;
   }
-  .grip {
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    width: 3px;
-    background: transparent;
-    z-index: 3;
-    pointer-events: none;
-  }
-  .grip.left {
-    left: 0;
-  }
-  .grip.right {
-    right: 0;
-  }
-  .selected .grip {
-    background: var(--accent);
-  }
   .cue {
     position: absolute;
     left: 0;
-    top: 0;
     border-style: solid;
     border-width: 8px 8px 0 0;
     border-color: var(--green) transparent transparent transparent;

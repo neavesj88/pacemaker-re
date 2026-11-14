@@ -124,6 +124,22 @@ export function overlapRange(start: number, end: number, lo: number, hi: number)
  * constants here rather than CSS variables. */
 export const BAND_COLOURS = { low: "#ff48a8", mid: "#e070ff", high: "#00ff46" } as const;
 
+/** One colour per clip on the single mix bar, in the order the clips were added (so a colour does
+ * not change when a clip is moved). Clearly different hues, bright enough for the dark theme.
+ * Hex because the waveform is drawn on a canvas. */
+export const CLIP_COLOURS = ["#4aa8ff", "#ff9f43", "#3ddc97", "#ff5d7a", "#b48cff", "#ffd23b", "#2ee6d6", "#ff7ad9"] as const;
+export const clipColour = (index: number): string => CLIP_COLOURS[((index % CLIP_COLOURS.length) + CLIP_COLOURS.length) % CLIP_COLOURS.length];
+
+/** `hex` mixed toward white by `amount` (0..1), as #rrggbb. */
+export function lighten(hex: string, amount: number): string {
+  const n = parseInt(hex.slice(1), 16);
+  const ch = (shift: number) => Math.round(((n >> shift) & 255) * (1 - amount) + 255 * amount);
+  return `#${[16, 8, 0].map((s) => ch(s).toString(16).padStart(2, "0")).join("")}`;
+}
+
+/** The three waveform bands in one clip's colour: lows in the colour itself, mids and highs lighter. */
+export const clipBands = (hex: string) => ({ low: hex, mid: lighten(hex, 0.38), high: lighten(hex, 0.72) });
+
 /** Block colours of the tool lane (the mockup's magenta ramp, defined on the view's root in
  * MixesView.svelte; filter in matrix green). */
 const TOOL_COLOURS: Record<string, string> = {
@@ -131,6 +147,7 @@ const TOOL_COLOURS: Record<string, string> = {
   Echo: "var(--l2b)",
   Roll: "var(--l2e)",
   Wah: "var(--l2d)",
+  Vocal: "var(--l2d)",
   Crush: "var(--l2f)",
   FILTER: "var(--green)",
   EQ: "var(--l2a)",
@@ -145,8 +162,8 @@ export const toolColour = (name: string) => TOOL_COLOURS[name] ?? "var(--l2a)";
 export const TOOL_LABELS: Record<string, string> = { FILTER: "Filter", loop: "Loop", ignore: "Ignore", reverse: "Reverse" };
 /** Name of a tool or region. `vocal` is the card's Vocal filter mode (state/vocal.svelte.ts): when it is on, the
  * Wah tool is called "Vocal" (see `toolTypesFor` in state/mixedit.ts). */
-export const toolLabel = (name: string, vocal: "off" | "vocal" | "inverted" = "off") =>
-  name === "Wah" && vocal !== "off" ? "Vocal" : (TOOL_LABELS[name] ?? name);
+export const toolLabel = (name: string, vocal: "off" | "vocal" | "inverted" = "off", marked = false) =>
+  name === "Wah" && (marked || vocal !== "off") ? "Vocal" : (TOOL_LABELS[name] ?? name);
 
 // ---------------------------------------------------------------------------------------------
 // Crossfade curve presets

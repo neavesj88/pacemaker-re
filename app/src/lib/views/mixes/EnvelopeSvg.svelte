@@ -195,6 +195,7 @@
   onpointerup={up}
   onpointercancel={up}
   oncontextmenu={ctx}
+  ondblclick={ctx}
   onkeydown={key}
 >
   {#each guides as g (g)}

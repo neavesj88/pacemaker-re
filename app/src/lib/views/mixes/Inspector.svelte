@@ -67,7 +67,7 @@
   }
   .insp :global(.field) {
     display: grid;
-    grid-template-columns: 88px 1fr;
+    grid-template-columns: 76px 1fr;
     gap: 6px;
     align-items: center;
     margin: 6px 0;

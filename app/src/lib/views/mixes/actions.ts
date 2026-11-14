@@ -19,7 +19,9 @@ import {
 import { confirm } from "./confirm.svelte";
 import { SR, toolLabel } from "./layout";
 import { recipePrefs } from "./recipePrefs.svelte";
+import { vocalTools } from "./vocalTools.svelte";
 import { mv } from "./view.svelte";
+import { stretchText } from "$lib/state/tempoMatch";
 
 export const errText = (e: unknown) => (typeof e === "string" ? e : e instanceof Error ? e.message : String(e));
 
@@ -32,7 +34,7 @@ export function describe(doc: MixDoc, id: string): string {
   if (f.kind === "clip") return `clip "${clipTitle(f.clip)}"`;
   if (f.kind === "process") {
     const p = f.process;
-    const name = p.kind === "tool" ? toolLabel(p.effects[0]?.name ?? p.toolType, vocal.mode) : toolLabel(p.kind);
+    const name = p.kind === "tool" ? toolLabel(p.effects[0]?.name ?? p.toolType, vocal.mode, isVocalTool(doc.id, p.id)) : toolLabel(p.kind);
     return `${name} on "${clipTitle(f.clip)}"`;
   }
   const t = f.transition;
@@ -41,25 +43,29 @@ export function describe(doc: MixDoc, id: string): string {
   return `crossfade "${a}" to "${b}"`;
 }
 
-/** The clip on `deck` that a new tool should go on: the selected one, else the one under
- * `at` (default: the playhead), else the first on that deck. */
-export function targetClip(deck: number, at: number = mv.playhead): Clip | undefined {
+/** True when the Wah tool `processId` of mix `mixId` is one the user made as a Vocal tool. */
+export const isVocalTool = (mixId: number, processId: string) => vocalTools.has(mixId, processId);
+
+export { toolChoices, type ToolChoice } from "$lib/state/mixedit";
+
+/** The clip a new tool should go on when none is named: the selected one (or the one whose tool is
+ * selected), else the one under `at` (default: the playhead), else the first. */
+export function targetClip(at: number = mv.playhead): Clip | undefined {
   const doc = mixes.doc;
   if (!doc) return undefined;
-  const onDeck = E.sortedClips(doc).filter((c) => c.channel === deck);
-  const sel = onDeck.find((c) => mixes.selected.includes(c.id));
-  const selProcessClip = onDeck.find((c) => c.processes.some((p) => mixes.selected.includes(p.id)));
-  const under = onDeck.find((c) => at >= c.visibleStart && at < c.visibleEnd);
-  return under ?? sel ?? selProcessClip ?? onDeck[0];
+  const all = E.sortedClips(doc);
+  const sel = all.find((c) => mixes.selected.includes(c.id));
+  const selProcessClip = all.find((c) => c.processes.some((p) => mixes.selected.includes(p.id)));
+  const under = all.find((c) => at >= c.visibleStart && at < c.visibleEnd);
+  return sel ?? selProcessClip ?? under ?? all[0];
 }
 
-/** Adds a tool or region at timeline `at` on `deck`. Tools of one kind may not overlap on a
+/** Adds a tool or region on `clip` at timeline `at`. Tools of one kind may not overlap on a
  * clip, so the new one is moved past an existing one; says why when it cannot be placed. */
-export function addProcessAt(type: string, deck: number, at: number = mv.playhead): boolean {
+export function addProcessTo(type: string, clip: Clip | undefined, at: number = mv.playhead, asVocal = false): boolean {
   const doc = mixes.doc;
-  const clip = targetClip(deck, at);
   if (!doc || !clip) {
-    toast.show("Add a track to this deck first.", "info");
+    toast.show("Add a track to the mix first.", "info");
     return false;
   }
   const bpm = E.effectiveBpm(clip, Math.min(clip.length, Math.max(0, at - clip.start))) || 120;
@@ -77,7 +83,7 @@ export function addProcessAt(type: string, deck: number, at: number = mv.playhea
       start = hit.start + hit.length;
       length = Math.min(want, clip.length - start);
       if (length < E.MIN_LENGTH) {
-        toast.show(`There is no room for another ${toolLabel(type, vocal.mode)} on "${clipTitle(clip)}" after the existing one.`, "info");
+        toast.show(`There is no room for another ${asVocal ? "Vocal" : toolLabel(type, vocal.mode)} on "${clipTitle(clip)}" after the existing one.`, "info");
         return false;
       }
     }
@@ -87,21 +93,28 @@ export function addProcessAt(type: string, deck: number, at: number = mv.playhea
     return false;
   }
   if (isRegion) mixes.addRegion(clip.id, type, start, length);
-  else mixes.addTool(clip.id, type, start, length, type === "Trans" ? E.effectiveBpm(clip, start) || bpm : 0);
+  else {
+    const tool = mixes.addTool(clip.id, type, start, length, type === "Trans" ? E.effectiveBpm(clip, start) || bpm : 0);
+    if (asVocal) vocalTools.set(doc.id, tool.id, true);
+  }
   return true;
 }
 
-/** Adds library tracks after the end of the mix (or at `at` for the first), one after another. */
-export async function addTracks(ids: number[], at?: number, channel?: number) {
+/** Adds library tracks after the end of the mix (or at `at` for the first), one after another.
+ * The decks are not the user's business: overlapping clips are put on different decks by the
+ * store. A track that would need more stretch than the setting allows to reach the mix tempo keeps
+ * its own tempo, and the toast says so. */
+export async function addTracks(ids: number[], at?: number) {
   const doc = mixes.doc;
   if (!doc || ids.length === 0) return;
   let pos = at;
   let added = 0;
+  const kept: string[] = [];
   for (const id of ids) {
     try {
       const before = mixes.doc?.clips.length ?? 0;
       const first = before === 0;
-      await mixes.addTrack(id, pos, pos === undefined ? before % 2 : channel);
+      const r = await mixes.addTrack(id, pos, pos === undefined ? before % 2 : undefined);
       added++;
       const cur = mixes.doc;
       if (first && cur && cur.tempoBpm === null && cur.clips[0]) {
@@ -109,6 +122,7 @@ export async function addTracks(ids: number[], at?: number, channel?: number) {
         const c = cur.clips[0];
         mixes.setTempo(Math.round(E.effectiveBpm(c, c.trimStart) * 100) / 100);
       }
+      if (r.choice && !r.matched) kept.push(`${clipTitle(mixes.doc?.clips.find((c) => mixes.selected.includes(c.id)))} (${stretchText(r.choice.stretchPct)} to reach ${r.choice.playsAt.toFixed(1)} BPM)`);
       if (pos !== undefined && mixes.doc) {
         const last = mixes.doc.clips.find((c) => mixes.selected.includes(c.id));
         if (last) pos = last.visibleEnd;
@@ -118,6 +132,7 @@ export async function addTracks(ids: number[], at?: number, channel?: number) {
     }
   }
   if (added > 0) toast.show(added === 1 ? "Track added" : `${added} tracks added`, "ok");
+  if (kept.length > 0) toast.show(`Kept at its own tempo, since matching would stretch it too much: ${kept.join("; ")}. Use "Sync to mix tempo" in the clip's panel to match anyway.`, "info", 10000);
 }
 
 /** Duplicates the selection: clips go right after themselves, a clip's processes after the

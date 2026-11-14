@@ -28,18 +28,18 @@ export function mergeTempoPrefs(raw: unknown): TempoPrefs {
   return d;
 }
 
-const KEY = "pm.mixes.tempo.v1";
+const STORAGE_KEY = "pm.mixes.tempo.v1";
 
 class TempoSettings {
   value = $state<TempoPrefs>({ ...DEFAULT_TEMPO_PREFS });
 
   constructor() {
-    this.value = loadPref(KEY, mergeTempoPrefs, () => ({ ...DEFAULT_TEMPO_PREFS }));
+    this.value = loadPref(STORAGE_KEY, mergeTempoPrefs, () => ({ ...DEFAULT_TEMPO_PREFS }));
   }
 
   set(patch: Partial<TempoPrefs>) {
     this.value = mergeTempoPrefs({ ...this.value, ...patch });
-    savePref(KEY, this.value);
+    savePref(STORAGE_KEY, this.value);
   }
 }
 

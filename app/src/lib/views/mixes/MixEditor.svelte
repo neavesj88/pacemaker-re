@@ -1,6 +1,6 @@
 <script lang="ts">
   // The open mix: toolbar, library picker, timeline, inspector and transport, plus the keyboard.
-  import { tick } from "svelte";
+  import { tick, untrack } from "svelte";
   import * as E from "$lib/state/mixedit";
   import { mixExport } from "$lib/state/mixexport.svelte";
   import { mixes } from "$lib/state/mixes.svelte";
@@ -8,15 +8,18 @@
   import { tracklist } from "$lib/state/tracklist.svelte";
   import { toast } from "$lib/state/toast.svelte";
   import Button from "$lib/ui/Button.svelte";
-  import { describe, duplicateSelection, errText, pasteAtPlayhead } from "./actions";
+  import { describe, clipTitle, duplicateSelection, errText, pasteAtPlayhead } from "./actions";
+  import BpmField from "./BpmField.svelte";
   import { confirm } from "./confirm.svelte";
   import { cancelExport, closeMix, exportAudio, newMix, saveMix, saveMixAs } from "./flow";
   import Inspector from "./Inspector.svelte";
   import { PPS_MAX, PPS_MIN, SR, clock, ppsFromSlider, sliderFromPps } from "./layout";
   import { preview } from "./preview.svelte";
+  import MixPicker from "./MixPicker.svelte";
   import Timeline from "./Timeline.svelte";
-  import TrackPicker from "./TrackPicker.svelte";
-  import { mv } from "./view.svelte";
+  import { stretchText } from "$lib/state/tempoMatch";
+  import { vocalTools } from "./vocalTools.svelte";
+  import { mv, type EnvOverlay } from "./view.svelte";
   import { setlist } from "../setlist/setlist.svelte";
 
   const doc = $derived(mixes.doc!);
@@ -28,6 +31,24 @@
     mixExport.startFor(mixes.doc?.id);
     mixExport.open = true;
   }
+
+  // The live engine plays the open mix as it stands: opened (decoding starts) when a mix is opened,
+  // and told about every edit, including the Vocal marks of tools, which only the app knows.
+  let openedId = -1;
+  $effect(() => {
+    const d = mixes.doc;
+    if (!d || d.id === openedId) return;
+    openedId = d.id;
+    untrack(() => void preview.open(d));
+  });
+  $effect(() => {
+    const d = mixes.doc;
+    if (!d) return;
+    void vocalTools.ids(d.id);
+    untrack(() => {
+      if (d.id === openedId) preview.sync(d);
+    });
+  });
 
   // fit a mix to the window when it is opened
   let fittedFor = -1;
@@ -166,7 +187,26 @@
   }
 
   const zoomValue = $derived(sliderFromPps(mv.pps));
-  const busyLabel = $derived(preview.status === "rendering" ? "Rendering preview…" : "");
+  const busyLabel = $derived(preview.status === "rendering" ? "Rendering the export preview…" : preview.decoding ? `Reading the tracks: ${preview.engine.loaded} of ${preview.engine.total}` : "");
+
+  /** The mix tempo the toolbar shows: the reference tempo, else the first clip's. */
+  const mixTempo = $derived(doc.tempoBpm ?? (doc.clips[0] ? E.effectiveBpm(doc.clips[0], doc.clips[0].trimStart) : null));
+  function setMixTempo(v: number) {
+    mixes.setTempo(v);
+  }
+  /** Plays every clip at the mix tempo (or double or half of it), keeping any that would need a big stretch. */
+  function matchAll() {
+    if (!mixTempo) return;
+    const r = mixes.syncAll(mixTempo);
+    const bits = r.applied > 0 ? [`${r.applied} track${r.applied === 1 ? "" : "s"} matched to ${mixTempo.toFixed(2)} BPM.`] : r.kept.length > 0 ? [] : ["Every track already plays at the mix tempo."];
+    if (r.kept.length > 0) bits.push(`Left at their own tempo, because matching would stretch them too much: ${r.kept.map((k) => `${clipTitle(k.clip)} (${stretchText(k.choice.stretchPct)})`).join("; ")}.`);
+    toast.show(bits.join(" "), r.kept.length > 0 ? "info" : "ok", 9000);
+  }
+  const OVERLAYS: { id: EnvOverlay; label: string; tip: string }[] = [
+    { id: "gain", label: "Gain", tip: "Draw each clip's gain curve over the bar; select a clip to edit its curve (click adds a node, right-click removes it)" },
+    { id: "tempo", label: "Tempo", tip: "Draw each clip's tempo curve over the bar; select a clip and click to add a node for a tempo ramp" },
+    { id: "key", label: "Key", tip: "Draw each clip's key curve over the bar; select a clip to edit it" },
+  ];
 </script>
 
 <svelte:window onkeydown={onkey} {onbeforeunload} />
@@ -212,7 +252,20 @@
       />
     </label>
     <Button small onclick={() => mv.fit(doc.length)} title="Show the whole mix">Fit</Button>
-    <Button small active={mv.pickerOpen} onclick={() => (mv.pickerOpen = !mv.pickerOpen)}>Tracks</Button>
+    <span class="sep"></span>
+    <span class="ctl" title="The tempo the mix is matched to: new tracks and the Match buttons play at this, or at double or half of it, whichever stretches the track least. Not stored in the mix file.">
+      Mix tempo
+      <BpmField value={mixTempo} onset={setMixTempo} label="Mix tempo" disabled={doc.clips.length === 0} />
+    </span>
+    <Button small disabled={!mixTempo} onclick={matchAll} title="Play every track at the mix tempo (or double or half of it); a track that would need more stretch than the setting allows keeps its own tempo">Match all</Button>
+    <span class="ctl">Curves
+      <span class="segs">
+        {#each OVERLAYS as o (o.id)}
+          <Button small active={mv.overlay === o.id} onclick={() => (mv.overlay = mv.overlay === o.id ? "none" : o.id)} title={o.tip}>{o.label}</Button>
+        {/each}
+      </span>
+    </span>
+    <Button small active={mv.pickerOpen} onclick={() => (mv.pickerOpen = !mv.pickerOpen)} title="Show or hide the track table under the mix">Tracks</Button>
     <div class="acts">
       {#if mixes.problems.length > 0}
         <span class="problem" title={mixes.problems.join("\n")}>⚠ {mixes.problems.length} problem{mixes.problems.length === 1 ? "" : "s"} blocking save</span>
@@ -235,35 +288,34 @@
   </div>
   {#if mv.exporting}<div class="progress" role="progressbar" aria-label="Exporting audio"><i></i></div>{/if}
 
-  <div class="split">
-    {#if mv.pickerOpen}<TrackPicker />{/if}
-    <div class="tl"><Timeline ondelete={requestDelete} /></div>
-    <Inspector ondelete={requestDelete} />
-  </div>
+  <div class="body">
+    <div class="left">
+      <div class="tl"><Timeline ondelete={requestDelete} /></div>
 
-  <div class="transport">
-    <Button aria-label="Back to start" onclick={() => { void preview.seek(0); mv.scrollLeft = 0; }}>⏮</Button>
-    <Button variant="primary" aria-label={preview.playing ? "Pause" : "Play"} onclick={playPause} disabled={doc.clips.length === 0}>
-      {preview.playing ? "❚❚ Pause" : preview.status === "rendering" ? "Rendering…" : "▶ Play"}
-    </Button>
-    <Button aria-label="To the end" onclick={toEnd}>⏭</Button>
-    <span class="time" aria-live="off">{clock(mv.playhead / SR)}</span>
-    <span class="muted">/ {clock(doc.lengthSec)}</span>
-    {#if busyLabel}<span class="muted">{busyLabel}</span>{/if}
-    {#if preview.stale && (preview.playing || preview.status === "paused")}
-      <span class="stale" title="The preview was rendered before your last edit or before the Vocal setting changed. Press play again to hear the change.">preview is out of date</span>
-    {/if}
-    {#if preview.notice}<span class="notice" role="status">{preview.notice}</span>{/if}
-    {#if mixExport.previewGains()}
-      <span class="level" title="The preview plays at the level your last loudness analysis found for the export settings.">export level</span>
-    {:else if mixExport.previewBehind}
-      <span class="stale" title="Loudness settings are on but the last analysis is about a different mix or settings. Analyse again in Export audio to hear the export level.">not at export level</span>
-    {/if}
-    <label class="ctl" title="Preview volume only; it is not saved in the mix">Master
-      <input type="range" min="0" max="1" step="0.01" bind:value={preview.volume} aria-label="Preview volume" />
-    </label>
-    <label class="ctl follow"><input type="checkbox" bind:checked={mv.follow} /> follow playhead</label>
-    <span class="legend">drag clips · click a block to edit it · Space plays from the playhead</span>
+      <div class="transport">
+        <Button aria-label="Back to start" onclick={() => { void preview.seek(0); mv.scrollLeft = 0; }}>⏮</Button>
+        <Button variant="primary" aria-label={preview.playing ? "Pause" : "Play"} onclick={playPause} disabled={doc.clips.length === 0}>
+          {preview.playing ? "❚❚ Pause" : preview.status === "rendering" ? "Rendering…" : "▶ Play"}
+        </Button>
+        <Button aria-label="To the end" onclick={toEnd}>⏭</Button>
+        <span class="time" aria-live="off">{clock(mv.playhead / SR)}</span>
+        <span class="muted">/ {clock(doc.lengthSec)}</span>
+        {#if busyLabel}<span class="muted">{busyLabel}</span>{/if}
+        {#if preview.notice}<span class="notice" role="status">{preview.notice}</span>{/if}
+        {#if mixExport.previewGains()}
+          <span class="level" title="The preview plays at the level your last loudness analysis found for the export settings.">export level</span>
+        {:else if mixExport.previewBehind}
+          <span class="stale" title="Loudness settings are on but the last analysis is about a different mix or settings. Analyse again in Export audio to hear the export level.">not at export level</span>
+        {/if}
+        <label class="ctl" title="Preview volume only; it is not saved in the mix">Master
+          <input type="range" min="0" max="1" step="0.01" bind:value={preview.volume} aria-label="Preview volume" />
+        </label>
+        <label class="ctl follow"><input type="checkbox" bind:checked={mv.follow} /> follow playhead</label>
+        <span class="legend">plays live as you edit · drag clips · click a block to edit it · Space plays from the playhead</span>
+      </div>
+      {#if mv.pickerOpen}<MixPicker />{/if}
+    </div>
+    <Inspector ondelete={requestDelete} />
   </div>
 </div>
 
@@ -346,15 +398,26 @@
       left: 100%;
     }
   }
-  .split {
+  .body {
     flex: 1;
     min-height: 0;
     display: flex;
   }
-  .tl {
+  .left {
     flex: 1;
     min-width: 0;
     min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .segs {
+    display: inline-flex;
+    gap: 2px;
+  }
+  .tl {
+    flex: 1 1 0;
+    min-width: 0;
+    min-height: 250px;
   }
   .transport {
     display: flex;

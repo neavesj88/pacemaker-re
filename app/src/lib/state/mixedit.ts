@@ -780,6 +780,15 @@ export function setTempoNodeAt(doc: MixDoc, clipId: string, pos: number, speed: 
   return replaceClip(doc, clipId, (x) => retempoClip(x, tempo));
 }
 
+/** Replaces a clip's whole tempo curve (the tempo overlay's node editor). Speeds outside 0.1 to 4
+ * are refused. */
+export function setTempoCurve(doc: MixDoc, clipId: string, tempo: TempoNode[]): MixDoc {
+  const c = clipOf(doc, clipId);
+  if (!c || tempo.length === 0 || tempo.some((n) => !(n.speed > 0.1) || n.speed > 4)) return doc;
+  const sorted = [...tempo].map((n) => ({ ...n, pos: Math.max(0, Math.round(n.pos)) })).sort((a, b) => a.pos - b.pos);
+  return replaceClip(doc, clipId, (x) => retempoClip(x, sorted));
+}
+
 /** Removes a tempo node (the curve keeps at least one). */
 export function removeTempoNode(doc: MixDoc, clipId: string, index: number): MixDoc {
   const c = clipOf(doc, clipId);
@@ -995,6 +1004,22 @@ export const TRANS_TYPE: ToolType = { name: "Trans", label: "Trans", group: "fx"
  * Trans (it has no parameters to look up). */
 export function addableToolTypes(vocal: VocalMode, trans: boolean): ToolType[] {
   return [...toolTypesFor(vocal), ...(trans ? [TRANS_TYPE] : [])];
+}
+
+export type ToolChoice = { id: string; type: string; label: string; vocal: boolean };
+
+/** What the "+ Tool" menu offers. Vocal is always there, next to Wah: it is the same tool in the
+ * file (Wah, Wah-CutOff); the app remembers which ones are Vocal for the labels and the preview
+ * (views/mixes/vocalTools.svelte.ts), so a Vocal choice creates a Wah tool and marks it. */
+export function toolChoices(trans: boolean): ToolChoice[] {
+  const out: ToolChoice[] = [];
+  for (const t of TOOL_TYPES) {
+    out.push({ id: t.name, type: t.name, label: t.label, vocal: false });
+    if (t.name === "Wah") out.push({ id: "Vocal", type: "Wah", label: "Vocal", vocal: true });
+  }
+  if (trans) out.push({ id: "Trans", type: "Trans", label: "Trans", vocal: false });
+  out.push({ id: "loop", type: "loop", label: "Loop", vocal: false }, { id: "reverse", type: "reverse", label: "Reverse", vocal: false }, { id: "ignore", type: "ignore", label: "Ignore", vocal: false });
+  return out;
 }
 
 /** The catalogue as the card presents it. On a Pacemaker set up for the Vocal filter (Revival

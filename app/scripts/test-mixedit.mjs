@@ -11,6 +11,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import * as E from "../src/lib/state/mixedit.ts";
+import * as TM from "../src/lib/state/tempoMatch.ts";
 import * as R from "../src/lib/state/transitionRecipes.ts";
 import * as ST from "../src/lib/state/sectionTransition.ts";
 import * as L from "../src/lib/views/mixes/layout.ts";
@@ -1078,6 +1079,192 @@ test("section words and saved settings", () => {
   assert.equal(R.mergeRecipePrefs({ sectionEdge: "both" }).sectionEdge, "both");
   // an old saved value without the new fields reads back as "off"
   assert.equal(R.mergeRecipePrefs({ recipe: "echoOut", bars: 4, cutAt: "start", onConflict: "skip" }).sectionEdge, "off");
+});
+
+// ---- the one-bar Mix tab: tempo matching, decks, overlaps, colours, Vocal ---------------------------
+
+test("tempo match picks the target, double or half of it nearest the track's own tempo", () => {
+  const pick = (bpm, target) => TM.chooseTempo(bpm, target);
+  // a 130 BPM track joining a mix at 87 (= 174 in double time) plays at 174, not slowed to 87
+  let c = pick(130, 87);
+  assert.equal(c.factor, 2);
+  close(c.playsAt, 174);
+  close(c.stretchPct, (174 / 130 - 1) * 100, 1e-9);
+  // an 87 BPM track in a mix at 174 plays at half of it: no stretch at all
+  c = pick(87, 174);
+  assert.equal(c.factor, 0.5);
+  close(c.speed, 1);
+  // 174 into a 130 mix: the same tempo, slowed 25 % (half time 65 would be slowed 63 %)
+  c = pick(174, 130);
+  assert.equal(c.factor, 1);
+  close(c.stretchPct, (130 / 174 - 1) * 100, 1e-9);
+  // 130 into 174: the target itself, +34 % (half time 87 is further from 130 in ratio terms)
+  c = pick(130, 174);
+  assert.equal(c.factor, 1);
+  close(c.stretchPct, (174 / 130 - 1) * 100, 1e-9);
+  // 128 into 126: a small slow-down at the same time
+  c = pick(128, 126);
+  assert.equal(c.factor, 1);
+  close(c.stretchPct, (126 / 128 - 1) * 100, 1e-9);
+  // 64 into 128: double time of 64 is 128, so it plays at half the mix tempo: no stretch
+  c = pick(64, 128);
+  assert.equal(c.factor, 0.5);
+  close(c.speed, 1);
+  // 80 into 160 (a misanalysed half-time track): plays unstretched
+  c = pick(80, 160);
+  assert.equal(c.factor, 0.5);
+  close(c.speed, 1);
+  // the same tempo is factor 1
+  assert.equal(pick(100, 100).factor, 1);
+  // junk gives no choice
+  assert.equal(pick(0, 120), null);
+  assert.equal(pick(120, Number.NaN), null);
+  assert.equal(pick(-5, 120), null);
+});
+
+test("the stretch limit: at the limit is silent, beyond it warns; text of a stretch", () => {
+  assert.equal(TM.exceeds(1.08, 8), false);
+  assert.equal(TM.exceeds(1.081, 8), true);
+  assert.equal(TM.exceeds(0.92, 8), false);
+  assert.equal(TM.exceeds(0.91, 8), true);
+  assert.equal(TM.exceeds(1.5, 100), false);
+  assert.equal(TM.stretchText(23), "+23 %");
+  assert.equal(TM.stretchText(-4.5), "-4.5 %");
+  assert.equal(TM.stretchText(0), "+0.0 %");
+});
+
+test("syncClipTo: applies a small match, holds a big one back unless forced, keeps the audible start", () => {
+  const g = grid(130, 0, 400, 0);
+  const c = clip("a", 0, 30 * BAR, 130, 1, g, { trimStart: 2 * BAR });
+  const d = doc([c], { tempoBpm: 87 });
+  // 130 -> mix 87: double time 174 is +34 %, over the 8 % limit: nothing changes, the choice is returned
+  let r = E.syncClipTo(d, "a", 87, 8);
+  assert.equal(r.applied, false);
+  assert.equal(r.doc, d);
+  assert.equal(r.choice.factor, 2);
+  // forced: it plays at 174
+  r = E.syncClipTo(d, "a", 87, 8, true);
+  assert.equal(r.applied, true);
+  close(E.clipPlaysAt(r.doc.clips[0]), 174, 0.01);
+  close(E.clipSpeed(r.doc.clips[0]), 174 / 130, 1e-6);
+  // within the limit: applied without asking
+  r = E.syncClipTo(d, "a", 128, 8);
+  assert.equal(r.applied, true);
+  close(E.clipPlaysAt(r.doc.clips[0]), 128, 0.01);
+  // the audible start stays where it was
+  close(r.doc.clips[0].visibleStart, d.clips[0].visibleStart, 1);
+  // a clip without a tempo is left alone
+  const z = doc([clip("z", 0, 10 * BAR, 0, 1, null)]);
+  assert.equal(E.syncClipTo(z, "z", 120, 8).applied, false);
+});
+
+test("pitch per cent, fine tempo steps and tempo ramps", () => {
+  const c = clip("a", 0, 30 * BAR, 124, 1, grid(124, 0, 400, 0));
+  const d = doc([c]);
+  const up = E.setClipPercent(d, "a", 2.5);
+  close(E.clipSpeed(up.clips[0]), 1.025, 1e-6);
+  close(E.clipPlaysAt(up.clips[0]), 124 * 1.025, 1e-4);
+  assert.equal(E.setClipPercent(d, "a", -95), d, "not below -90 %");
+  // 0.01 BPM steps survive the round trip
+  const fine = E.setClipBpm(d, "a", 124.01);
+  close(E.clipPlaysAt(fine.clips[0]), 124.01, 1e-4);
+  // a ramp: a node at 10 bars at 5 % faster, linear between nodes
+  const ramp = E.setTempoNodeAt(d, "a", 10 * BAR, 1.05);
+  assert.equal(ramp.clips[0].tempo.length, 2);
+  assert.deepEqual(ramp.clips[0].tempo.map((n) => n.pos), [0, 10 * BAR]);
+  const m = new E.TempoMap(ramp.clips[0].tempo);
+  close(m.speedAt(5 * BAR), 1.025, 1e-6);
+  // removing a node keeps one; the curve can be replaced whole
+  const back = E.removeTempoNode(ramp, "a", 1);
+  assert.equal(back.clips[0].tempo.length, 1);
+  assert.equal(E.removeTempoNode(back, "a", 0), back);
+  const whole = E.setTempoCurve(d, "a", [{ pos: 0, speed: 1 }, { pos: 8 * BAR, speed: 1.04 }]);
+  assert.equal(whole.clips[0].tempo.length, 2);
+  assert.equal(E.setTempoCurve(d, "a", [{ pos: 0, speed: 9 }]), d, "absurd speeds are refused");
+  // musical positions survive a ramp: the file's length in audio is unchanged
+  const old = new E.TempoMap(c.tempo);
+  close(m.sourceAt(ramp.clips[0].length), old.sourceAt(c.length), 1e-3);
+});
+
+test("decks are automatic: overlapping clips end up on different decks and a document that was fine is not rewritten", () => {
+  const a = clip("a", 0, 10 * BAR, 120, 1, null);
+  const b = clip("b", 8 * BAR, 10 * BAR, 120, 1, null); // overlaps a, both on deck 0
+  const d = doc([a, b]);
+  const n = E.normalizeChannels(d);
+  assert.notEqual(n.clips[0].channel, n.clips[1].channel);
+  // already fine: same object back
+  assert.equal(E.normalizeChannels(n), n);
+  const apart = doc([a, clip("c", 12 * BAR, 4 * BAR, 120, 1, null)]);
+  assert.equal(E.normalizeChannels(apart), apart);
+  // a clip that has a crossfade over its overlap on the same deck is left as it is
+  const covered = E.addTransition(d, E.newTransition("a", "b", 8 * BAR, 2 * BAR, "x"));
+  assert.equal(E.normalizeChannels(covered).clips[1].channel, 0);
+  // moving a clip over another puts it on the other deck
+  const moved = E.normalizeChannels(E.moveClip(doc([a, clip("m", 30 * BAR, 4 * BAR, 120, 1, null)]), "m", 5 * BAR));
+  assert.notEqual(moved.clips[0].channel, moved.clips[1].channel);
+  // three at once cannot all be separated onto two decks: nothing breaks
+  const three = E.normalizeChannels(doc([a, b, clip("c", 9 * BAR, 4 * BAR, 120, 1, null)]));
+  assert.equal(three.clips.length, 3);
+});
+
+test("overlapSlices cuts a clip by how many clips are heard together, the earlier clip on top", () => {
+  const a = clip("a", 0, 10 * BAR, 120, 1, null);
+  const b = clip("b", 8 * BAR, 10 * BAR, 120, 1, null, { channel: 1 });
+  const d = doc([a, b]);
+  const sa = E.overlapSlices(d, d.clips[0]);
+  assert.equal(sa.length, 2);
+  assert.deepEqual(sa.map((s) => [s.band, s.count]), [[0, 1], [0, 2]]);
+  assert.equal(sa[0].to, 8 * BAR);
+  assert.equal(sa[1].to, 10 * BAR);
+  const sb = E.overlapSlices(d, d.clips[1]);
+  assert.deepEqual(sb.map((s) => [s.band, s.count]), [[1, 2], [0, 1]]);
+  assert.equal(sb[0].from, 8 * BAR);
+  // a clip alone is one slice, full height
+  const alone = doc([clip("x", 0, 4 * BAR, 120, 1, null)]);
+  assert.deepEqual(E.overlapSlices(alone, alone.clips[0]).map((s) => [s.band, s.count]), [[0, 1]]);
+  // slices of one clip tile its audible part exactly
+  for (const c of d.clips) {
+    const s = E.overlapSlices(d, c);
+    assert.equal(s[0].from, c.visibleStart);
+    assert.equal(s.at(-1).to, c.visibleEnd);
+    for (let i = 1; i < s.length; i++) assert.equal(s[i].from, s[i - 1].to);
+  }
+});
+
+test("clip colours: a stable palette of distinct colours, bands in the clip's own colour", () => {
+  assert.equal(new Set(L.CLIP_COLOURS).size, L.CLIP_COLOURS.length);
+  assert.ok(L.CLIP_COLOURS.length >= 8);
+  assert.equal(L.clipColour(0), L.CLIP_COLOURS[0]);
+  assert.equal(L.clipColour(L.CLIP_COLOURS.length), L.CLIP_COLOURS[0], "the palette repeats");
+  assert.equal(L.clipColour(-1), L.CLIP_COLOURS.at(-1));
+  assert.equal(L.lighten("#000000", 1), "#ffffff");
+  assert.equal(L.lighten("#102030", 0), "#102030");
+  const b = L.clipBands("#4aa8ff");
+  assert.equal(b.low, "#4aa8ff");
+  assert.notEqual(b.mid, b.low);
+  assert.notEqual(b.high, b.mid);
+});
+
+test("Vocal is always in the tool menu, next to Wah, and is written as the Wah slot", () => {
+  const names = (trans) => E.toolChoices(trans).map((t) => t.label);
+  assert.ok(names(false).includes("Vocal") && names(false).includes("Wah"));
+  assert.equal(names(false)[names(false).indexOf("Wah") + 1], "Vocal");
+  assert.ok(!names(false).includes("Trans") && names(true).includes("Trans"));
+  const v = E.toolChoices(false).find((t) => t.label === "Vocal");
+  assert.equal(v.type, "Wah");
+  assert.equal(v.vocal, true);
+  assert.equal(E.toolChoices(false).filter((t) => t.vocal).length, 1, "Wah itself is not a Vocal choice");
+  // what a Vocal choice creates is a plain Wah tool: nothing of the app's own mark is in the document
+  const t = E.newTool(v.type, 0, 4 * BAR, "v1");
+  assert.equal(t.effects[0].name, "Wah");
+  assert.equal(t.effects[0].class, "peq");
+  assert.deepEqual(Object.keys(t.params), ["Wah-CutOff"]);
+  assert.ok(!/vocal/i.test(JSON.stringify(t)), "no vocal field in the tool the file is made from");
+  // with the card's flag on, the label of a Wah tool follows it; a marked Wah is Vocal whatever the card says
+  assert.equal(L.toolLabel("Wah", "off", true), "Vocal");
+  assert.equal(L.toolLabel("Wah", "off", false), "Wah");
+  assert.equal(L.toolLabel("Wah", "vocal", false), "Vocal");
+  assert.equal(L.toolLabel("Reverb", "off", true), "Reverb");
 });
 
 // the set builder's solver and mix layout have their own test file; running it here keeps one entry point
