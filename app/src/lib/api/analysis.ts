@@ -223,7 +223,7 @@ export const clearSections = (root: string) => invoke<number>("analysis_sections
 // batch re-analyse all read it when they start.
 
 export type BpmRangeSettings = {
-  /** Low end of the window; the high end is twice that. One of 68, 78, 88, 98 (see state/bpmRangeLogic.ts). */
+  /** Low end of the window; the high end is twice that. One of 68, 78, 92, 98 (see state/bpmRangeLogic.ts). */
   lo: number;
 };
 

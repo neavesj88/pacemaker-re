@@ -1,5 +1,5 @@
 //! The "BPM range" setting: the window every analysed tempo is doubled or halved into, so drum &
-//! bass reads at its real ~174 (88-176, the default) or at the original Editor's ~87 (78-156).
+//! bass reads at its real ~174 (92-184, the default) or at the original Editor's ~87 (78-156).
 //!
 //! One saved value (`bpm-range-settings.json` in the app config folder, never on the device).
 //! Every place that analyses audio calls [`current`] when it starts: adding tracks, re-analysing,
@@ -95,7 +95,7 @@ mod tests {
     fn default_is_drum_and_bass_at_full_time() {
         let d = dir("default");
         assert_eq!(load_settings(&d).range(), BpmRange::DNB_FULL_TIME);
-        assert_eq!(load_settings(&d).lo, 88.0);
+        assert_eq!(load_settings(&d).lo, 92.0);
     }
 
     #[test]
@@ -115,8 +115,8 @@ mod tests {
     fn a_damaged_or_out_of_range_file_reads_as_the_default() {
         let d = dir("bad");
         std::fs::write(settings_path(&d), "{ not json").unwrap();
-        assert_eq!(load_settings(&d).lo, 88.0);
+        assert_eq!(load_settings(&d).lo, 92.0);
         std::fs::write(settings_path(&d), "{\"lo\": 12}").unwrap();
-        assert_eq!(load_settings(&d).lo, 88.0);
+        assert_eq!(load_settings(&d).lo, 92.0);
     }
 }

@@ -17,7 +17,7 @@
     <label class="opt">
       <input type="radio" name="bpm-range" checked={bpmRange.lo === r.lo} onchange={() => bpmRange.choose(r.lo)} />
       <span>
-        <b>{r.label}</b>{#if r.lo === 88}<span class="chip ok dflt">default</span>{/if}
+        <b>{r.label}</b>{#if r.lo === 92}<span class="chip ok dflt">default</span>{/if}
         <small class="muted">{r.hint}</small>
       </span>
     </label>

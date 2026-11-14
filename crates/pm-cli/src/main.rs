@@ -2,9 +2,9 @@
 //!
 //!   pm volumes                     list mounted volumes holding a Pacemaker library
 //!   pm ls <volume>                 list tracks, mixes and cases; check device compatibility
-//!   pm add <volume> [--bpm-range 88-176] <audio>...
+//!   pm add <volume> [--bpm-range 92-184] <audio>...
 //!                                  analyse and add tracks (creates the library if missing);
-//!                                  the BPM range is 68-136, 78-156 (the Editor), 88-176 (default) or 98-196
+//!                                  the BPM range is 68-136, 78-156 (the Editor), 92-184 (default) or 98-196
 //!   pm health <volume>             JSON: library health, firmware, storage (--strict: exit 3 on problems)
 //!   pm backup <volume> <folder>    JSON: back the library up into a new folder (--audio, --verify)
 //!   pm verify <backup-folder>      JSON: check a backup against its manifest (exit 3 on problems)
@@ -114,14 +114,14 @@ fn ls(volume: &Path) -> Res {
     Ok(())
 }
 
-/// `--bpm-range 88-176` (or just `88`) as a window the app offers; it is the first of the extra
+/// `--bpm-range 92-184` (or just `92`) as a window the app offers; it is the first of the extra
 /// arguments after the volume and is not an audio file.
 fn split_bpm_range(args: &[String]) -> Result<(pm_analysis::tempo::BpmRange, &[String]), Box<dyn std::error::Error>> {
     let range = pm_analysis::tempo::BpmRange::PRESETS;
     if args.first().map(String::as_str) != Some("--bpm-range") {
         return Ok((pm_analysis::tempo::BpmRange::default(), args));
     }
-    let value = args.get(1).ok_or("--bpm-range needs a value such as 88-176")?;
+    let value = args.get(1).ok_or("--bpm-range needs a value such as 92-184")?;
     let lo: f64 = value.split('-').next().unwrap_or("").parse().map_err(|_| format!("--bpm-range {value}: not a number"))?;
     let chosen = pm_analysis::tempo::BpmRange::from_lo(lo).ok_or_else(|| {
         let all: Vec<String> = range.iter().map(|r| format!("{}-{}", r.lo, r.hi())).collect();

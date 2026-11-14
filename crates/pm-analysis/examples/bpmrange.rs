@@ -8,7 +8,7 @@ use pm_analysis::tempo::BpmRange;
 fn main() {
     let mut args = std::env::args().skip(1);
     let root = std::path::PathBuf::from(args.next().expect("root folder"));
-    println!("{:<12} {:>8} {:>8} {:>8} {:>8} {:>7}", "file", "78-156", "88-176", "98-196", "68-136", "grid");
+    println!("{:<12} {:>8} {:>8} {:>8} {:>8} {:>7}", "file", "78-156", "92-184", "98-196", "68-136", "grid");
     for rel in args {
         let path = root.join(&rel);
         let name = path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
@@ -21,9 +21,9 @@ fn main() {
         };
         let mut cols = Vec::new();
         let mut note = String::new();
-        for lo in [78.0, 88.0, 98.0, 68.0] {
+        for lo in [78.0, 92.0, 98.0, 68.0] {
             let r = pm_analysis::analyze_with(&d.mono, d.sample_rate, d.tag_bpm, BpmRange { lo });
-            if lo == 88.0 {
+            if lo == 92.0 {
                 // grid consistency: median spacing between beats must match the BPM
                 let b = &r.beats;
                 if b.len() > 2 {

@@ -9,12 +9,12 @@ export type BpmRangeOption = {
   hint: string;
 };
 
-export const DEFAULT_RANGE_LO = 88;
+export const DEFAULT_RANGE_LO = 92;
 
 /** The windows on offer, widest first. */
 export const BPM_RANGES: readonly BpmRangeOption[] = [
   { lo: 98, label: "98-196", hint: "Fast drum & bass and hardcore at full time (180 reads as 180). 90 BPM hip-hop reads as 180." },
-  { lo: 88, label: "88-176", hint: "Drum & bass at full time (about 174). House, techno and everything from 88 to 175 keeps its own number. Drum & bass at 176 or faster reads at half time (180 reads as 90): use 98-196 for those." },
+  { lo: 92, label: "92-184", hint: "Drum & bass at full time (about 174). House, techno and everything from 92 to 183 keeps its own number. Drum & bass at 184 or faster reads at half time (190 reads as 95): use 98-196 for those. Music at 88 to 91 BPM (slow hip-hop) reads double: use 68-136 for that." },
   { lo: 78, label: "78-156", hint: "Same as the original Editor: drum & bass reads at half time (about 87), 158 reads as 79." },
   { lo: 68, label: "68-136", hint: "Slow music at its own tempo; anything from 136 up reads at half time (140 reads as 70)." },
 ];

@@ -307,6 +307,13 @@ mod tests {
     }
 
     #[test]
+    fn fast_drum_and_bass_at_180_keeps_its_number_under_the_default() {
+        let r = analyze_with(&dnb_break(180.0, 0.21), SR, None, tempo::BpmRange::default());
+        assert!((r.bpm - 180.0).abs() < 0.6, "bpm {}", r.bpm);
+        assert!((grid_bpm(&r) - r.bpm).abs() < 0.6, "grid {}", grid_bpm(&r));
+    }
+
+    #[test]
     fn house_stays_put_unless_the_range_cannot_hold_it() {
         let mono = house(128.0, 0.1);
         for (range, want) in [
@@ -370,7 +377,7 @@ mod tests {
         assert!((own.bpm - 87.0).abs() < 4.0, "without the range it reads {}", own.bpm);
         let r = analyze_with(&dnb_drifting(87.0, 0.06), SR, None, tempo::BpmRange::DNB_FULL_TIME);
         assert!(!r.locked_grid, "the drifting signal must not lock a constant grid");
-        assert!(r.bpm >= 88.0 && r.bpm < 176.0, "bpm {}", r.bpm);
+        assert!(r.bpm >= 92.0 && r.bpm < 184.0, "bpm {}", r.bpm);
         assert!((r.bpm - 174.0).abs() < 8.0, "bpm {}", r.bpm);
         let g = grid_bpm(&r);
         assert!((g - r.bpm).abs() < 8.0, "grid {g} vs bpm {}", r.bpm);

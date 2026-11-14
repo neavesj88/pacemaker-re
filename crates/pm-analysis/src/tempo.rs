@@ -11,14 +11,15 @@ pub const MAX_BPM: f64 = 200.0;
 /// Preferred tempo window, the analogue of DJ software's "BPM range" setting: candidate
 /// tempos are doubled or halved into [lo, 2 * lo).
 ///
-/// The default is [`BpmRange::DNB_FULL_TIME`] (88-176): drum & bass reads at its real ~174 and
-/// everything from 88 to 175 keeps its own number. The original Editor folds into 78-156 instead
+/// The default is [`BpmRange::DNB_FULL_TIME`] (92-184): drum & bass reads at its real ~174 and
+/// everything from 92 to 183 keeps its own number. The original Editor folds into 78-156 instead
 /// ([`BpmRange::EDITOR_COMPATIBLE`], observed range 79-150: it folds 158 to 79 and drum & bass
 /// to ~87), which halves every drum & bass track; mixing one of those with a 130 BPM track then
 /// slows the 130 track right down, so that is no longer the default. The device syncs tracks by
 /// BPM, so a library mixing tracks the Editor analysed (drum & bass at ~87) with ours (~174)
-/// can disagree about those tracks; the app can list and re-analyse them. A tempo of 176 or more
-/// does not fit 88-176 (180 reads as 90): [`BpmRange::PRESETS`] has 98-196 for that.
+/// can disagree about those tracks; the app can list and re-analyse them. A tempo of 184 or more
+/// does not fit 92-184 (190 reads as 95): [`BpmRange::PRESETS`] has 98-196 for that. Music at 88-91 BPM (hip-hop) reads
+/// double under it; 68-136 keeps those.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct BpmRange {
     pub lo: f64,
@@ -33,8 +34,8 @@ impl Default for BpmRange {
 impl BpmRange {
     /// 78-156, what the original Editor does.
     pub const EDITOR_COMPATIBLE: BpmRange = BpmRange { lo: 78.0 };
-    /// 88-176, drum & bass at full time.
-    pub const DNB_FULL_TIME: BpmRange = BpmRange { lo: 88.0 };
+    /// 92-184, drum & bass at full time.
+    pub const DNB_FULL_TIME: BpmRange = BpmRange { lo: 92.0 };
     /// 98-196, for fast drum & bass and hardcore.
     pub const FAST: BpmRange = BpmRange { lo: 98.0 };
     /// 68-136, slow music (hip-hop, downtempo) at its own tempo, house at half time.
@@ -146,7 +147,9 @@ mod tests {
         }
         assert_eq!(BpmRange::from_lo(90.0), None);
         assert_eq!(BpmRange::FAST.fold(90.0), 180.0);
-        assert_eq!(BpmRange::DNB_FULL_TIME.fold(180.0), 90.0);
+        assert_eq!(BpmRange::DNB_FULL_TIME.fold(180.0), 180.0, "fast drum & bass at 180 keeps its number");
+        assert_eq!(BpmRange::DNB_FULL_TIME.fold(90.0), 180.0, "the price: 90 BPM music reads double");
+        assert_eq!(BpmRange::SLOW.fold(90.0), 90.0);
         assert_eq!(BpmRange::SLOW.fold(136.0), 68.0);
     }
 }

@@ -72,8 +72,8 @@ export function mockAutoEnergy(trackId: number): number | null {
 }
 
 /** The BPM range the mock saves (low end); `foldBpm` is what the mock's analysis does with it. */
-export let bpmRangeLo = 88;
-const RANGE_LOS = [68, 78, 88, 98];
+export let bpmRangeLo = 92;
+const RANGE_LOS = [68, 78, 92, 98];
 
 /** The mock's analysis: the track's tempo folded into the saved window, as the real analyser does. */
 export function foldBpm(bpm: number): number {
@@ -87,7 +87,7 @@ export const handlers: Handlers = {
   analysis_bpm_range_get: () => ({ lo: bpmRangeLo }),
   analysis_bpm_range_set: (a) => {
     const lo = a.settings?.lo;
-    if (!RANGE_LOS.includes(lo)) throw "The BPM range must be one of 68-136, 78-156, 88-176, 98-196.";
+    if (!RANGE_LOS.includes(lo)) throw "The BPM range must be one of 68-136, 78-156, 92-184, 98-196.";
     bpmRangeLo = lo;
     return { lo };
   },
