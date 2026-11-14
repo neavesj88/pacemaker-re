@@ -3,7 +3,7 @@
   // beat ticks with the bar starts brighter, the cue flag, the beat loop and the playhead.
   // Click or drag to seek. Copied from ui/Waveform (single colour, integration-owned) rather
   // than extended, as ARCHITECTURE.md rule 7 asks.
-  import { tickTier } from "./waveTicks";
+  import { gridAlpha, tickTier } from "./waveTicks";
   import { appearance } from "$lib/state/appearance.svelte";
   import type { Peak } from "$lib/api/analysis";
 
@@ -115,7 +115,7 @@
         const first = firstDownbeat ?? 0;
         const barColour = css("--text");
         const beatColour = css("--line-hi");
-        g.globalAlpha = 0.8;
+        g.globalAlpha = gridAlpha((px(beats[beats.length - 1]) - px(beats[0])) / (beats.length - 1));
         for (let i = 0; i < beats.length; i++) {
           const bar = (((i - first) % 4) + 4) % 4 === 0;
           if (tier === "bars" && !bar) continue;

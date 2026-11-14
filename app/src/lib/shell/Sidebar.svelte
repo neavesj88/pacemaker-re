@@ -28,9 +28,10 @@
 <style>
   /* published so the undo prompt can sit past it */
   :global(:root) {
-    --nav-w: 190px;
+    --nav-w: 207px; /* outer width: the old 190px content + 16px padding + 1px border, so the layout is unchanged */
   }
   nav {
+    box-sizing: border-box; /* --nav-w is the outer width, padding and border included */
     width: var(--nav-w);
     flex: none;
     display: flex;

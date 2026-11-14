@@ -26,14 +26,14 @@
     position: fixed;
     /* left of the main pane (past the sidebar), where toasts (right) are not, and just above the
        player bar whatever height it has */
-    left: calc(var(--nav-w, 190px) + 14px);
+    left: calc(var(--nav-w, 207px) + 14px);
     bottom: calc(var(--player-h, 48px) + 8px);
     z-index: 50;
     display: flex;
     align-items: center;
     gap: 8px;
     width: max-content;
-    max-width: min(560px, calc(100vw - var(--nav-w, 190px) - 28px));
+    max-width: min(560px, calc(100vw - var(--nav-w, 207px) - 28px));
     padding: 6px 8px 6px 12px;
     background: var(--panel);
     border: 1px solid var(--line-hi);

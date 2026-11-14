@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { tickTier } from "./waveTicks.ts";
+import { gridAlpha, tickTier } from "./waveTicks.ts";
 
 test("a normal track keeps every beat tick", () => assert.equal(tickTier(900 / 600), "bars"));
 test("wide beats draw all ticks", () => assert.equal(tickTier(5), "all"));
@@ -20,4 +20,9 @@ test("the cutoff is the setting's", () => {
   assert.equal(tickTier(1.2, 8), "none");
   assert.equal(tickTier(2.1, 8), "bars");
   assert.equal(tickTier(5, 0), "none");
+});
+test("tightly packed bar lines are drawn faint, roomy ones firm", () => {
+  assert.equal(gridAlpha(310 / 512), 0.35);
+  assert.equal(gridAlpha(1), 0.8);
+  assert.ok(gridAlpha(0.9) < gridAlpha(1.1));
 });
