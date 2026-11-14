@@ -3,9 +3,21 @@
   // transport (state/playback.svelte.ts) and sends clicks back to it or to the engine.
   import { playback } from "$lib/state/playback.svelte";
   import { session } from "$lib/state/session.svelte";
+  import { loadPref, savePref } from "$lib/state/prefStore";
   import Button from "$lib/ui/Button.svelte";
   import { engine } from "./engine.svelte";
   import PlayerWave from "./PlayerWave.svelte";
+  import {
+    DEFAULT_HEIGHT,
+    MIN_HEIGHT,
+    PLAYER_HEIGHT_KEY,
+    clampHeight,
+    dragHeight,
+    keyHeight,
+    maxHeight,
+    normaliseHeight,
+    scaleFor,
+  } from "./playerSize";
 
   const track = $derived(
     playback.trackId === null ? null : (session.library?.tracks.find((t) => t.track_id === playback.trackId) ?? null),
@@ -45,6 +57,55 @@
     return null;
   });
 
+  // Bar height. `chosen` is what the owner set and what is remembered; `barH` is that held to the
+  // current window (45 % of its height at most), so a size chosen on a big screen fits a small one
+  // and comes back intact. Read here, in the component's setup, so the first paint already has it.
+  let chosen = $state(loadPref(PLAYER_HEIGHT_KEY, normaliseHeight, () => DEFAULT_HEIGHT));
+  let winW = $state(typeof window === "undefined" ? 1920 : window.innerWidth);
+  let winH = $state(typeof window === "undefined" ? 1080 : window.innerHeight);
+  const barH = $derived(clampHeight(chosen, winH));
+  const scale = $derived(scaleFor(barH, winW));
+  let resizing = $state(false);
+  let drag: { y: number; h: number; start: number; id: number; el: HTMLElement } | null = null;
+
+  function setChosen(h: number) {
+    chosen = h;
+    savePref(PLAYER_HEIGHT_KEY, h);
+  }
+  function gripDown(e: PointerEvent) {
+    if (e.button !== 0) return;
+    const el = e.currentTarget as HTMLElement;
+    drag = { y: e.clientY, h: barH, start: chosen, id: e.pointerId, el };
+    resizing = true;
+    el.setPointerCapture(e.pointerId);
+  }
+  // live while dragging; saved once on release so storage is not written per pixel
+  function gripMove(e: PointerEvent) {
+    if (drag) chosen = dragHeight(drag.h, drag.y, e.clientY, winH);
+  }
+  function gripUp() {
+    if (!drag) return;
+    drag = null;
+    resizing = false;
+    setChosen(chosen);
+  }
+  function gripKey(e: KeyboardEvent) {
+    if (e.key === "Escape" && drag) {
+      // cancel: back to the size from before the drag, nothing saved
+      const d = drag;
+      drag = null;
+      resizing = false;
+      chosen = d.start;
+      if (d.el.hasPointerCapture(d.id)) d.el.releasePointerCapture(d.id);
+      return;
+    }
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    const h = keyHeight(e.key, e.shiftKey, barH, winH);
+    if (h === null) return;
+    e.preventDefault();
+    setChosen(h);
+  }
+
   const seekFraction = (f: number) => playback.seek((mix?.fromSecs ?? 0) + f * span);
 
   function cueDown(e: PointerEvent) {
@@ -66,7 +127,32 @@
   }
 </script>
 
-<footer class="player" aria-label="Player">
+<svelte:window bind:innerWidth={winW} bind:innerHeight={winH} />
+
+<footer class="player" class:resizing aria-label="Player" style="--ph: {barH}px; --ps: {scale}">
+  <!-- Drag up to make the bar taller. Double-click resets; Up / Down step, Home / End = min / max.
+       A focusable separator is the ARIA window-splitter pattern; svelte only knows it as non-interactive. -->
+  <!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
+  <div
+    class="grip"
+    role="separator"
+    aria-orientation="horizontal"
+    aria-label="Player height"
+    aria-valuemin={MIN_HEIGHT}
+    aria-valuemax={maxHeight(winH)}
+    aria-valuenow={barH}
+    tabindex="0"
+    title="Drag up or down to resize the player. Double-click for the default size."
+    onpointerdown={gripDown}
+    onpointermove={gripMove}
+    onpointerup={gripUp}
+    onpointercancel={gripUp}
+    onlostpointercapture={gripUp}
+    onkeydown={gripKey}
+    ondblclick={() => setChosen(DEFAULT_HEIGHT)}
+  >
+    <span class="grip-line"></span>
+  </div>
   <div class="info">
     {#if track}
       <b class="title" title={track.title}>{track.title}</b>
@@ -154,15 +240,54 @@
 </footer>
 
 <style>
+  /* --ph is the bar height and --ps the content scale (1 at the default size), both set from the
+     script; every size below is its 1x value times --ps, so the contents grow in steps with the bar */
   .player {
+    --ps: 1;
+    position: relative;
+    flex: none;
+    box-sizing: border-box;
+    min-height: var(--ph, 63px);
     display: grid;
-    grid-template-columns: minmax(160px, 260px) 1fr auto;
-    gap: 12px;
+    grid-template-columns: minmax(calc(160px * var(--ps)), calc(260px * var(--ps))) 1fr auto;
+    gap: calc(12px * var(--ps));
     align-items: center;
-    padding: 6px 14px;
+    padding: calc(6px * var(--ps)) 14px 6px;
     background: var(--deep);
     border-top: 1px solid var(--line);
-    font-size: 12px;
+    font-size: calc(12px * var(--ps));
+  }
+  .grip {
+    position: absolute;
+    inset: 0 0 auto 0;
+    /* grows with --ps and stays inside the 1px border + top padding (also 6px * --ps), so it never covers the waveform or the text */
+    height: calc(6px * var(--ps));
+    z-index: 2;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: row-resize;
+    touch-action: none;
+    user-select: none;
+  }
+  .grip-line {
+    width: calc(44px * var(--ps));
+    height: calc(3px * var(--ps));
+    border-radius: calc(2px * var(--ps));
+    background: var(--muted);
+    transition: background 0.12s;
+  }
+  .grip:hover .grip-line,
+  .grip:focus-visible .grip-line,
+  .resizing .grip-line {
+    background: var(--accent);
+  }
+  .grip:focus-visible {
+    outline: 1px solid var(--accent);
+    outline-offset: -1px;
+  }
+  .resizing {
+    cursor: row-resize;
   }
   .info {
     min-width: 0;
@@ -175,7 +300,7 @@
     text-overflow: ellipsis;
   }
   .line {
-    font-size: 11px;
+    font-size: calc(11px * var(--ps));
   }
   .status {
     color: var(--muted);
@@ -188,16 +313,22 @@
   .controls {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: calc(6px * var(--ps));
+  }
+  .controls :global(.btn) {
+    padding: calc(2px * var(--ps)) calc(8px * var(--ps));
+    font-size: calc(12px * var(--ps));
   }
   .time {
-    min-width: 92px;
-    margin-right: 4px;
+    min-width: calc(92px * var(--ps));
+    margin-right: calc(4px * var(--ps));
     color: var(--green);
-    font: 600 13px ui-monospace, Consolas, monospace;
+    font: 600 calc(13px * var(--ps)) ui-monospace, Consolas, monospace;
     text-align: left;
   }
   .vol {
+    /* zoom scales the slider's track and thumb as well as its width */
+    zoom: var(--ps);
     width: 80px;
     padding: 0;
     border: none;
@@ -207,6 +338,8 @@
   @media (max-width: 900px) {
     .player {
       grid-template-columns: 1fr auto;
+      /* the waveform row takes all the height the bar gains */
+      grid-template-rows: auto 1fr;
     }
     .player :global(.wave) {
       grid-column: 1 / -1;

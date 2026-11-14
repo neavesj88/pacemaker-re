@@ -118,6 +118,7 @@ const VIEW_STATE = {
   "pm.mixes.tools.v1": "whether transitions are shown in the mix editor",
   "pm.mixes.sectionMarkers.v1": "whether section markers are drawn on clips",
   "pm.gridBatchNudgeMs": "the last nudge typed into the grid batch dialog",
+  "pacemaker-revival.playerHeight": "how tall the player bar is (dragged on its top edge; Double-click resets)",
 };
 
 function sourceFiles(dir) {
