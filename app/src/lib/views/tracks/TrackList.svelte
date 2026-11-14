@@ -8,7 +8,7 @@
   import { mmss } from "$lib/format";
   import { labelEditor, labels } from "$lib/state/labels.svelte";
   import { playback } from "$lib/state/playback.svelte";
-    import { session } from "$lib/state/session.svelte";
+  import { session } from "$lib/state/session.svelte";
   import { armTrackDrag } from "$lib/state/trackDrag.svelte";
   import { holders } from "$lib/state/holders.svelte";
   import { suspectKinds } from "$lib/state/batchLogic";
@@ -30,9 +30,43 @@
   import EnergyCell from "../analysis/EnergyCell.svelte";
   import { addToMix, buildSet, editGrid, editMetadata, playTrack, rate, revealInExplorer } from "./trackActions";
   import { formatDate, formatSize, keyColour, parseKey } from "./trackLogic";
+  import { caseMembers } from "$lib/state/caseMembers.svelte";
+  import { caseLookup } from "./trackFilter";
+  import type { TableState } from "./tableState.svelte";
   import { tracksState } from "./tracksState.svelte";
 
-  let { rows, root }: { rows: Track[]; root: string } = $props();
+  let {
+    rows,
+    root,
+    table = tracksState,
+    label = "Tracks",
+    dragFrom = "tracks",
+    onopen,
+    onadd,
+    marker,
+  }: {
+    rows: Track[];
+    root: string;
+    /** This table's own state (sort, columns, filters, selection). The Tracks view's by default. */
+    table?: TableState;
+    label?: string;
+    /** The drag scope name rows are dragged from ("tracks", or "mix:picker" in the Mix tab). */
+    dragFrom?: string;
+    /** Double-click / Enter on a row; without it the track is played. */
+    onopen?: (t: Track) => void;
+    /** "Add to mix" in the context menu; without it the context menu opens the Mix tab. */
+    onadd?: (ids: number[]) => void;
+    /** A short mark after the title (such as "x2" for a track already in the mix). */
+    marker?: (id: number) => string;
+  } = $props();
+
+  const addToMixFn = (ids: number[]) => (onadd ? onadd(ids) : addToMix(ids));
+  const caseNo = $derived(caseLookup(table.caseId, table.caseId === null ? null : caseMembers.tracksOf(table.caseId)));
+
+  // the case columns and the case filter read the case lists, once per change of the case list
+  $effect(() => {
+    if (table.caseId !== null || table.prefs.visible.cases) void caseMembers.ensure();
+  });
 
   const ROW = 28;
   const HEAD = 30;

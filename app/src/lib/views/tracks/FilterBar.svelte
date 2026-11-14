@@ -64,7 +64,7 @@
   });
 
   const anyFilter = $derived(
-    filterIsActive({ ...table.filter }) || labelFilterActive(table.labelFilter) || table.search.onlyNeeds || !!table.search.query || table.onlySuspect,
+    filterIsActive({ ...table.filter }) || labelFilterActive(table.labelFilter) || table.search.onlyNeeds || !!table.search.query || table.onlySuspect || table.caseId !== null,
   );
 
   // Analysed and Missing are opposites; pressing one releases the other, pressing it again clears it.

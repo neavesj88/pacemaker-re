@@ -53,7 +53,7 @@ export const COLUMNS: ColDef[] = [
   { key: "size", label: "Size", width: 76, min: 56, num: true, sort: "file_size", defaultOn: false },
   // the cases (crates) that hold the track, and its place in the case chosen in the filter bar
   { key: "cases", label: "Cases", width: 170, min: 70, sort: "cases", defaultOn: false },
-  { key: "caseno", label: "Case #", width: 62, min: 50, num: true, sort: "case_order", defaultOn: false },
+  { key: "caseno", label: "Case #", width: 80, min: 60, num: true, sort: "case_order", defaultOn: false },
 ];
 
 /** Columns that only make sense while a case is chosen in the filter bar. */

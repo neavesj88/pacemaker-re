@@ -26,7 +26,7 @@
   const byId = $derived(new Map(all.map((t) => [t.track_id, t])));
   const focus = $derived(tracksState.focusId === null ? null : (byId.get(tracksState.focusId) ?? null));
   const filtersActive = $derived(
-    !!(filters.query || filters.onlyNeeds || tracksState.genre || tracksState.bpmMin || tracksState.bpmMax || tracksState.keyFilter || tracksState.onlyAnalysed || labelFilterActive(tracksState.labelFilter) || tracksState.onlySuspect),
+    !!(filters.query || filters.onlyNeeds || tracksState.genre || tracksState.bpmMin || tracksState.bpmMax || tracksState.keyFilter || tracksState.onlyAnalysed || labelFilterActive(tracksState.labelFilter) || tracksState.onlySuspect || tracksState.caseId !== null),
   );
   const suspectIds = $derived(tracksState.onlySuspect ? rows.map((t) => t.track_id) : []);
 
