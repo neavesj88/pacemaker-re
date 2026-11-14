@@ -6,8 +6,10 @@
   import { untrack } from "svelte";
   import type { EnergySettings } from "$lib/api/analysis";
   import { analysis } from "$lib/state/analysis.svelte";
+  import { bg } from "$lib/state/bganalysis.svelte";
   import { energy } from "$lib/state/energy.svelte";
   import { jobs } from "$lib/state/jobs.svelte";
+  import { playback } from "$lib/state/playback.svelte";
   import { sections } from "$lib/state/sections.svelte";
   import { session } from "$lib/state/session.svelte";
   import Button from "$lib/ui/Button.svelte";
@@ -26,6 +28,18 @@
       energy.load();
       sections.load();
     });
+  });
+
+  // The background analysis worker is told which library is open (on every open and every in-place
+  // reload, so a finished add or sync is looked at again) and whether a preview is playing.
+  $effect(() => {
+    const root = session.library?.root ?? null;
+    session.library;
+    untrack(() => bg.watch(root));
+  });
+  $effect(() => {
+    const playing = playback.playing;
+    untrack(() => bg.setPlaying(playing));
   });
 
   const keyDialog = $derived(analysis.dialog);

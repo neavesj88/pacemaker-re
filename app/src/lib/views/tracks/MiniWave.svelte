@@ -5,6 +5,7 @@
   import { sections } from "$lib/state/sections.svelte";
   import SectionBand from "../analysis/SectionBand.svelte";
   import { cachedPeaks, requestPeaks } from "./peakCache";
+  import { peakTick } from "./peakTick.svelte";
   import { drawPeaks } from "./waveDraw";
 
   let { root, location, columns = 64, height = 18, trackId = null }: { root: string; location: string; columns?: number; height?: number; trackId?: number | null } = $props();
@@ -17,6 +18,8 @@
   let peaks = $state.raw<Peak[] | null>(null);
 
   $effect(() => {
+    // moves when the background analysis has just made this track's waveform
+    peakTick.of(location);
     const cached = cachedPeaks(root, location, columns);
     if (cached !== undefined) {
       peaks = cached;

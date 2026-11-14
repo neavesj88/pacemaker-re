@@ -3,6 +3,7 @@
 import { emit } from "@tauri-apps/api/event";
 import { canonicalKeyName } from "../state/keyLogic";
 import { tracks } from "./db";
+import { heldPeaks } from "./bgHeld";
 import { jobLock } from "./jobs";
 import type { Handlers } from "./types";
 
@@ -65,6 +66,12 @@ function mockEnergyState() {
     scale_used: used, anchor_lo: anchors.lo, anchor_hi: anchors.hi, note, settings: { ...energySettings }, problem: null,
   };
 }
+
+/** What the simulated background worker reads and writes of the energy cache (devmock/bganalysis.ts). */
+export const bgEnergy = {
+  missing: () => tracks.filter((t) => ["none", "stale"].includes(mockStatus(t))),
+  make: (t: (typeof tracks)[number]) => energyCache.set(t.location, { size: t.file_size, duration: t.play_time_secs, score: 0.2 + 0.6 * seeded(`e${t.location}`)(), skip: null }),
+};
 
 /** The mock library's Energy (auto) estimate of a track (1.0 to 10.0), or null: what the smart-case twin reads. */
 export function mockAutoEnergy(trackId: number): number | null {
@@ -158,6 +165,8 @@ export const handlers: Handlers = {
 
   // synthetic but stable per track: a kick-heavy body with quieter intro and outro
   analysis_peaks: (a) => {
+    // not made yet (see bgHeld.ts): the table shows no waveform until the background worker has it
+    if (heldPeaks.has(String(a.location))) return [];
     const r = seeded(String(a.location));
     const width = Math.max(1, Math.min(16384, Number(a.width) || 100));
     return Array.from({ length: width }, (_, i) => {

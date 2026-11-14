@@ -1,9 +1,21 @@
+import { bg } from "$lib/state/bganalysis.svelte";
 import { energy } from "$lib/state/energy.svelte";
 import { sections } from "$lib/state/sections.svelte";
 import type { SettingsEntry } from "../settings/types";
+import BgSettingsFields from "./BgSettingsFields.svelte";
 import KeySettingsFields from "./KeySettingsFields.svelte";
 
 const entries: SettingsEntry[] = [
+  {
+    id: "background-analysis",
+    area: "Analysis",
+    title: "Background analysis",
+    help: "Whether waveforms, keys, energy and sections are made automatically for the library on this computer, which of them, and Run now for a Pacemaker.",
+    keywords: "background automatic waveform peaks key energy sections pause playback run now pacemaker queue",
+    how: "inline",
+    component: BgSettingsFields,
+    load: () => bg.load(),
+  },
   {
     id: "key-detection",
     area: "Analysis",
