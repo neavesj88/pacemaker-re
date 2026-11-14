@@ -17,10 +17,17 @@ export type ComputerLibraryInfo = {
   default_path: string;
   /** A library is there now. */
   exists: boolean;
+  /** The folder is there, with or without a library in it. */
+  folder_exists: boolean;
   warning: string | null;
   /** The settings file exists but could not be used: `settings` and `path` are only the defaults. */
   unreadable: boolean;
 };
+
+/** Whether the window opens at the size it was closed at (on by default). */
+export const windowRememberGet = () => invoke<boolean>("window_remember_get");
+/** Turns that on or off; off forgets the saved size. */
+export const windowRememberSet = (remember: boolean) => invoke<boolean>("window_remember_set", { remember });
 
 export const computerLibraryGet = () => invoke<ComputerLibraryInfo>("computer_library_get");
 /** Saves the settings; the library at the old path is not moved or deleted. */

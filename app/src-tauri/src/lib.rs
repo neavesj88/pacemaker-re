@@ -20,6 +20,7 @@ pub fn run() {
             commands::setup(app);
             Ok(())
         })
+        .on_window_event(commands::library::window::on_event)
         .invoke_handler(register_handlers!())
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

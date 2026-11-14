@@ -1,6 +1,6 @@
 // Run: node --experimental-strip-types src/lib/state/leaveGuard.test.mjs
 import assert from "node:assert/strict";
-import { allSaveable, gridLine, mixLine, registerLeaveGuard, unsavedWork } from "./leaveGuard.ts";
+import { allSaveable, gridLine, mixKeptNote, mixLine, registerLeaveGuard, unsavedWork } from "./leaveGuard.ts";
 
 assert.deepEqual(unsavedWork(), [], "no guard, nothing to ask");
 
@@ -31,5 +31,11 @@ assert.equal(allSaveable([]), false);
 
 mix = { lines: [] };
 assert.equal(unsavedWork().length, 1, "a guard with no lines counts as nothing");
+
+// a question about a case says the mix draft is not part of it (switching tabs keeps the draft)
+assert.equal(mixKeptNote(null, false, 0), "");
+assert.equal(mixKeptNote("Walk mix", false, 3), "", "a saved mix needs no note");
+assert.match(mixKeptNote("Walk mix", true, 7), /“Walk mix” \(7 unsaved edits\) is not affected: it stays open in Mixes/);
+assert.match(mixKeptNote("Walk mix", true, 0), /“Walk mix” is not affected/);
 
 console.log("leaveGuard.test.mjs ok");

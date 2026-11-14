@@ -28,9 +28,10 @@ export const COLUMNS: ColDef[] = [
   { key: "title", label: "Title", width: 190, min: 90, sort: "title", fixed: true, defaultOn: true },
   { key: "artist", label: "Artist", width: 140, min: 70, sort: "artist", defaultOn: true },
   { key: "album", label: "Album", width: 160, min: 70, sort: "album", defaultOn: false },
-  { key: "wave", label: "Waveform", width: 100, min: 70, defaultOn: true },
+  // BPM and Key come before the waveform: on a small window they are what the table must still show
   { key: "bpm", label: "BPM", width: 64, min: 50, num: true, sort: "bpm", defaultOn: true },
   { key: "key", label: "Key", width: 54, min: 46, sort: "key", defaultOn: true },
+  { key: "wave", label: "Waveform", width: 100, min: 70, defaultOn: true },
   { key: "energy", label: "Energy", width: 84, min: 60, sort: "energy", defaultOn: true },
   // read-only estimate from the audio, kept app-side (views/analysis); blank until analysed. It is
   // not the energy label above, which the user sets.

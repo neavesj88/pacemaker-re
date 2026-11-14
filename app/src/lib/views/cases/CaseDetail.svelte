@@ -4,6 +4,8 @@
   import { mmss } from "$lib/format";
   import { caseExport } from "$lib/state/caseExport.svelte";
   import { cases } from "$lib/state/cases.svelte";
+  import { mixKeptNote } from "$lib/state/leaveGuard";
+  import { mixes } from "$lib/state/mixes.svelte";
   import { filters } from "$lib/state/filters.svelte";
   import { jobs } from "$lib/state/jobs.svelte";
   import { metadataEditor } from "$lib/state/metadata.svelte";
@@ -594,7 +596,7 @@
   {@const proceed = leaving}
   <ConfirmDialog
     title="Discard unsaved changes?"
-    message={`The details of the case “${open.name}” (name, genre, year, rating, producer, remixer or comments) have changes that are not saved. Leaving now discards them.`}
+    message={`The details of the case “${open.name}” (name, genre, year, rating, producer, remixer or comments) have changes that are not saved. Leaving now discards them.${mixKeptNote(mixes.doc?.name ?? null, mixes.dirty, mixes.undoDepth)}`}
     confirmLabel="Discard changes"
     onconfirm={() => proceed()}
     onclose={() => (leaving = null)}

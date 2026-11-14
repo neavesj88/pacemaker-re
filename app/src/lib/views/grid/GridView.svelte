@@ -361,7 +361,7 @@
         </div>
         <div class="grp" role="group" aria-label="Analysis and cue">
           <Button small disabled={editor.busy} onclick={() => editor.reanalyse()} title="Replace the grid with a fresh analysis of the audio (nothing is saved until you save)">Re-analyse</Button>
-          <Button small disabled={editor.busy} onclick={() => editor.setCue(head)} title="Use the playhead as the device cue point">Set cue</Button>
+          <Button small disabled={editor.busy} onclick={() => editor.setCue(head)} title="Use the playhead as the cue point">Set cue</Button>
           <Button small disabled={editor.busy || editor.cue === null} onclick={() => editor.setCue(null)}>Clear cue</Button>
         </div>
       </div>
@@ -472,14 +472,14 @@
           <p class="note">Writes the same .str file the Pacemaker reads, so sync locks to these beats.</p>
         </div>
         <div class="card">
-          <h4>Device cue</h4>
+          <h4>Pacemaker cue</h4>
           <div class="field">
             <span class="lab">Cue point</span>
             <span class="num">{cueSecs === null ? "not set" : fmtTime(cueSecs)}{editor.cueDirty ? " (unsaved)" : ""}</span>
           </div>
           <p class="note">
             The Pacemaker holds one cue point per track. It is stored in the track's row with the grid, in source sample
-            frames. The unit of a set cue is unverified against a device.
+            frames. The unit of a set cue is unverified against a real Pacemaker.
           </p>
         </div>
         <div class="card">
@@ -522,7 +522,7 @@
     </ul>
     {#if needsCueTick}
       <p class="warn-box">
-        Unit unverified: the cue is written as a position in source sample frames, which no device-written cue has
+        Unit unverified: the cue is written as a position in source sample frames, which no cue written by a real Pacemaker has
         confirmed. A wrong unit would put the cue at the wrong place on the Pacemaker.
       </p>
       <label class="tick"><input type="checkbox" bind:checked={cueOk} /> Write the cue anyway</label>
@@ -538,7 +538,7 @@
     {/if}
     <p class="muted">
       The previous grid cannot be restored from here. A copy of music.db is kept in the app's data folder before the
-      first write of each session (Device, Backup).
+      first write of each session ({session.isComputer ? "This library" : "Device"}, Backup).
     </p>
     {#snippet actions()}
       <Button data-autofocus onclick={() => (confirmSave = false)}>Cancel</Button>

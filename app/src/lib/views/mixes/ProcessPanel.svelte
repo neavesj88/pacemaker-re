@@ -144,7 +144,7 @@
     <label class="check"><input type="checkbox" checked={marked} onchange={(e) => mixes.doc && vocalTools.set(mixes.doc.id, p.id, e.currentTarget.checked)} /> use as the vocal filter</label>
   </div>
   <p class="note">
-    Vocal and Wah are the same tool in the mix file (Wah, cut-off). {session.isComputer ? "A mix sent to a Pacemaker" : "On the Pacemaker"} plays it as the vocal filter only with Revival firmware and the Vocal flag switched on ({session.isComputer ? "Device view, with the Pacemaker connected" : "Device view"});
+    Vocal and Wah are the same tool in the mix file (Wah, cut-off). {session.isComputer ? "A mix sent to a Pacemaker" : "On the Pacemaker"} plays it as the vocal filter only with Revival firmware and the Vocal flag switched on ({session.isComputer ? "the Device view of the Pacemaker itself, once it is open" : "Device view"});
     otherwise the Pacemaker plays it as Wah. This app remembers which tools you made as Vocal, for the names here, the live preview and audio exports, which play them as the vocal filter. The mark is kept in this
     app, not in the mix, and a copy of the tool is a Wah tool until you mark it.
   </p>

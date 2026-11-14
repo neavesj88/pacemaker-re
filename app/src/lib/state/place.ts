@@ -93,7 +93,7 @@ export function missingComputerPath(info: StartupInfo): string | null {
   return info && !info.unreadable && !info.exists && info.settings.path ? info.path : null;
 }
 
-export type StartupInfo = { exists: boolean; path: string; unreadable?: boolean; settings: { path?: string; open_at_start: boolean } } | null;
+export type StartupInfo = { exists: boolean; folder_exists?: boolean; path: string; unreadable?: boolean; settings: { path?: string; open_at_start: boolean } } | null;
 
 /** The library to open when the app starts: the one on this computer, only when it is there and
  *  the setting is on. A Pacemaker is never opened by itself (see `Session.refreshVolumes`). When the
@@ -112,16 +112,20 @@ export function welcomeOffer(
   info: StartupInfo,
   volumes: string[],
   pickedPath: string | null = null,
-): { start: boolean; open: boolean; copyFrom: string | null; unreadable: boolean; missingPath: string | null } {
-  if (info?.unreadable) return { start: false, open: false, copyFrom: null, unreadable: true, missingPath: null };
+): { start: boolean; open: boolean; copyFrom: string | null; unreadable: boolean; missingPath: string | null; emptyFolder: boolean } {
+  if (info?.unreadable) return { start: false, open: false, copyFrom: null, unreadable: true, missingPath: null, emptyFolder: false };
   const start = !!info && !info.exists;
+  const missingPath = pickedPath && info && sameRoot(pickedPath, info.path) ? null : missingComputerPath(info);
   return {
     start,
     open: !!info && info.exists,
     copyFrom: start && volumes.length > 0 ? volumes[0] : null,
     unreadable: false,
     // a folder the user has just picked on this screen is a place to make a library, not one that went missing
-    missingPath: pickedPath && info && sameRoot(pickedPath, info.path) ? null : missingComputerPath(info),
+    missingPath,
+    // the settings name a folder that is there but holds no library: a place to start one, not a
+    // library that went missing (so no "not found")
+    emptyFolder: missingPath !== null && info?.folder_exists === true,
   };
 }
 

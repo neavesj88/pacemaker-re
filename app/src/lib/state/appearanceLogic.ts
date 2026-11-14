@@ -57,6 +57,16 @@ export function normaliseErrorSecs(raw: unknown): number {
   return finite(raw) && (ERROR_SECS_CHOICES as readonly number[]).includes(raw) ? raw : ERROR_SECS_DEFAULT;
 }
 
+/** How long the note of a finished add or analysis stays above the views when it went well, in
+ *  seconds; 0 = until it is dismissed. A note with failures in it, or with an Undo, always stays. */
+export const DONE_SECS_KEY = "pacemaker-revival.finishedNoteSeconds";
+export const DONE_SECS_CHOICES = [5, 10, 30, 0] as const;
+export const DONE_SECS_DEFAULT = 10;
+
+export function normaliseDoneSecs(raw: unknown): number {
+  return finite(raw) && (DONE_SECS_CHOICES as readonly number[]).includes(raw) ? raw : DONE_SECS_DEFAULT;
+}
+
 /** How long a toast stays on screen in ms, or null for until it is closed. A message about a
  *  failure is read at the user's own pace (`errorSecs`, never shorter than the caller asked for);
  *  the rest keep the caller's time. */
@@ -67,4 +77,12 @@ export function toastMs(kind: "info" | "ok" | "bad", ms: number, errorSecs: numb
 }
 
 /** The most toasts on screen at once; the oldest goes first, so a closed-by-hand stack cannot grow without end. */
-export const MAX_TOASTS = 6;
+export const MAX_TOASTS = 4;
+
+/** The stack after a message is added. The same message again (same text and kind) replaces its
+ *  earlier card and counts it ("x3"), so adding ten tracks one by one is one card, not a wall. */
+export function addToast<T extends { id: number; text: string; kind: string; count: number }>(items: readonly T[], next: Omit<T, "count">, max = MAX_TOASTS): T[] {
+  const same = items.find((t) => t.text === next.text && t.kind === next.kind);
+  const rest = items.filter((t) => t !== same);
+  return [...rest, { ...next, count: (same?.count ?? 0) + 1 } as T].slice(-max);
+}

@@ -5,6 +5,8 @@
   import { labels } from "$lib/state/labels.svelte";
   import { caseExport } from "$lib/state/caseExport.svelte";
   import { cases } from "$lib/state/cases.svelte";
+  import { mixKeptNote } from "$lib/state/leaveGuard";
+  import { mixes } from "$lib/state/mixes.svelte";
   import { jobs } from "$lib/state/jobs.svelte";
   import { session } from "$lib/state/session.svelte";
   import { smartSettings } from "$lib/state/smartSettings.svelte";
@@ -256,7 +258,7 @@
   {@const proceed = leaving}
   <ConfirmDialog
     title="Discard unsaved changes?"
-    message={`The smart case “${draft.name.trim() || "New smart case"}” has changes that are not saved. Leaving now discards them.`}
+    message={`The smart case “${draft.name.trim() || "New smart case"}” has changes that are not saved. Leaving now discards them.${mixKeptNote(mixes.doc?.name ?? null, mixes.dirty, mixes.undoDepth)}`}
     confirmLabel="Discard changes"
     onconfirm={() => proceed()}
     onclose={() => (leaving = null)}

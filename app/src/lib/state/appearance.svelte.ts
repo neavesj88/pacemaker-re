@@ -3,6 +3,8 @@
 // which the root layout does before the first view is built, so the size is applied at start.
 import { loadPref, savePref } from "./prefStore";
 import {
+  DONE_SECS_DEFAULT,
+  DONE_SECS_KEY,
   ERROR_SECS_DEFAULT,
   ERROR_SECS_KEY,
   GRID_MIN_DEFAULT,
@@ -11,6 +13,7 @@ import {
   SCALE_DEFAULT,
   SCALE_KEY,
   clampScale,
+  normaliseDoneSecs,
   normaliseErrorSecs,
   normaliseScale,
   stepScale,
@@ -22,6 +25,8 @@ class Appearance {
   scale = $state(loadPref(SCALE_KEY, normaliseScale, () => SCALE_DEFAULT));
   /** Seconds an error message stays; 0 = until closed. */
   errorSecs = $state(loadPref(ERROR_SECS_KEY, normaliseErrorSecs, () => ERROR_SECS_DEFAULT));
+  /** Seconds the note of a finished job that went well stays; 0 = until dismissed. */
+  doneSecs = $state(loadPref(DONE_SECS_KEY, normaliseDoneSecs, () => DONE_SECS_DEFAULT));
   /** Least width of one bar (px) that still gets a bar line on the player waveform; 0 = no grid. */
   gridMinBarPx = $state(loadPref(GRID_MIN_KEY, normaliseGridMin, () => GRID_MIN_DEFAULT));
   /** The webview could not be zoomed (the browser preview, or the permission is missing). */
@@ -60,6 +65,11 @@ class Appearance {
   setGridMinBarPx(px: number) {
     this.gridMinBarPx = normaliseGridMin(px);
     savePref(GRID_MIN_KEY, this.gridMinBarPx);
+  }
+
+  setDoneSecs(secs: number) {
+    this.doneSecs = normaliseDoneSecs(secs);
+    savePref(DONE_SECS_KEY, this.doneSecs);
   }
 
   setErrorSecs(secs: number) {

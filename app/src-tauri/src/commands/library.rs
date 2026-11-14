@@ -4,6 +4,7 @@
 pub mod computer;
 pub(crate) mod kind;
 pub mod pane;
+pub mod window;
 
 use std::path::PathBuf;
 
@@ -32,7 +33,9 @@ pub struct LibraryView {
     needs_analysis: Vec<NeedsAnalysis>,
 }
 
-pub fn setup(_app: &mut tauri::App) {}
+pub fn setup(app: &mut tauri::App) {
+    window::restore(app.handle());
+}
 
 /// The third-party notices (`THIRD-PARTY-NOTICES.md`, bundled with the app as a resource), for the
 /// About entry of the Settings view.
@@ -88,6 +91,8 @@ macro_rules! library_commands {
                 $crate::commands::library::computer::computer_library_get,
                 $crate::commands::library::computer::computer_library_set,
                 $crate::commands::library::computer::computer_library_create,
+                $crate::commands::library::window::window_remember_get,
+                $crate::commands::library::window::window_remember_set,
             ];
             $($rest),*
         }

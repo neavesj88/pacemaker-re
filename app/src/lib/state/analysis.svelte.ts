@@ -92,7 +92,8 @@ class Analysis {
       root: lib.root,
       count: n,
       names: targets.map((t) => detectLine(t, s)),
-      title: `Detect the key of ${n} track${n === 1 ? "" : "s"} on ${lib.root} ?`,
+      title: `Detect the key of ${n} track${n === 1 ? "" : "s"} ${session.isComputer ? "in your library" : `on ${lib.root}`}?`,
+      where: session.isComputer ? lib.root : undefined,
       description:
         "Each track is decoded and its key worked out from the audio (for example Am or F#m). Only the key field of the library is written. Keys from audio are a good first guess, not a certainty." +
         (kept.length > 0 ? ` ${kept.length} track${kept.length === 1 ? " already has a key and keeps" : "s already have a key and keep"} it.` : "") +

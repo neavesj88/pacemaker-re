@@ -114,6 +114,7 @@ const PREF_ENTRIES = {
   "pacemaker-revival.interfaceSize": "interface",
   "pacemaker-revival.errorSeconds": "interface",
   "pacemaker-revival.waveGridMinBarPx": "interface",
+  "pacemaker-revival.finishedNoteSeconds": "interface",
 };
 const VIEW_STATE = {
   "pm.tracks.view.v1": "which columns the track table shows and how it is sorted",

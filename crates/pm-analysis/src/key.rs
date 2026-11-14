@@ -96,6 +96,8 @@ const LOW_HZ: f32 = 80.0;
 const HIGH_HZ: f32 = 4000.0;
 /// Frames analysed per track at most; longer audio is sampled at a wider hop.
 const MAX_FRAMES: usize = 2500;
+/// At least this share of the audible frames must hold a tonal peak for the track to have a key.
+const MIN_TONAL_SHARE: f32 = 0.25;
 /// Shorter audio has no stable key.
 const MIN_SECS: f32 = 5.0;
 /// Below this length of the mean tuning vector the peaks show no tuning (percussive or noisy
@@ -144,6 +146,7 @@ fn chromagram(mono: &[f32], sample_rate: u32) -> Option<([f32; 12], f32)> {
     let mut mag = vec![0f32; n / 2];
     let mut prefix = vec![0f32; n / 2 + 1];
     let mut frames: Vec<Vec<Peak>> = Vec::new();
+    let mut audible = 0usize;
     let mut start = 0;
     while start + n <= mono.len() {
         let seg = &mono[start..start + n];
@@ -152,6 +155,7 @@ fn chromagram(mono: &[f32], sample_rate: u32) -> Option<([f32; 12], f32)> {
         if energy < 1e-8 {
             continue; // digital silence or near it: its noise must not vote
         }
+        audible += 1;
         for i in 0..n {
             buf[i] = Complex::new(seg[i] * window[i], 0.0);
         }
@@ -183,7 +187,9 @@ fn chromagram(mono: &[f32], sample_rate: u32) -> Option<([f32; 12], f32)> {
             frames.push(peaks);
         }
     }
-    if frames.is_empty() {
+    // Drums and noise throw up a few chance peaks, which would still pick a key (a drum-only
+    // track read F#m); music with harmony has tonal peaks in most of its frames.
+    if frames.is_empty() || (frames.len() as f32) < MIN_TONAL_SHARE * audible as f32 {
         return None;
     }
 
@@ -396,6 +402,37 @@ mod tests {
         let noise: Vec<f32> = (0..SR as usize * 12).map(|_| 0.3 * rng.next()).collect();
         if let Some(r) = detect(&noise, SR) {
             assert!(r.confidence < 0.35, "noise gave confidence {}", r.confidence);
+        }
+    }
+
+    /// A kick, snare and hats (no harmony) put a handful of chance peaks in a few frames, which
+    /// used to be enough for a confident-looking key (F#m for drum-only tracks).
+    #[test]
+    fn drums_alone_have_no_key() {
+        let mut seed = 5u32;
+        let mut noise = move || {
+            seed = seed.wrapping_mul(1664525).wrapping_add(1013904223);
+            (seed >> 8) as f32 / (1u32 << 23) as f32 - 1.0
+        };
+        for bpm in [128.0f32, 140.0, 174.0] {
+            let beat = 60.0 / bpm;
+            let mut m = vec![0f32; SR as usize * 60];
+            let mut k = 0;
+            while (k as f32 * beat) < 58.0 {
+                let st = (k as f32 * beat * SR as f32) as usize;
+                for i in 0..(0.3 * SR as f32) as usize {
+                    let t = i as f32 / SR as f32;
+                    m[st + i] += 0.9 * (2.0 * PI * (50.0 + 60.0 * (-t * 40.0).exp()) * t).sin() * (-t * 18.0).exp();
+                }
+                for (off, len, decay, lvl) in [(0.5f32, 0.05f32, 80.0f32, 0.25f32), (1.0, 0.15, 25.0, 0.5)] {
+                    let st = ((k as f32 + off) * beat * SR as f32) as usize;
+                    for i in 0..(len * SR as f32) as usize {
+                        m[st + i] += lvl * noise() * (-(i as f32 / SR as f32) * decay).exp();
+                    }
+                }
+                k += 1;
+            }
+            assert!(detect(&m, SR).is_none(), "{bpm} BPM drums got a key");
         }
     }
 }

@@ -140,10 +140,11 @@ pub fn lock(env: &Envelope, candidates: &[Candidate], duration: f64, range_hi: f
 
     // fine: period within one coarse step, phase within +-3 ms
     let mut e_best = f64::MIN;
-    let p_coarse = period;
+    let (p_coarse, ph_coarse) = (period, phase);
     for i in -40..=40 {
         let pb = p_coarse * (1.0 + i as f64 * 0.00001);
-        let (e, ph, _) = best_phase(env, pb, duration, phase - 0.003, phase + 0.003, 0.00025);
+        let mid = phase_at_mid(ph_coarse, p_coarse, pb, duration);
+        let (e, ph, _) = best_phase(env, pb, duration, mid - 0.003, mid + 0.003, 0.00025);
         if e > e_best {
             (e_best, period, phase) = (e, pb, ph);
         }
@@ -159,7 +160,8 @@ pub fn lock(env: &Envelope, candidates: &[Candidate], duration: f64, range_hi: f
                 continue;
             }
             let pb = 60.0 / target;
-            let (e, ph, _) = best_phase(env, pb, duration, phase - 0.01, phase + 0.01, 0.00025);
+            let mid = phase_at_mid(phase, period, pb, duration);
+            let (e, ph, _) = best_phase(env, pb, duration, mid - 0.01, mid + 0.01, 0.00025);
             if e >= 0.985 * e_best {
                 (period, phase, snapped) = (pb, ph, true);
                 break;
@@ -169,6 +171,15 @@ pub fn lock(env: &Envelope, candidates: &[Candidate], duration: f64, range_hi: f
     let onset_phase = phase;
     let phase = place_on_kick(env, period, onset_phase, duration);
     Some(Grid { period, phase, contrast, onset_phase, snapped })
+}
+
+/// The reference phase for period `to` that puts its grid line in the middle of the track where
+/// the grid (`phase`, `from`) has one. A phase is measured from the start, so on a long track
+/// a period change of 0.01 % moves the middle by 50 ms; searching a few milliseconds around
+/// the old phase would then never find the better period.
+fn phase_at_mid(phase: f64, from: f64, to: f64, duration: f64) -> f64 {
+    let k = ((0.5 * duration - phase) / from).round().max(0.0);
+    phase + k * (from - to)
 }
 
 /// Put the beat on the kick. The full-band envelope can lock to off-beat hats (house), off-beat

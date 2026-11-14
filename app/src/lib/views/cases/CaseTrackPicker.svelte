@@ -5,6 +5,7 @@
   import { onMount } from "svelte";
   import type { Track } from "$lib/api/types";
   import { Filters } from "$lib/state/filters.svelte";
+  import { playback } from "$lib/state/playback.svelte";
   import { session } from "$lib/state/session.svelte";
   import { endTrackDrag } from "$lib/state/trackDrag.svelte";
   import { toast } from "$lib/state/toast.svelte";
@@ -51,7 +52,12 @@
     panel?.focus();
     const root = library?.root;
     if (root && tracksState.favourites.size === 0) void tracksState.loadFavourites(root);
-    return endTrackDrag;
+    // a track previewed from the picker stops with it; one that was already playing carries on
+    const before = playback.playing ? playback.trackId : null;
+    return () => {
+      endTrackDrag();
+      if (playback.playing && playback.trackId !== before) playback.pause();
+    };
   });
 
   // a genre this library does not have would silently hide everything
@@ -91,7 +97,7 @@
     </div>
     <div class="tbl">
       {#if library}
-        <TrackList {rows} root={library.root} {table} label="Library tracks" dragFrom="picker:case" onopen={open} marker={(id) => (existing.has(id) ? "in case" : "")} />
+        <TrackList {rows} root={library.root} {table} label="Library tracks" dragFrom="picker:case" onopen={open} escapeClears={false} marker={(id) => (existing.has(id) ? "in case" : "")} />
       {/if}
       {#if rows.length === 0}
         <p class="empty">{all.length === 0 ? "No tracks in this library yet." : "No tracks match. Clear the search or the filters above."}</p>

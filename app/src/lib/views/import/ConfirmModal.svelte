@@ -11,6 +11,7 @@
 {#if jobs.pending}
   {@const p = jobs.pending}
   <Modal title={p.title} onclose={() => jobs.cancel()}>
+    {#if p.where}<p class="muted where">{p.where}</p>{/if}
     <p class="muted">{p.description}</p>
     <ul class="names">
       {#each p.names as n}<li>{n}</li>{/each}
@@ -23,6 +24,10 @@
 {/if}
 
 <style>
+  .where {
+    font-size: 12px;
+    overflow-wrap: anywhere;
+  }
   .names {
     margin: 8px 0 0;
     padding-left: 18px;

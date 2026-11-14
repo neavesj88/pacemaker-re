@@ -376,6 +376,20 @@ function haystack(t: Track): string[] {
   return [t.title, t.artist, t.album, t.genre, t.key, key ? key.code : "", t.comments, t.label, t.remixer, t.composer, t.year > 0 ? String(t.year) : ""];
 }
 
+const folded = new Map<string, string>();
+
+/** Text as it is compared in a search: lower case, accents taken off ("Café" matches "cafe"). Other
+ *  scripts are left as they are apart from marks that decompose (Cyrillic "й" also matches "и"). */
+export function fold(s: string): string {
+  let f = folded.get(s);
+  if (f === undefined) {
+    f = s.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
+    if (folded.size > 40000) folded.clear();
+    folded.set(s, f);
+  }
+  return f;
+}
+
 /** Builds the term for one token, or returns an error message (the term is then skipped) or null
  *  (nothing typed yet after the colon: skipped silently). */
 function buildTerm(tok: Token): Test | string | null {
@@ -383,10 +397,10 @@ function buildTerm(tok: Token): Test | string | null {
   if (!field) {
     // plain text: a word, a phrase, or something with a colon that is not a field
     const needle = tok.raw.replace(/^-/, "");
-    const text = (tok.field ? needle.replace(/"/g, "") : tok.value).toLowerCase();
+    const text = fold(tok.field ? needle.replace(/"/g, "") : tok.value);
     // nothing yet, or a lone minus that is about to become a negation
     if (text === "" || (text === "-" && !tok.quoted)) return null;
-    return (t, cx) => haystack(t).some((h) => h.toLowerCase().includes(text)) || (cx.labelOf(t.track_id)?.tags.some((g) => g.toLowerCase().includes(text)) ?? false);
+    return (t, cx) => haystack(t).some((h) => fold(h).includes(text)) || (cx.labelOf(t.track_id)?.tags.some((g) => fold(g).includes(text)) ?? false);
   }
   const value = tok.value.trim();
   const emptyQuoted = tok.quoted && value === "";
@@ -396,8 +410,8 @@ function buildTerm(tok: Token): Test | string | null {
       const get = field.text!;
       if (emptyQuoted) return (t) => get(t).trim() === "";
       if (tok.op !== ":" && tok.op !== "=") return `${field.name} takes ${field.name}:text`;
-      const needle = value.toLowerCase();
-      return (t) => get(t).toLowerCase().includes(needle);
+      const needle = fold(value);
+      return (t) => fold(get(t)).includes(needle);
     }
     case "number": {
       const parse = field.parse ?? plainNumber;

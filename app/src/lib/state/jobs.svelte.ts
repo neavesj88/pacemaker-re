@@ -7,6 +7,7 @@ import { addTracks, expandAudioPaths, pickAudioFiles } from "$lib/api/import";
 import { reanalyseTracks } from "$lib/api/tracks";
 import { baseName } from "$lib/format";
 import { mixesNote } from "./mixNote";
+import { appearance } from "./appearance.svelte";
 import { session } from "./session.svelte";
 
 export type Job = {
@@ -33,6 +34,8 @@ export type JobRequest = {
   count: number;
   names: string[];
   title: string;
+  /** The folder or drive, as a smaller second line under the title (for a library on this computer, whose title says "your library"). */
+  where?: string;
   description: string;
   confirmLabel: string;
   runningLabel: string;
@@ -122,6 +125,12 @@ class Jobs {
     job.running = false;
     job.result = ev;
     if (ev.error) session.error = ev.error;
+    // a note about a clean run goes by itself; failures and the tempo Undo stay until dismissed
+    if (!ev.error && job.failures.length === 0 && job.kind !== "tempo-edit" && appearance.doneSecs > 0) {
+      setTimeout(() => {
+        if (this.job === job && !this.job.running) this.job = null;
+      }, appearance.doneSecs * 1000);
+    }
     if (session.library) await session.load(session.library.root, true);
   }
 
@@ -155,7 +164,8 @@ class Jobs {
       root: lib.root,
       count: n,
       names: files.map(baseName),
-      title: `Add ${n} track${n === 1 ? "" : "s"}${from} to ${lib.root} ?`,
+      title: `Add ${n} track${n === 1 ? "" : "s"}${from} to ${session.isComputer ? "your library" : lib.root}?`,
+      where: session.isComputer ? lib.root : undefined,
       description: session.isComputer
         ? "The files are analysed, copied into the library on this computer and added to it. Tracks already there are skipped."
         : "The files are analysed, copied onto the device and added to its library. Tracks already there are skipped.",
@@ -187,7 +197,8 @@ class Jobs {
       root: lib.root,
       count: n,
       names: lib.tracks.filter((t) => wanted.has(t.track_id)).map((t) => t.title || baseName(t.location)),
-      title: `Re-analyse ${n} track${n === 1 ? "" : "s"} on ${lib.root} ?`,
+      title: `Re-analyse ${n} track${n === 1 ? "" : "s"} ${session.isComputer ? "in your library" : `on ${lib.root}`}?`,
+      where: session.isComputer ? lib.root : undefined,
       description:
         `Only the beat grid (.str) and BPM of these tracks are rewritten, from the audio already ${session.isComputer ? "in the library" : "on the device"}. No audio is copied.` +
         handNote +

@@ -63,7 +63,7 @@ assert.equal(startupRoot(info(false, true)), null, "nothing to open yet");
 assert.equal(startupRoot(null), null, "not read yet");
 
 // the Welcome screen
-const offer = (o) => ({ unreadable: false, missingPath: null, ...o });
+const offer = (o) => ({ unreadable: false, missingPath: null, emptyFolder: false, ...o });
 assert.deepEqual(welcomeOffer(info(false, true), []), offer({ start: true, open: false, copyFrom: null }));
 assert.deepEqual(welcomeOffer(info(false, true), ["G:\\", "H:\\"]), offer({ start: true, open: false, copyFrom: "G:\\" }), "copy is offered when a Pacemaker is there");
 assert.deepEqual(welcomeOffer(info(true, false), ["G:\\"]), offer({ start: false, open: true, copyFrom: null }), "no copy offer once a library exists");
@@ -73,7 +73,7 @@ assert.deepEqual(welcomeOffer(null, ["G:\\"]), offer({ start: false, open: false
 // path, and the Welcome screen offers neither "start" nor "open" until the user chooses
 const damaged = { exists: true, path: lib, unreadable: true, settings: { open_at_start: true } };
 assert.equal(startupRoot(damaged), null, "the default library is not opened when the settings file is unreadable");
-assert.deepEqual(welcomeOffer(damaged, ["G:\\"]), { start: false, open: false, copyFrom: null, unreadable: true, missingPath: null });
+assert.deepEqual(welcomeOffer(damaged, ["G:\\"]), { start: false, open: false, copyFrom: null, unreadable: true, missingPath: null, emptyFolder: false });
 assert.equal(startupRoot({ ...damaged, unreadable: false }), lib, "a readable file still opens it");
 
 // a path in the file that does not exist: not opened, not made; the screen says where it looked
@@ -85,6 +85,9 @@ assert.equal(welcomeOffer(info(false, true), []).missingPath, null, "the default
 assert.equal(welcomeOffer(gone, [], "e:/music/lib/").missingPath, null, "a folder just picked on the Welcome screen is where the library will be made, not a missing one");
 assert.equal(welcomeOffer(gone, [], "F:/Other").missingPath, "E:/Music/Lib", "a different earlier pick does not hide a missing path");
 
+assert.equal(welcomeOffer(gone, []).emptyFolder, false, "a folder that is not there is a missing library");
+assert.equal(welcomeOffer({ ...gone, folder_exists: true }, []).emptyFolder, true, "a folder that is there but empty is a place to start");
+assert.equal(welcomeOffer({ ...gone, folder_exists: true }, [], "e:/music/lib").emptyFolder, false, "no missing path, nothing to word");
 assert.equal(missingComputerPath(gone), "E:/Music/Lib");
 assert.equal(missingComputerPath(info(false, true)), null, "the default location is not a missing path");
 assert.equal(missingComputerPath({ ...gone, exists: true }), null, "it is there");

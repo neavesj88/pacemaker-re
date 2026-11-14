@@ -87,7 +87,7 @@
   const megabytes = (bytes: number) => `${(bytes / 1_000_000).toFixed(1)} MB`;
 </script>
 
-<aside class="insp" aria-label="Track details">
+<aside class="insp" class:idle={!track} aria-label="Track details">
   {#if !track}
     <p class="empty">Select a track to see its details and the tracks that mix well with it.</p>
   {:else}
@@ -105,7 +105,7 @@
       <span class="label">BPM</span>
       <span>
         {track.bpm && !needs ? track.bpm.toFixed(2) : "–"}
-        {#if needs}<span class="chip warn" title={needs}>needs analysis</span>{:else if track.analysed}<span class="chip ok">grid checked</span>{/if}
+        {#if needs}<span class="chip warn" title={needs}>needs analysis</span>{:else if suspect}<span class="chip warn" title={suspect.reasons.join("; ")}>suspect grid</span>{:else if track.analysed}<span class="chip ok">grid checked</span>{/if}
         <Button
           variant="ghost"
           small
@@ -234,6 +234,12 @@
   @media (max-width: 1100px) {
     .insp {
       width: 220px;
+    }
+  }
+  /* a narrow window gives the table the room until a track is picked; wide ones keep the panel with its hint */
+  @media (max-width: 1300px) {
+    .insp.idle {
+      display: none;
     }
   }
   .insp {

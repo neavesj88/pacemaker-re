@@ -490,6 +490,16 @@
     color: var(--muted);
     font-size: 12px;
   }
+  /* a short window: the timeline gives way before the track picker does, so the table under the
+     filter bar always shows a few rows (the timeline scrolls inside its own pane) */
+  @media (max-height: 800px) {
+    .tl {
+      min-height: 150px;
+    }
+    .left :global(.picker) {
+      min-height: 210px;
+    }
+  }
   /* a short window: a tighter toolbar and no hint line, so more of the timeline shows without scrolling */
   @media (max-height: 700px) {
     .bar {

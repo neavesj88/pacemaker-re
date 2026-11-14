@@ -93,4 +93,17 @@
   nav :global(.btn.small) {
     margin: 2px 6px;
   }
+  /* a short window (a 1080p laptop with the taskbar): tighter rows, so the Tools section down to Settings fits without scrolling */
+  @media (max-height: 800px) {
+    nav {
+      gap: 0;
+      padding: 6px 8px;
+    }
+    button {
+      padding: 3px 10px;
+    }
+    nav :global(.sect) {
+      margin-top: 6px;
+    }
+  }
 </style>

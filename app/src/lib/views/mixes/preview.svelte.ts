@@ -100,6 +100,12 @@ class Preview {
     onMixLiveStatus((s) => {
       if (this.#key === null) return;
       this.load = s;
+      // a mix with no clip at all has nothing the engine could play; that is not an error to show
+      // (the editor already invites the first track), and Play says what to do
+      if (s.state === "error" && (mixes.doc?.clips.length ?? 1) === 0) {
+        if (this.status === "playing") this.status = "paused";
+        return;
+      }
       if (s.state === "error" || s.message) {
         this.notice = s.message;
         this.#engineNotice = s.message;
@@ -200,6 +206,8 @@ class Preview {
    * first Play and the first Play is instant. */
   async open(doc: MixDoc) {
     if (!mixes.root || this.#range) return;
+    // nothing to decode yet; the first Play loads the mix once it has a clip
+    if (doc.clips.length === 0) return;
     try {
       await this.#ensure(doc);
     } catch (e) {

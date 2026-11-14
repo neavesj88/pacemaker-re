@@ -119,6 +119,9 @@ pub struct ComputerLibraryInfo {
     default_path: String,
     /// A library (`.Pacemaker/music.db`) is there now.
     exists: bool,
+    /// The folder itself is there (with or without a library in it): an empty folder is somewhere
+    /// to start a library, where a missing one is a drive that is not connected.
+    folder_exists: bool,
     warning: Option<String>,
     /// The settings file is there but could not be used, so `settings` and `path` are only the
     /// defaults. The app opens nothing by itself then: the user decides (see `startupRoot`).
@@ -129,7 +132,7 @@ pub struct ComputerLibraryInfo {
 fn info_for(dir: &Path, default: &Path) -> ComputerLibraryInfo {
     let (settings, warning, unreadable) = load(dir);
     let at = resolve(&settings, default);
-    ComputerLibraryInfo { exists: db_path(&at).is_file(), path: at.display().to_string(), default_path: default.display().to_string(), settings, warning, unreadable }
+    ComputerLibraryInfo { exists: db_path(&at).is_file(), folder_exists: at.is_dir(), path: at.display().to_string(), default_path: default.display().to_string(), settings, warning, unreadable }
 }
 
 fn info(app: &AppHandle) -> AppResult<ComputerLibraryInfo> {
@@ -304,6 +307,7 @@ mod tests {
         std::fs::write(path(&cfg), serde_json::json!({ "path": gone.display().to_string(), "open_at_start": true }).to_string()).unwrap();
         let i = info_for(&cfg, &default);
         assert!(!i.exists && !i.unreadable && i.path == gone.display().to_string(), "the configured path is kept, not swapped for the default");
+        assert!(!i.folder_exists, "a folder that is not there is not an empty folder");
         assert!(!gone.exists() && !default.exists(), "looking at the settings creates nothing");
         std::fs::remove_dir_all(&root).unwrap();
     }

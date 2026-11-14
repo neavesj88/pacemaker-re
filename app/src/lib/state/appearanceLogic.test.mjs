@@ -1,6 +1,6 @@
 // Run: node --experimental-strip-types src/lib/state/appearanceLogic.test.mjs
 import assert from "node:assert/strict";
-import { ERROR_SECS_DEFAULT, GRID_MIN_DEFAULT, MAX_TOASTS, normaliseGridMin, clampScale, normaliseErrorSecs, normaliseScale, scaleKey, stepScale, toastMs, zoomFactor } from "./appearanceLogic.ts";
+import { addToast, DONE_SECS_DEFAULT, normaliseDoneSecs, ERROR_SECS_DEFAULT, GRID_MIN_DEFAULT, MAX_TOASTS, normaliseGridMin, clampScale, normaliseErrorSecs, normaliseScale, scaleKey, stepScale, toastMs, zoomFactor } from "./appearanceLogic.ts";
 
 // size: 80 to 200 %, default 100, junk gives the default
 assert.equal(clampScale(100), 100);
@@ -44,9 +44,27 @@ assert.equal(toastMs("bad", 30000, 20), 30000, "a caller that asked for longer k
 assert.equal(toastMs("bad", 4000, 0), null, "until closed");
 assert.ok(MAX_TOASTS >= 3);
 
+// the same message again is one card with a count; different ones stack, oldest dropped past the limit
+{
+  let items = [];
+  items = addToast(items, { id: 1, text: "Track added", kind: "ok" });
+  items = addToast(items, { id: 2, text: "Kept at its own tempo", kind: "info" });
+  items = addToast(items, { id: 3, text: "Track added", kind: "ok" });
+  assert.deepEqual(items.map((t) => [t.id, t.count]), [[2, 1], [3, 2]], "the repeat replaces the old card and counts it");
+  assert.equal(addToast(items, { id: 4, text: "Track added", kind: "bad" }).length, 3, "another kind is another message");
+  let many = [];
+  for (let i = 0; i < 10; i++) many = addToast(many, { id: i, text: `m${i}`, kind: "info" });
+  assert.equal(many.length, MAX_TOASTS);
+  assert.equal(many.at(-1).text, "m9");
+}
+
 console.log("appearanceLogic.test.mjs ok");
 
-// beat grid cutoff: only the offered choices, junk gives the default
+// how long a finished job's note stays, and the beat grid cutoff: only the offered choices, junk gives the default
+assert.equal(normaliseDoneSecs(30), 30);
+assert.equal(normaliseDoneSecs(0), 0, "0 = until dismissed");
+assert.equal(normaliseDoneSecs(7), DONE_SECS_DEFAULT);
+assert.equal(normaliseDoneSecs(null), DONE_SECS_DEFAULT);
 assert.equal(normaliseGridMin(0), 0);
 assert.equal(normaliseGridMin(4), 4);
 assert.equal(normaliseGridMin(3), GRID_MIN_DEFAULT);

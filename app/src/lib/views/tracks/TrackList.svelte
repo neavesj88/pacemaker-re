@@ -42,6 +42,7 @@
     label = "Tracks",
     dragFrom = "tracks",
     onopen,
+    escapeClears = true,
     onadd,
     marker,
   }: {
@@ -54,6 +55,8 @@
     dragFrom?: string;
     /** Double-click / Enter on a row; without it the track is played. */
     onopen?: (t: Track) => void;
+    /** Escape clears the selection first (the Tracks view). A dialog around the table passes false, so one Escape closes it. */
+    escapeClears?: boolean;
     /** "Add to mix" in the context menu; without it the context menu opens the Mix tab. */
     onadd?: (ids: number[]) => void;
     /** A short mark after the title (such as "x2" for a track already in the mix). */
@@ -176,6 +179,7 @@
         break;
       // with nothing selected the key is left alone, so a dialog around the table (the case picker) still sees it
       case "Escape":
+        if (!escapeClears) return;
         if (table.selectedIds.length === 0 && table.focusId === null) return;
         select([], null);
         break;

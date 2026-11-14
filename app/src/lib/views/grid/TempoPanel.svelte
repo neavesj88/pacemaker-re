@@ -94,7 +94,7 @@
     <p class="note first">
       The .str file stores a position and a tempo for every beat, so a tempo that changes is saved exactly as you edit it.
       That the Pacemaker plays each beat where the file puts it (rather than smoothing the tempo) has not been tested on
-      a device.
+      a real Pacemaker.
     </p>
     {#if vtempo.sectionsError}<p class="err">{vtempo.sectionsError}</p>{/if}
     {#if vtempo.sections.length > 0}
@@ -223,7 +223,7 @@
     </div>
     <p class="note">
       Drag a line to move just that one. Alt+drag moves it and every later beat together. A line stays clear of its
-      neighbours by the shortest beat the device allows (400 BPM).
+      neighbours by the shortest beat the Pacemaker allows (400 BPM).
     </p>
   </div>
 

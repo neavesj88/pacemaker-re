@@ -33,7 +33,10 @@
       <Button onclick={() => session.chooseComputerFolder()}>Choose a folder for it…</Button>
     </div>
   {:else if offer.start}
-    {#if offer.missingPath}
+    {#if offer.emptyFolder}
+      <h1>Welcome. Where should your library live?</h1>
+      <p>Your tracks, mixes and cases live in a library on this computer. You do not need the Pacemaker to work on them.</p>
+    {:else if offer.missingPath}
       <h1>Your library was not found</h1>
       <p class="where">
         Your settings say the library is in <code>{offer.missingPath}</code>, but nothing is there. If it is on a drive or
@@ -44,7 +47,10 @@
       <p>Your tracks, mixes and cases live in a library on this computer. You do not need the Pacemaker to work on them.</p>
     {/if}
     <div class="actions">
-      {#if offer.missingPath}
+      {#if offer.emptyFolder}
+        <Button variant="primary" onclick={() => session.startComputer()}>Start a new library in {session.computer?.path}</Button>
+        <Button onclick={() => session.chooseComputerFolder()} title="Pick a different folder for the library">Choose a different folder�</Button>
+      {:else if offer.missingPath}
         <Button variant="primary" onclick={() => session.chooseComputerFolder()} title="Pick the folder your library is in, or the place to make a new one">Choose where the library is…</Button>
         <Button onclick={() => session.startComputer()} title="Makes a new, empty library in {session.computer?.path}. Use it only if the first is gone.">Start a new, empty library in {session.computer?.path}</Button>
       {:else}
@@ -56,10 +62,12 @@
         </Button>
       {/if}
     </div>
-    {#if offer.missingPath && checkedAt}
+    {#if offer.missingPath && !offer.emptyFolder && checkedAt}
       <p class="where" role="status" data-testid="welcome-checked">Still not found in <code>{offer.missingPath}</code> (checked at {checkedTime}).</p>
     {/if}
-    {#if offer.missingPath}
+    {#if offer.emptyFolder}
+      <!-- the folder is named on the main button; nothing else to warn about -->
+    {:else if offer.missingPath}
       <p class="where">Starting a new library makes a second, empty one in that folder, so use it only if the first is gone.</p>
     {:else}
       <p class="where">

@@ -36,6 +36,15 @@ export function mixLine(name: string, undoDepth: number): string {
   return undoDepth > 0 ? `The mix “${name}”: ${edits(undoDepth)}` : `The mix “${name}”: unsaved changes`;
 }
 
+/** What an unsaved-edits question about something else says about an open mix with unsaved edits:
+ *  switching tabs keeps the mix draft, so the question must not look as if it covered it. Empty when
+ *  there is no such mix. */
+export function mixKeptNote(name: string | null, dirty: boolean, undoDepth: number): string {
+  if (!name || !dirty) return "";
+  const what = undoDepth > 0 ? ` (${edits(undoDepth)})` : "";
+  return ` The mix “${name}”${what} is not affected: it stays open in Mixes until you save or close it.`;
+}
+
 /** The line for the beat grid editor: what is unsaved on which track. */
 export function gridLine(track: string, grid: boolean, cue: boolean): string {
   const what = grid && cue ? "beat grid and cue point" : cue ? "cue point" : "beat grid";

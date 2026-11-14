@@ -1,6 +1,8 @@
 <script lang="ts">
   import { appearance } from "$lib/state/appearance.svelte";
-  import { ERROR_SECS_CHOICES, GRID_MIN_CHOICES, SCALE_DEFAULT, SCALE_MAX, SCALE_MIN, SCALE_STEP } from "$lib/state/appearanceLogic";
+  import { DONE_SECS_CHOICES, ERROR_SECS_CHOICES, GRID_MIN_CHOICES, SCALE_DEFAULT, SCALE_MAX, SCALE_MIN, SCALE_STEP } from "$lib/state/appearanceLogic";
+  import { windowRememberGet, windowRememberSet } from "$lib/api/library";
+  import { toast } from "$lib/state/toast.svelte";
   import Button from "$lib/ui/Button.svelte";
 
   // The size of the whole window (text, tables, the player), for a big monitor or a small laptop. It
@@ -10,6 +12,20 @@
   // under the pointer would move the slider away from it)
   let dragging = $state<number | null>(null);
   const shown = $derived(dragging ?? appearance.scale);
+
+  // whether the window opens at the size it was closed at (kept by the app, so it is read from there)
+  let remember = $state(true);
+  void windowRememberGet().then((v) => (remember = v)).catch(() => {});
+  async function setRemember(on: boolean) {
+    const before = remember;
+    remember = on;
+    try {
+      remember = await windowRememberSet(on);
+    } catch (e) {
+      remember = before;
+      toast.show(`Could not change that: ${e}`, "bad", 8000);
+    }
+  }
 
   const gridText = (g: number) => (g === 0 ? "No beat grid" : `Bar lines down to ${g} px per bar${g === 2 ? " (most)" : ""}`);
   const secsText = (s: number) => (s === 0 ? "until I close them" : `${s} seconds`);
@@ -44,11 +60,22 @@
   {/if}
 
   <div class="row">
+    <label class="k" for="win-size">Window size</label>
+    <label class="tick"><input id="win-size" type="checkbox" checked={remember} onchange={(e) => void setRemember(e.currentTarget.checked)} /> Open at the size it was closed at</label>
+  </div>
+  <div class="row">
     <label for="err-secs" class="k">Error messages stay</label>
     <select id="err-secs" value={appearance.errorSecs} onchange={(e) => appearance.setErrorSecs(Number(e.currentTarget.value))}>
       {#each ERROR_SECS_CHOICES as s (s)}<option value={s}>{secsText(s)}</option>{/each}
     </select>
   </div>
+  <div class="row">
+    <label for="done-secs" class="k">"Finished" notes stay</label>
+    <select id="done-secs" value={appearance.doneSecs} onchange={(e) => appearance.setDoneSecs(Number(e.currentTarget.value))}>
+      {#each DONE_SECS_CHOICES as s (s)}<option value={s}>{secsText(s)}</option>{/each}
+    </select>
+  </div>
+  <p class="muted note">The note after an add or an analysis went well (for example "Add finished"). One with failures in it stays until you close it.</p>
   <div class="row">
     <label for="grid-min" class="k">Beat grid on the player</label>
     <select id="grid-min" value={appearance.gridMinBarPx} onchange={(e) => appearance.setGridMinBarPx(Number(e.currentTarget.value))}>

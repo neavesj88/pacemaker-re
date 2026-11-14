@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { session } from "$lib/state/session.svelte";
   import { toast } from "$lib/state/toast.svelte";
   import Button from "$lib/ui/Button.svelte";
   import { settingsEntries } from "./registry";
@@ -13,6 +14,8 @@
   let dialogId = $state<string | null>(null);
   let loading = $state<string | null>(null);
 
+  /** The Device group holds the library health, safety and space tools; on a library on this computer it is not about a device. */
+  const areaName = (area: string) => (area === "Device" && session.isComputer ? "Library tools" : area);
   const groups = $derived(group(settingsEntries, query));
   const total = $derived(groups.reduce((n, g) => n + g.entries.length, 0));
   const dialog = $derived(settingsEntries.find((e) => e.id === dialogId && e.how === "dialog") ?? null);
@@ -62,7 +65,7 @@
 
   {#each groups as g (g.area)}
     <section class="area" aria-labelledby="area-{g.area.replace(/\s+/g, '-')}">
-      <h3 id="area-{g.area.replace(/\s+/g, '-')}">{g.area}</h3>
+      <h3 id="area-{g.area.replace(/\s+/g, '-')}">{areaName(g.area)}</h3>
       {#each g.entries as e (e.id)}
         <article class="entry" id="settings-{e.id}">
           <header>

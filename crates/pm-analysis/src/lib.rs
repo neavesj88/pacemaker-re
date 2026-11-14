@@ -273,6 +273,33 @@ mod tests {
         mono
     }
 
+    /// `house` for `secs` seconds instead of 40.
+    fn long_house(bpm: f64, secs: f64) -> Vec<f32> {
+        let beat = 60.0 / bpm;
+        let mut mono = vec![0f32; (SR as f64 * secs) as usize];
+        let mut seed = 11u32;
+        let mut k = 0;
+        while 0.1 + k as f64 * beat < secs {
+            let t = 0.1 + k as f64 * beat;
+            add_kick(&mut mono, t);
+            add_noise_hit(&mut mono, t + 0.5 * beat, 0.05, 80.0, 0.25, &mut seed);
+            k += 1;
+        }
+        mono
+    }
+
+    /// A 0.6 % tempo error from the first autocorrelation read once added up to seconds of drift
+    /// on a long file, so a 17 minute 128 BPM house track read as a related tempo (reported as
+    /// 92.91 BPM with a "grid checked" tick).
+    #[test]
+    fn a_ten_minute_house_track_reads_the_same_tempo_as_a_short_one() {
+        for bpm in [128.0, 140.0] {
+            let r = analyze(&long_house(bpm, 600.0), SR, None);
+            assert!((r.bpm - bpm).abs() < 0.02, "{bpm}: read {}", r.bpm);
+            assert!(r.locked_grid, "{bpm}: grid not locked");
+        }
+    }
+
     /// The median spacing of the result's beats, as a tempo: the grid must agree with the number.
     fn grid_bpm(r: &Result) -> f64 {
         let mut gaps: Vec<f64> = r.beats.windows(2).map(|w| (w[1] - w[0]) as f64 / r.sample_rate as f64).collect();

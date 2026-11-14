@@ -384,3 +384,12 @@ test("spaced operators and an empty field next to another term", () => {
   assert.match(compileQuery("bpm: OR key:8A").diagnostics[0].message, /^has no value/);
 });
 
+
+test("search ignores accents and case, in plain words and in text fields", () => {
+  const list = [T(1, { title: "Café Déjà Vu", artist: "Zoë" }), T(2, { title: "Москва" }), T(3, { title: "Cafeteria" })];
+  assert.deepEqual(run("cafe", list), [1, 3], "plain letters find the accented title");
+  assert.deepEqual(run("Café", list), [1, 3], "an accented search finds plain titles too");
+  assert.deepEqual(run("deja vu", list), [1]);
+  assert.deepEqual(run("artist:zoe", list), [1], "text fields fold as well");
+  assert.deepEqual(run("москва", list), [2], "Cyrillic still matches");
+});
