@@ -12,6 +12,7 @@
   import { energy } from "$lib/state/energy.svelte";
   import { jobs } from "$lib/state/jobs.svelte";
   import { playback } from "$lib/state/playback.svelte";
+  import { preview } from "$lib/views/mixes/preview.svelte";
   import { sections } from "$lib/state/sections.svelte";
   import { session } from "$lib/state/session.svelte";
   import Button from "$lib/ui/Button.svelte";
@@ -42,7 +43,8 @@
     untrack(() => bg.watch(root));
   });
   $effect(() => {
-    const playing = playback.playing;
+    // the live mix engine plays outside the player bar, so it is asked separately
+    const playing = playback.playing || preview.playing;
     untrack(() => bg.setPlaying(playing));
   });
 
