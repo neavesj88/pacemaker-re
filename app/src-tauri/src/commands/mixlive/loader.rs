@@ -1,7 +1,7 @@
 //! Decodes the clips of the open mix in the background and hands them to the live engine.
 //!
 //! One thread decodes the clips nearest the play position first. Decoded audio is kept (a decoded
-//! 6-minute track is about 70 MB) until the budget is used up; then the clips farthest from the
+//! 6-minute track is about 143 MB at 9 bytes a frame) until the budget is used up; then the clips farthest from the
 //! play position are dropped, and decoded again when the position comes back. A clip the engine
 //! asks for before it is decoded is [`SourceState::Pending`]: it plays silent for a moment and is
 //! picked up at the next block.
@@ -42,6 +42,8 @@ struct Inner {
     bytes: u64,
     budget: u64,
     stop: bool,
+    /// The decode thread is decoding a file right now.
+    busy: bool,
 }
 
 impl Inner {
@@ -78,7 +80,7 @@ impl Loader {
     /// `changed` is called (from the decode thread) after every decode, success or failure.
     pub fn start(budget_bytes: u64, changed: Arc<dyn Fn() + Send + Sync>) -> Arc<Loader> {
         let l = Arc::new(Loader {
-            inner: Mutex::new(Inner { wanted: Vec::new(), cache: HashMap::new(), parked: HashMap::new(), pos: 0, bytes: 0, budget: budget_bytes, stop: false }),
+            inner: Mutex::new(Inner { wanted: Vec::new(), cache: HashMap::new(), parked: HashMap::new(), pos: 0, bytes: 0, budget: budget_bytes, stop: false, busy: false }),
             cv: Condvar::new(),
             join: Mutex::new(None),
         });
@@ -118,12 +120,18 @@ impl Loader {
             self.cv.notify_all();
         }
         g.pos = frame;
+        // steady play moves the position in small steps, so the thread also re-checks on a timer
+        // (see `run`): a clip parked for the budget becomes nearer than a held one by degrees
     }
 
     pub fn progress(&self) -> Progress {
         let g = self.inner.lock().unwrap();
         let ids: std::collections::BTreeSet<i64> = g.wanted.iter().map(|w| w.id).collect();
-        Progress { total: ids.len(), loaded: ids.iter().filter(|id| g.cache.contains_key(id)).count() }
+        // nothing left to decode (what does not fit stays parked on purpose): the mix is as ready as it gets
+        if !g.busy && self.next(&g).is_none() {
+            return Progress { total: ids.len(), loaded: ids.len() };
+        }
+        Progress { total: ids.len(), loaded: ids.iter().filter(|id| g.cache.contains_key(id) || g.parked.contains_key(id)).count() }
     }
 
     /// Decoded bytes held right now.
@@ -160,20 +168,27 @@ impl Loader {
         loop {
             let job = {
                 let mut g = self.inner.lock().unwrap();
-                loop {
+                let j = loop {
                     if g.stop {
                         return;
                     }
                     if let Some(j) = self.next(&g) {
                         break j;
                     }
-                    g = self.cv.wait(g).unwrap();
-                }
+                    g = self.cv.wait_timeout(g, std::time::Duration::from_millis(250)).unwrap().0;
+                };
+                g.busy = true;
+                j
             };
             let (id, path) = job;
-            let res = pm_mixer::audio::load(&path);
+            // a codec panic on a corrupt file fails that one file, not the whole decode thread
+            let res = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| pm_mixer::audio::load(&path))) {
+                Ok(r) => r.map_err(|e| e.to_string()),
+                Err(_) => Err("the audio decoder crashed on this file".to_string()),
+            };
             {
                 let mut g = self.inner.lock().unwrap();
+                g.busy = false;
                 if g.stop {
                     return;
                 }
@@ -189,7 +204,7 @@ impl Loader {
                             self.evict(&mut g);
                         }
                         Err(e) => {
-                            g.cache.insert(id, Entry::Failed(e.to_string()));
+                            g.cache.insert(id, Entry::Failed(e));
                         }
                     }
                 }
@@ -291,7 +306,8 @@ mod tests {
         assert!(matches!(l.get(2), SourceState::Failed(_)));
         assert!(matches!(l.get(-3), SourceState::Failed(e) if e.contains("removed")));
         wait("the decode", || matches!(l.get(1), SourceState::Ready(_)));
-        assert_eq!(l.progress(), Progress { loaded: 1, total: 3 });
+        // the two clips without a file are settled (failed), so nothing is left to read
+        assert_eq!(l.progress(), Progress { loaded: 3, total: 3 });
         assert!(count.load(Relaxed) >= 1);
         l.shutdown();
     }
@@ -316,6 +332,29 @@ mod tests {
         wait("the far clip", || matches!(l.get(2), SourceState::Ready(_)));
         // the far clip becomes visible before the farthest one is evicted, so wait for the eviction
         wait("the eviction", || l.bytes() <= 2 * 44100 * BYTES_PER_FRAME + 1000);
+        l.shutdown();
+    }
+
+    #[test]
+    fn steady_play_brings_a_parked_clip_back_in_time() {
+        let d = dir("steady");
+        for k in 0..3 {
+            wav(&d.join(format!("{k}.wav")), 1.0);
+        }
+        let cap = 2 * 44100 * BYTES_PER_FRAME + 1000;
+        let l = Loader::start(cap, Arc::new(|| {}));
+        let w = |k: i64| Wanted { id: k, path: Some(d.join(format!("{k}.wav"))), start: k * 10 * 44100, end: k * 10 * 44100 + 44100 };
+        l.set_position(0);
+        l.set_wanted(vec![w(0), w(1), w(2)]);
+        wait("two decoded", || l.progress().loaded == 3 && l.bytes() > 0);
+        // 33 ms steps (1470 frames) from 0 to 25 s, as the position events arrive in play
+        let mut p = 0i64;
+        while p < 25 * 44100 {
+            p += 1470;
+            l.set_position(p);
+            std::thread::sleep(Duration::from_micros(200));
+        }
+        wait("clip 2 in use at 25 s", || matches!(l.get(2), SourceState::Ready(_)));
         l.shutdown();
     }
 

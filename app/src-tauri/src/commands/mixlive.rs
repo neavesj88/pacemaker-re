@@ -43,8 +43,15 @@ use loader::{Loader, Wanted};
 pub const MIX_LIVE_POSITION: &str = "mix-live-position";
 pub const MIX_LIVE_STATUS: &str = "mix-live-status";
 
-/// Decoded audio kept in memory (see [`loader`]); 1.5 GiB holds about twenty 6-minute tracks.
-const DECODE_BUDGET_BYTES: u64 = 1536 * 1024 * 1024;
+/// Default for the decoded audio kept in memory (see [`loader`]): 1 GiB holds about seven 6-minute
+/// tracks at the loader's 9 bytes a frame; the rest is decoded as the playhead nears it. The user
+/// sets it in Settings (Mixes, Tempo matching); the page sends it with the load.
+const DEFAULT_DECODE_BUDGET_MB: u64 = 1024;
+
+/// The decode budget in bytes from the setting in MB, kept within 256 MB to 64 GB.
+fn decode_budget_bytes(mb: Option<u64>) -> u64 {
+    mb.unwrap_or(DEFAULT_DECODE_BUDGET_MB).clamp(256, 65_536) * 1024 * 1024
+}
 /// Frames the ring holds (about 0.74 s; the player keeps 250 ms of it filled).
 const RING_FRAMES: usize = 32_768;
 
@@ -149,6 +156,14 @@ impl Session {
 impl Drop for Session {
     fn drop(&mut self) {
         self.loader.shutdown();
+        // fade out before the device goes: a hard cut mid-signal clicks
+        if self.device.is_some() && !self.ring.stopped() {
+            self.player.send(Command::Pause);
+            let t = std::time::Instant::now();
+            while !self.ring.stopped() && t.elapsed() < std::time::Duration::from_millis(200) {
+                std::thread::sleep(std::time::Duration::from_millis(2));
+            }
+        }
         self.device.take();
     }
 }
@@ -186,12 +201,13 @@ fn not_loaded() -> AppError {
 /// Starts decoding the clips of `doc` in the background and readies the player (stopped at 0).
 /// Replaces a mix loaded before.
 #[tauri::command]
-pub async fn mix_live_load(app: AppHandle, state: State<'_, MixLive>, root: String, doc: MixDoc, gains: Option<PreviewGains>, vocal_tool_ids: Option<Vec<String>>) -> AppResult<()> {
+pub async fn mix_live_load(app: AppHandle, state: State<'_, MixLive>, root: String, doc: MixDoc, gains: Option<PreviewGains>, vocal_tool_ids: Option<Vec<String>>, decode_budget_mb: Option<u64>) -> AppResult<()> {
     let old = state.0.lock().map_err(|_| AppError::from("The live player is locked."))?.take();
     if let Some(s) = old {
         tauri::async_runtime::spawn_blocking(move || s.shutdown()).await.ok();
     }
     let app2 = app.clone();
+    let budget = decode_budget_bytes(decode_budget_mb);
     let session = tauri::async_runtime::spawn_blocking(move || -> AppResult<Session> {
         let root = PathBuf::from(root);
         let mix = doc.to_mix()?;
@@ -209,7 +225,7 @@ pub async fn mix_live_load(app: AppHandle, state: State<'_, MixLive>, root: Stri
             pos_frame: AtomicI64::new(0),
         });
         let sh = shared.clone();
-        let loader = Loader::start(DECODE_BUDGET_BYTES, Arc::new(move || sh.emit_status()));
+        let loader = Loader::start(budget, Arc::new(move || sh.emit_status()));
         let _ = shared.loader.set(loader.clone());
         loader.set_wanted(wanted);
         let ring = Arc::new(Ring::new(RING_FRAMES));
@@ -392,6 +408,19 @@ fn status_of(error: &str, message: String, loaded_any: bool, playing: bool, p: l
         "ready"
     };
     StatusEvent { state, loaded: p.loaded, total: p.total, message: if error.is_empty() { message } else { error.to_string() } }
+}
+
+#[cfg(test)]
+mod budget_tests {
+    use super::*;
+
+    #[test]
+    fn decode_budget_comes_from_the_setting_within_limits() {
+        assert_eq!(decode_budget_bytes(None), 1024 * 1024 * 1024);
+        assert_eq!(decode_budget_bytes(Some(2048)), 2048 * 1024 * 1024);
+        assert_eq!(decode_budget_bytes(Some(1)), 256 * 1024 * 1024);
+        assert_eq!(decode_budget_bytes(Some(u64::MAX)), 65_536 * 1024 * 1024);
+    }
 }
 
 #[cfg(test)]

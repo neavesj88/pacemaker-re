@@ -14,9 +14,11 @@ export type TempoPrefs = {
   matchOnAdd: boolean;
   /** What happens to a newly added clip that would need more than `warnPct`: keep its own tempo, or match anyway. */
   overOnAdd: OnAddOverStretch;
+  /** Memory (MB) the live player may use for decoded audio; a mix that needs more reads the nearest tracks first. */
+  decodeMb: number;
 };
 
-export const DEFAULT_TEMPO_PREFS: TempoPrefs = { warnPct: DEFAULT_STRETCH_WARN_PCT, matchOnAdd: true, overOnAdd: "keep" };
+export const DEFAULT_TEMPO_PREFS: TempoPrefs = { warnPct: DEFAULT_STRETCH_WARN_PCT, matchOnAdd: true, overOnAdd: "keep", decodeMb: 1024 };
 
 export function mergeTempoPrefs(raw: unknown): TempoPrefs {
   const d = { ...DEFAULT_TEMPO_PREFS };
@@ -25,6 +27,7 @@ export function mergeTempoPrefs(raw: unknown): TempoPrefs {
   if (typeof r.warnPct === "number" && Number.isFinite(r.warnPct)) d.warnPct = Math.min(100, Math.max(0, r.warnPct));
   if (typeof r.matchOnAdd === "boolean") d.matchOnAdd = r.matchOnAdd;
   if (r.overOnAdd === "keep" || r.overOnAdd === "match") d.overOnAdd = r.overOnAdd;
+  if (typeof r.decodeMb === "number" && Number.isFinite(r.decodeMb)) d.decodeMb = Math.min(65536, Math.max(256, Math.round(r.decodeMb)));
   return d;
 }
 

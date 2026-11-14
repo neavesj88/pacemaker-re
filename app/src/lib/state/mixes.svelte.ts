@@ -536,16 +536,18 @@ class Mixes {
     if (!root || !this.doc) throw new Error("no mix is open");
     const s = await mixBeatmatch(root, this.doc, clipId);
     const c = E.clipOf(this.doc, clipId);
-    const choice = c ? chooseTempo(c.bpm, s.targetBpm) : null;
-    if (c && choice && choice.factor !== 1) {
+    const hd = c ? E.matchHalfDouble(this.doc, clipId, s.targetBpm, tempoPrefs.value.warnPct) : null;
+    if (hd) {
       // the backend lines the beats up at the reference tempo itself; this clip is closer to half
       // or double of it, so it plays at that instead and keeps its place (the beats are not
       // re-aligned: that needs the grids matched at the other ratio). Held back when it would
-      // stretch the track more than the setting allows: never silently stretch a lot.
-      if (exceeds(choice.speed, tempoPrefs.value.warnPct)) {
+      // stretch the track more than the setting allows: never silently stretch a lot. A tempo
+      // ramp keeps its shape (the whole curve is scaled).
+      const choice = hd.choice;
+      if (hd.held) {
         throw new Error(`nothing changed: ${choice.factor === 2 ? "double" : "half"} time would stretch this track ${stretchText(choice.stretchPct)}, more than the ${tempoPrefs.value.warnPct} % limit in the settings. Use "Sync to previous clip" and then "Match anyway" to do it regardless`);
       }
-      this.edit("Match tempo", (d) => E.setClipBpm(d, clipId, choice.playsAt));
+      this.edit("Match tempo", () => hd.doc);
       return { ...s, targetBpm: choice.playsAt, speed: choice.speed, notes: [...s.notes, `Matched at ${choice.factor === 2 ? "double" : "half"} time (${stretchText(choice.stretchPct)}); the beats were not re-aligned`] };
     }
     if (c && s.speed > 0 && exceeds(s.speed, tempoPrefs.value.warnPct)) {

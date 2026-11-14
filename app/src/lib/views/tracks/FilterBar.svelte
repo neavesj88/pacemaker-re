@@ -47,6 +47,19 @@
 
   /** Every case, by name; the chosen one stays listed even if the case list is re-read. */
   const caseOptions = $derived([...(session.library?.cases ?? [])].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" })));
+  /** What the option says: the case's size, and how many of its tracks are not in this library
+   *  (the table lists only the ones it has) once the members are read. */
+  function caseLabel(c: { id: number; name: string; track_count: number }): string {
+    const ids = caseMembers.tracksOf(c.id);
+    const have = session.library ? libraryIds : null;
+    if (!ids || !have) return `${c.name} (${c.track_count})`;
+    const missing = ids.filter((id) => !have.has(id)).length;
+    return missing === 0 ? `${c.name} (${ids.length})` : `${c.name} (${ids.length - missing}, ${missing} missing)`;
+  }
+  const libraryIds = $derived(new Set((session.library?.tracks ?? []).map((t) => t.track_id)));
+  $effect(() => {
+    if (session.library) void caseMembers.ensure();
+  });
   // a chosen case that was deleted would silently hide everything
   $effect(() => {
     if (table.caseId !== null && session.library && !session.library.cases.some((c) => c.id === table.caseId)) table.setCase(null);
@@ -118,7 +131,7 @@
 
   <select aria-label="Case" title="Only the tracks of one case (crate) that exists on the device, in the case's own order when the column Case # is the sort. A smart case is listed here once it is on the device; the count is the case's size, the table can show fewer when some tracks are not in this library." value={table.caseId ?? ""} onchange={(e) => { const v = e.currentTarget.value; table.setCase(v === "" ? null : Number(v)); if (v !== "") void caseMembers.ensure(); }}>
     <option value="">All cases</option>
-    {#each caseOptions as c (c.id)}<option value={c.id}>{c.name} ({c.track_count})</option>{/each}
+    {#each caseOptions as c (c.id)}<option value={c.id}>{caseLabel(c)}</option>{/each}
   </select>
 
   <LabelFilterBar {table} />

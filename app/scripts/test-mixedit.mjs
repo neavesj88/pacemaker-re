@@ -1308,4 +1308,31 @@ test("clip colours: never the same for two clips, however many", () => {
 // the set builder's solver and mix layout have their own test file; running it here keeps one entry point
 await import("../src/lib/views/setbuilder/solver.test.mjs");
 
+
+test("a ramped clip synced to a target really starts at the target; half/double keeps the ramp; add with both decks busy goes to the next free place", () => {
+  const g = grid(120, 0, 400, 0);
+  const c = clip("a", 3 * BAR, 40 * BAR, 120, 1, g);
+  let d = doc([c], { tempoBpm: 128 });
+  d = E.setTempoNodeAt(d, "a", 10 * BAR, 1.15);
+  const r = E.syncClipTo(d, "a", 128, 100);
+  assert.equal(r.applied, true);
+  close(E.clipPlaysAt(r.doc.clips[0]), 128, 1e-4, "ramped clip lands on the target");
+  assert.equal(E.syncClipTo(r.doc, "a", 128, 100).already, true, "a second Sync is a no-op");
+  const two = E.setTempoCurve(d, "a", [{ pos: 0, speed: 1.05 }, { pos: 20 * BAR, speed: 0.97 }]);
+  const r2 = E.syncClipTo(two, "a", 128, 100);
+  close(E.clipPlaysAt(r2.doc.clips[0]), 128, 1e-4);
+  // half / double time keeps a ramp
+  const hd = E.matchHalfDouble(d, "a", 64 * 1.02, 8);
+  assert.ok(hd && hd.choice.factor !== 1);
+  assert.equal(hd.doc.clips[0].tempo.length, 2, "the ramp survives half time");
+  assert.equal(E.matchHalfDouble(d, "a", 120, 8), null, "factor 1 is not this path");
+  // both decks busy at the spot: the new clip goes after the clips it would overlap
+  const busy = doc([clip("x", 0, 10 * BAR, 120, 1, null, { channel: 0 }), clip("y", 0, 12 * BAR, 120, 1, null, { channel: 1 })]);
+  const added = E.addClip(busy, clip("n", 0, 4 * BAR, 120, 1, null), 2 * BAR);
+  const n = added.clips.find((q) => q.id === "n");
+  assert.equal(n.visibleStart, 10 * BAR, "after the first clip that frees a deck");
+  assert.equal(n.channel, 0);
+  assert.equal(added.problems?.length ?? 0, busy.problems?.length ?? 0, "no new overlap problem");
+});
+
 console.log(`\n${n} tests passed`);

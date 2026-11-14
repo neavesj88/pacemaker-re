@@ -35,11 +35,13 @@ export type MixLiveExtras = {
    * device file has no Vocal tool, so only the app knows; the live player renders those as the
    * vocal filter and every other Wah tool as Wah. Omitted on an update = unchanged. */
   vocalToolIds?: string[];
+  /** Load only: memory for decoded audio, in MB (Settings, Tempo matching); omitted = the app default. */
+  decodeBudgetMb?: number;
 };
 
 /** Starts decoding the clips of `doc` in the background; resolves once the mix is accepted (the
  * player is stopped at 0 and `mix-live-status` reports the decoding). Replaces a mix loaded before. */
-export const mixLiveLoad = (root: string, doc: MixDoc, extras: MixLiveExtras = {}) => invoke<void>("mix_live_load", { root, doc, gains: extras.gains ?? null, vocalToolIds: extras.vocalToolIds ?? null });
+export const mixLiveLoad = (root: string, doc: MixDoc, extras: MixLiveExtras = {}) => invoke<void>("mix_live_load", { root, doc, gains: extras.gains ?? null, vocalToolIds: extras.vocalToolIds ?? null, decodeBudgetMb: extras.decodeBudgetMb ?? null });
 
 /** An edit, while stopped or playing; applied live without a click. */
 export const mixLiveUpdate = (doc: MixDoc, extras: MixLiveExtras = {}) => invoke<void>("mix_live_update", { doc, gains: extras.gains ?? null, refreshVocal: extras.refreshVocal ?? null, vocalToolIds: extras.vocalToolIds ?? null });

@@ -7,6 +7,7 @@
 // One thing still renders: `playRange` ("Preview this part" in the export dialog) plays a stretch
 // as the partial export makes it (cut fades, export loudness) through the player bar, as before.
 import { mixLiveLoad, mixLivePause, mixLivePlay, mixLiveSeek, mixLiveSetMaster, mixLiveUnload, mixLiveUpdate, onMixLivePosition, onMixLiveStatus, type MixLiveStatus } from "$lib/api/mixLive";
+import { tempoPrefs } from "./tempoPrefs.svelte";
 import { mixExport } from "$lib/state/mixexport.svelte";
 import { mixes } from "$lib/state/mixes.svelte";
 import { playback } from "$lib/state/playback.svelte";
@@ -134,7 +135,7 @@ class Preview {
       this.#sentVocal = vocalIds.join("|");
       try {
         await this.#send(async () => {
-          await mixLiveLoad(root, doc, { gains: mixExport.previewGains(), vocalToolIds: vocalIds });
+          await mixLiveLoad(root, doc, { gains: mixExport.previewGains(), vocalToolIds: vocalIds, decodeBudgetMb: tempoPrefs.value.decodeMb });
           if (playback.volume < 1) await mixLiveSetMaster(volumeToDb(playback.volume));
         });
       } catch (e) {

@@ -114,6 +114,8 @@ impl Player {
         let join = std::thread::Builder::new()
             .name("mix-live".into())
             .spawn(move || {
+                // a panic in the renderer must not leave a player that looks alive and plays nothing
+                let run = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 loop {
                     w.stats.loops.fetch_add(1, Relaxed);
                     // while the last frames are queued there is nothing to render: wait, do not spin
@@ -148,6 +150,22 @@ impl Player {
                     w.tick();
                 }
                 w.halt();
+                }));
+                if run.is_err() {
+                    w.playing = false;
+                    w.ring.flush();
+                    const DEAD: &str = "The live player stopped unexpectedly. Close and reopen the mix to play it again.";
+                    (w.notify)(Event::Note(DEAD.into()));
+                    w.emit_position();
+                    while let Ok(c) = rx.recv() {
+                        if matches!(c, Command::Shutdown) {
+                            break;
+                        }
+                        if matches!(c, Command::Play(_)) {
+                            (w.notify)(Event::Note(DEAD.into()));
+                        }
+                    }
+                }
             })
             .expect("cannot start the mix-live thread");
         Player { tx, join: Some(join), ring, stats }
@@ -590,6 +608,21 @@ mod tests {
         assert!(events.lock().unwrap().iter().all(|e| !matches!(e, Event::Note(n) if n.contains("ran short"))), "underrun on update");
         drop(p);
         drop(fake);
+    }
+
+    #[test]
+    fn a_panic_in_the_worker_is_reported_and_later_plays_say_so() {
+        let ring = Arc::new(Ring::new(1 << 15));
+        let (notify, events) = collect_events();
+        let p = Player::spawn(ring.clone(), Box::new(|_t| panic!("codec panic")), notify);
+        p.send(Command::Load(mix_of(2, 1.0), LiveOptions::default()));
+        p.send(Command::Play(0));
+        let dead = |n: &String| n.contains("stopped unexpectedly");
+        assert!(wait_for(|| events.lock().unwrap().iter().any(|e| matches!(e, Event::Note(n) if dead(n))), 10.0), "no message after the panic");
+        let before = events.lock().unwrap().iter().filter(|e| matches!(e, Event::Note(n) if dead(n))).count();
+        p.send(Command::Play(0));
+        assert!(wait_for(|| events.lock().unwrap().iter().filter(|e| matches!(e, Event::Note(n) if dead(n))).count() > before, 5.0));
+        drop(p);
     }
 
     #[test]

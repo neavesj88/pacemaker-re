@@ -28,6 +28,16 @@
     <option value="match">Match anyway (badge shows the stretch)</option>
   </select>
 </div>
+<div class="field">
+  <label for="ts-mem">Playback memory</label>
+  <span class="inline">
+    <input id="ts-mem" type="number" min="256" max="65536" step="256" value={p.decodeMb} onchange={(e) => tempoPrefs.set({ decodeMb: e.currentTarget.valueAsNumber })} />
+    <span class="muted">MB</span>
+  </span>
+</div>
+<div class="muted small">
+  Decoded audio the live player keeps in memory (a 6-minute track takes about 140 MB). A longer mix reads the tracks nearest the playhead first. Applies the next time a mix is opened.
+</div>
 
 <style>
   .small {

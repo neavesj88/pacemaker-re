@@ -429,12 +429,32 @@ export function resizeClip(doc: MixDoc, id: string, edge: "left" | "right", pos:
   return replaceClip(doc, id, (x) => ({ ...x, trimEnd: x.start + x.length - v }));
 }
 
-/** Adds a clip so that its audible start is at `start`, on `channel` or the free deck. */
+/** Where a clip of audible length `len` can go at or after `from` without overlapping a clip on
+ * its own deck: the free deck at `from`, else the same at the nearest clip end after it. */
+export function freeSlot(doc: MixDoc, from: number, len: number, exclude: string[] = []): { start: number; channel: number } {
+  const clips = doc.clips.filter((c) => !exclude.includes(c.id));
+  const free = (s: number) => [0, 1].find((ch) => !clips.some((c) => (c.channel === 1 ? 1 : 0) === ch && Math.min(c.visibleEnd, s + len) - Math.max(c.visibleStart, s) > 0));
+  const starts = [from, ...clips.map((c) => c.visibleEnd).filter((e) => e > from)].sort((a, b) => a - b);
+  for (const s of starts) {
+    const ch = free(s);
+    if (ch !== undefined) return { start: s, channel: ch };
+  }
+  return { start: from, channel: freeChannel(doc, from, from + len, exclude) };
+}
+
+/** Adds a clip so that its audible start is at `start`, on `channel` or the free deck. With both
+ * decks busy at `start` and no `channel` asked for, the clip goes to the next place where a deck
+ * is free instead of piling onto two overlapping clips. */
 export function addClip(doc: MixDoc, clip: Clip, start: number, channel?: number): MixDoc {
-  const placed = { ...clip, start: start - clip.trimStart };
-  const vs = start;
-  const ve = start + clip.length - clip.trimStart - clip.trimEnd;
-  placed.channel = channel ?? freeChannel(doc, vs, ve);
+  const len = clip.length - clip.trimStart - clip.trimEnd;
+  let at = start;
+  let ch = channel;
+  if (ch === undefined) {
+    const slot = freeSlot(doc, start, len);
+    at = slot.start;
+    ch = slot.channel;
+  }
+  const placed = { ...clip, start: at - clip.trimStart, channel: ch };
   return refresh({ ...doc, clips: [...doc.clips, placed] });
 }
 
@@ -779,12 +799,35 @@ export function syncClipTo(doc: MixDoc, clipId: string, target: number, threshol
   if (Math.abs(choice.playsAt - cur) < 1e-7 * Math.max(1, cur)) return { doc, choice, applied: false, already: true };
   if (!force && exceeds(choice.speed, thresholdPct)) return { doc, choice, applied: false };
   if (c.tempo.length > 1) {
-    const k = choice.playsAt / cur;
-    const next = setTempoCurve(doc, clipId, c.tempo.map((n) => ({ ...n, speed: n.speed * k })));
+    // scaling the curve by playsAt / cur is only right at the old cue: the cue moves to another
+    // local position where the scaled curve has a different speed, so correct the factor until
+    // the clip really starts at the target (a few steps; the error shrinks every time)
+    let k = choice.playsAt / cur;
+    let next = setTempoCurve(doc, clipId, c.tempo.map((n) => ({ ...n, speed: n.speed * k })));
+    for (let i = 0; i < 8 && next !== doc; i++) {
+      const got = clipPlaysAt(clipOf(next, clipId)!);
+      if (Math.abs(got - choice.playsAt) < 1e-6 * choice.playsAt) break;
+      k *= choice.playsAt / got;
+      const again = setTempoCurve(doc, clipId, c.tempo.map((n) => ({ ...n, speed: n.speed * k })));
+      if (again === doc) break;
+      next = again;
+    }
     return { doc: next, choice, applied: next !== doc };
   }
   const next = setClipBpm(doc, clipId, choice.playsAt);
   return { doc: next, choice, applied: next !== doc };
+}
+
+/** The half / double-time branch of Beat-match: when the clip is closer to half or double of
+ * `target`, it plays at that (a ramp keeps its shape) unless that stretches it more than
+ * `thresholdPct` (`held`). `null` when the clip matches at the target itself (factor 1). */
+export function matchHalfDouble(doc: MixDoc, clipId: string, target: number, thresholdPct: number): { doc: MixDoc; choice: TempoChoice; held: boolean } | null {
+  const c = clipOf(doc, clipId);
+  const choice = c ? chooseTempo(c.bpm, target) : null;
+  if (!c || !choice || choice.factor === 1) return null;
+  const r = syncClipTo(doc, clipId, target, thresholdPct);
+  const held = !r.applied && !r.already;
+  return { doc: r.doc, choice, held };
 }
 
 /** Sets the pitch / tempo percentage of a clip: it plays at its track tempo times (1 + pct / 100). */
