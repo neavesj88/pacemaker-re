@@ -43,3 +43,11 @@ test("offer lines name the track and its BPM", () => {
   assert.equal(offerLine(t(1, 87, { artist: "A", title: "B" })), "A - B  (87.00 BPM)");
   assert.equal(offerLine(t(2, 87.5, { title: "" })), "2.mp3  (87.50 BPM)");
 });
+
+import { offerText } from "./bpmRangeLogic.ts";
+
+test("the offer warns that slow and fast music moves, and the 88-176 hint says 176+ reads at half time", () => {
+  assert.match(offerText(88), /80 BPM track would be read as 160/);
+  assert.match(offerText(88), /untick/);
+  assert.match(rangeOf(88).hint, /176 or faster reads at half time/);
+});

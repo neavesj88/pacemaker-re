@@ -1,5 +1,7 @@
 <script lang="ts">
   import { jobs } from "$lib/state/jobs.svelte";
+  import { tempo } from "$lib/state/tempo.svelte";
+  import { inverseOp } from "$lib/state/tempoLogic";
   import Button from "$lib/ui/Button.svelte";
 
   // Progress of the running add / analysis job, and its result until dismissed.
@@ -19,6 +21,9 @@
       <div class="line">
         <b>{job.doneLabel}:</b>
         <span class="cur">{job.result.summary || "nothing to do"}</span>
+        {#if job.kind === "tempo-edit" && tempo.last && job.result.ok > 0 && inverseOp(tempo.last.op)}
+          <Button small disabled={!jobs.canWrite} title="Run the opposite edit on the tracks this one changed; you see each track's tempo before anything is written" onclick={() => { jobs.dismiss(); void tempo.askUndo(); }}>Undo</Button>
+        {/if}
         <Button small onclick={() => jobs.dismiss()}>Dismiss</Button>
       </div>
     {/if}

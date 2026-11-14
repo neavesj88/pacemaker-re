@@ -14,7 +14,7 @@ export const DEFAULT_RANGE_LO = 88;
 /** The windows on offer, widest first. */
 export const BPM_RANGES: readonly BpmRangeOption[] = [
   { lo: 98, label: "98-196", hint: "Fast drum & bass and hardcore at full time (180 reads as 180). 90 BPM hip-hop reads as 180." },
-  { lo: 88, label: "88-176", hint: "Drum & bass at full time (about 174). House, techno and everything from 88 to 175 keeps its own number. Default." },
+  { lo: 88, label: "88-176", hint: "Drum & bass at full time (about 174). House, techno and everything from 88 to 175 keeps its own number. Drum & bass at 176 or faster reads at half time (180 reads as 90): use 98-196 for those. Default." },
   { lo: 78, label: "78-156", hint: "Same as the original Editor: drum & bass reads at half time (about 87), 158 reads as 79." },
   { lo: 68, label: "68-136", hint: "Slow music at its own tempo; anything from 136 up reads at half time (140 reads as 70)." },
 ];
@@ -59,7 +59,8 @@ export function offerTitle(n: number, lo: number): string {
 export function offerText(lo: number): string {
   return (
     `These tracks have a BPM outside the current range of ${rangeLabel(lo)}: they were analysed with another range, ` +
-    `by the original Editor, or their BPM was typed in. Re-analysing replaces only the beat grid and BPM of the tracks you confirm, ` +
-    `from the audio already in the library. A beat grid or BPM you set by hand for them is replaced too.`
+    `by the original Editor, or their BPM was typed in. Re-analysing replaces only the beat grid and BPM of the tracks you tick, ` +
+    `from the audio already in the library. A beat grid or BPM you set by hand for them is replaced too. ` +
+    `Music that really is slow or fast moves into the window: a true 80 BPM track would be read as 160, so untick those. "Leave these alone" stops listing them until the library is opened again.`
   );
 }

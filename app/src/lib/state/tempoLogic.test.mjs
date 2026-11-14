@@ -47,3 +47,22 @@ test("when nothing would change the message gives the reasons once each", () => 
   const four = [1, 2, 3, 4].map((i) => ({ ...left, track_id: i, skip: `reason ${i}` }));
   assert.equal(nothingToDo(four), "Nothing would change: reason 1; reason 2; reason 3; ….");
 });
+
+import { inverseOp, stillAsWritten, undoDescription } from "./tempoLogic.ts";
+
+test("doubling and halving undo each other, set does not", () => {
+  assert.deepEqual(inverseOp({ kind: "double" }), { kind: "halve" });
+  assert.deepEqual(inverseOp({ kind: "halve" }), { kind: "double" });
+  assert.equal(inverseOp({ kind: "set", bpm: 120 }), null);
+  assert.match(undoDescription({ kind: "halve" }), /Doubles each track/);
+});
+
+test("an undo covers only tracks still at the tempo the edit wrote", () => {
+  const run = { op: { kind: "double" }, at: 0, rows: [{ track_id: 1, label: "A", before: 87, after: 174 }, { track_id: 2, label: "B", before: 87, after: 174 }, { track_id: 3, label: "C", before: 87, after: 174 }] };
+  const now = [
+    { track_id: 1, label: "A", before: 174, after: 87, skip: null },
+    { track_id: 2, label: "B", before: 130, after: 65, skip: null },
+    { track_id: 3, label: "C", before: null, after: null, skip: "no readable beat grid" },
+  ];
+  assert.deepEqual(stillAsWritten(run, now), [1]);
+});

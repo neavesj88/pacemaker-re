@@ -13,7 +13,7 @@
 
 <fieldset>
   <legend class="sr">BPM range</legend>
-  {#each BPM_RANGES as r (r.lo)}
+  {#key bpmRange.failed}{#each BPM_RANGES as r (r.lo)}
     <label class="opt">
       <input type="radio" name="bpm-range" checked={bpmRange.lo === r.lo} onchange={() => bpmRange.choose(r.lo)} />
       <span>
@@ -21,7 +21,7 @@
         <small class="muted">{r.hint}</small>
       </span>
     </label>
-  {/each}
+  {/each}{/key}
 </fieldset>
 <p class="muted note">
   Applies to tracks analysed from now on: adding tracks, Re-analyse, the grid editor's Re-analyse and the grid batch.

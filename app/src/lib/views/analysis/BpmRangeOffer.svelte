@@ -18,22 +18,26 @@
     <p>{offerText(bpmRange.lo)}</p>
     <ul class="tracks" aria-label="Tracks to re-analyse">
       {#each list as t (t.track_id)}
-        <li>{offerLine(t)}</li>
+        <li>
+          <label><input type="checkbox" checked={!bpmRange.unticked.has(t.track_id)} onchange={() => bpmRange.toggle(t.track_id)} /> {offerLine(t)}</label>
+        </li>
       {/each}
     </ul>
   {/if}
   {#snippet actions()}
     <Button data-autofocus onclick={() => bpmRange.closeOffer()}>{list.length === 0 ? "Close" : "Not now"}</Button>
     {#if list.length > 0}
-      <Button variant="primary" disabled={!jobs.canWrite} onclick={() => bpmRange.reanalyse()}>Re-analyse {plural(list.length, "track")}…</Button>
+      <Button onclick={() => bpmRange.leaveAlone()} title="Stop listing these tracks until the library is opened again">Leave these alone</Button>
+      <Button variant="primary" disabled={!jobs.canWrite || bpmRange.ticked.length === 0} onclick={() => bpmRange.reanalyse()}>Re-analyse {plural(bpmRange.ticked.length, "track")}…</Button>
     {/if}
   {/snippet}
 </Modal>
 
 <style>
   .tracks {
+    list-style: none;
     margin: 8px 0;
-    padding: 6px 10px 6px 24px;
+    padding: 6px 10px;
     max-height: 40vh;
     overflow: auto;
     font-size: 12px;
