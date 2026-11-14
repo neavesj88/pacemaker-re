@@ -1,105 +1,123 @@
-// Browser stand-in for the live mix engine (api/mixLive.ts): decoding takes a moment, per clip,
-// and a clock runs while "playing". It makes no sound; it exists so the Mix tab's transport,
-// loading indicator and playhead can be checked without the native shell.
+// Mock of src-tauri/src/commands/mixlive.rs for the browser preview. There is no audio: the mock
+// simulates decoding progress (one clip every 250 ms) and a running clock that emits
+// `mix-live-position` at about 30 Hz while playing, so the Mix screen behaves as it does in the app.
 import { emit } from "@tauri-apps/api/event";
+import type { MixDoc } from "$lib/api/mixes";
+import type { MixLivePosition, MixLiveStatus } from "$lib/api/mixLive";
 import type { Handlers } from "./types";
 
-type Doc = { clips?: unknown[]; lengthSec?: number };
+const POSITION = "mix-live-position";
+const STATUS = "mix-live-status";
 
-let doc: Doc | null = null;
-let sec = 0;
-let playing = false;
+let doc: MixDoc | null = null;
 let loaded = 0;
 let total = 0;
-let state: "idle" | "loading" | "ready" | "playing" | "error" = "idle";
-let clock: ReturnType<typeof setInterval> | null = null;
-let loader: ReturnType<typeof setInterval> | null = null;
-let lastTick = 0;
+let playing = false;
+let sec = 0;
+let from = 0;
+let startedAt = 0;
+let clock: ReturnType<typeof setInterval> | undefined;
+let loader: ReturnType<typeof setInterval> | undefined;
 
-const status = () => void emit("mix-live-status", { state, loaded, total, message: "" });
-const position = () => void emit("mix-live-position", { sec, playing });
+/** Seconds of the mix; the mock plays to the end of the last clip. */
+const length = () => doc?.lengthSec ?? 0;
+const files = (d: MixDoc) => new Set(d.clips.map((c) => c.trackId)).size;
+
+function status(message = ""): MixLiveStatus {
+  const state = !doc ? "idle" : playing ? "playing" : loaded < total ? "loading" : "ready";
+  return { state, loaded, total, message };
+}
+const sendStatus = (message = "") => void emit(STATUS, status(message));
+const sendPosition = () => void emit(POSITION, { sec, playing } satisfies MixLivePosition);
 
 function stopClock() {
   if (clock) clearInterval(clock);
-  clock = null;
+  clock = undefined;
 }
 
-function setState(next: typeof state) {
-  state = next;
-  status();
+function tick() {
+  sec = from + (performance.now() - startedAt) / 1000;
+  if (sec >= length()) {
+    sec = length();
+    playing = false;
+    stopClock();
+    sendPosition();
+    sendStatus();
+    return;
+  }
+  sendPosition();
 }
 
 export const handlers: Handlers = {
-  mix_live_load: (a) => {
-    doc = a.doc as Doc;
-    total = doc.clips?.length ?? 0;
-    loaded = 0;
-    sec = 0;
-    playing = false;
+  mix_live_load: ({ doc: d }) => {
     stopClock();
     if (loader) clearInterval(loader);
-    setState(total ? "loading" : "ready");
-    // one clip "decodes" every 350 ms, so a long mix shows its progress
+    doc = d as MixDoc;
+    playing = false;
+    sec = 0;
+    loaded = 0;
+    total = files(doc);
     loader = setInterval(() => {
       loaded = Math.min(total, loaded + 1);
-      if (loaded >= total) {
-        if (loader) clearInterval(loader);
-        loader = null;
-        setState(playing ? "playing" : "ready");
-      } else status();
-    }, 350);
-    position();
+      sendStatus();
+      if (loaded >= total && loader) clearInterval(loader);
+    }, 250);
+    sendStatus();
+    sendPosition();
   },
-  mix_live_update: (a) => {
-    doc = a.doc as Doc;
-    const n = doc.clips?.length ?? 0;
-    if (n !== total) {
-      total = n;
-      loaded = Math.min(loaded, total);
-      status();
+  mix_live_update: ({ doc: d }) => {
+    if (!doc) throw "No mix is loaded in the live player.";
+    doc = d as MixDoc;
+    total = files(doc);
+    loaded = Math.min(loaded, total);
+    // a clip the mix did not have before decodes now
+    if (loaded < total && !loader) {
+      loader = setInterval(() => {
+        loaded = Math.min(total, loaded + 1);
+        sendStatus();
+        if (loaded >= total && loader) {
+          clearInterval(loader);
+          loader = undefined;
+        }
+      }, 250);
     }
+    if (sec > length()) sec = length();
   },
-  mix_live_play: (a) => {
-    sec = Number(a.fromSec) || 0;
+  mix_live_play: ({ fromSec }) => {
+    if (!doc) throw "No mix is loaded in the live player.";
+    from = Math.max(0, Number(fromSec));
+    if (from >= length() - 0.05) from = 0;
+    sec = from;
+    startedAt = performance.now();
     playing = true;
-    lastTick = performance.now();
     stopClock();
-    clock = setInterval(() => {
-      const now = performance.now();
-      sec += (now - lastTick) / 1000;
-      lastTick = now;
-      const end = doc?.lengthSec ?? 0;
-      if (end > 0 && sec >= end) {
-        sec = end;
-        playing = false;
-        stopClock();
-        setState("ready");
-      }
-      position();
-    }, 33);
-    setState(loaded >= total ? "playing" : "loading");
-    position();
+    clock = setInterval(tick, 33);
+    sendPosition();
+    sendStatus();
   },
   mix_live_pause: () => {
+    if (playing) tick();
     playing = false;
     stopClock();
-    setState(loaded >= total ? "ready" : "loading");
-    position();
+    sendPosition();
+    sendStatus();
   },
-  mix_live_seek: (a) => {
-    sec = Math.max(0, Number(a.sec) || 0);
-    lastTick = performance.now();
-    position();
+  mix_live_seek: ({ sec: s }) => {
+    sec = Math.max(0, Math.min(length(), Number(s)));
+    from = sec;
+    startedAt = performance.now();
+    sendPosition();
   },
-  mix_live_set_master: () => undefined,
+  mix_live_set_master: () => {},
   mix_live_unload: () => {
-    doc = null;
-    playing = false;
-    loaded = 0;
-    total = 0;
     stopClock();
     if (loader) clearInterval(loader);
-    loader = null;
-    setState("idle");
+    loader = undefined;
+    doc = null;
+    playing = false;
+    sec = 0;
+    loaded = total = 0;
+    sendPosition();
+    sendStatus();
   },
 };

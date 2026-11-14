@@ -18,6 +18,7 @@ pub mod import;
 pub mod library;
 pub mod metadata;
 pub mod mixes;
+pub mod mixlive;
 pub mod playback;
 pub mod tags;
 pub mod stems;
@@ -27,6 +28,7 @@ pub fn setup(app: &mut tauri::App) {
     library::setup(app);
     tracks::setup(app);
     mixes::setup(app);
+    mixlive::setup(app);
     cases::setup(app);
     history::setup(app);
     grid::setup(app);
@@ -56,6 +58,7 @@ macro_rules! register_handlers {
             [];
             tracks_commands,
             mixes_commands,
+            mixlive_commands,
             cases_commands,
             history_commands,
             grid_commands,

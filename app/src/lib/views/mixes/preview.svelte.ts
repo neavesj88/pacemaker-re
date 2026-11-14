@@ -1,118 +1,194 @@
-// Mix playback. The Mix tab plays the open, possibly unsaved document LIVE through the audio
-// area's mix engine (api/mixLive.ts): the clips are decoded in the background when the mix is
-// opened, an edit while playing is sent to the engine as it happens, and there is no render step.
-// The playhead follows the engine's position events.
+// Mix transport. The Mix tab plays through the LIVE engine (api/mixLive.ts, crates/pm-mixer live
+// player): no render step. Play, pause and seek are instant, an edit is sent to the engine about
+// 30 ms after it is made and is heard while playing, and the playhead follows the engine's
+// `mix-live-position` events. The decoded audio stays in the engine while the mix is open, so the
+// second play is instant too.
 //
-// One thing is still rendered: "Preview this part" in the export dialog plays a stretch exactly
-// as a partial export makes it (loudness gain, edge fades), which needs the export render
-// (`playRange` below). Starting either one stops the other.
-import { onMixLivePosition, onMixLiveStatus, mixLiveLoad, mixLivePause, mixLivePlay, mixLiveSeek, mixLiveSetMaster, mixLiveUnload, mixLiveUpdate, type MixLiveStatus } from "$lib/api/mixLive";
+// One thing still renders: `playRange` ("Preview this part" in the export dialog) plays a stretch
+// as the partial export makes it (cut fades, export loudness) through the player bar, as before.
+import { mixLiveLoad, mixLivePause, mixLivePlay, mixLiveSeek, mixLiveSetMaster, mixLiveUnload, mixLiveUpdate, onMixLivePosition, onMixLiveStatus, type MixLiveStatus } from "$lib/api/mixLive";
 import { mixExport } from "$lib/state/mixexport.svelte";
 import { mixes } from "$lib/state/mixes.svelte";
 import { playback } from "$lib/state/playback.svelte";
 import { session } from "$lib/state/session.svelte";
+import { vocal } from "$lib/state/vocal.svelte";
+import type { VocalMode } from "$lib/api/device";
 import type { MixDoc } from "$lib/api/mixes";
 import { SR, toSamples } from "./layout";
+import { sameRender, volumeToDb } from "./previewState";
 import { vocalTools } from "./vocalTools.svelte";
 import { mv } from "./view.svelte";
 
 /** The longest stretch one range preview renders (the backend's limit), seconds. */
 const MAX_RANGE_PREVIEW = 900;
 
+/** Wait after an edit before it goes to the engine, so a drag sends the last state, not every pixel. */
+const EDIT_DEBOUNCE_MS = 30;
+
 export type PreviewStatus = "idle" | "rendering" | "playing" | "paused";
 
-/** How long an edit waits before it is sent to the engine, so a drag sends one update per 30 ms. */
-const SYNC_MS = 30;
-
-const IDLE: MixLiveStatus = { state: "idle", loaded: 0, total: 0, message: "" };
-
-/** Preview level 0..1 as dB for the engine (0 is silence: -90). */
-const toDb = (v: number) => (v <= 0.0001 ? -90 : 20 * Math.log10(Math.min(1, v)));
+const errText = (e: unknown) => (typeof e === "string" ? e : e instanceof Error ? e.message : String(e));
 
 class Preview {
   status = $state<PreviewStatus>("idle");
-  /** Why nothing plays, or "". */
+  /** Why nothing plays, or something the engine wants said (a clip that is missing, an underrun). */
   notice = $state("");
-  /** The engine's own state: decoding progress and errors. */
-  engine = $state<MixLiveStatus>({ ...IDLE });
+  /** Decoding progress of the open mix's clips (`loaded` of `total` files), "idle" before a mix is loaded. */
+  load = $state.raw<MixLiveStatus>({ state: "idle", loaded: 0, total: 0, message: "" });
 
-  #unsubs: (() => void)[] = [];
-  #timer: ReturnType<typeof setTimeout> | null = null;
-  #queued: MixDoc | null = null;
-  /** A range preview (rendered, played by the shared player) is running. */
+  // ---- live engine ----
+  /** `root|mix id` of the mix the engine holds, or null. */
+  #key: string | null = null;
+  /** The document, Vocal mode and loudness gains the engine was last given. */
+  #sent: MixDoc | null = null;
+  #sentMode: VocalMode = "off";
+  #sentGains = "";
+  /** The Vocal-tool marks the engine was last given (app-side only: the file has no Vocal tool). */
+  #sentVocal = "";
+  #listening = false;
+  /** Engine calls run one after another, so an update never overtakes the load before it. */
+  #chain: Promise<unknown> = Promise.resolve();
+  #timer: ReturnType<typeof setTimeout> | undefined;
+  /** The player bar is playing a rendered range (`playRange`). */
   #range = false;
-  #rangeToken = 0;
-  #rangeRaf = 0;
-  #rangeFrom = 0;
-  #volume = 1;
+  #raf = 0;
+  #rangeStart = 0;
+  #rangeEnd = 0;
+  #token = 0;
 
   /** Preview level 0..1 (a listening aid, not part of the mix). */
   get volume() {
-    return this.#volume;
+    return playback.volume;
   }
   set volume(v: number) {
-    this.#volume = Math.min(1, Math.max(0, v));
-    void mixLiveSetMaster(toDb(this.#volume)).catch(() => {});
+    playback.setVolume(v);
+    if (this.#key !== null) void this.#send(() => mixLiveSetMaster(volumeToDb(playback.volume))).catch(() => {});
   }
 
   get playing() {
     return this.status === "playing";
   }
 
-  /** The live engine plays what is on screen, so there is no out-of-date state. */
-  get stale() {
-    return false;
+  /** Whether clips are still being decoded (they join in as soon as they are ready). */
+  get loading() {
+    return this.load.state === "loading";
   }
 
-  /** True while the engine is still decoding clips. */
-  get decoding() {
-    return this.engine.state === "loading" && this.engine.loaded < this.engine.total;
+  #send<T>(fn: () => Promise<T>): Promise<T> {
+    const run = this.#chain.then(fn, fn);
+    this.#chain = run.catch(() => {});
+    return run;
   }
 
-  /** Opens the live engine on the open mix: listens to its events and starts the decoding. */
-  async open(doc: MixDoc) {
-    const root = session.library?.root;
-    if (!root) return;
-    this.#detach();
-    this.status = "idle";
-    this.notice = "";
-    this.engine = { state: "loading", loaded: 0, total: doc.clips.length, message: "" };
-    try {
-      this.#unsubs.push(
-        await onMixLivePosition((p) => {
-          if (this.#range) return;
-          if (p.playing || this.status !== "playing") mv.playhead = toSamples(p.sec);
-          if (p.playing) this.status = "playing";
-          else if (this.status === "playing") this.status = "paused";
-        }),
-        await onMixLiveStatus((st) => {
-          this.engine = st;
-          if (st.state === "error") {
-            this.notice = st.message || "The mix engine reported an error.";
-            if (this.status === "playing") this.status = "paused";
-          } else if (this.notice && st.state !== "idle") this.notice = "";
-        }),
-      );
-      await mixLiveLoad(root, doc, vocalToolIds(doc));
-      await mixLiveSetMaster(toDb(this.#volume)).catch(() => {});
-    } catch (e) {
-      this.engine = { state: "error", loaded: 0, total: doc.clips.length, message: errorText(e) };
-      this.notice = `Live playback is not available: ${errorText(e)}`;
+  #listen() {
+    if (this.#listening) return;
+    this.#listening = true;
+    // a start that throws (no Tauri in a plain browser) is ignored; the commands then fail with a message
+    onMixLivePosition((p) => {
+      if (this.#range || this.#key === null) return;
+      if (p.playing) {
+        mv.playhead = toSamples(p.sec);
+      } else if (this.status === "playing") {
+        // paused by the engine: the end of the mix
+        this.status = "paused";
+        mv.playhead = toSamples(p.sec);
+      }
+    }).catch(() => {});
+    onMixLiveStatus((s) => {
+      if (this.#key === null) return;
+      this.load = s;
+      if (s.state === "error" || s.message) this.notice = s.message;
+      if (s.state === "error" && this.status === "playing") this.status = "paused";
+    }).catch(() => {});
+  }
+
+  /** Ids of the Wah tools this mix marks as Vocal tools; the engine renders those as the vocal
+   * filter and every other Wah tool as Wah. */
+  #vocalIds(doc: MixDoc): string[] {
+    const marked = new Set(vocalTools.ids(doc.id));
+    return doc.clips.flatMap((c) => c.processes.filter((p) => marked.has(p.id)).map((p) => p.id)).sort();
+  }
+
+  #gainsKey() {
+    return mixExport.gainsKey();
+  }
+
+  /** Makes sure the engine holds the open mix as it is now; loads it when it holds another. */
+  async #ensure(doc: MixDoc): Promise<boolean> {
+    const root = mixes.root;
+    if (!root) {
+      this.notice = "Open a library first.";
+      return false;
     }
+    this.#listen();
+    const key = `${root}|${doc.id}`;
+    const mode = vocal.mode;
+    const gains = this.#gainsKey();
+    const vocalIds = this.#vocalIds(doc);
+    if (this.#key !== key) {
+      if (this.#key !== null) this.#drop();
+      this.#key = key;
+      this.#sent = doc;
+      this.#sentMode = mode;
+      this.#sentGains = gains;
+      this.#sentVocal = vocalIds.join("|");
+      try {
+        await this.#send(async () => {
+          await mixLiveLoad(root, doc, { gains: mixExport.previewGains(), vocalToolIds: vocalIds });
+          if (playback.volume < 1) await mixLiveSetMaster(volumeToDb(playback.volume));
+        });
+      } catch (e) {
+        this.#key = null;
+        this.#sent = null;
+        throw e;
+      }
+    } else if (!sameRender(this.#sent, this.#sentMode, doc, mode) || this.#sentGains !== gains || this.#sentVocal !== vocalIds.join("|")) {
+      await this.#push(doc);
+    }
+    return true;
   }
 
-  /** Sends an edit to the engine, at most once every 30 ms (a drag costs one update per 30 ms, and the
-   * last state always goes). A timer rather than an animation frame: a window in the background
-   * does not get frames, and the edit must still reach the engine. */
-  sync(doc: MixDoc) {
-    this.#queued = doc;
-    if (this.#timer) return;
+  async #push(doc: MixDoc) {
+    const refreshVocal = this.#sentMode !== vocal.mode;
+    const gainsChanged = this.#sentGains !== this.#gainsKey();
+    this.#sent = doc;
+    this.#sentMode = vocal.mode;
+    this.#sentGains = this.#gainsKey();
+    const vocalToolIds = this.#vocalIds(doc);
+    this.#sentVocal = vocalToolIds.join("|");
+    await this.#send(() => mixLiveUpdate(doc, { refreshVocal, gains: gainsChanged ? mixExport.previewGains() : undefined, vocalToolIds }));
+  }
+
+  /** Called when the open document, the card's Vocal mode or the loudness gains may have changed:
+   * sends the new state to the engine (while playing the edit is heard within a few hundred ms). */
+  edited() {
+    if (this.#key === null || this.#range) return;
+    const doc = mixes.doc;
+    if (!doc) return;
+    if (`${mixes.root}|${doc.id}` !== this.#key) {
+      // another mix was opened: the old one stops, the next play loads the new one
+      this.pause();
+      this.#drop();
+      return;
+    }
+    if (sameRender(this.#sent, this.#sentMode, doc, vocal.mode) && this.#sentGains === this.#gainsKey() && this.#sentVocal === this.#vocalIds(doc).join("|")) return;
+    clearTimeout(this.#timer);
     this.#timer = setTimeout(() => {
-      this.#timer = null;
-      const d = this.#queued;
-      this.#queued = null;
-      if (d) void mixLiveUpdate(d, vocalToolIds(d)).catch(() => {});
-    }, SYNC_MS);
+      const d = mixes.doc;
+      if (!d || this.#key === null) return;
+      this.#push(d).catch((e) => (this.notice = errText(e)));
+    }, EDIT_DEBOUNCE_MS);
+  }
+
+  /** Opens the open mix in the engine as soon as it is shown, so its clips are decoded before the
+   * first Play and the first Play is instant. */
+  async open(doc: MixDoc) {
+    if (!mixes.root || this.#range) return;
+    try {
+      await this.#ensure(doc);
+    } catch (e) {
+      this.notice = `Live playback is not available: ${errText(e)}`;
+    }
   }
 
   /** Plays from the playhead (or `fromSamples`). */
@@ -123,27 +199,100 @@ class Preview {
       this.notice = "Add a track before playing.";
       return;
     }
-    this.#stopRange();
     this.notice = "";
+    this.#stopRange();
+    // the mix and the player bar never play together
+    playback.pause();
     let startSec = fromSamples / SR;
     if (startSec >= doc.lengthSec - 0.05) startSec = 0;
-    mv.playhead = toSamples(startSec);
+    const token = ++this.#token;
     try {
-      await mixLivePlay(startSec);
+      if (!(await this.#ensure(doc))) return;
+      if (token !== this.#token) return;
+      mv.playhead = toSamples(startSec);
+      await this.#send(() => mixLivePlay(startSec));
+      if (token !== this.#token) return;
       this.status = "playing";
     } catch (e) {
+      if (token !== this.#token) return;
+      this.status = this.status === "playing" ? "paused" : "idle";
+      this.notice = errText(e);
+    }
+  }
+
+  /** Plays a stretch of the mix once, as a partial export makes it: at the level of the current
+   * loudness analysis (when there is one) and with the fade at its cuts. It stops at `toSec`. This
+   * renders (the live engine has no export fades), so it takes a moment. */
+  async playRange(fromSec: number, toSec: number) {
+    const doc = mixes.doc;
+    if (!doc || doc.clips.length === 0) return;
+    this.notice = "";
+    const to = Math.min(toSec, fromSec + MAX_RANGE_PREVIEW);
+    if (to < toSec) this.notice = "Only the first 15 minutes of the range are previewed.";
+    const token = ++this.#token;
+    this.#stopRange();
+    await this.#pauseLive();
+    this.status = "rendering";
+    mv.playhead = toSamples(fromSec);
+    try {
+      const { path } = await mixes.renderPreview(fromSec, to, mixExport.previewGains(), mixExport.prefs.edgeFadeMs);
+      if (token !== this.#token) return;
+      this.#range = true;
+      this.#rangeStart = fromSec;
+      this.#rangeEnd = to;
+      playback.previewMix(path, { mixId: doc.id, label: doc.name || "Mix preview", fromSecs: fromSec });
+      playback.play();
+      this.status = "playing";
+      this.#tick();
+    } catch (e) {
+      if (token !== this.#token) return;
       this.status = "idle";
-      this.notice = errorText(e);
+      this.notice = errText(e);
+    }
+  }
+
+  #tick = () => {
+    cancelAnimationFrame(this.#raf);
+    if (!this.#range || this.status !== "playing") return;
+    if (playback.mixPreview === null) {
+      // something else took the player bar
+      this.#range = false;
+      this.status = "paused";
+      return;
+    }
+    if (!playback.playing) {
+      // the rendered part ended
+      this.#range = false;
+      this.status = "paused";
+      mv.playhead = toSamples(this.#rangeEnd);
+      return;
+    }
+    mv.playhead = toSamples(Math.max(this.#rangeStart, playback.position));
+    this.#raf = requestAnimationFrame(this.#tick);
+  };
+
+  #stopRange() {
+    if (!this.#range) return;
+    cancelAnimationFrame(this.#raf);
+    playback.pause();
+    this.#range = false;
+  }
+
+  async #pauseLive() {
+    if (this.#key === null) return;
+    try {
+      await this.#send(() => mixLivePause());
+    } catch {
+      /* nothing is loaded any more */
     }
   }
 
   pause() {
-    if (this.#range) {
-      this.#stopRange();
-      return;
-    }
-    if (this.status === "playing") this.status = "paused";
-    void mixLivePause().catch(() => {});
+    this.#token++;
+    clearTimeout(this.#timer);
+    if (this.#range) this.#stopRange();
+    else if (this.#key !== null) void this.#pauseLive();
+    if (this.status === "playing" || this.status === "rendering") this.status = "paused";
   }
 
   async toggle() {
@@ -151,94 +300,62 @@ class Preview {
     else await this.play();
   }
 
-  /** Moves the playhead; the engine jumps there too (playing or not). */
+  /** Moves the playhead; while playing, the music jumps there at once. */
   async seek(samples: number) {
     const s = Math.max(0, samples);
     mv.playhead = s;
-    if (this.#range) this.#stopRange();
-    await mixLiveSeek(s / SR).catch(() => {});
-  }
-
-  /** Plays a stretch of the mix once, as a partial export makes it: at the level of the current
-   * loudness analysis (when there is one) and with the fade at its cuts. It stops at `toSec`. */
-  async playRange(fromSec: number, toSec: number) {
-    const doc = mixes.doc;
-    if (!doc || doc.clips.length === 0) return;
-    this.notice = "";
-    void mixLivePause().catch(() => {});
-    const to = Math.min(toSec, fromSec + MAX_RANGE_PREVIEW);
-    if (to < toSec) this.notice = "Only the first 15 minutes of the range are previewed.";
-    const token = ++this.#rangeToken;
-    this.#range = true;
-    this.status = "rendering";
-    mv.playhead = toSamples(fromSec);
-    this.#rangeFrom = fromSec;
-    try {
-      const { path } = await mixes.renderPreview(fromSec, to, mixExport.previewGains(), mixExport.prefs.edgeFadeMs);
-      if (token !== this.#rangeToken) return;
-      playback.previewMix(path, { mixId: doc.id, label: doc.name || "Mix preview", fromSecs: fromSec });
-      playback.play();
-      this.status = "playing";
-      this.#rangeTick(token);
-    } catch (e) {
-      if (token !== this.#rangeToken) return;
-      this.#range = false;
-      this.status = "idle";
-      this.notice = errorText(e);
+    if (this.#range) {
+      await this.play(s);
+    } else if (this.status === "playing" && this.#key !== null) {
+      try {
+        await this.#send(() => mixLiveSeek(s / SR));
+      } catch (e) {
+        this.notice = errText(e);
+      }
     }
   }
 
-  #rangeTick(token: number) {
-    cancelAnimationFrame(this.#rangeRaf);
-    if (token !== this.#rangeToken || !this.#range) return;
-    if (!playback.playing) {
-      this.#range = false;
-      this.status = "paused";
-      return;
-    }
-    mv.playhead = toSamples(playback.position);
-    this.#rangeRaf = requestAnimationFrame(() => this.#rangeTick(token));
+  /** Pauses and lets the engine free the decoded audio and the audio device (the view was closed).
+   * The next play loads again. */
+  release() {
+    this.pause();
+    this.#drop();
   }
 
-  #stopRange() {
-    if (!this.#range) return;
-    this.#rangeToken++;
-    cancelAnimationFrame(this.#rangeRaf);
-    playback.pause();
-    this.#range = false;
-    this.status = "paused";
+  #drop() {
+    clearTimeout(this.#timer);
+    if (this.#key === null) return;
+    this.#key = null;
+    this.#sent = null;
+    this.load = { state: "idle", loaded: 0, total: 0, message: "" };
+    void this.#send(() => mixLiveUnload()).catch(() => {});
   }
 
-  #detach() {
-    for (const u of this.#unsubs) u();
-    this.#unsubs = [];
-    if (this.#timer) clearTimeout(this.#timer);
-    this.#timer = null;
-    this.#queued = null;
-  }
-
-  /** Stops and drops the decoded audio (a different mix was opened, or the editor closed). */
+  /** Stops and forgets everything (a different mix was opened, or the session was reset). */
   stop() {
+    this.#token++;
     this.#stopRange();
-    this.#detach();
-    void mixLivePause().catch(() => {});
-    void mixLiveUnload().catch(() => {});
+    this.#drop();
     this.status = "idle";
     this.notice = "";
-    this.engine = { ...IDLE };
   }
-}
-
-function errorText(e: unknown): string {
-  return typeof e === "string" ? e : e instanceof Error ? e.message : String(e);
-}
-
-/** Ids of the Wah tools this mix marks as Vocal tools, for the engine. */
-function vocalToolIds(doc: MixDoc): string[] {
-  const marked = new Set(vocalTools.ids(doc.id));
-  return doc.clips.flatMap((c) => c.processes.filter((p) => marked.has(p.id)).map((p) => p.id));
 }
 
 export const preview = new Preview();
 
 session.onReset(() => preview.stop());
+
+// Edits, the card's Vocal flag and the loudness gains reach the engine through here; the player bar
+// taking over (a library track starts) silences the mix.
+$effect.root(() => {
+  $effect(() => {
+    void mixes.doc;
+    void vocal.mode;
+    void mixExport.gainsKey();
+    if (mixes.doc) void vocalTools.ids(mixes.doc.id);
+    preview.edited();
+  });
+  $effect(() => {
+    if (playback.playing && playback.mixPreview === null && preview.status === "playing") preview.pause();
+  });
+});

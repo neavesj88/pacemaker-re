@@ -18,7 +18,6 @@
   import MixPicker from "./MixPicker.svelte";
   import Timeline from "./Timeline.svelte";
   import { stretchText } from "$lib/state/tempoMatch";
-  import { vocalTools } from "./vocalTools.svelte";
   import { mv, type EnvOverlay } from "./view.svelte";
   import { setlist } from "../setlist/setlist.svelte";
 
@@ -33,7 +32,7 @@
   }
 
   // The live engine plays the open mix as it stands: opened (decoding starts) when a mix is opened,
-  // and told about every edit, including the Vocal marks of tools, which only the app knows.
+  // (preview.svelte.ts then sends every edit, including the Vocal marks of tools, which only the app knows).
   let openedId = -1;
   $effect(() => {
     const d = mixes.doc;
@@ -41,15 +40,6 @@
     openedId = d.id;
     untrack(() => void preview.open(d));
   });
-  $effect(() => {
-    const d = mixes.doc;
-    if (!d) return;
-    void vocalTools.ids(d.id);
-    untrack(() => {
-      if (d.id === openedId) preview.sync(d);
-    });
-  });
-
   // fit a mix to the window when it is opened
   let fittedFor = -1;
   $effect(() => {
@@ -187,7 +177,7 @@
   }
 
   const zoomValue = $derived(sliderFromPps(mv.pps));
-  const busyLabel = $derived(preview.status === "rendering" ? "Rendering the export preview…" : preview.decoding ? `Reading the tracks: ${preview.engine.loaded} of ${preview.engine.total}` : "");
+  const busyLabel = $derived(preview.status === "rendering" ? "Rendering the export preview…" : preview.loading ? `Reading the tracks: ${preview.load.loaded} of ${preview.load.total}` : "");
 
   /** The mix tempo the toolbar shows: the reference tempo, else the first clip's. */
   const mixTempo = $derived(doc.tempoBpm ?? (doc.clips[0] ? E.effectiveBpm(doc.clips[0], doc.clips[0].trimStart) : null));
