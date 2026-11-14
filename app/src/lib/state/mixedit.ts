@@ -542,8 +542,9 @@ export function updateProcess(doc: MixDoc, clipId: string, id: string, fn: (p: P
 
 /** The reference (mix) tempo a document keeps when `target` replaces the current one (undo, redo, deleting
  * clips): kept, except that an empty mix has none, so its next first track is matched to nothing and sets
- * the tempo itself instead of being held to a tempo the mix no longer has. */
-export const carryTempo = (current: number | null, target: MixDoc): number | null => (target.clips.length === 0 ? null : current);
+ * the tempo itself instead of being held to a tempo the mix no longer has. When the current tempo is already
+ * empty (undoing the delete of every clip) the target's own tempo comes back with its clips. */
+export const carryTempo = (current: number | null, target: MixDoc): number | null => (target.clips.length === 0 ? null : (current ?? target.tempoBpm));
 
 /** Moves a process to clip-local `newStart` (snapped on the timeline when asked), keeping it
  * inside its clip. */

@@ -168,7 +168,11 @@
     }
     if (sel[0] === shownTool) return;
     const it = fx.items.find((x) => x.p.id === sel[0]);
-    if (!it) return;
+    if (!it) {
+      // a clip is picked: the same tool picked next is a new pick and is shown again
+      shownTool = null;
+      return;
+    }
     shownTool = sel[0];
     const top = RULER_H + BAR_H + 2;
     const bottom = top + fxLaneH;

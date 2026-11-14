@@ -1358,7 +1358,8 @@ test("an emptied mix has no reference tempo, a mix with clips keeps it", () => {
   const empty = doc([]);
   assert.equal(E.carryTempo(124, empty), null, "undo or delete to an empty mix drops the tempo");
   assert.equal(E.carryTempo(124, one), 124, "with clips the tempo stays");
-  assert.equal(E.carryTempo(null, one), null);
+  assert.equal(E.carryTempo(null, one), one.tempoBpm, "undoing the delete of every clip brings the snapshot's tempo back");
+  assert.equal(E.carryTempo(null, empty), null);
 });
 
 test("a deep link that names the tracks under both keys adds them once", () => {
