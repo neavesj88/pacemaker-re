@@ -980,13 +980,15 @@ fn digest_of(items: &[SyncItem], settings: &SyncSettings, label: &str, s_stamp: 
     for it in items {
         text.push('\n');
         text.push_str(&format!(
-            "{}|{}|{}|{}|{:?}|{:?}",
+            "{}|{}|{}|{}|{:?}|{:?}|{}",
             it.key,
             serde_json::to_string(&it.action).unwrap_or_default(),
             it.bytes,
             it.needs.iter().map(|n| n.location.as_str()).collect::<Vec<_>>().join(","),
             it.source_id,
-            it.target_id
+            it.target_id,
+            // a repair carries no payload in its action: the detail names what is missing
+            if matches!(it.action, SyncAction::Repair) { it.detail.as_str() } else { "" }
         ));
     }
     format!("{:016x}", appfile::fnv1a(&text))

@@ -497,7 +497,7 @@
     --time: 62px;
   }
   .scroller.tracks {
-    --cols: var(--both) minmax(70px, 1.5fr) minmax(48px, 1fr) 36px 38px var(--time);
+    --cols: var(--both) minmax(70px, 1.5fr) minmax(48px, 1fr) 36px 46px var(--time);
   }
   .scroller.cols-mix {
     --cols: var(--both) minmax(70px, 1fr) var(--time) 48px;
@@ -508,7 +508,7 @@
   /* a narrow pane (the window at its smallest) drops the artist column so titles stay readable */
   @container (max-width: 400px) {
     .scroller.tracks {
-      --cols: var(--both) minmax(70px, 1fr) 36px 38px var(--time);
+      --cols: var(--both) minmax(70px, 1fr) 36px 46px var(--time);
     }
     .artist {
       display: none;

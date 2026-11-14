@@ -260,9 +260,15 @@ pub fn plan_selection(
         } else if new == 0 && item.action.acts() {
             item.action = skip(SAME);
         }
-        if avail.len() < needs.len() {
-            item.detail = format!("{} of {} tracks will not be there and are left out", needs.len() - avail.len(), needs.len());
+        let mut notes: Vec<String> = Vec::new();
+        if new > 0 && new < avail.len() {
+            let have = avail.len() - new;
+            notes.push(format!("{have} of the {} {} already in it", avail.len(), if have == 1 { "is" } else { "are" }));
         }
+        if avail.len() < needs.len() {
+            notes.push(format!("{} of {} tracks will not be there and are left out", needs.len() - avail.len(), needs.len()));
+        }
+        item.detail = notes.join("; ");
         item.needs = needs;
         items.push(item);
     }

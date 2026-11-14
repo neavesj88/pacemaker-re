@@ -11,7 +11,7 @@ export const tracks = Array.from({ length: 24 }, (_, i) => ({
   album: `Sample Album ${1 + (i % 5)}`,
   genre: genres[i % genres.length],
   bpm: [124, 126, 128, 87, 138, 140][i % 6] + (i % 3 === 0 ? 0 : 0.5),
-  key: ["Am", "Cm", "F#m", "Ab Minor", ""][i % 5],
+  key: ["Am", "Cm", "F#m", "Abm", ""][i % 5],
   // three long ones (25:30, 59:59, 1:12:05) so every Time column is seen at its widest
   play_time_secs: i === 5 ? 1530 : i === 9 ? 3599 : i === 11 ? 4325 : 180 + ((i * 37) % 240),
   rating: i % 6,

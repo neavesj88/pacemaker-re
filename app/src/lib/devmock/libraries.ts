@@ -240,7 +240,14 @@ function planOf(a: Record<string, any>) {
     if (avail.length === 0 && it.action.type !== "skip") it.action = skip("none of the tracks will be in the receiving library");
     it.into_case = name;
     it.needs = needsHere;
-    if (avail.length < needsHere.length) it.detail = `${needsHere.length - avail.length} of ${needsHere.length} tracks will not be there and are left out`;
+    const notes: string[] = [];
+    if (t && it.action.type === "merge") {
+      const have = new Set(t.ids.map((id) => T.tracks.find((x) => x.track_id === id)?.location));
+      const fresh = avail.filter((x) => !have.has(x.location)).length;
+      if (fresh > 0 && fresh < avail.length) notes.push(`${avail.length - fresh} of the ${avail.length} ${avail.length - fresh === 1 ? "is" : "are"} already in it`);
+    }
+    if (avail.length < needsHere.length) notes.push(`${needsHere.length - avail.length} of ${needsHere.length} tracks will not be there and are left out`);
+    it.detail = notes.join("; ");
     items.push(it);
   }
 
