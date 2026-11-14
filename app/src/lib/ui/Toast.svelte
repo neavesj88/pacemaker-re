@@ -27,7 +27,7 @@
 <div class="toasts" aria-live="polite" style="bottom: {lift + GAP}px">
   {#each toast.items as t (t.id)}
     <div class="toast {t.kind}" role={t.kind === "bad" ? "alert" : "status"}>
-      <span class="text">{t.text}{#if t.count > 1} <span class="times">�{t.count}</span>{/if}</span>
+      <span class="text">{t.text}{#if t.count > 1} <span class="times">×{t.count}</span>{/if}</span>
       <button class="close" aria-label="Dismiss this message" title="Dismiss" onclick={() => toast.dismiss(t.id)}>×</button>
     </div>
   {/each}

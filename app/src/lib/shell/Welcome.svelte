@@ -49,7 +49,7 @@
     <div class="actions">
       {#if offer.emptyFolder}
         <Button variant="primary" onclick={() => session.startComputer()}>Start a new library in {session.computer?.path}</Button>
-        <Button onclick={() => session.chooseComputerFolder()} title="Pick a different folder for the library">Choose a different folder�</Button>
+        <Button onclick={() => session.chooseComputerFolder()} title="Pick a different folder for the library">Choose a different folder…</Button>
       {:else if offer.missingPath}
         <Button variant="primary" onclick={() => session.chooseComputerFolder()} title="Pick the folder your library is in, or the place to make a new one">Choose where the library is…</Button>
         <Button onclick={() => session.startComputer()} title="Makes a new, empty library in {session.computer?.path}. Use it only if the first is gone.">Start a new, empty library in {session.computer?.path}</Button>
