@@ -39,7 +39,7 @@
 
   let panel = $state<HTMLDivElement | null>(null);
 
-  // Escape closes the picker only when nothing opened from it (the metadata editor, a menu) is on top
+  // Escape closes the picker only when nothing opened from it (the metadata editor; a menu marks the key as handled) is on top
   function escape(e: KeyboardEvent) {
     if (e.key !== "Escape" || e.defaultPrevented) return;
     const dialogs = document.querySelectorAll('[role="dialog"]');

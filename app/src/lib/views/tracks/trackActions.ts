@@ -5,6 +5,7 @@ import { revealTrack } from "$lib/api/tracks";
 import type { Track } from "$lib/api/types";
 import { metadataEditor } from "$lib/state/metadata.svelte";
 import { nav } from "$lib/state/nav.svelte";
+import { cases } from "$lib/state/cases.svelte";
 import { jobs } from "$lib/state/jobs.svelte";
 import { playback } from "$lib/state/playback.svelte";
 import { session } from "$lib/state/session.svelte";
@@ -49,6 +50,8 @@ export async function rate(track: Track, stars: number) {
   session.patchTracks([id], { rating: stars });
   try {
     await setRating(root, track.track_id, stars);
+    // the smart case counts were first asked for on the optimistic change, which may be before this write landed
+    cases.scheduleSmartCounts();
   } catch (e) {
     // only if nothing else changed the rating meanwhile
     if (session.library?.tracks.find((t) => t.track_id === id)?.rating === stars) session.patchTracks([id], { rating: before });

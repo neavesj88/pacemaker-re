@@ -493,7 +493,7 @@
       {/if}
     </div>
     <div class="hintbar muted">
-      {#if !smartCopy}Drag the ≡ number to reorder (in case order) · {/if}drag a row onto a case in the sidebar to copy it there · click a column to sort the view · the order is the order {session.place.on}
+      {#if !smartCopy}Drag the ≡ number to reorder (in case order) · drag{:else}Drag{/if} a row onto a case in the sidebar to copy it there · click a column to sort the view · the order is the order {session.place.on}
     </div>
   </div>
 
@@ -646,6 +646,7 @@
   .main {
     flex: 1;
     min-width: 0;
+    overflow-y: auto; /* on a short window the table keeps a few rows and this pane scrolls instead */
     display: flex;
     flex-direction: column;
   }
@@ -708,6 +709,7 @@
   }
   .scroll {
     flex: 1;
+    min-height: 170px;
     overflow: auto;
     outline: none;
   }

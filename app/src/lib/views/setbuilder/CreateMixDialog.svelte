@@ -182,7 +182,7 @@
       </label>
       <label class="row">
         <span>Tempo the mix runs at (BPM)</span>
-        <input type="number" min="40" max="250" step="0.1" placeholder={planRuns(plan).length > 1 ? "middle tempo of each stretch" : "middle tempo of the set"} disabled={!prefs.beatmatch || phase === "building"} value={prefs.mixTempo ?? ""} onchange={(e) => setPrefs.commitNumber(e.currentTarget, "mixTempo", true)} />
+        <input type="number" min="40" max="250" step="0.1" placeholder={planRuns(plan).filter((r) => r.count > 1 && r.tempo !== null).length > 1 ? "middle tempo of each stretch" : "middle tempo of the set"} disabled={!prefs.beatmatch || phase === "building"} value={prefs.mixTempo ?? ""} onchange={(e) => setPrefs.commitNumber(e.currentTarget, "mixTempo", true)} />
       </label>
       <label class="row">
         <span>Do not beat-match a hop bigger than (%)</span>

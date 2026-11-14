@@ -147,7 +147,8 @@
   const menuItems = (c: CaseInfo): MenuItem[] => [
     { label: "Open", onclick: () => open(c) },
     { label: picked.has(c.id) && pickedShown.length > 1 ? `Tags and colour of ${pickedShown.length} ticked cases…` : "Tags and colour…", onclick: () => thingEditor.edit("case", picked.has(c.id) && pickedShown.length > 1 ? pickedShown.map((x) => x.id) : [c.id]) },
-    { label: "Rename…", onclick: () => (naming = { kind: "rename", c }), disabled: !jobs.canWrite || !!smartOf(c) },
+    // a star copy is named by its smart case (the row button says so); the menu has no tooltip, so it omits the item
+    ...(smartOf(c) ? [] : [{ label: "Rename…", onclick: () => (naming = { kind: "rename", c }), disabled: !jobs.canWrite }]),
     { label: "Duplicate…", onclick: () => (naming = { kind: "duplicate", c }), disabled: !jobs.canWrite },
     { label: "Merge with other cases…", onclick: () => (merging = [...new Set([...picked, c.id])]), disabled: !jobs.canWrite || cases.infos.length < 2 },
     ...exportItems(c),

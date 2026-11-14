@@ -192,7 +192,7 @@ class Session {
     try {
       this.#library = new OpenLibrary(await openLibrary(root));
       if (!keepView) {
-        nav.go("tracks");
+        nav.go("tracks", {}, true);
         for (const fn of resetHooks) fn();
       }
     } catch (e) {

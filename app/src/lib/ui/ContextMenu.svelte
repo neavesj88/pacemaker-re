@@ -6,7 +6,12 @@
   let { x, y, items, onclose }: { x: number; y: number; items: MenuItem[]; onclose: () => void } = $props();
 </script>
 
-<svelte:window onclick={onclose} onkeydown={(e) => e.key === "Escape" && onclose()} oncontextmenu={onclose} />
+<svelte:window onclick={onclose} onkeydown={(e) => {
+    if (e.key !== "Escape") return;
+    // handled: a dialog underneath (the case picker) must not also close on this Escape
+    e.preventDefault();
+    onclose();
+  }} oncontextmenu={onclose} />
 
 <ul class="menu" role="menu" style:left="{x}px" style:top="{y}px">
   {#each items as item (item.label)}

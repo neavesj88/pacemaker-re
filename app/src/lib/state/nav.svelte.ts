@@ -12,12 +12,14 @@ class Nav {
    *  deep link into the view already showing. */
   beforeLeave: ((proceed: () => void) => void) | null = null;
 
-  go(view: ViewId, params: Record<string, unknown> = {}) {
+  /** `force` skips the unsaved-edits guard: for a caller that is about to discard that state anyway
+   *  (opening another library). */
+  go(view: ViewId, params: Record<string, unknown> = {}, force = false) {
     const show = () => {
       this.params = params;
       this.view = view;
     };
-    if (view !== this.view && this.beforeLeave) this.beforeLeave(show);
+    if (!force && view !== this.view && this.beforeLeave) this.beforeLeave(show);
     else show();
   }
 
