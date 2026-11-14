@@ -362,10 +362,15 @@ impl Real {
         if !self.env.job_running() {
             return false;
         }
-        if !self.pending_keys.is_empty() || self.energy.has_pending() || self.sections.has_pending() {
+        if self.has_held() {
             self.deferred = true;
         }
         true
+    }
+
+    /// True while results are in memory that no save has written yet.
+    fn has_held(&self) -> bool {
+        !self.pending_keys.is_empty() || self.energy.has_pending() || self.sections.has_pending()
     }
 
     fn peak_id(&self, location: &str) -> String {
@@ -708,8 +713,9 @@ impl Worker {
         status.failures = self.engine.failures.len();
         let mut ctl = Ctl { env: &self.env, shared: &self.shared, root: root.clone(), epoch, status, lanes: Vec::new(), seen: Vec::new(), last_emit: Instant::now() - STATUS_EVERY };
         let end = self.engine.run(&settings, &mut real, &mut ctl);
-        if real.deferred {
-            // results held back for a user job are gone: find those tracks missing again later
+        if real.deferred || real.save_failed.is_some() || real.has_held() {
+            // results held back (a user job, a blocked save, a stop) die with `real` while the
+            // engine has already popped their tracks: find those tracks missing again
             self.engine.replan();
         }
 
@@ -970,6 +976,8 @@ mod tests {
 
     struct TestEnv {
         job: AtomicBool,
+        /// While set, begin_write refuses (a blocked save).
+        refuse: AtomicBool,
         gate: WriteGate,
         changed: Mutex<Vec<Changed>>,
         statuses: Mutex<Vec<Status>>,
@@ -977,7 +985,7 @@ mod tests {
 
     impl TestEnv {
         fn new() -> Arc<Self> {
-            Arc::new(TestEnv { job: AtomicBool::new(false), gate: WriteGate::default(), changed: Mutex::new(Vec::new()), statuses: Mutex::new(Vec::new()) })
+            Arc::new(TestEnv { job: AtomicBool::new(false), refuse: AtomicBool::new(false), gate: WriteGate::default(), changed: Mutex::new(Vec::new()), statuses: Mutex::new(Vec::new()) })
         }
         fn peaks_events(&self) -> usize {
             self.changed.lock().unwrap().iter().filter(|c| matches!(c, Changed::Peaks { .. })).count()
@@ -995,6 +1003,9 @@ mod tests {
             self.job.load(Ordering::SeqCst)
         }
         fn begin_write(&self, root: &Path) -> Result<WriteTicket, String> {
+            if self.refuse.load(Ordering::SeqCst) {
+                return Err("write refused".into());
+            }
             self.gate.begin_write_with(root, || Ok(()))
         }
         fn changed(&self, c: Changed) {
@@ -1243,7 +1254,10 @@ mod tests {
 
     fn real_for(env: &Arc<TestEnv>, base: &Path, vol: &Path) -> Real {
         std::fs::create_dir_all(base.join("cfg")).unwrap();
-        Real::new(env.clone(), &base.join("cfg"), &base.join("cache"), Arc::new(PeaksState::default()), &vol.display().to_string(), &Settings::default())
+        let mut real = Real::new(env.clone(), &base.join("cfg"), &base.join("cache"), Arc::new(PeaksState::default()), &vol.display().to_string(), &Settings::default());
+        // no timed auto-save during a test, however slow the machine is
+        real.last_key_save = Instant::now() + Duration::from_secs(3600);
+        real
     }
 
     #[test]
@@ -1288,6 +1302,39 @@ mod tests {
         env.job.store(false, Ordering::SeqCst);
         w.step();
         assert!(keys_of(&vol).iter().filter(|k| !k.is_empty()).count() >= 1);
+        std::fs::remove_dir_all(&base).unwrap();
+    }
+
+    #[test]
+    fn results_lost_to_a_blocked_save_are_made_again() {
+        let (base, vol, _) = library("blocked");
+        let env = TestEnv::new();
+        let s = Settings { waveforms: false, energy: false, sections: false, ..Settings::default() };
+        let (mut w, _) = worker(&env, &base, &vol, s);
+        env.refuse.store(true, Ordering::SeqCst);
+        w.step();
+        assert_eq!(env.last_state(), "blocked");
+        assert_eq!(keys_of(&vol), vec!["", "", "", ""], "nothing could be written");
+        env.refuse.store(false, Ordering::SeqCst);
+        w.step();
+        assert_eq!(keys_of(&vol).iter().filter(|k| !k.is_empty()).count(), 3, "the dropped keys were redone");
+        std::fs::remove_dir_all(&base).unwrap();
+    }
+
+    #[test]
+    fn a_blocked_save_keeps_the_results_visible_to_step_so_it_replans() {
+        let (base, vol, _) = library("held");
+        let env = TestEnv::new();
+        let mut real = real_for(&env, &base, &vol);
+        let items = real.missing(Kind::Keys).unwrap();
+        env.refuse.store(true, Ordering::SeqCst);
+        assert!(matches!(real.process(Kind::Keys, &items[0], &Settings::default()), Outcome::Done { .. }));
+        // the batch timer runs out and the save is refused
+        real.last_key_save = Instant::now() - KEY_MAX_WAIT - Duration::from_secs(1);
+        real.save_due();
+        assert!(real.save_failed.is_some() && real.has_held(), "step() replans on exactly this state");
+        assert!(matches!(real.process(Kind::Keys, &items[1], &Settings::default()), Outcome::Later(_)));
+        assert!(real.has_held(), "still held after the run stopped Blocked");
         std::fs::remove_dir_all(&base).unwrap();
     }
 
