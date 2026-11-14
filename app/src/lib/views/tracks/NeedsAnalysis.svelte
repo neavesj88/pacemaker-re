@@ -2,6 +2,8 @@
   // The "need analysis" block at the foot of the sidebar (a fixed slot rendered by
   // shell/Sidebar.svelte). Tracks-owned.
   import { analysis } from "$lib/state/analysis.svelte";
+  import { bpmRange } from "$lib/state/bpmRange.svelte";
+  import { rangeLabel } from "$lib/state/bpmRangeLogic";
   import { cases } from "$lib/state/cases.svelte";
   import { energy } from "$lib/state/energy.svelte";
   import { filters } from "$lib/state/filters.svelte";
@@ -31,6 +33,12 @@
   >Analyse {session.needs.size}…</Button>
 {:else}
   <div class="stat">All tracks analysed</div>
+{/if}
+{#if bpmRange.outside.length > 0}
+  <div class="stat warn">{bpmRange.outside.length} read outside {rangeLabel(bpmRange.lo)} BPM</div>
+  <Button small onclick={() => bpmRange.openOffer()} title="These tracks were analysed with another BPM range or by the original Editor. See them and re-analyse them with the range in Settings.">
+    Review {bpmRange.outside.length}…
+  </Button>
 {/if}
 {#if energy.state && energy.state.total > 0}
   <Button small onclick={() => energy.openPanel()} title="Estimate how intense each track is from its audio. Kept by this app only; nothing is written to the device.">

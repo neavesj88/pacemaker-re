@@ -6,6 +6,7 @@
   import { mmss } from "$lib/format";
   import { labelEditor, labels } from "$lib/state/labels.svelte";
   import { suspectKinds } from "$lib/state/batchLogic";
+  import { plural } from "$lib/state/bpmRangeLogic";
   import { analysis } from "$lib/state/analysis.svelte";
   import { gridBatch } from "$lib/state/gridBatch.svelte";
   import { suspects } from "$lib/state/gridSuspects.svelte";
@@ -112,6 +113,28 @@
           onclick={() => tempo.askSet(track.track_id)}
           title={needs ? "Re-analyse this track first: it has no readable beat grid" : many ? "Select one track to type its BPM" : "Type the BPM; the beat grid is rewritten with it"}
         >Edit</Button>
+        <Button
+          variant="ghost"
+          small
+          disabled={!!needs}
+          onclick={() => tempo.askDouble(selectedIds.length > 1 ? selectedIds : [track.track_id])}
+          title={needs
+            ? "Re-analyse this track first: it has no readable beat grid"
+            : many
+              ? `Double the BPM of the ${selectedIds.length} selected tracks: a beat is added midway between every two. You see each track's old and new BPM before anything is written.`
+              : "Double the BPM: a beat is added midway between every two, the first beat stays. You see the old and new BPM before anything is written."}
+        >Double BPM{many ? ` (${plural(selectedIds.length, "track")})` : ""}</Button>
+        <Button
+          variant="ghost"
+          small
+          disabled={!!needs}
+          onclick={() => tempo.askHalve(selectedIds.length > 1 ? selectedIds : [track.track_id])}
+          title={needs
+            ? "Re-analyse this track first: it has no readable beat grid"
+            : many
+              ? `Halve the BPM of the ${selectedIds.length} selected tracks: every second beat is kept. You see each track's old and new BPM before anything is written.`
+              : "Halve the BPM: every second beat is kept. You see the old and new BPM before anything is written."}
+        >Halve BPM{many ? ` (${plural(selectedIds.length, "track")})` : ""}</Button>
       </span>
     </div>
     {#if suspect}

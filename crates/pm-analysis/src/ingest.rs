@@ -13,6 +13,8 @@ use std::sync::mpsc;
 use pm_formats::library::{Library, Track, TrackMeta};
 use pm_formats::strfile;
 
+use crate::tempo::BpmRange;
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Outcome {
     /// Copied to the volume, `.str` written, row inserted.
@@ -66,10 +68,10 @@ struct Analysed {
     bpm: f64,
 }
 
-fn analyse_file(path: &Path) -> Result<Analysed, String> {
+fn analyse_file(path: &Path, range: BpmRange) -> Result<Analysed, String> {
     catch_unwind(AssertUnwindSafe(|| {
         let d = crate::decode::decode(path).map_err(|e| e.to_string())?;
-        let r = crate::analyze(&d.mono, d.sample_rate, d.tag_bpm);
+        let r = crate::analyze_with(&d.mono, d.sample_rate, d.tag_bpm, range);
         Ok(Analysed { meta: d.meta, analysis: r.to_str_analysis(), bpm: r.bpm })
     }))
     .unwrap_or_else(|_| Err("the audio decoder crashed on this file".to_string()))
@@ -77,7 +79,7 @@ fn analyse_file(path: &Path) -> Result<Analysed, String> {
 
 /// Analyses `files` on worker threads, handing each result to `sink` (on the calling thread)
 /// as it finishes. `sink` gets the index into `files`.
-fn analyse_many(files: &[PathBuf], mut sink: impl FnMut(usize, Result<Analysed, String>)) {
+fn analyse_many(files: &[PathBuf], range: BpmRange, mut sink: impl FnMut(usize, Result<Analysed, String>)) {
     if files.is_empty() {
         return;
     }
@@ -99,7 +101,7 @@ fn analyse_many(files: &[PathBuf], mut sink: impl FnMut(usize, Result<Analysed, 
                     if i >= files.len() {
                         break;
                     }
-                    if tx.send((i, analyse_file(&files[i]))).is_err() {
+                    if tx.send((i, analyse_file(&files[i], range))).is_err() {
                         break;
                     }
                 }
@@ -134,8 +136,9 @@ fn file_label(p: &Path) -> String {
 }
 
 /// Adds `files` to `lib`. Files already on the volume (same device location) are reported as
-/// [`Outcome::Skipped`] without being decoded. `progress` is called once per file.
-pub fn add_files(lib: &mut Library, files: &[PathBuf], mut progress: impl FnMut(&Event)) -> Summary {
+/// [`Outcome::Skipped`] without being decoded. `progress` is called once per file. Tempos are
+/// folded into `range`.
+pub fn add_files(lib: &mut Library, files: &[PathBuf], range: BpmRange, mut progress: impl FnMut(&Event)) -> Summary {
     let mut summary = Summary::default();
     let mut emit = |label: String, outcome: Outcome, summary: &mut Summary| {
         summary.count(&outcome);
@@ -149,7 +152,7 @@ pub fn add_files(lib: &mut Library, files: &[PathBuf], mut progress: impl FnMut(
             Err(e) => emit(file_label(f), Outcome::Failed(e.to_string()), &mut summary),
         }
     }
-    analyse_many(&todo, |i, res| {
+    analyse_many(&todo, range, |i, res| {
         let path = &todo[i];
         let outcome = match res {
             Err(e) => Outcome::Failed(e),
@@ -164,9 +167,9 @@ pub fn add_files(lib: &mut Library, files: &[PathBuf], mut progress: impl FnMut(
 }
 
 /// Rewrites the `.str` (and bpm / analysed flag) of existing tracks from their audio files on
-/// the volume. The audio is never copied or modified; a track whose audio can't be decoded keeps
-/// whatever `.str` it had.
-pub fn reanalyse(lib: &mut Library, tracks: &[Existing], mut progress: impl FnMut(&Event)) -> Summary {
+/// the volume, with tempos folded into `range`. The audio is never copied or modified; a track
+/// whose audio can't be decoded keeps whatever `.str` it had.
+pub fn reanalyse(lib: &mut Library, tracks: &[Existing], range: BpmRange, mut progress: impl FnMut(&Event)) -> Summary {
     let mut summary = Summary::default();
     let mut emit = |label: String, outcome: Outcome, summary: &mut Summary| {
         summary.count(&outcome);
@@ -181,7 +184,7 @@ pub fn reanalyse(lib: &mut Library, tracks: &[Existing], mut progress: impl FnMu
         }
     }
     let audio: Vec<PathBuf> = todo.iter().map(|(_, p)| p.clone()).collect();
-    analyse_many(&audio, |i, res| {
+    analyse_many(&audio, range, |i, res| {
         let t = todo[i].0;
         let outcome = match res {
             Err(e) => Outcome::Failed(e),
@@ -247,7 +250,7 @@ mod tests {
         let mut lib = Library::create(&vol).unwrap();
         let mut events = Vec::new();
         let files = vec![good.clone(), bad.clone(), missing.clone()];
-        let s = add_files(&mut lib, &files, |e| events.push(e.clone()));
+        let s = add_files(&mut lib, &files, BpmRange::default(), |e| events.push(e.clone()));
         assert_eq!(s, Summary { added: 1, skipped: 0, reanalysed: 0, failed: 2 });
         assert_eq!(events.len(), 3, "one event per file");
         let Outcome::Added { track_id, bpm } = events.iter().find(|e| e.label == "Click 120.wav").unwrap().outcome else {
@@ -258,7 +261,7 @@ mod tests {
         assert_eq!(lib.tracks().unwrap().len(), 1);
 
         // adding again skips without re-analysing
-        let s = add_files(&mut lib, std::slice::from_ref(&good), |_| {});
+        let s = add_files(&mut lib, std::slice::from_ref(&good), BpmRange::default(), |_| {});
         assert_eq!(s, Summary { skipped: 1, ..Default::default() });
 
         // a 0-byte .str (as seen on a real device) is detected and repaired from the audio
@@ -274,7 +277,7 @@ mod tests {
         assert_eq!(analysis_problem(&lib, &t).as_deref(), Some("no .str file"));
         std::fs::write(&sidecar, b"").unwrap();
         let item = Existing { track_id, location: t.location.clone(), label: "Click".into() };
-        let s = reanalyse(&mut lib, std::slice::from_ref(&item), |_| {});
+        let s = reanalyse(&mut lib, std::slice::from_ref(&item), BpmRange::default(), |_| {});
         assert_eq!(s, Summary { reanalysed: 1, ..Default::default() });
         let text = std::fs::read_to_string(&sidecar).unwrap();
         let a = strfile::decode(&text).unwrap();
@@ -286,7 +289,7 @@ mod tests {
 
         // audio gone: reported, old .str kept
         std::fs::remove_file(&audio).unwrap();
-        let s = reanalyse(&mut lib, &[item], |_| {});
+        let s = reanalyse(&mut lib, &[item], BpmRange::default(), |_| {});
         assert_eq!(s.failed, 1);
         assert!(sidecar.is_file());
 

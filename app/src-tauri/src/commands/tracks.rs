@@ -55,7 +55,8 @@ pub fn reanalyse_tracks(app: AppHandle, lock: State<'_, JobLock>, root: String, 
             let ev = ingest::Event { label: t.label.clone(), outcome: ingest::Outcome::Failed("track location is not valid".into()) };
             events::emit(app, JOB_PROGRESS, progress_of("reanalyse", &ev, done, total));
         }
-        let mut summary = ingest::reanalyse(&mut lib, &items, |ev| {
+        let range = super::analysis::bpm_range::current(app);
+        let mut summary = ingest::reanalyse(&mut lib, &items, range, |ev| {
             done += 1;
             events::emit(app, JOB_PROGRESS, progress_of("reanalyse", ev, done, total));
         });

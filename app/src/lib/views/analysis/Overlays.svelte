@@ -2,10 +2,12 @@
   // Always-mounted part of the analysis area: the key tools' dialogs (opened by
   // `analysis.askDetectKeys` / `askSetKey`), keeps the energy estimates and the sections in step
   // with the open library, and shows the "Energy (auto)" panel (coverage, run buttons, settings)
-  // and the "Sections" panel when asked.
+  // and the "Sections" panel when asked. Also the BPM range offer (re-analyse tracks read outside the
+  // range in force).
   import { untrack } from "svelte";
   import type { EnergySettings } from "$lib/api/analysis";
   import { analysis } from "$lib/state/analysis.svelte";
+  import { bpmRange } from "$lib/state/bpmRange.svelte";
   import { energy } from "$lib/state/energy.svelte";
   import { jobs } from "$lib/state/jobs.svelte";
   import { sections } from "$lib/state/sections.svelte";
@@ -13,6 +15,7 @@
   import Button from "$lib/ui/Button.svelte";
   import Modal from "$lib/ui/Modal.svelte";
   import { clampSetting, coverageText, LIMITS, scaleText, toAnalyse, type NumericSetting } from "./energyLogic";
+  import BpmRangeOffer from "./BpmRangeOffer.svelte";
   import KeyDetectDialog from "./KeyDetectDialog.svelte";
   import KeyPickerDialog from "./KeyPickerDialog.svelte";
   import SectionsPanel from "./SectionsPanel.svelte";
@@ -23,6 +26,7 @@
   $effect(() => {
     session.library;
     untrack(() => {
+      bpmRange.ensure();
       energy.load();
       sections.load();
     });
@@ -65,6 +69,10 @@
   <KeyDetectDialog ids={keyDialog.ids} />
 {:else if keyDialog?.kind === "set"}
   <KeyPickerDialog ids={keyDialog.ids} />
+{/if}
+
+{#if bpmRange.offerOpen}
+  <BpmRangeOffer />
 {/if}
 
 {#if energy.panelOpen}

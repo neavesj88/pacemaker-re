@@ -4,16 +4,20 @@
 // tracks table's menu, the inspector) calls `tempo.askHalve(ids)`, `askDouble(ids)` or
 // `askSet(id)`; the bulk-edit dialog is views/grid/Overlays.svelte.
 import { gridTempoApply, gridTempoPlan } from "$lib/api/grid";
+import { bpmRange } from "./bpmRange.svelte";
 import { jobs } from "./jobs.svelte";
 import { mixesNote } from "./mixNote";
 import { session } from "./session.svelte";
-import { changing, nothingToDo, opDescription, opTitle, rowLine, type TempoOp } from "./tempoLogic";
+import { changing, inverseOp, nothingToDo, opDescription, opTitle, rowLine, stillAsWritten, undoDescription, type TempoOp, type TempoRun } from "./tempoLogic";
 
 export const TEMPO_JOB = "tempo-edit";
 
 class Tempo {
   /** The track whose BPM is being typed in the dialog, or null when it is closed. */
   settingId = $state<number | null>(null);
+
+  /** The last tempo edit written in this session, kept so it can be taken back. */
+  last = $state<TempoRun | null>(null);
 
   askSet(trackId: number) {
     if (!session.library?.tracks.some((t) => t.track_id === trackId)) return;
@@ -38,9 +42,32 @@ class Tempo {
     return this.ask({ kind: "set", bpm }, [trackId]);
   }
 
+  /** Step one of taking back the last edit: previews the opposite edit on the tracks that still
+   *  have the tempo it wrote, then the usual write confirmation names each with old -> new. */
+  async askUndo() {
+    const run = this.last;
+    const lib = session.library;
+    const inv = run && inverseOp(run.op);
+    if (!run || !lib || !inv) return;
+    if (!jobs.guard()) return;
+    let rows;
+    try {
+      rows = await gridTempoPlan(lib.root, run.rows.map((r) => r.track_id), inv);
+    } catch (e) {
+      session.error = String(e);
+      return;
+    }
+    const keep = new Set(stillAsWritten(run, rows));
+    if (keep.size === 0) {
+      session.error = "Nothing to take back: none of those tracks has the tempo that edit wrote any more.";
+      return;
+    }
+    await this.ask(inv, [...keep], { description: undoDescription(run.op, session.library?.kind), record: false });
+  }
+
   /** Asks the backend what `op` would do to each track, then opens the write confirmation with
    *  one line per track saying so. The job recomputes with the same code when confirmed. */
-  async ask(op: TempoOp, ids: number[]) {
+  async ask(op: TempoOp, ids: number[], opts: { description?: string; record?: boolean } = {}) {
     const lib = session.library;
     if (!lib || ids.length === 0) return;
     if (!jobs.guard()) return;
@@ -65,19 +92,26 @@ class Tempo {
       // every track asked for, the ones that stay as they are included, with the reason
       names: rows.map(rowLine),
       title: opTitle(op, n, lib.root),
-      description: opDescription(op, session.library?.kind) + note,
+      description: (opts.description ?? opDescription(op, session.library?.kind)) + note,
       confirmLabel: `Change ${n}`,
       runningLabel: "Changing BPM",
       doneLabel: "BPM change finished",
       // only the tracks the confirmation names as changing, so a track shown as left alone stays alone
       // and each one's tempo as confirmed, so a grid changed meanwhile is skipped, not changed again
-      start: () =>
-        gridTempoApply(
+      start: async () => {
+        await gridTempoApply(
           lib.root,
           todo.map((r) => r.track_id),
           op,
           todo.map((r) => ({ track_id: r.track_id, before: r.before as number })),
-        ),
+        );
+        // an undo is not itself offered for undo (it would only flip back and forth)
+        bpmRange.accept(todo.map((r) => r.track_id));
+        this.last =
+          opts.record === false
+            ? null
+            : { op, at: Date.now(), rows: todo.map((r) => ({ track_id: r.track_id, label: r.label, before: r.before as number, after: r.after as number })) };
+      },
     });
   }
 }

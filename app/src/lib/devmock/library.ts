@@ -17,7 +17,9 @@ export const handlers: Handlers = {
       root,
       kind,
       problems: root.includes("broken") ? ["user_version is 12, device requires 677"] : [],
-      tracks: lib.tracks,
+      // fresh objects every time, like the real IPC: the page replaces its rows by identity, so
+      // handing back the mock's own rows would hide an in-place change from the table and Inspector
+      tracks: lib.tracks.map((t) => ({ ...t })),
       mixes: lib.mixes.map(stripIds),
       cases: lib.cases.map(stripIds),
       needs_analysis: kind === "computer" ? [...needs].map(([track_id, reason]) => ({ track_id, reason })) : [],

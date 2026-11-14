@@ -63,3 +63,33 @@ export function nothingToDo(rows: TempoRow[]): string {
   const why = [...new Set(rows.map((r) => r.skip ?? ""))].filter(Boolean);
   return `Nothing would change: ${why.slice(0, 3).join("; ")}${why.length > 3 ? "; …" : ""}.`;
 }
+
+/** One tempo edit that was written: what was done and each changed track's tempo before and after.
+ *  Kept for the session so the last edit can be taken back. */
+export type TempoRun = { op: TempoOp; at: number; rows: { track_id: number; label: string; before: number; after: number }[] };
+
+/** The edit that takes `op` back, or null when none does: halving undoes doubling and the other
+ *  way round; "Set BPM" threw the old beat positions away, so only the saved copy of the old grid
+ *  (named in the finished line) brings it back. */
+export function inverseOp(op: TempoOp): TempoOp | null {
+  if (op.kind === "double") return { kind: "halve" };
+  if (op.kind === "halve") return { kind: "double" };
+  return null;
+}
+
+/** The tracks of `run` whose tempo is still the one the run wrote, judged against `now` (the
+ *  preview of the inverse edit). A track edited again since is left out, never undone over. */
+export function stillAsWritten(run: TempoRun, now: TempoRow[]): number[] {
+  const wrote = new Map(run.rows.map((r) => [r.track_id, r.after]));
+  return now.filter((r) => r.skip === null && r.before !== null && Math.abs((wrote.get(r.track_id) ?? Number.NaN) - r.before) < 0.01).map((r) => r.track_id);
+}
+
+export function undoDescription(op: TempoOp, lib: LibraryKind = "pacemaker"): string {
+  const saved = lib === "computer" ? "copied out of the library" : "saved off the device";
+  const inv = op.kind === "double" ? "Halves" : "Doubles";
+  const lost =
+    op.kind === "halve"
+      ? ` Doubling puts a beat midway between every two, so a grid that was uneven before the halving comes back even, and when the first bar line was on an odd beat the beat before the first kept one is gone for good. The grid copy ${saved} before the halving is the way back to the exact original.`
+      : "";
+  return `Takes back the last tempo edit by running its opposite on the same tracks: ${inv} each track's tempo.${lost} Tracks whose tempo is not the one that edit wrote are left out.`;
+}

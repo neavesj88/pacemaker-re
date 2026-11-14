@@ -23,6 +23,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{mpsc, Arc, Mutex};
 
+use pm_analysis::tempo::BpmRange;
 use pm_formats::library::{track_bpm, Library};
 use pm_formats::ops_grid::{self, EditCtx, GridDoc, GridEdit, GridLoad};
 use pm_formats::strfile::Analysis;
@@ -340,7 +341,8 @@ pub fn grid_batch_analyse(app: AppHandle, lock: State<'_, JobLock>, state: State
     spawn_job(app, &lock, ANALYSE_JOB, move |app| {
         let lib = Library::open_read_only(Path::new(&root))?;
         let state = app.state::<BatchState>();
-        let planned = analyse_plan(&lib, &track_ids, &state.cancel, |p| events::emit(app, JOB_PROGRESS, p))?;
+        let range = crate::commands::analysis::bpm_range::current(app);
+        let planned = analyse_plan(&lib, &track_ids, range, &state.cancel, |p| events::emit(app, JOB_PROGRESS, p))?;
         let (changed, other): (usize, usize) = planned.iter().fold((0, 0), |(c, o), p| if p.proposal.is_some() { (c + 1, o) } else { (c, o + 1) });
         let cancelled = state.cancel.load(Ordering::SeqCst);
         state.store(&root, planned);
@@ -357,7 +359,7 @@ pub fn grid_batch_analyse(app: AppHandle, lock: State<'_, JobLock>, state: State
 
 /// The analysis of every wanted track, ready to review. Tracks that cannot be analysed are
 /// returned as skipped rows with the reason. Progress is reported once per track.
-fn analyse_plan(lib: &Library, ids: &[i64], cancel: &AtomicBool, mut progress: impl FnMut(Progress)) -> AppResult<Vec<Planned>> {
+fn analyse_plan(lib: &Library, ids: &[i64], range: BpmRange, cancel: &AtomicBool, mut progress: impl FnMut(Progress)) -> AppResult<Vec<Planned>> {
     let tracks = lib.tracks()?;
     let by_id: HashMap<i64, &pm_formats::library::Track> = tracks.iter().map(|t| (t.track_id, t)).collect();
     let mut seen = HashSet::new();
@@ -408,7 +410,7 @@ fn analyse_plan(lib: &Library, ids: &[i64], cancel: &AtomicBool, mut progress: i
         progress(Progress::new(ANALYSE_JOB, p.row.label.clone(), finished, total, "skipped"));
     }
     let files: Vec<PathBuf> = todo.iter().map(|(_, a, _)| a.clone()).collect();
-    analyse_files(&files, cancel, |i, res| {
+    analyse_files(&files, range, cancel, |i, res| {
         finished += 1;
         let (at, _, load) = &todo[i];
         let planned = &mut out[*at];
@@ -463,7 +465,7 @@ fn finish_analysed(row: &mut BatchRow, load: &GridLoad, found: Found) -> Result<
 /// Analyses `files` on a few worker threads, handing each result to `sink` (on the calling thread)
 /// as it finishes. Stops taking new files once `cancel` is set. A decoder that panics becomes a
 /// failed file, never a crashed job.
-fn analyse_files(files: &[PathBuf], cancel: &AtomicBool, mut sink: impl FnMut(usize, Result<Found, String>)) {
+fn analyse_files(files: &[PathBuf], range: BpmRange, cancel: &AtomicBool, mut sink: impl FnMut(usize, Result<Found, String>)) {
     if files.is_empty() {
         return;
     }
@@ -482,7 +484,7 @@ fn analyse_files(files: &[PathBuf], cancel: &AtomicBool, mut sink: impl FnMut(us
                 if i >= files.len() {
                     break;
                 }
-                if tx.send((i, analyse_one(&files[i]))).is_err() {
+                if tx.send((i, analyse_one(&files[i], range))).is_err() {
                     break;
                 }
             });
@@ -494,9 +496,9 @@ fn analyse_files(files: &[PathBuf], cancel: &AtomicBool, mut sink: impl FnMut(us
     });
 }
 
-fn analyse_one(path: &Path) -> Result<Found, String> {
+fn analyse_one(path: &Path, range: BpmRange) -> Result<Found, String> {
     catch_unwind(AssertUnwindSafe(|| {
-        let r = pm_analysis::analyze_file(path).map_err(|e| e.to_string())?;
+        let r = pm_analysis::analyze_file_with(path, range).map_err(|e| e.to_string())?;
         let note = if r.locked_grid {
             format!("even grid at {:.2} BPM", r.bpm)
         } else if r.residual_ms.is_finite() {
@@ -923,7 +925,7 @@ mod tests {
         let state = BatchState::default();
         let mut events = Vec::new();
         let cancel = AtomicBool::new(false);
-        let planned = analyse_plan(&lib, &[id, gone, id, 987_654], &cancel, |e| events.push((e.status, e.done, e.total))).unwrap();
+        let planned = analyse_plan(&lib, &[id, gone, id, 987_654], BpmRange::default(), &cancel, |e| events.push((e.status, e.done, e.total))).unwrap();
         assert_eq!(planned.len(), 3, "a repeated id is analysed once");
         let stored = state.store(lib.root().to_str().unwrap(), planned);
         let r = &stored.rows[0];
@@ -952,7 +954,7 @@ mod tests {
         let (lib, base, ids) = library("stop", &[("House", 100.0, 20)]);
         let cancel = AtomicBool::new(true);
         // the synthetic audio is not decodable; with the stop already set nothing is attempted
-        let planned = analyse_plan(&lib, &ids, &cancel, |_| {}).unwrap();
+        let planned = analyse_plan(&lib, &ids, BpmRange::default(), &cancel, |_| {}).unwrap();
         assert_eq!(planned[0].row.skip.as_deref(), Some("not analysed: the run was stopped"));
         assert!(planned[0].proposal.is_none());
         cleanup(lib, base);

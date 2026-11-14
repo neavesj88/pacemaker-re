@@ -2,7 +2,9 @@
 //!
 //!   pm volumes                     list mounted volumes holding a Pacemaker library
 //!   pm ls <volume>                 list tracks, mixes and cases; check device compatibility
-//!   pm add <volume> <audio>...     analyse and add tracks (creates the library if missing)
+//!   pm add <volume> [--bpm-range 92-184] <audio>...
+//!                                  analyse and add tracks (creates the library if missing);
+//!                                  the BPM range is 68-136, 78-156 (the Editor), 92-184 (default) or 98-196
 //!   pm health <volume>             JSON: library health, firmware, storage (--strict: exit 3 on problems)
 //!   pm backup <volume> <folder>    JSON: back the library up into a new folder (--audio, --verify)
 //!   pm verify <backup-folder>      JSON: check a backup against its manifest (exit 3 on problems)
@@ -112,7 +114,27 @@ fn ls(volume: &Path) -> Res {
     Ok(())
 }
 
-fn add(volume: &Path, files: &[String]) -> Res {
+/// `--bpm-range 92-184` (or just `92`) as a window the app offers; it is the first of the extra
+/// arguments after the volume and is not an audio file.
+fn split_bpm_range(args: &[String]) -> Result<(pm_analysis::tempo::BpmRange, &[String]), Box<dyn std::error::Error>> {
+    let range = pm_analysis::tempo::BpmRange::PRESETS;
+    if args.first().map(String::as_str) != Some("--bpm-range") {
+        return Ok((pm_analysis::tempo::BpmRange::default(), args));
+    }
+    let value = args.get(1).ok_or("--bpm-range needs a value such as 92-184")?;
+    let lo: f64 = value.split('-').next().unwrap_or("").parse().map_err(|_| format!("--bpm-range {value}: not a number"))?;
+    let chosen = pm_analysis::tempo::BpmRange::from_lo(lo).ok_or_else(|| {
+        let all: Vec<String> = range.iter().map(|r| format!("{}-{}", r.lo, r.hi())).collect();
+        format!("--bpm-range {value}: choose one of {}", all.join(", "))
+    })?;
+    Ok((chosen, &args[2..]))
+}
+
+fn add(volume: &Path, args: &[String]) -> Res {
+    let (range, files) = split_bpm_range(args)?;
+    if files.is_empty() {
+        return Err("no audio files given".into());
+    }
     let mut lib = Library::create(volume)?;
     for f in files {
         let path = PathBuf::from(f);
@@ -127,7 +149,7 @@ fn add(volume: &Path, files: &[String]) -> Res {
                 continue;
             }
         };
-        let r = pm_analysis::analyze(&d.mono, d.sample_rate, d.tag_bpm);
+        let r = pm_analysis::analyze_with(&d.mono, d.sample_rate, d.tag_bpm, range);
         let id = lib.add_track(&path, &d.meta, &r.to_str_analysis())?;
         println!("{:>4}  {:<50} {:7.2} bpm", id, path.file_name().unwrap().to_string_lossy(), r.bpm);
     }

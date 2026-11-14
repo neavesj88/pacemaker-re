@@ -1,4 +1,5 @@
 // Mock of src-tauri/src/commands/tracks.rs.
+import { foldBpm } from "./analysis";
 import { needs, tracks } from "./db";
 import { jobLock, runJob } from "./jobs";
 import { mixNamesUsing } from "./mixes";
@@ -82,8 +83,12 @@ export const handlers: Handlers = {
     runJob("reanalyse", ids.map((id) => tracks.find((t) => t.track_id === id)?.title ?? String(id)), (_l, i) => {
       needs.delete(ids[i]);
       const t = tracks.find((x) => x.track_id === ids[i]);
-      if (t) t.analysed = true;
-      return { bpm: 126 };
+      // the real analyser folds the tempo it finds into the saved BPM range (state/bpmRangeLogic.ts)
+      if (t) {
+        t.analysed = true;
+        t.bpm = foldBpm(t.bpm);
+      }
+      return { bpm: t ? t.bpm : 126 };
     });
     return null;
   },
