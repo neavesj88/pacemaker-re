@@ -104,6 +104,9 @@ pub enum Outcome {
     NoResult(String),
     /// The file could not be analysed.
     Failed(String),
+    /// The audio file is not there (a drive unplugged, a file moved). Listed like a failure, but
+    /// tried again as soon as the file is back, whatever its size.
+    Missing(String),
     /// Could not be stored right now (the library is being backed up, say). Nothing is recorded;
     /// the track stays first in its lane and the run stops so it is tried again shortly.
     Later(String),
@@ -118,6 +121,26 @@ pub struct Failure {
     pub location: String,
     pub size: i64,
     pub reason: String,
+    /// The file was read fine but holds no result (no clear key): nothing went wrong, and trying
+    /// again cannot change it.
+    #[serde(default)]
+    pub no_result: bool,
+    /// The audio file was not there when this was recorded.
+    #[serde(default)]
+    pub file_missing: bool,
+}
+
+impl Failure {
+    /// The record an outcome leaves, or None when it leaves none.
+    pub fn of(kind: Kind, item: &Item, outcome: &Outcome) -> Option<Failure> {
+        let (reason, no_result, file_missing) = match outcome {
+            Outcome::Failed(why) => (why, false, false),
+            Outcome::NoResult(why) => (why, true, false),
+            Outcome::Missing(why) => (why, false, true),
+            Outcome::Done { .. } | Outcome::Later(_) => return None,
+        };
+        Some(Failure { kind, track_id: item.id, label: item.label.clone(), location: item.location.clone(), size: item.size, reason: reason.clone(), no_result, file_missing })
+    }
 }
 
 /// The tracks the queue will not try again, by kind and location.
@@ -130,15 +153,20 @@ fn failure_key(kind: Kind, location: &str) -> String {
 
 impl Failures {
     pub fn record(&mut self, kind: Kind, item: &Item, reason: String) {
-        self.0.insert(
-            failure_key(kind, &item.location),
-            Failure { kind, track_id: item.id, label: item.label.clone(), location: item.location.clone(), size: item.size, reason },
-        );
+        self.record_outcome(kind, item, &Outcome::Failed(reason));
     }
 
-    /// True while the record still describes this file (same size).
-    pub fn skips(&self, kind: Kind, item: &Item) -> bool {
-        self.0.get(&failure_key(kind, &item.location)).is_some_and(|f| f.size == item.size)
+    /// Records what [`Failure::of`] makes of an outcome; `Done` and `Later` leave nothing.
+    pub fn record_outcome(&mut self, kind: Kind, item: &Item, outcome: &Outcome) {
+        if let Some(f) = Failure::of(kind, item, outcome) {
+            self.0.insert(failure_key(kind, &item.location), f);
+        }
+    }
+
+    /// True while the record still describes this file: the same size, and, for a file that was
+    /// not there, still not there (`present` says whether it is now).
+    pub fn skips(&self, kind: Kind, item: &Item, present: bool) -> bool {
+        self.0.get(&failure_key(kind, &item.location)).is_some_and(|f| f.size == item.size && !(f.file_missing && present))
     }
 
     pub fn clear(&mut self) -> usize {
@@ -174,6 +202,11 @@ pub trait Backend {
     fn process(&mut self, kind: Kind, item: &Item, settings: &Settings) -> Outcome;
     /// Saves anything held back (called whenever a run ends, for any reason).
     fn flush(&mut self);
+    /// Whether the audio file of `item` is there now. Only asked about a track that was given up
+    /// on because its file was missing, so a file that came back is tried again.
+    fn file_present(&self, _item: &Item) -> bool {
+        false
+    }
 }
 
 /// Why a run stopped before the work was done.
@@ -191,6 +224,8 @@ pub enum Stop {
     Playing,
     /// A job the user started holds the library.
     Job,
+    /// The owner is looking at a Sync plan: keys written now would make it stale.
+    Held,
     /// The open library changed, or something asks for a fresh look at what is missing.
     Replan,
     /// Could not store a result right now.
@@ -266,7 +301,8 @@ impl Engine {
             if !settings.wants(kind) {
                 continue;
             }
-            let items: VecDeque<Item> = b.missing(kind)?.into_iter().filter(|i| !self.failures.skips(kind, i)).collect();
+            let found = b.missing(kind)?;
+            let items: VecDeque<Item> = found.into_iter().filter(|i| !self.failures.skips(kind, i, b.file_present(i))).collect();
             self.lanes.push(Lane { kind, total: items.len(), items, done: 0 });
         }
         self.planned = true;
@@ -313,7 +349,7 @@ impl Engine {
             lane.done += 1;
             let (done, total) = (lane.done, lane.total);
             match &outcome {
-                Outcome::NoResult(why) | Outcome::Failed(why) => self.failures.record(kind, &item, why.clone()),
+                Outcome::NoResult(_) | Outcome::Failed(_) | Outcome::Missing(_) => self.failures.record_outcome(kind, &item, &outcome),
                 Outcome::Done { .. } | Outcome::Later(_) => {}
             }
             c.event(Event::Result { kind, item: &item, outcome: &outcome, done, total });
@@ -340,11 +376,13 @@ mod tests {
         scans: Vec<Kind>,
         flushes: usize,
         sizes: HashMap<i64, i64>,
+        /// Whether every audio file is there "now" (asked only about tracks given up on as missing).
+        present: bool,
     }
 
     impl Fake {
         fn new(n: i64) -> Self {
-            Fake { n, have: HashSet::new(), script: HashMap::new(), calls: Vec::new(), scans: Vec::new(), flushes: 0, sizes: HashMap::new() }
+            Fake { n, have: HashSet::new(), script: HashMap::new(), calls: Vec::new(), scans: Vec::new(), flushes: 0, sizes: HashMap::new(), present: false }
         }
     }
 
@@ -372,6 +410,9 @@ mod tests {
         }
         fn flush(&mut self) {
             self.flushes += 1;
+        }
+        fn file_present(&self, _: &Item) -> bool {
+            self.present
         }
     }
 
@@ -486,6 +527,61 @@ mod tests {
         assert_eq!(e.run(&all_on(), &mut f, &mut Script::unlimited()), RunEnd::Idle);
         assert_eq!(f.calls.len(), before, "nothing is missing but the failure, and it is skipped");
         assert!(!f.calls[before..].contains(&(Kind::Peaks, 2)));
+    }
+
+    #[test]
+    fn a_track_whose_file_was_missing_is_tried_again_when_the_file_is_back() {
+        let mut f = Fake::new(2);
+        f.script.insert((Kind::Keys, 1), Outcome::Missing("its audio file is not there".into()));
+        let s = Settings { waveforms: false, energy: false, sections: false, ..all_on() };
+        let mut e = Engine::default();
+        e.run(&s, &mut f, &mut Script::unlimited());
+        let list = e.failures.list();
+        assert_eq!((list.len(), list[0].track_id, list[0].file_missing, list[0].no_result), (1, 1, true, false), "listed, with why");
+
+        // still gone: left alone, as any failure is
+        e.replan();
+        let before = f.calls.len();
+        e.run(&s, &mut f, &mut Script::unlimited());
+        assert_eq!(f.calls.len(), before, "the file is still not there");
+
+        // the drive is back, same size: the track is looked at again and now gets its result
+        f.present = true;
+        f.script.remove(&(Kind::Keys, 1));
+        e.replan();
+        e.run(&s, &mut f, &mut Script::unlimited());
+        assert_eq!(f.calls.len(), before + 1);
+        assert!(f.have.contains(&(Kind::Keys, 1)));
+    }
+
+    #[test]
+    fn a_file_that_failed_to_decode_is_not_tried_again_just_because_it_exists() {
+        let mut f = Fake::new(1);
+        f.script.insert((Kind::Keys, 1), Outcome::Failed("cannot decode".into()));
+        let s = Settings { waveforms: false, energy: false, sections: false, ..all_on() };
+        let mut e = Engine::default();
+        e.run(&s, &mut f, &mut Script::unlimited());
+        f.present = true;
+        e.replan();
+        let before = f.calls.len();
+        e.run(&s, &mut f, &mut Script::unlimited());
+        assert_eq!(f.calls.len(), before, "only a missing file is tried again when it is present");
+    }
+
+    #[test]
+    fn no_result_is_flagged_so_it_is_not_shown_as_a_failure_and_old_files_still_load() {
+        let mut f = Fake::new(1);
+        f.script.insert((Kind::Keys, 1), Outcome::NoResult("no clear key".into()));
+        let s = Settings { waveforms: false, energy: false, sections: false, ..all_on() };
+        let mut e = Engine::default();
+        e.run(&s, &mut f, &mut Script::unlimited());
+        let list = e.failures.list();
+        assert_eq!((list[0].no_result, list[0].file_missing), (true, false));
+        // a failures file written before these flags existed has neither: both read as false
+        let old = r#"{"keys|/pmdb_tracks/a.mp3":{"kind":"keys","track_id":1,"label":"A","location":"/pmdb_tracks/a.mp3","size":5,"reason":"x"}}"#;
+        let back: Failures = serde_json::from_str(old).unwrap();
+        assert_eq!(back.list().len(), 1);
+        assert!(!back.list()[0].no_result && !back.list()[0].file_missing);
     }
 
     #[test]
@@ -632,8 +728,8 @@ mod tests {
         fl.record(Kind::Peaks, &item(2), "cannot decode".into());
         let back: Failures = serde_json::from_str(&serde_json::to_string(&fl).unwrap()).unwrap();
         assert_eq!(back, fl);
-        assert!(back.skips(Kind::Keys, &item(1)));
-        assert!(!back.skips(Kind::Energy, &item(1)), "a failure belongs to one kind");
+        assert!(back.skips(Kind::Keys, &item(1), false));
+        assert!(!back.skips(Kind::Energy, &item(1), false), "a failure belongs to one kind");
         let mut gone = back.clone();
         let kept = item(2).location;
         let here: HashSet<&str> = [kept.as_str()].into_iter().collect();

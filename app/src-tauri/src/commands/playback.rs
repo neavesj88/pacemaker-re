@@ -26,7 +26,10 @@ pub fn setup(app: &mut tauri::App) {
     app.manage(SampleRates::default());
 }
 
-const AUDIO_EXTS: [&str; 7] = ["mp3", "wav", "flac", "m4a", "aac", "ogg", "aif"];
+/// Every extension a library can hold (the set of `ops_device::AUDIO_EXTS`, which includes the importer's),
+/// so a track that was added can always be asked for. Whether the webview can decode one is its
+/// own answer, and the player shows that as "cannot be played", not as "not an audio file".
+const AUDIO_EXTS: [&str; 11] = ["mp3", "wav", "flac", "m4a", "aac", "ogg", "opus", "aif", "aiff", "wma", "mp4"];
 
 #[derive(Debug, Serialize, PartialEq)]
 pub struct Source {
@@ -255,6 +258,15 @@ mod tests {
             beats: (0..4).map(|i| Beat { pos: 22_050 + i * 22_050, bpm: 120.0 }).collect(),
             first_downbeat: Some(1),
         }
+    }
+
+    #[test]
+    fn every_imported_extension_can_be_asked_for() {
+        for ext in ["mp3", "wav", "flac", "m4a", "aac", "ogg", "opus", "aif", "aiff", "AIFF", "wma", "mp4"] {
+            assert!(has_audio_ext(Path::new(&format!("/pmdb_tracks/a.{ext}"))), "{ext}");
+        }
+        assert!(!has_audio_ext(Path::new("/pmdb_tracks/a.str")));
+        assert!(!has_audio_ext(Path::new("/pmdb_tracks/a")));
     }
 
     #[test]

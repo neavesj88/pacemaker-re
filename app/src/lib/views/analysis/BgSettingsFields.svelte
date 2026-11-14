@@ -5,12 +5,13 @@
   import { bg } from "$lib/state/bganalysis.svelte";
   import { session } from "$lib/state/session.svelte";
   import Button from "$lib/ui/Button.svelte";
-  import { clampPct, failureRows, pauseAction, statusLine } from "./bgLogic";
+  import { clampPct, failureRows, noResultRows, pauseAction, statusLine } from "./bgLogic";
 
   const s = $derived(bg.settings);
   const lib = $derived(session.library);
   const pacemaker = $derived(lib?.kind === "pacemaker");
   const rows = $derived(failureRows(bg.failures));
+  const noResult = $derived(noResultRows(bg.failures));
   const action = $derived(pauseAction(bg.status));
 
   function saveFloor(e: Event) {
@@ -98,6 +99,18 @@
       {#each rows as r (r.track_id)}<li><b>{r.label}</b> ({r.kinds}): {r.reasons}</li>{/each}
     </ul>
     <Button small onclick={() => bg.retryFailures()}>Try these again</Button>
+  {/if}
+  {#if noResult.length > 0}
+    <details class="nokey" data-testid="bg-no-result">
+      <summary>{noResult.length} {noResult.length === 1 ? "track has" : "tracks have"} nothing to give for one result</summary>
+      <p class="muted small">
+        These were read fine: their waveform and tempo are there. The result listed is one the audio does not hold (a drum-only or silent track has no key), so
+        there is nothing to try again.
+      </p>
+      <ul>
+        {#each noResult as r (r.track_id)}<li><b>{r.label}</b> ({r.kinds}): {r.reasons}</li>{/each}
+      </ul>
+    </details>
   {/if}
 </div>
 

@@ -1,7 +1,7 @@
 // Run: node --experimental-strip-types --test src/lib/views/analysis/bgLogic.test.mjs
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { clampPct, failureNote, failureRows, groupKeys, pauseAction, statusLine, stripVisible } from "./bgLogic.ts";
+import { clampPct, failureCount, failureNote, failureRows, groupKeys, noResultRows, parseDismissed, pauseAction, statusLine, stripVisible } from "./bgLogic.ts";
 
 const base = { state: "running", detail: "", root: "C:\\Lib", pacemaker: false, word: "waveforms", done: 12, total: 40, left: 100, label: "A - B", failures: 0 };
 const fail = (kind, track_id, reason, label = `Track ${track_id}`) => ({ kind, track_id, label, location: `/pmdb_tracks/${track_id}.mp3`, size: 1, reason });
@@ -68,4 +68,31 @@ test("the key floor is clamped to whole per cent between 0 and 100", () => {
   assert.equal(clampPct(-5), 0);
   assert.equal(clampPct(150), 100);
   assert.equal(clampPct(42.6), 43);
+});
+
+const noKey = (id, label = `Track ${id}`) => ({ ...fail("keys", id, "no clear key (too short, silent or atonal)", label), no_result: true });
+
+test("a drum-only track with no key is not a failure: no note, no retry row, listed apart", () => {
+  const list = [noKey(1), noKey(2)];
+  assert.equal(failureNote(list, 0), null);
+  assert.deepEqual(failureRows(list), []);
+  assert.equal(failureCount(list), 0);
+  assert.deepEqual(noResultRows(list).map((r) => [r.track_id, r.kinds]), [[1, "keys"], [2, "keys"]]);
+  // a real failure next to them is still the only thing the note counts
+  const mixed = [...list, fail("peaks", 3, "cannot decode")];
+  assert.equal(failureNote(mixed, 0), "1 track couldn't be analysed.");
+  assert.equal(failureCount(mixed), 1);
+  assert.deepEqual(noResultRows(mixed).map((r) => r.track_id), [1, 2]);
+});
+
+test("a Sync plan on screen holds the worker and the strip says so", () => {
+  assert.match(statusLine({ ...base, state: "held" }), /waits while a Sync plan is on screen \(100 left in all\)/);
+  assert.ok(stripVisible({ ...base, state: "held" }));
+  assert.ok(!stripVisible({ ...base, state: "held", left: 0 }));
+  assert.equal(pauseAction({ ...base, state: "held" }), null);
+});
+
+test("the remembered hidden-note counts survive bad storage", () => {
+  assert.deepEqual(parseDismissed({ "C:\Lib": 3, "D:\Other": 0, x: "2", y: 1.5 }), { "C:\Lib": 3 });
+  for (const bad of [null, undefined, 5, "text", [1, 2]]) assert.deepEqual(parseDismissed(bad), {});
 });

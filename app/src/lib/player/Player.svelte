@@ -106,6 +106,15 @@
     setChosen(h);
   }
 
+  // The bar's real height (it grows past --ph when the layout wraps), published for the toasts,
+  // which sit just above it.
+  let barPx = $state(0);
+  $effect(() => {
+    if (typeof document === "undefined" || barPx <= 0) return;
+    document.documentElement.style.setProperty("--player-h", `${barPx}px`);
+    return () => document.documentElement.style.removeProperty("--player-h");
+  });
+
   const seekFraction = (f: number) => playback.seek((mix?.fromSecs ?? 0) + f * span);
 
   function cueDown(e: PointerEvent) {
@@ -129,7 +138,7 @@
 
 <svelte:window bind:innerWidth={winW} bind:innerHeight={winH} />
 
-<footer class="player" class:resizing aria-label="Player" style="--ph: {barH}px; --ps: {scale}">
+<footer class="player" class:resizing aria-label="Player" bind:offsetHeight={barPx} style="--ph: {barH}px; --ps: {scale}">
   <!-- Drag up to make the bar taller. Double-click resets; Up / Down step, Home / End = min / max.
        A focusable separator is the ARIA window-splitter pattern; svelte only knows it as non-interactive. -->
   <!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
@@ -204,10 +213,10 @@
     <Button
       small
       variant="primary"
-      aria-label={playback.playing ? "Pause" : "Play"}
-      title="Play / pause (Space)"
+      aria-label={playback.error ? "Try again" : playback.playing ? "Pause" : "Play"}
+      title={playback.error ? "Open the file again and play it" : "Play / pause (Space)"}
       disabled={!loaded}
-      onclick={() => playback.toggle()}>{playback.playing ? "⏸" : "▶"}</Button
+      onclick={() => (playback.error ? playback.retry() : playback.toggle())}>{playback.error ? "↻" : playback.playing ? "⏸" : "▶"}</Button
     >
     <Button
       small

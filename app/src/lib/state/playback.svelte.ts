@@ -32,6 +32,8 @@ class Playback {
   loop = $state<Loop | null>(null);
   /** Why the loaded track cannot play (file missing, cannot decode), or "". */
   error = $state("");
+  /** Bumped by `retry`: the engine opens the loaded file again even though nothing else changed. */
+  reloads = $state(0);
 
   /** Track ids that next/previous walk through; empty = the Tracks table as it is shown now. */
   queue = $state<number[]>([]);
@@ -41,8 +43,10 @@ class Playback {
   load(trackId: number, autoplay = false, queue?: number[]) {
     if (queue) this.queue = queue;
     // loading the track that is already loaded only restarts it: the engine does not reload it,
-    // so its cue point (the default first downbeat, or one the user set) and error stay as they are
+    // so its cue point (the default first downbeat, or one the user set) stays as it is
     const same = this.trackId === trackId && this.mixPreview === null;
+    // asking for the track that failed again is a retry: the file may be back
+    if (same && this.error) this.reloads++;
     this.mixPreview = null;
     this.trackId = trackId;
     this.position = 0;
@@ -50,18 +54,31 @@ class Playback {
       this.duration = 0;
       this.cue = 0;
       this.loop = null;
-      this.error = "";
     }
+    this.error = "";
     this.seekRequest = { secs: 0 };
     this.playing = autoplay;
   }
 
   play() {
+    // nothing is loaded in the engine after an error: "playing" would show Pause over silence and
+    // tell background analysis a preview is audible. Retry opens the file again.
+    if (this.error) return;
     this.playing = this.trackId !== null || this.mixPreview !== null;
   }
 
   pause() {
     this.playing = false;
+  }
+
+  /** Opens the loaded track (or mix preview) again after an error, and plays it. */
+  retry() {
+    if (this.trackId === null && this.mixPreview === null) return;
+    this.error = "";
+    this.reloads++;
+    this.seekRequest = { secs: this.mixPreview?.fromSecs ?? 0 };
+    this.position = this.mixPreview?.fromSecs ?? 0;
+    this.playing = true;
   }
 
   toggle() {

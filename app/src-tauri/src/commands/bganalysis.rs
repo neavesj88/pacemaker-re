@@ -131,6 +131,8 @@ pub struct Inner {
     manual_root: Option<String>,
     paused: bool,
     playing: bool,
+    /// The owner is looking at a Sync plan (see [`Stop::Held`]).
+    held: bool,
     /// Bumped by anything that needs a fresh look at what is missing (a library opened or
     /// reloaded, a setting switched, a retry).
     epoch: u64,
@@ -155,6 +157,7 @@ impl Shared {
                 manual_root: None,
                 paused: false,
                 playing: false,
+                held: false,
                 epoch: 0,
                 tick: 0,
                 retry: false,
@@ -195,6 +198,8 @@ pub struct Snap {
     pub paused: bool,
     pub playing: bool,
     pub job_running: bool,
+    /// A Sync plan is on screen.
+    pub held: bool,
 }
 
 /// Why the worker must not work right now, or None when it may. Checked before every track.
@@ -217,6 +222,9 @@ pub fn decide(s: &Snap) -> Option<Stop> {
     if s.job_running {
         return Some(Stop::Job);
     }
+    if s.held {
+        return Some(Stop::Held);
+    }
     None
 }
 
@@ -230,6 +238,7 @@ fn snap_of(g: &Inner, job_running: bool) -> Snap {
         paused: g.paused,
         playing: g.playing,
         job_running,
+        held: g.held,
     }
 }
 
@@ -241,6 +250,7 @@ fn state_word(stop: &Stop) -> (&'static str, String) {
         Stop::Paused => ("paused", String::new()),
         Stop::Playing => ("playing", String::new()),
         Stop::Job => ("waiting", String::new()),
+        Stop::Held => ("held", String::new()),
         Stop::Replan => ("running", String::new()),
         Stop::Blocked(why) => ("blocked", why.clone()),
         Stop::Scan(why) => ("error", why.clone()),
@@ -505,6 +515,10 @@ impl Backend for Real {
         }
     }
 
+    fn file_present(&self, item: &Item) -> bool {
+        audio_path(&self.root_path, &item.location).is_ok_and(|a| a.is_file())
+    }
+
     fn process(&mut self, kind: Kind, item: &Item, _settings: &Settings) -> Outcome {
         if self.save_failed.is_some() {
             match self.save_all() {
@@ -514,6 +528,11 @@ impl Backend for Real {
                     return Outcome::Later(e);
                 }
             }
+        }
+        // a file that is not there (a drive unplugged, a file moved) is listed, but remembered as
+        // missing: the track is tried again as soon as the file is back
+        if audio_path(&self.root_path, &item.location).is_ok_and(|a| !a.is_file()) {
+            return Outcome::Missing("its audio file is not there".into());
         }
         let out = match kind {
             Kind::Peaks => match analysis::peaks_blocking(&self.peaks, &self.cache_dir, &self.root, &item.location, 64) {
@@ -630,8 +649,8 @@ impl Control for Ctl<'_> {
                 }
                 self.status.done = done;
                 self.status.total = total;
-                if let Outcome::Failed(why) | Outcome::NoResult(why) = outcome {
-                    self.seen.push(Failure { kind, track_id: item.id, label: item.label.clone(), location: item.location.clone(), size: item.size, reason: why.clone() });
+                if let Some(f) = Failure::of(kind, item, outcome) {
+                    self.seen.push(f);
                 }
                 self.publish(done == total);
             }
@@ -915,6 +934,13 @@ pub fn bganalysis_set_playing(shared: State<'_, Arc<Shared>>, playing: bool) {
     shared.change(false, |g| g.playing = playing);
 }
 
+/// A Sync plan is on screen (or being made): the worker waits, because every key it writes changes
+/// a row the plan was made from and the plan would be refused as stale. Not remembered.
+#[tauri::command]
+pub fn bganalysis_set_hold(shared: State<'_, Arc<Shared>>, hold: bool) {
+    shared.change(false, |g| g.held = hold);
+}
+
 /// "Run now": works on the open library even if it is a Pacemaker, which is otherwise never
 /// touched. Refused while the master switch is off.
 #[tauri::command]
@@ -955,6 +981,7 @@ macro_rules! bganalysis_commands {
                 $crate::commands::bganalysis::bganalysis_watch,
                 $crate::commands::bganalysis::bganalysis_set_paused,
                 $crate::commands::bganalysis::bganalysis_set_playing,
+                $crate::commands::bganalysis::bganalysis_set_hold,
                 $crate::commands::bganalysis::bganalysis_run_now,
                 $crate::commands::bganalysis::bganalysis_retry_failures,
             ];
@@ -1116,7 +1143,7 @@ mod tests {
 
     #[test]
     fn decide_applies_the_rules_in_order() {
-        let ok = Snap { settings: Settings::default(), open: true, pacemaker: false, started: false, paused: false, playing: false, job_running: false };
+        let ok = Snap { settings: Settings::default(), open: true, pacemaker: false, started: false, paused: false, playing: false, job_running: false, held: false };
         assert_eq!(decide(&ok), None, "a library on this computer is worked on by itself");
         assert_eq!(decide(&Snap { open: false, ..ok.clone() }), Some(Stop::NoLibrary));
         assert_eq!(decide(&Snap { settings: Settings { enabled: false, ..ok.settings }, ..ok.clone() }), Some(Stop::Off));
@@ -1129,6 +1156,8 @@ mod tests {
         let ignore = Settings { pause_during_playback: false, ..ok.settings };
         assert_eq!(decide(&Snap { settings: ignore, playing: true, ..ok.clone() }), None, "the playback wait is a setting");
         assert_eq!(decide(&Snap { job_running: true, ..ok.clone() }), Some(Stop::Job));
+        assert_eq!(decide(&Snap { held: true, ..ok.clone() }), Some(Stop::Held), "a Sync plan on screen holds it");
+        assert_eq!(decide(&Snap { held: true, paused: true, ..ok.clone() }), Some(Stop::Paused), "pause still comes first");
         // the switch beats everything else, so a Pacemaker with the switch off says "off"
         assert_eq!(decide(&Snap { settings: Settings { enabled: false, ..ok.settings }, pacemaker: true, paused: true, ..ok }), Some(Stop::Off));
     }

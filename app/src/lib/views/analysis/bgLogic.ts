@@ -17,6 +17,7 @@ export function stripVisible(s: BgStatus): boolean {
     case "paused":
     case "playing":
     case "waiting":
+    case "held":
       return s.left > 0;
     default:
       return false;
@@ -35,6 +36,8 @@ export function statusLine(s: BgStatus): string {
       return `Background analysis waits while a preview plays${more}`;
     case "waiting":
       return `Background analysis waits for the job you started${more}`;
+    case "held":
+      return `Background analysis waits while a Sync plan is on screen${more}`;
     case "blocked":
       return `Background analysis is held up: ${s.detail || "a result could not be saved"}. It tries again shortly.`;
     case "error":
@@ -70,12 +73,21 @@ export function groupKeys(keys: { track_id: number; key: string }[]): Map<string
   return out;
 }
 
+/** Something went wrong with this one, as against a file that was read fine and has no result to
+ *  give (a drum-only track has no key): that is not a failure and has nothing to try again. */
+export const isFailure = (f: BgFailure): boolean => !f.no_result;
+
+/** What was read fine but gave no result: one row per track, with what is missing (`keys`). */
+export function noResultRows(list: BgFailure[]): FailureRow[] {
+  return failureRows(list.filter((f) => f.no_result).map((f) => ({ ...f, no_result: false })));
+}
+
 /** The "couldn't analyse" list: one row per track, the kinds that failed and the reasons. */
 export type FailureRow = { track_id: number; label: string; kinds: string; reasons: string };
 
 export function failureRows(list: BgFailure[]): FailureRow[] {
   const by = new Map<number, BgFailure[]>();
-  for (const f of list) by.set(f.track_id, [...(by.get(f.track_id) ?? []), f]);
+  for (const f of list.filter(isFailure)) by.set(f.track_id, [...(by.get(f.track_id) ?? []), f]);
   return [...by.values()]
     .map((fs) => ({
       track_id: fs[0].track_id,
@@ -89,9 +101,22 @@ export function failureRows(list: BgFailure[]): FailureRow[] {
 /** The note under the strip: how many tracks could not be analysed, hidden once the user
  *  dismissed it for this many results (it comes back if more fail). */
 export function failureNote(failures: BgFailure[], dismissedAt: number): string | null {
-  const tracks = new Set(failures.map((f) => f.track_id)).size;
-  if (tracks === 0 || failures.length <= dismissedAt) return null;
+  const real = failures.filter(isFailure);
+  const tracks = new Set(real.map((f) => f.track_id)).size;
+  if (tracks === 0 || real.length <= dismissedAt) return null;
   return `${plural(tracks, "track", "tracks")} couldn't be analysed.`;
+}
+
+/** How many results count towards the hidden note (no-result ones never do). */
+export const failureCount = (failures: BgFailure[]): number => failures.filter(isFailure).length;
+
+/** The remembered "note hidden" counts, by library root, from storage. Anything unusable is dropped. */
+export function parseDismissed(raw: unknown): Record<string, number> {
+  const out: Record<string, number> = {};
+  if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+    for (const [k, v] of Object.entries(raw)) if (typeof v === "number" && Number.isInteger(v) && v > 0) out[k] = v;
+  }
+  return out;
 }
 
 /** Clamps the key confidence floor the way the backend validates it (whole per cent, 0 to 100). */

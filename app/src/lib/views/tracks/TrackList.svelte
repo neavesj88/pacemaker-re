@@ -647,6 +647,8 @@
     background: var(--row);
     box-sizing: border-box;
     cursor: default;
+    /* a double-click plays the track and shift-click selects a range: neither should highlight text */
+    user-select: none;
     outline: none;
   }
   .row.alt {

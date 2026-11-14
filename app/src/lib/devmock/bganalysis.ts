@@ -16,7 +16,7 @@ import type { Handlers } from "./types";
 
 type Kind = "peaks" | "keys" | "energy" | "sections";
 type MTrack = ReturnType<typeof libraryFor>["tracks"][number];
-type Failure = { kind: Kind; track_id: number; label: string; location: string; size: number; reason: string };
+type Failure = { kind: Kind; track_id: number; label: string; location: string; size: number; reason: string; no_result?: boolean; file_missing?: boolean };
 
 const KINDS: Kind[] = ["peaks", "keys", "energy", "sections"];
 const WORD: Record<Kind, string> = { peaks: "waveforms", keys: "keys", energy: "energy", sections: "sections" };
@@ -28,6 +28,7 @@ let root: string | null = null;
 let manualRoot: string | null = null;
 let paused = false;
 let playing = false;
+let held = false;
 let failures: Failure[] = [];
 let lanes: { kind: Kind; items: MTrack[]; total: number; done: number }[] | null = null;
 let timer: ReturnType<typeof setInterval> | null = null;
@@ -79,6 +80,7 @@ function hold(): string | null {
   if (paused) return "paused";
   if (settings.pause_during_playback && playing) return "playing";
   if (jobLock.running) return "waiting";
+  if (held) return "held";
   return null;
 }
 
@@ -167,6 +169,11 @@ export const handlers: Handlers = {
   },
   bganalysis_set_playing: (a) => {
     playing = !!a.playing;
+    tick();
+    return null;
+  },
+  bganalysis_set_hold: (a) => {
+    held = !!a.hold;
     tick();
     return null;
   },

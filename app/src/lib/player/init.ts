@@ -1,12 +1,14 @@
 // Startup hook (run by the shell): starts the playback engine and the player's keyboard
 // shortcuts. Space plays / pauses (or plays the highlighted track when nothing is loaded);
-// C is the CUE button while held. Neither fires while a text field has the focus.
+// C is the CUE button while held. Neither fires while a text field has the focus, and Space yields
+// to a row, editor or view that already handled the key (see spaceClaim.ts).
 import type { Unlisten } from "$lib/api/events";
 import { playback } from "$lib/state/playback.svelte";
 import { nav } from "$lib/state/nav.svelte";
 import { selection } from "$lib/state/selection.svelte";
 import { session } from "$lib/state/session.svelte";
 import { engine } from "./engine.svelte";
+import { playerOwnsSpace } from "./spaceClaim";
 
 /** True when the key press belongs to something being typed into. */
 function typing(t: EventTarget | null): boolean {
@@ -41,6 +43,9 @@ export default function init(): Unlisten {
     if (e.ctrlKey || e.metaKey || e.altKey || typing(e.target) || !session.library) return;
     if (e.code === "Space") {
       if (!spaceFree(e.target)) return;
+      // a table row, the mix editor or the grid editor already acted on this press: one key, one
+      // action (two toggles in a row left the player paused)
+      if (!playerOwnsSpace(e.defaultPrevented)) return;
       e.preventDefault(); // the page must not scroll
       if (e.repeat) return;
       if (playback.trackId === null && playback.mixPreview === null) {

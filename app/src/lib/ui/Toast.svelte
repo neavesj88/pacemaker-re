@@ -12,7 +12,8 @@
   .toasts {
     position: fixed;
     right: 14px;
-    bottom: 56px;
+    /* just above the player bar, whatever height it has (Player.svelte publishes --player-h) */
+    bottom: calc(var(--player-h, 48px) + 8px);
     z-index: 50;
     display: flex;
     flex-direction: column;

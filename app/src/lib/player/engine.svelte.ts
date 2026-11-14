@@ -154,6 +154,8 @@ class Engine {
   #tick: ReturnType<typeof setInterval> | undefined;
   #cuePreviewing = false;
   #started = false;
+  /** The library object the peaks and beats on show were read for. */
+  #decorLib: unknown = null;
 
   /** Starts the effects that keep the audio in step with the transport. Returns the teardown. */
   start(): Unlisten {
@@ -179,12 +181,29 @@ class Engine {
     }
 
     const stop = $effect.root(() => {
+      // What the effect below follows are values, not the library object: every in-place reload
+      // (a grid save, a tag edit, a finished job, an undo) installs a new object, and reopening
+      // the audio for that cut the sound and sent the playhead back to 0:00. A derived is passed
+      // on only when its value changes, so the track is reopened when the library, the track or
+      // the file it points at really changed.
+      const root = $derived(session.library?.root ?? null);
+      const where = $derived(
+        playback.trackId === null ? null : (session.library?.tracks.find((t) => t.track_id === playback.trackId)?.location ?? null),
+      );
       // 1. what is loaded: resolve the file, beats and peaks
       $effect(() => {
         const id = playback.trackId;
         const mix = playback.mixPreview;
-        const root = session.library?.root ?? null;
-        untrack(() => void this.#select(id, mix, root));
+        const r = root;
+        void where;
+        void playback.reloads;
+        untrack(() => void this.#select(id, mix, r));
+      });
+      // 1b. the library was reloaded in place under the loaded track: the audio plays on, only
+      // the waveform and beat ticks are read again (a saved grid changes them)
+      $effect(() => {
+        const lib = session.library;
+        untrack(() => this.#refreshDecor(lib));
       });
       // 2. play / pause, once the source is ready
       $effect(() => {
@@ -234,6 +253,7 @@ class Engine {
 
   async #select(id: number | null, mix: typeof playback.mixPreview, root: string | null) {
     const token = ++this.#token;
+    this.#decorLib = session.library;
     this.#halt();
     this.#media.pause();
     this.#media.load(null, 0);
@@ -287,6 +307,39 @@ class Engine {
     } finally {
       if (token === this.#token) this.loading = false;
     }
+  }
+
+  /** Reads the loaded track's waveform and beat ticks again after an in-place library reload.
+   *  Nothing is unloaded: the audio, its position and its play state are left alone. */
+  #refreshDecor(lib: typeof session.library) {
+    if (lib === this.#decorLib) return;
+    this.#decorLib = lib;
+    const id = playback.trackId;
+    if (!lib || id === null || playback.mixPreview || !this.ready) return;
+    const track = lib.tracks.find((t) => t.track_id === id);
+    if (!track) return;
+    const token = this.#token; // a track change bumps it and drops these results
+    void fetchPeaks(lib.root, track.location, PEAK_COLUMNS).then(
+      (p) => {
+        if (token !== this.#token) return;
+        this.peaks = p;
+        this.peaksProblem = "";
+      },
+      (e) => {
+        if (token === this.#token) this.peaksProblem = e instanceof Error ? e.message : String(e);
+      },
+    );
+    void playbackBeats(lib.root, track.location).then(
+      (b) => {
+        if (token !== this.#token) return;
+        this.beats = b.beats;
+        this.firstDownbeat = b.first_downbeat;
+        this.beatsProblem = b.problem ?? "";
+      },
+      (e) => {
+        if (token === this.#token) this.beatsProblem = String(e);
+      },
+    );
   }
 
   /** Points the output at `path`; an empty path means the browser preview (silent clock). */

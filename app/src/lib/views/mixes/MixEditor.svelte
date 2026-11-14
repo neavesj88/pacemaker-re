@@ -1,6 +1,7 @@
 <script lang="ts">
   // The open mix: toolbar, library picker, timeline, inspector and transport, plus the keyboard.
-  import { tick, untrack } from "svelte";
+  import { onMount, tick, untrack } from "svelte";
+  import { claimSpace } from "$lib/player/spaceClaim";
   import * as E from "$lib/state/mixedit";
   import { mixExport } from "$lib/state/mixexport.svelte";
   import { mixes } from "$lib/state/mixes.svelte";
@@ -22,6 +23,8 @@
   import { setlist } from "../setlist/setlist.svelte";
 
   const doc = $derived(mixes.doc!);
+  // Space plays the mix here; the player bar's own Space shortcut stands aside while a mix is open
+  onMount(() => claimSpace(() => !!mixes.doc));
   let saving = $state(false);
   tracklist.ensureLoaded();
   mixExport.ensureLoaded();
@@ -102,6 +105,8 @@
     if (!mixes.doc) return;
     const mod = e.ctrlKey || e.metaKey;
     const k = e.key.toLowerCase();
+    // a row, clip or control already acted on this key (one key, one action)
+    if (e.defaultPrevented) return;
     if (mod && k === "s") {
       e.preventDefault();
       if (e.shiftKey) saveMixAs();
@@ -109,6 +114,9 @@
       return;
     }
     if (editable(e.target)) return;
+    // the library picker is a table with its own keys (Space auditions a track in the player bar,
+    // Delete and Ctrl+A are not for the clips): only undo and redo reach the mix from there
+    if ((e.target as Element | null)?.closest?.(".picker") && !(mod && (k === "z" || k === "y"))) return;
     // a dialog is open, or a button / menu item has the focus and wants Space and Enter itself
     if (document.querySelector('[role="dialog"]')) return;
     if (k === " " && (e.target as HTMLElement | null)?.closest?.("button, a, summary, [role=menuitem]")) return;

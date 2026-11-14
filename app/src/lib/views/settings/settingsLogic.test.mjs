@@ -123,6 +123,7 @@ const VIEW_STATE = {
   "pm.mixes.vocalTools.v1": "which Wah tools of a mix the user made as Vocal tools (a note about the mix kept in this app, not a setting)",
   "pm.gridBatchNudgeMs": "the last nudge typed into the grid batch dialog",
   "pacemaker-revival.playerHeight": "how tall the player bar is (dragged on its top edge; Double-click resets)",
+  "pm.bg.noteHidden.v1": "which background-analysis failure notes the owner hid, per library (it comes back if more tracks fail; Try again clears it)",
 };
 
 function sourceFiles(dir) {
