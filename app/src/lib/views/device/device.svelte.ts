@@ -17,8 +17,10 @@ import {
 } from "$lib/api/device";
 import type { DoneEvent, ProgressEvent } from "$lib/api/types";
 import { jobs } from "$lib/state/jobs.svelte";
+import { nav } from "$lib/state/nav.svelte";
 import { session } from "$lib/state/session.svelte";
 import { toast } from "$lib/state/toast.svelte";
+import { reloadPlan } from "./reloadLogic";
 
 export type DeviceJob = { kind: string; label: string; done: number; total: number; detail: string | null };
 
@@ -41,9 +43,6 @@ class DeviceStore {
   /** The per-file result of the last finished backup verification. */
   verify = $state<VerifyReport | null>(null);
   verifyOpen = $state(false);
-  /** The library object that was ejected. The session has no way to close a library, so the
-   *  view treats exactly this object as detached; opening a drive again gives a new object. */
-  ejected = $state.raw<unknown>(null);
   #root = "";
 
   /** Anything that writes to the volume (a device job here, an import or re-analysis elsewhere,
@@ -52,8 +51,21 @@ class DeviceStore {
     return !!this.job || jobs.busy || this.ejecting;
   }
 
+  /** `lib` is the open library and its Pacemaker was ejected (the session marks it; opening a drive
+   *  again gives a new object). */
   isDetached(lib: unknown) {
-    return !!lib && lib === this.ejected;
+    return !!lib && lib === session.library && session.isDetached;
+  }
+
+  /** A different library was opened: nothing read for the old one is shown or reloaded. */
+  reset() {
+    this.overview = null;
+    this.health = null;
+    this.settings = undefined;
+    this.results = {};
+    this.verify = null;
+    this.verifyOpen = false;
+    this.#root = "";
   }
 
   cancel() {
@@ -98,7 +110,7 @@ class DeviceStore {
     this.ejecting = true;
     try {
       if (await deviceEject(root)) {
-        this.ejected = lib;
+        session.markDetached(lib);
         this.overview = null;
         this.health = null;
         this.settings = undefined;
@@ -143,9 +155,14 @@ class DeviceStore {
       this.results[ev.job] = ev.summary;
       toast.show(ev.summary, ev.failed > 0 ? "bad" : "ok", 8000);
     }
-    if (ev.job === JOB_RELINK && this.#root && !this.isDetached(session.library)) {
+    // only what the open library is: a job that ends after the user switched library or unplugged
+    // the drive must not read the old root (a missing drive would show as an error after a success)
+    const lib = session.library;
+    const plan = reloadPlan(this.#root, lib?.root ?? null, this.isDetached(lib), nav.view === "device");
+    if (plan === "forget") this.reset();
+    if (ev.job === JOB_RELINK && lib && (plan === "load" || plan === "clear")) {
       // track locations changed: the open library and the Restore card's snapshot list are stale
-      await session.load(this.#root, true);
+      await session.load(lib.root, true);
       this.snapshotTick++;
     }
     if (ev.job === JOB_VERIFY) {
@@ -161,8 +178,16 @@ class DeviceStore {
       }
       return;
     }
-    if (this.#root && !this.isDetached(session.library)) await this.load(this.#root);
+    if (plan === "load") await this.load(this.#root);
+    else if (plan === "clear") {
+      // not on screen: the view reads it afresh when it is opened, so no scan of a view nobody looks at
+      this.overview = null;
+      this.health = null;
+      this.settings = undefined;
+    }
   }
 }
 
 export const device = new DeviceStore();
+
+session.onReset(() => device.reset());

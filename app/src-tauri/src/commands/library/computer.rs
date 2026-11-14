@@ -120,14 +120,34 @@ pub struct ComputerLibraryInfo {
     /// A library (`.Pacemaker/music.db`) is there now.
     exists: bool,
     warning: Option<String>,
+    /// The settings file is there but could not be used, so `settings` and `path` are only the
+    /// defaults. The app opens nothing by itself then: the user decides (see `startupRoot`).
+    unreadable: bool,
+}
+
+/// What the settings say, read only: nothing is created, opened or rewritten.
+fn info_for(dir: &Path, default: &Path) -> ComputerLibraryInfo {
+    let (settings, warning, unreadable) = load(dir);
+    let at = resolve(&settings, default);
+    ComputerLibraryInfo { exists: db_path(&at).is_file(), path: at.display().to_string(), default_path: default.display().to_string(), settings, warning, unreadable }
 }
 
 fn info(app: &AppHandle) -> AppResult<ComputerLibraryInfo> {
-    let dir = config_dir(app)?;
-    let default = default_path(app)?;
-    let (settings, warning, _) = load(&dir);
-    let at = resolve(&settings, &default);
-    Ok(ComputerLibraryInfo { exists: db_path(&at).is_file(), path: at.display().to_string(), default_path: default.display().to_string(), settings, warning })
+    Ok(info_for(&config_dir(app)?, &default_path(app)?))
+}
+
+/// Where "make the library" would put it. Refused while the settings file is unreadable, because
+/// the path would then be the default instead of the one the file was meant to hold.
+fn create_target(dir: &Path, default: &Path) -> Result<PathBuf, String> {
+    let i = info_for(dir, default);
+    if i.unreadable {
+        return Err(format!(
+            "{} could not be read, so no library was made. {} Use the default location in Settings (a copy of the damaged file is kept) or choose a folder first.",
+            path(dir).display(),
+            i.warning.unwrap_or_default()
+        ));
+    }
+    Ok(PathBuf::from(i.path))
 }
 
 /// The settings, the resolved path and whether a library exists there.
@@ -151,7 +171,7 @@ pub async fn computer_library_set(app: AppHandle, settings: ComputerSettings) ->
 #[tauri::command]
 pub async fn computer_library_create(app: AppHandle) -> AppResult<String> {
     tauri::async_runtime::spawn_blocking(move || -> AppResult<String> {
-        let at = PathBuf::from(info(&app)?.path);
+        let at = create_target(&config_dir(&app)?, &default_path(&app)?)?;
         create_at(&at)?;
         Ok(at.display().to_string())
     })
@@ -247,6 +267,45 @@ mod tests {
         let (s, warn, bad) = load(&dir);
         assert!(warn.unwrap().contains("invalid value") && bad && s == ComputerSettings::default());
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn an_unreadable_settings_file_is_reported_and_nothing_is_made_or_rewritten() {
+        let root = temp_dir("unreadable");
+        let cfg = root.join("cfg");
+        let default = root.join("Music").join(FOLDER_NAME);
+        std::fs::create_dir_all(&cfg).unwrap();
+        // an owner's library is at the default path: a corrupt file must not lead the app to it
+        create_at(&default).unwrap();
+        std::fs::write(path(&cfg), "{ not json").unwrap();
+        let i = info_for(&cfg, &default);
+        assert!(i.unreadable && i.warning.as_deref().unwrap().contains(FILE), "the file is named in the warning");
+        assert!(i.exists, "the default library is there, but the frontend must not open it by itself");
+        assert_eq!(std::fs::read_to_string(path(&cfg)).unwrap(), "{ not json", "reading never rewrites the file");
+        assert!(!cfg.join(format!("{FILE}.bad")).exists());
+        let err = create_target(&cfg, &default).unwrap_err();
+        assert!(err.contains(FILE) && err.contains("no library was made"), "{err}");
+        // a good file is not flagged
+        std::fs::write(path(&cfg), r#"{"open_at_start":false}"#).unwrap();
+        let i = info_for(&cfg, &default);
+        assert!(!i.unreadable && i.warning.is_none() && !i.settings.open_at_start);
+        assert_eq!(create_target(&cfg, &default).unwrap(), default);
+        drop(Library::open_read_only(&default));
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn a_path_that_does_not_exist_is_reported_and_not_created() {
+        let root = temp_dir("missing");
+        let cfg = root.join("cfg");
+        std::fs::create_dir_all(&cfg).unwrap();
+        let gone = root.join("unplugged").join("Lib");
+        let default = root.join("Music").join(FOLDER_NAME);
+        std::fs::write(path(&cfg), serde_json::json!({ "path": gone.display().to_string(), "open_at_start": true }).to_string()).unwrap();
+        let i = info_for(&cfg, &default);
+        assert!(!i.exists && !i.unreadable && i.path == gone.display().to_string(), "the configured path is kept, not swapped for the default");
+        assert!(!gone.exists() && !default.exists(), "looking at the settings creates nothing");
+        std::fs::remove_dir_all(&root).unwrap();
     }
 
     #[test]

@@ -2,23 +2,36 @@
   import { filters } from "$lib/state/filters.svelte";
   import { jobs } from "$lib/state/jobs.svelte";
   import { nav } from "$lib/state/nav.svelte";
-  import { pickerOptions, sameRoot } from "$lib/state/place";
+  import { missingComputerPath, pickerOptions, sameRoot } from "$lib/state/place";
   import { session } from "$lib/state/session.svelte";
   import Button from "$lib/ui/Button.svelte";
   import RMark from "$lib/ui/RMark.svelte";
 
   // "This computer" first, then each detected Pacemaker; a folder opened by hand is added so the
   // picker always names what is open.
+  // A saved path that is not there (an unplugged drive) is not offered: choosing it would quietly make a
+  // second, empty library. The Welcome screen explains it and asks first.
   const options = $derived(
-    pickerOptions(session.computer?.path ?? null, session.computer?.exists ?? false, session.volumes, session.library),
+    pickerOptions(
+      missingComputerPath(session.computerOffer) ? null : (session.computerOffer?.path ?? null),
+      session.computerOffer?.exists ?? false,
+      session.volumes,
+      session.attached,
+    ),
   );
-  const current = $derived(options.find((o) => session.library && sameRoot(o.value, session.library.root))?.value ?? "");
+  const current = $derived(options.find((o) => session.attached && sameRoot(o.value, session.attached.root))?.value ?? "");
 
-  function pick(value: string) {
+  async function pick(select: HTMLSelectElement) {
+    const value = select.value;
+    // keep showing the open library until the switch really happens (a question may stop it)
+    select.value = current;
     const c = session.computer;
     // choosing "This computer (new)" makes the library first
-    if (c && sameRoot(value, c.path) && !c.exists) void session.startComputer();
-    else void session.load(value);
+    if (c && sameRoot(value, c.path) && !c.exists) await session.startComputer();
+    else await session.load(value);
+    // the select is bound one way: when the read failed or the question was cancelled nothing
+    // changed in `current`, so the box would keep showing the library that did not open
+    select.value = current;
   }
 </script>
 
@@ -26,13 +39,7 @@
   <div class="brand"><RMark size={20} /><b>Pacemaker <span>Revival</span></b></div>
   <div class="source">
     {#if options.length > 0}
-      <select aria-label="Library" value={current} onchange={(e) => {
-          const el = e.currentTarget as HTMLSelectElement;
-          const v = el.value;
-          // keep showing the open library until the switch really happens (a prompt may stop it)
-          el.value = current;
-          pick(v);
-        }}>
+      <select aria-label="Library" value={current} disabled={session.loading} onchange={(e) => void pick(e.currentTarget as HTMLSelectElement)}>
         <option value="" disabled>Choose a library…</option>
         {#each options as o (o.value)}
           <option value={o.value} title={o.title}>{o.label}</option>
@@ -40,7 +47,7 @@
       </select>
     {/if}
     <Button onclick={() => session.refreshVolumes()} title="Look for a connected Pacemaker">Rescan</Button>
-    <Button onclick={() => session.openFolder()}>Open folder…</Button>
+    <Button disabled={session.loading} onclick={() => session.openFolder()}>Open folder…</Button>
   </div>
   {#if session.library && session.isComputer && session.volumes.length > 0}
     <Button
@@ -57,7 +64,7 @@
         ? session.isComputer
           ? "Analyse audio files and copy them into the library on this computer"
           : "Analyse audio files and copy them to the Pacemaker"
-        : "Unavailable while a job runs or the library is not device-compatible"}
+        : "Unavailable while a job runs, the library is not device-compatible or the Pacemaker was ejected"}
     >Add tracks…</Button>
     <input
       class="search"

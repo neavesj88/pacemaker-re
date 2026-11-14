@@ -35,8 +35,8 @@
 
   // ---- names --------------------------------------------------------------------------------
 
-  const options = $derived(libraryOptions(session.computer, session.volumes, session.library ? { root: session.library.root, kind: session.library.kind } : null));
-  const open = $derived(session.library ? { root: session.library.root, kind: session.library.kind } : null);
+  const options = $derived(libraryOptions(session.computerOffer, session.volumes, session.attached ? { root: session.attached.root, kind: session.attached.kind } : null));
+  const open = $derived(session.attached ? { root: session.attached.root, kind: session.attached.kind } : null);
   const choices = $derived.by(() => {
     const all = [...options];
     for (const f of libs.folders) if (!all.some((o) => sameRoot(o.value, f.value))) all.push(f);
@@ -240,7 +240,7 @@
     <div class="empty">
       {#if side === "left"}
         <p>Open a library to see it here.</p>
-        {#if session.computer?.exists}
+        {#if session.computerOffer?.exists}
           <Button variant="primary" onclick={() => session.computer && session.load(session.computer.path)}>Open the library on this computer</Button>
         {/if}
       {:else if !libs.rightRoot && picker.length > 0}

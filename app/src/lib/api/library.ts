@@ -18,6 +18,8 @@ export type ComputerLibraryInfo = {
   /** A library is there now. */
   exists: boolean;
   warning: string | null;
+  /** The settings file exists but could not be used: `settings` and `path` are only the defaults. */
+  unreadable: boolean;
 };
 
 export const computerLibraryGet = () => invoke<ComputerLibraryInfo>("computer_library_get");

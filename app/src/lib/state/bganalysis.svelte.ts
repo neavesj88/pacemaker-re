@@ -18,7 +18,7 @@ import {
 } from "$lib/api/bganalysis";
 import { forgetPeaks } from "$lib/views/tracks/peakCache";
 import { peakTick } from "$lib/views/tracks/peakTick.svelte";
-import { groupKeys } from "$lib/views/analysis/bgLogic";
+import { groupKeys, libraryChanged } from "$lib/views/analysis/bgLogic";
 import { energy } from "./energy.svelte";
 import { sections } from "./sections.svelte";
 import { session } from "./session.svelte";
@@ -55,6 +55,8 @@ class Bg {
   #peaks = new Set<string>();
   #peaksTimer: ReturnType<typeof setTimeout> | null = null;
   #lastFailures = -1;
+  /** The library the last status was about: the failure list and its "Hide" belong to it. */
+  #root: string | null = null;
 
   /** Reads settings, status and the failure list from the backend. */
   async load() {
@@ -135,8 +137,17 @@ class Bg {
     this.dismissedAt = this.failures.length;
   }
 
+  /** Forgets the failure list and the "Hide", so the next status reads the list afresh. */
+  private forgetFailures() {
+    this.failures = [];
+    this.dismissedAt = 0;
+    this.#lastFailures = -1;
+  }
+
   onStatus(s: BgStatus) {
     this.status = s;
+    if (libraryChanged(this.#root, s.root)) this.forgetFailures();
+    this.#root = s.root;
     // the list is read again only when its length moved, not on every status tick
     if (s.failures !== this.#lastFailures) {
       this.#lastFailures = s.failures;

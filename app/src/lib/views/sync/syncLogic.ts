@@ -77,7 +77,7 @@ export function defaultPair(
   }
   const computer = computerOf(opts);
   const pm = firstPacemaker(opts);
-  if (open && open.kind === "pacemaker" && computer) return { from: open.root, to: computer };
+  if (open && open.kind === "pacemaker" && computer && opts.some((o) => sameRoot(o.value, open.root))) return { from: open.root, to: computer };
   if (computer && pm) return { from: computer, to: pm };
   return none;
 }
