@@ -352,6 +352,8 @@ export async function checkOpenMixAfterReload(root: string) {
     void mixes.refreshList();
     toast.show(`“${name}” is no longer in the library (a restore or sync removed it), so the editor was closed.`, "info", 9000);
   } else if (verdict === "changed" || verdict === "gone") {
+    if (verdict === "changed" && stamp === mixes.keptStamp) return; // already answered "Keep my edits" for this version
+    mixes.libraryStamp = stamp;
     mixes.libraryChange = verdict;
   }
 }

@@ -134,7 +134,7 @@
     </span>
   </div>
   <p class="note">Chops the clip on and off in eighth notes from the start of this block, at the tempo above (0 follows the clip's tempo). It has no curves.</p>
-  <div class="warn">The file layout of a Trans tool has not been checked on a real Pacemaker or in the Tonium Editor (no mix with one has been seen). The preview and the audio export play it; if the device does not like it, delete the block and save again.</div>
+  <div class="warn">The file layout of a Trans tool has not been checked on a real Pacemaker or in the Tonium Editor (no mix with one has been seen). The preview and the audio export play it; if {session.isComputer ? "the Pacemaker" : "the device"} does not like it, delete the block and save again.</div>
 {/if}
 
 {#if tool && type === "Wah"}

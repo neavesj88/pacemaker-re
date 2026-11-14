@@ -157,12 +157,19 @@
 
   // a tool that was just added (or picked) is shown: the strip may lie below the bar's fold on a short window
   // or past the right edge when the playhead was elsewhere
+  // only when the picked tool changes, so scrolling away on purpose (or editing the tool) is left alone
+  let shownTool: string | null = null;
   $effect(() => {
     const sel = mixes.selected;
     const s = scroller;
-    if (!s || sel.length !== 1) return;
+    if (!s || sel.length !== 1) {
+      shownTool = null;
+      return;
+    }
+    if (sel[0] === shownTool) return;
     const it = fx.items.find((x) => x.p.id === sel[0]);
     if (!it) return;
+    shownTool = sel[0];
     const top = RULER_H + BAR_H + 2;
     const bottom = top + fxLaneH;
     untrack(() => {

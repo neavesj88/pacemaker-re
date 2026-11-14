@@ -2,6 +2,7 @@
   // Inspector when nothing is selected: the mix itself (name, reference tempo, library row).
   import type { MixMeta } from "$lib/api/mixes";
   import { mixes } from "$lib/state/mixes.svelte";
+  import { session } from "$lib/state/session.svelte";
   import { toast } from "$lib/state/toast.svelte";
   import Stars from "$lib/ui/Stars.svelte";
   import { errText } from "./actions";
@@ -70,7 +71,7 @@
   <input type="checkbox" checked={toolPrefs.showTrans} onchange={(e) => toolPrefs.setShowTrans(e.currentTarget.checked)} />
   Offer the Trans tool when adding a tool
 </label>
-<div class="muted small">Off by default. Trans (a beat-synced gate) plays in the preview and the audio export, but its file layout has not been checked on a real Pacemaker, so a mix saved with it may be refused or played differently by the device. Turning this on is your choice. It only hides the menu entry: mixes that already have the tool still show it. A volume curve is the clip's Gain curve; there is no separate Volume tool.</div>
+<div class="muted small">Off by default. Trans (a beat-synced gate) plays in the preview and the audio export, but its file layout has not been checked on a real Pacemaker, so a mix saved with it may be refused or played differently by {session.isComputer ? "the Pacemaker" : "the device"}. Turning this on is your choice. It only hides the menu entry: mixes that already have the tool still show it. A volume curve is the clip's Gain curve; there is no separate Volume tool.</div>
 
 {#if mixes.problems.length > 0}
   <h4>Cannot save yet</h4>

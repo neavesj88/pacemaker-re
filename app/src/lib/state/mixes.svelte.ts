@@ -87,6 +87,10 @@ class Mixes {
    * replaced it): "changed" = another version is there now, "gone" = the mix is not in the library any more.
    * Saving is refused until the user chooses (reload, or keep the edits on purpose). */
   libraryChange = $state<"changed" | "gone" | null>(null);
+  /** The library's stamp behind `libraryChange`, and the stamp the user already chose to overwrite ("Keep my
+   * edits"), so the next reload with the same stamp does not ask the same question again. */
+  libraryStamp: number | null = null;
+  keptStamp: number | null = null;
   /** Copied clips or processes. */
   clipboard = $state.raw<E.Clipboard | null>(null);
   /** The mix list, for pickers (refreshed by `refreshList`). */
@@ -204,11 +208,16 @@ class Mixes {
 
   /** The user chose to keep the edits over the version the library has now: the next Save overwrites it. */
   keepEdits() {
-    if (this.libraryChange === "changed") this.libraryChange = null;
+    if (this.libraryChange === "changed") {
+      this.keptStamp = this.libraryStamp;
+      this.libraryChange = null;
+    }
   }
 
   close() {
     this.libraryChange = null;
+    this.libraryStamp = null;
+    this.keptStamp = null;
     this.doc = null;
     this.selected = [];
     this.dirty = false;
