@@ -166,7 +166,8 @@
   }
 
   const zoomValue = $derived(sliderFromPps(mv.pps));
-  const busyLabel = $derived(preview.status === "rendering" ? "Rendering preview…" : "");
+  // clips still decoding play silent and join in as soon as they are ready; a range preview renders first
+  const busyLabel = $derived(preview.status === "rendering" ? "Rendering the part…" : preview.loading ? `Loading clips ${preview.load.loaded} of ${preview.load.total}…` : "");
 </script>
 
 <svelte:window onkeydown={onkey} {onbeforeunload} />
@@ -250,9 +251,6 @@
     <span class="time" aria-live="off">{clock(mv.playhead / SR)}</span>
     <span class="muted">/ {clock(doc.lengthSec)}</span>
     {#if busyLabel}<span class="muted">{busyLabel}</span>{/if}
-    {#if preview.stale && (preview.playing || preview.status === "paused")}
-      <span class="stale" title="The preview was rendered before your last edit or before the Vocal setting changed. Press play again to hear the change.">preview is out of date</span>
-    {/if}
     {#if preview.notice}<span class="notice" role="status">{preview.notice}</span>{/if}
     {#if mixExport.previewGains()}
       <span class="level" title="The preview plays at the level your last loudness analysis found for the export settings.">export level</span>
