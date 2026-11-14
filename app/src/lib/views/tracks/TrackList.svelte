@@ -305,10 +305,11 @@
     const drawn = (handle.closest('[role="columnheader"]') as HTMLElement | null)?.getBoundingClientRect().width;
     const w0 = drawn && drawn > 0 ? Math.round(drawn) : widthOf(c);
     let moved = false;
-    resizing = c.key;
     const move = (m: PointerEvent) => {
       if (!moved && m.clientX === x0) return;
+      // fix the column to px in the same render that gives it its dragged width, so pressing the grip never jumps it
       moved = true;
+      resizing = c.key;
       table.setWidth(c.key, w0 + m.clientX - x0);
     };
     const stop = () => {

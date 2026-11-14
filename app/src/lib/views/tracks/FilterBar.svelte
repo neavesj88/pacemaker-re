@@ -194,7 +194,7 @@
           </label>
         {/each}
         <div class="opts muted">Options</div>
-        <label title="On a wide window Title and Artist share the spare room; their widths are the least they get. Off: every column keeps its width."><input type="checkbox" checked={table.prefs.fillWidth} onchange={(e) => table.setFillWidth(e.currentTarget.checked)} /> Title and Artist fill a wide window</label>
+        <label title="On a wide window Title and Artist share the spare room; their widths are the least they get. A column you drag keeps the width you gave it (Reset columns undoes that). Off: every column keeps its width."><input type="checkbox" checked={table.prefs.fillWidth} onchange={(e) => table.setFillWidth(e.currentTarget.checked)} /> Title and Artist fill a wide window</label>
         <label><input type="checkbox" checked={table.prefs.caseOrderOnPick} onchange={(e) => table.setCaseOrderOnPick(e.currentTarget.checked)} /> Choosing a case sorts by case order</label>
         <p class="hint muted">Drag a column header to move it. Click a header to sort, shift-click to add a second key.</p>
         <Button small variant="link" onclick={() => table.resetColumns()}>Reset columns</Button>

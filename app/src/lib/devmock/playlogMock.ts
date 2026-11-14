@@ -104,7 +104,7 @@ function overview(a: Record<string, any>) {
     problem: problem ? "playlog-0123456789abcdef.json is not readable: expected value at line 1 column 1" : null,
     problem_moves_aside: !!problem,
     mismatch,
-    log_root: cleared ? "" : "E:\\",
+    log_root: cleared ? "" : typeof a.root === "string" && a.root ? a.root : "E:\\",
     candidates: cleared && candidate && settings.ask_before_new_log ? [CANDIDATE] : [],
     started_at: cleared ? 0 : started,
     last_change_at: cleared ? 0 : hits.length ? hits[hits.length - 1].at + 40 * 60_000 : NOW,
