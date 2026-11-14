@@ -154,8 +154,9 @@ export function mergePrefs(saved: unknown, base: ViewPrefs = defaultPrefs()): Vi
 
 /** The CSS grid track of each shown column: its width, or (when `fillWidth` is on) at least that
  *  width and a share of any spare room in proportion to it, for Title and Artist only. */
-export function gridTemplate(cols: readonly ColDef[], widths: Readonly<Record<string, number>>, fillWidth: boolean): string {
-  return cols.map((c) => (fillWidth && FLEX_COLUMNS.includes(c.key) ? `minmax(${widths[c.key]}px, ${widths[c.key]}fr)` : `${widths[c.key]}px`)).join(" ");
+export function gridTemplate(cols: readonly ColDef[], widths: Readonly<Record<string, number>>, fillWidth: boolean, fixedKey: string | null = null): string {
+  // `fixedKey`: the column whose grip is being dragged is drawn at exactly its width meanwhile
+  return cols.map((c) => (fillWidth && FLEX_COLUMNS.includes(c.key) && c.key !== fixedKey ? `minmax(${widths[c.key]}px, ${widths[c.key]}fr)` : `${widths[c.key]}px`)).join(" ");
 }
 
 /** The columns to draw: in the saved order, hidden ones left out. */

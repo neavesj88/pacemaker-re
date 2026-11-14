@@ -80,7 +80,8 @@
   const cols = $derived(table.shownColumns);
   const widthOf = (c: ColDef) => table.prefs.widths[c.key];
   const totalW = $derived(cols.reduce((sum, c) => sum + widthOf(c), 0));
-  const template = $derived(gridTemplate(cols, table.prefs.widths, table.prefs.fillWidth));
+  let resizing = $state<ColKey | null>(null);
+  const template = $derived(gridTemplate(cols, table.prefs.widths, table.prefs.fillWidth, resizing));
   const bodyH = $derived(Math.max(0, viewH - HEAD));
   const start = $derived(Math.max(0, Math.floor(scrollTop / ROW) - OVERSCAN));
   const end = $derived(Math.min(rows.length, Math.ceil((scrollTop + bodyH) / ROW) + OVERSCAN));
@@ -298,9 +299,15 @@
     const handle = e.currentTarget as HTMLElement;
     handle.setPointerCapture(e.pointerId);
     const x0 = e.clientX;
-    const w0 = widthOf(c);
+    // a Title/Artist column that is filling a wide window is drawn wider than its saved width:
+    // the drag starts from what is on screen, and the saved width follows it from there
+    const drawn = (handle.closest('[role="columnheader"]') as HTMLElement | null)?.getBoundingClientRect().width;
+    const w0 = drawn && drawn > 0 ? Math.round(drawn) : widthOf(c);
+    resizing = c.key;
+    table.setWidth(c.key, w0);
     const move = (m: PointerEvent) => table.setWidth(c.key, w0 + m.clientX - x0);
     const stop = () => {
+      resizing = null;
       handle.removeEventListener("pointermove", move);
       handle.removeEventListener("pointerup", stop);
       handle.removeEventListener("pointercancel", stop);

@@ -198,7 +198,7 @@
     {#if data?.has_log}
       Logging since {dayLabel(data.started_at)}, {data.events} change{data.events === 1 ? "" : "s"} recorded, {fmtBytes(data.file_bytes)},
       {retentionLabel(data.retention_days)}.
-      {#if data.log_root}This log belongs to the drive or path <b>{data.log_root}</b>.{/if}
+      {#if data.log_root}This log belongs to the {session.isComputer ? "folder" : "drive or path"} <b>{data.log_root}</b>.{/if}
     {/if}
   </span>
   <span class="grow"></span>
@@ -324,7 +324,7 @@
     </div>
 
     <div class="legend muted">
-      Times are {session.isComputer ? "the clock of the Pacemaker they came from" : "the device's clock"}. A <b>~</b> means the play is not exact (hover it for why).
+      Times are {session.isComputer ? "the clock of the library they were read from" : "the device's clock"}. A <b>~</b> means the play is not exact (hover it for why).
       {#if data.removed_plays > 0}
         {data.removed_plays} play{data.removed_plays === 1 ? "" : "s"} of tracks no longer in the library {data.removed_plays === 1 ? "is" : "are"} not listed.
       {/if}

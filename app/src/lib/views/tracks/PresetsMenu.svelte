@@ -153,7 +153,7 @@
         <input type="checkbox" checked={tracksState.prefs.findClearsFilters} onchange={(e) => tracksState.setFindClearsFilters(e.currentTarget.checked)} />
         “Find” from History clears the filters that hide the track
       </label>
-      <p class="muted small">Presets and the remembered view are kept by this app only; they are not on the device.</p>
+      <p class="muted small">Presets and the remembered view are kept by this app only; they are not {session.isComputer ? "stored in the music library" : "on the device"}.</p>
     </div>
   {/if}
 </div>
@@ -166,6 +166,7 @@
     position: fixed;
     z-index: 40;
     box-sizing: border-box;
+    overflow-x: hidden;
     overflow-y: auto;
     padding: 8px 12px 10px;
     background: var(--panel);

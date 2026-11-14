@@ -161,6 +161,7 @@ test("Title and Artist share spare width when asked; every other column keeps it
   const cols = shownColumns(p).filter((c) => ["fav", "title", "artist", "bpm"].includes(c.key));
   const w = p.widths;
   assert.equal(gridTemplate(cols, w, true), `${w.fav}px minmax(${w.title}px, ${w.title}fr) minmax(${w.artist}px, ${w.artist}fr) ${w.bpm}px`);
+  assert.equal(gridTemplate(cols, w, true, "title"), `${w.fav}px ${w.title}px minmax(${w.artist}px, ${w.artist}fr) ${w.bpm}px`, "the column being dragged is exact");
   assert.equal(gridTemplate(cols, p.widths, false), cols.map((c) => `${p.widths[c.key]}px`).join(" "), "off: exact widths");
   assert.equal(mergePrefs({ fillWidth: false }).fillWidth, false);
   assert.equal(mergePrefs({ fillWidth: "no" }).fillWidth, true, "a non-boolean keeps the default");

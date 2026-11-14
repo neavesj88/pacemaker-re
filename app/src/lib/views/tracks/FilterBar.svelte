@@ -193,6 +193,7 @@
             {c.label}{CASE_ONLY.includes(c.key) ? " (while a case is chosen)" : ""}
           </label>
         {/each}
+        <div class="opts muted">Options</div>
         <label title="On a wide window Title and Artist share the spare room; their widths are the least they get. Off: every column keeps its width."><input type="checkbox" checked={table.prefs.fillWidth} onchange={(e) => table.setFillWidth(e.currentTarget.checked)} /> Title and Artist fill a wide window</label>
         <label><input type="checkbox" checked={table.prefs.caseOrderOnPick} onchange={(e) => table.setCaseOrderOnPick(e.currentTarget.checked)} /> Choosing a case sorts by case order</label>
         <p class="hint muted">Drag a column header to move it. Click a header to sort, shift-click to add a second key.</p>
@@ -292,6 +293,14 @@
   }
   .pop input {
     padding: 0;
+  }
+  .opts {
+    margin-top: 4px;
+    padding-top: 6px;
+    border-top: 1px solid var(--line);
+    font-size: 11px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
   }
   .hint {
     margin: 4px 0 0;

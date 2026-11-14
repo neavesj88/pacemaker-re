@@ -86,7 +86,7 @@ class TracksState extends TableState {
     // a case that no longer exists would hide every track; leaving a case first lets the sort that
     // was in force before it come back, so the state's own sort (below) wins over it
     const caseId = s.caseId !== null && session.library?.cases.some((c) => c.id === s.caseId) ? s.caseId : null;
-    if (caseId === null) this.setCase(null);
+    if (caseId === null || caseId === this.caseId) this.setCase(null);
     if (s.sort) {
       this.prefs.sort = s.sort.map((k) => ({ ...k }));
       this.save();

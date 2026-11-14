@@ -372,3 +372,15 @@ test("a plain word finds a key as the table shows it (8A) and as stored", () => 
   assert.deepEqual(run("Abm", list), [1]);
   assert.deepEqual(run("house 1A", list), [1]);
 });
+
+test("spaced operators and an empty field next to another term", () => {
+  const view = (q) => tokenize(q).map((t) => (t === null ? "OR" : `${t.field ?? ""}${t.field ? t.op : ""}${t.value}`));
+  assert.deepEqual(view("bpm: >120"), ["bpm>120"], "a space after the colon, then an operator");
+  assert.deepEqual(view("bpm: >=128 key:8A"), ["bpm>=128", "key:8A"]);
+  assert.deepEqual(view("artist: bpm:128"), ["artist:", "bpm:128"], "a field term is never taken as the value of the one before");
+  const list = [T(1, { bpm: 128 }), T(2, { bpm: 110 })];
+  assert.deepEqual(run("bpm: >120", list), [1]);
+  assert.deepEqual(run("artist: bpm:128", list), [1], "the empty term is skipped, the next applies");
+  assert.match(compileQuery("bpm: OR key:8A").diagnostics[0].message, /^has no value/);
+});
+

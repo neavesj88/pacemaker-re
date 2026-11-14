@@ -120,7 +120,19 @@ export function tokenize(text: string): (Token | null)[] {
         // `bpm: 128`, `key: 8A`: the value may follow after spaces (but `OR` still separates)
         if (known && !value) {
           const s = skipSpace(text, i);
-          if (s > i && s < n && !/^OR(\s|$)/.test(text.slice(s))) i = s;
+          const next = text.slice(s);
+          // another field term after the gap is its own term, not this one's value
+          if (s > i && s < n && !/^OR(\s|$)/.test(next) && !/^-?[A-Za-z_]+(?::|[<>=])/.test(next)) {
+            i = s;
+            // `bpm: >120` reads as `bpm:>120`
+            const opRun = op === ":" ? /^[<>=]+/.exec(next)?.[0] : undefined;
+            const o = opRun ? parseOp(opRun) : null;
+            if (o) {
+              op = o.op;
+              i = s + opRun!.length - o.rest.length;
+              if (o.rest) value = o.rest;
+            }
+          }
         }
       }
       if (text[i] === '"') {
@@ -482,7 +494,7 @@ function readQuery(text: string): CompiledQuery {
       // `bpm:` as the last thing typed is a term still being written; anywhere else it has no value
       const field = tok.field ? FIELD_BY_NAME.get(tok.field) : undefined;
       if (field && at < tokens.length - 1 && tok.value.trim() === "" && !tok.quoted) {
-        diagnostics.push({ term: tok.raw, message: `${field.name}: has no value, so it was skipped. Write it as ${field.name}:value` });
+        diagnostics.push({ term: tok.raw, message: `has no value, so it was skipped. Write it as ${field.name}:value` });
       }
       return;
     }
