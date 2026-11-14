@@ -10,6 +10,6 @@ const view: ViewDef = {
   section: "library",
   order: 65,
   component: LibrariesView,
-  visible: () => !!session.computer?.exists || session.isComputer || session.volumes.length > (session.library && !session.isComputer ? 1 : 0),
+  visible: () => !!session.computerOffer?.exists || session.isComputer || session.volumes.length > (session.library && !session.isComputer ? 1 : 0),
 };
 export default view;

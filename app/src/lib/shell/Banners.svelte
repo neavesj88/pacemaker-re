@@ -34,7 +34,7 @@
 
 {#if session.library}
   {#if session.isDetached}
-    <div class="banner warn">{label} · {session.library.root} · ejected: it is safe to unplug. Nothing can be written to it any more; choose a library above to keep working.</div>
+    <div class="banner warn">{label} · {session.library.root} · ejected: it is safe to unplug. Nothing can be written to it any more. To keep working, open the library on this computer, dock a Pacemaker and press Rescan, or open a folder.</div>
   {:else if session.library.problems.length === 0}
     <div class="banner ok">{label} · {session.library.root} · music.db is device-compatible</div>
   {:else}

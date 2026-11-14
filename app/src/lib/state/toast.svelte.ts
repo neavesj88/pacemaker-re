@@ -10,12 +10,13 @@ class Toasts {
   items = $state<ToastItem[]>([]);
   #next = 1;
 
-  show(text: string, kind: ToastKind = "info", ms = 4000) {
+  show(text: string, kind: ToastKind = "info", ms = 4000): number {
     const id = this.#next++;
     this.items.push({ id, text, kind });
     if (this.items.length > MAX_TOASTS) this.items = this.items.slice(-MAX_TOASTS);
     const stay = toastMs(kind, ms, appearance.errorSecs);
     if (stay !== null) setTimeout(() => this.dismiss(id), stay);
+    return id;
   }
 
   dismiss(id: number) {

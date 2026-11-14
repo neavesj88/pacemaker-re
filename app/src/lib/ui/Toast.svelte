@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { session } from "$lib/state/session.svelte";
   import { toast } from "$lib/state/toast.svelte";
 
   // The stack sits above the player bar, whatever height the owner dragged it to: it measures the
@@ -8,6 +9,8 @@
 
   $effect(() => {
     void toast.items.length;
+    // the player bar mounts when a library opens, which may be after the message appeared
+    void session.library;
     const bar = document.querySelector<HTMLElement>("footer.player");
     if (!bar) {
       lift = 0;

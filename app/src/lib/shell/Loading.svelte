@@ -11,12 +11,16 @@
     if (kind === "computer" && sameRoot(root, session.computer?.path ?? "")) return "Reading the library on this computer…";
     return `Reading ${libraryLabel(kind, root, session.computer?.path ?? null)}…`;
   });
+  // only a Pacemaker's own drive is slow to read; a folder on this computer is not
+  const slow = $derived(!!session.loadingRoot && libraryKind(session.loadingRoot) === "pacemaker");
 </script>
 
 <div class="loading" role="status" aria-live="polite">
   <div class="spin" aria-hidden="true"></div>
   <p>{what}</p>
-  <p class="muted">A Pacemaker with a hard drive can take a minute to read.</p>
+  {#if slow}
+    <p class="muted">A Pacemaker with a hard drive can take a minute to read.</p>
+  {/if}
 </div>
 
 <style>

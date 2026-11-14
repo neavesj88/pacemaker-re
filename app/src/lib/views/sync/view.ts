@@ -10,6 +10,6 @@ const view: ViewDef = {
   section: "library",
   order: 70,
   component: SyncView,
-  visible: () => !!session.computer?.exists || session.isComputer,
+  visible: () => !!session.computerOffer?.exists || session.isComputer,
 };
 export default view;

@@ -39,6 +39,8 @@ test("default pair", () => {
   const o = opts(["G:\\", "H:\\"]);
   assert.deepEqual(defaultPair(o, { root: COMP, kind: "computer" }), { from: COMP, to: "G:\\" });
   assert.deepEqual(defaultPair(o, { root: "H:\\", kind: "pacemaker" }), { from: "H:\\", to: COMP });
+  // an ejected Pacemaker is not on offer, so it is not the default side either
+  assert.deepEqual(defaultPair(o, { root: "Z:\\", kind: "pacemaker" }), { from: COMP, to: "G:\\" });
   assert.deepEqual(defaultPair(o, null), { from: COMP, to: "G:\\" });
   assert.deepEqual(defaultPair(opts([]), { root: COMP, kind: "computer" }), { from: "", to: "" });
   assert.deepEqual(defaultPair(opts(["G:\\"], false), null), { from: "", to: "" });

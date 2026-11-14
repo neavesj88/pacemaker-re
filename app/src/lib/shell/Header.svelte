@@ -10,7 +10,7 @@
   // "This computer" first, then each detected Pacemaker; a folder opened by hand is added so the
   // picker always names what is open.
   const options = $derived(
-    pickerOptions(session.computer?.path ?? null, session.computer?.exists ?? false, session.volumes, session.attached),
+    pickerOptions(session.computerOffer?.path ?? null, session.computerOffer?.exists ?? false, session.volumes, session.attached),
   );
   const current = $derived(options.find((o) => session.attached && sameRoot(o.value, session.attached.root))?.value ?? "");
 

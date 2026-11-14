@@ -27,7 +27,12 @@
     <h1>Start your library</h1>
     <p>Your tracks, mixes and cases live in a library on this computer. You do not need the Pacemaker to work on them.</p>
     <div class="actions">
-      <Button variant="primary" onclick={() => session.startComputer()}>Start a library on this computer</Button>
+      {#if offer.missingPath}
+        <Button variant="primary" onclick={() => session.chooseComputerFolder()} title="Pick the folder your library is in, or the place to make a new one">Choose where the library is…</Button>
+        <Button onclick={() => session.startComputer()} title="Makes a new, empty library in {session.computer?.path}">Start a new, empty library in {session.computer?.path}</Button>
+      {:else}
+        <Button variant="primary" onclick={() => session.startComputer()}>Start a library on this computer</Button>
+      {/if}
       {#if offer.copyFrom}
         <Button onclick={() => session.copyFromPacemaker(offer.copyFrom!)} title="Makes the library on this computer, then shows what would be copied from the Pacemaker before anything is">
           Copy my Pacemaker's library to this computer
@@ -37,13 +42,15 @@
     {#if offer.missingPath}
       <p class="where">
         Your settings say the library is in <code>{offer.missingPath}</code>, but nothing is there. If it is on a drive or
-        folder that is not connected, connect it and restart the app. Nothing was made.
+        folder that is not connected, connect it and restart the app. Nothing was made. Starting a new library makes a second, empty one there, so
+        use it only if the first is gone.
+      </p>
+    {:else}
+      <p class="where">
+        It will be made in <code>{session.computer?.path}</code>
+        <Button small variant="link" onclick={() => session.chooseComputerFolder()}>Change…</Button>
       </p>
     {/if}
-    <p class="where">
-      It will be made in <code>{session.computer?.path}</code>
-      <Button small variant="link" onclick={() => session.chooseComputerFolder()}>Change…</Button>
-    </p>
   {:else if offer.open}
     <h1>Open your library</h1>
     <div class="actions">

@@ -13,7 +13,8 @@
   import { startAll } from "$lib/shell/startup";
   import { nav } from "$lib/state/nav.svelte";
   import { appearance } from "$lib/state/appearance.svelte";
-  import { scaleKey } from "$lib/state/appearanceLogic";
+  import { SCALE_DEFAULT, scaleKey } from "$lib/state/appearanceLogic";
+  import { toast } from "$lib/state/toast.svelte";
   import { session } from "$lib/state/session.svelte";
   import Toast from "$lib/ui/Toast.svelte";
   import JobStrip from "$lib/shell/JobStrip.svelte";
@@ -25,12 +26,16 @@
   });
 
   // Ctrl + / Ctrl - / Ctrl 0 change the interface size (Settings > Appearance) wherever the focus is
+  let sizeToast = 0;
   function onkeydown(e: KeyboardEvent) {
     const act = scaleKey(e);
     if (!act) return;
     e.preventDefault();
     if (act === "reset") appearance.reset();
     else appearance.step(act === "bigger" ? 1 : -1);
+    // the whole window changes size, so say what it is now and how to get back; one message, replaced
+    toast.dismiss(sizeToast);
+    sizeToast = toast.show(`Interface size ${appearance.scale}%. Ctrl+0 sets it back to ${SCALE_DEFAULT}%.`, "info", 2500);
   }
 
   let Active = $derived(viewById(nav.view).component);

@@ -60,6 +60,9 @@ class Session {
    *  be written to it and it is no longer offered. Opening a library again makes a new object. */
   #detached = $state.raw<unknown>(null);
   #seq = new LoadSeq();
+  /** An in-place reload (after a job or an edit) was refused because a switch was being read: if the
+   *  switch fails, the library that stays open is re-read so it does not show stale data. */
+  #pendingReload = false;
   /** Shown in the red banner under the header. Any area may set it; "" clears it. */
   error = $state("");
 
@@ -96,6 +99,12 @@ class Session {
   /** `lib` was ejected: see `#detached`. */
   markDetached(lib: unknown) {
     this.#detached = lib;
+  }
+
+  /** The library on this computer as an offer in pickers: null while the settings file is unreadable,
+   *  because the path is then only a guess and must not be opened by one click. */
+  get computerOffer(): ComputerLibraryInfo | null {
+    return this.computer && !this.computer.unreadable ? this.computer : null;
   }
 
   /** The open library unless it was ejected: what a picker should offer as "the open library". */
@@ -244,7 +253,11 @@ class Session {
   async load(root: string, keepView = false, confirmed = false) {
     if (!keepView && !confirmed && !(await this.confirmLeave())) return;
     const ticket = this.#seq.begin(keepView);
-    if (ticket === null) return;
+    if (ticket === null) {
+      this.#pendingReload = true;
+      return;
+    }
+    let opened = false;
     this.loading = true;
     this.switching = !keepView;
     this.loadingRoot = root;
@@ -253,6 +266,7 @@ class Session {
       const view = await openLibrary(root);
       if (!this.#seq.current(ticket)) return;
       this.#library = new OpenLibrary(view);
+      opened = true;
       if (!keepView) {
         nav.go("tracks");
         for (const fn of resetHooks) fn();
@@ -264,6 +278,11 @@ class Session {
         this.loading = false;
         this.switching = false;
         this.loadingRoot = "";
+        // a switch that opened a new library makes the skipped reload moot; one that failed leaves the old
+        // library open, which still needs the reload it was refused
+        const redo = this.#pendingReload && !opened && !keepView && this.#library;
+        this.#pendingReload = false;
+        if (redo) void this.load(redo.root, true);
       }
     }
   }
