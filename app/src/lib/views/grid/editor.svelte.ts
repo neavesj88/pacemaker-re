@@ -14,6 +14,7 @@ import {
   type TempoEdit,
 } from "$lib/api/grid";
 import { session } from "$lib/state/session.svelte";
+import { bpmRange } from "$lib/state/bpmRange.svelte";
 import { jobs } from "$lib/state/jobs.svelte";
 import { toast } from "$lib/state/toast.svelte";
 
@@ -305,6 +306,8 @@ class GridEditor {
           return false;
         }
       }
+      // a tempo changed here is the owner's choice, not an analysis result to second-guess
+      const bpmChanged = this.gridDirty && Math.abs(trackBpm(this.#baseDocState) - this.bpm) > 0.01;
       const out = await gridSave(
         lib.root,
         l.track_id,
@@ -325,6 +328,7 @@ class GridEditor {
       this.#past = [];
       this.#future = [];
       this.error = "";
+      if (out.wrote_grid && bpmChanged) bpmRange.accept([l.track_id]);
       toast.show(out.wrote_grid ? "Grid saved to the .str" : "Cue saved", "ok");
     } catch (err) {
       session.error = `Saving the grid failed: ${String(err)}`;

@@ -5,12 +5,14 @@
   import { bg } from "$lib/state/bganalysis.svelte";
   import { session } from "$lib/state/session.svelte";
   import Button from "$lib/ui/Button.svelte";
-  import { clampPct, failureRows, pauseAction, statusLine } from "./bgLogic";
+  import { clampPct, failureRows, heldBackRows, noResultRows, pauseAction, statusLine } from "./bgLogic";
 
   const s = $derived(bg.settings);
   const lib = $derived(session.library);
   const pacemaker = $derived(lib?.kind === "pacemaker");
   const rows = $derived(failureRows(bg.failures));
+  const noResult = $derived(noResultRows(bg.failures));
+  const heldBack = $derived(heldBackRows(bg.failures));
   const action = $derived(pauseAction(bg.status));
 
   function saveFloor(e: Event) {
@@ -60,12 +62,20 @@
 </label>
 
 <label class="opt">
+  <input type="checkbox" checked={s.hold_during_sync_plan} onchange={(e) => bg.save({ hold_during_sync_plan: e.currentTarget.checked })} />
+  <span>
+    Wait while a Sync plan is on screen
+    <small class="muted">A key written now would change a row the plan was made from, and Sync would refuse the plan as out of date. It carries on when the plan is applied or cleared.</small>
+  </span>
+</label>
+
+<label class="opt">
   <input type="number" min="0" max="100" step="5" value={s.key_min_confidence_pct} onchange={saveFloor} aria-label="Confidence floor for background keys, per cent" />
   <span>
     Confidence floor for background keys, per cent
     <small class="muted">
       Applies to background analysis only; the manual Key detection section has its own floor. A key found below this is not written; the track is listed under
-      "couldn't be analysed" instead. 0 writes every result.
+      "Held back by the floor" instead, and is looked at again as soon as you change the floor. 0 writes every result.
     </small>
   </span>
 </label>
@@ -98,6 +108,24 @@
       {#each rows as r (r.track_id)}<li><b>{r.label}</b> ({r.kinds}): {r.reasons}</li>{/each}
     </ul>
     <Button small onclick={() => bg.retryFailures()}>Try these again</Button>
+  {/if}
+  {#if heldBack.length > 0}
+    <details class="nokey" data-testid="bg-held-back">
+      <summary>{heldBack.length} {heldBack.length === 1 ? "track has" : "tracks have"} a key held back by the confidence floor</summary>
+      <p class="muted small">A key was found but it is under the floor above, so it was not written. Lower the floor to write it.</p>
+      <ul>
+        {#each heldBack as r (r.track_id)}<li><b>{r.label}</b>: {r.reasons}</li>{/each}
+      </ul>
+    </details>
+  {/if}
+  {#if noResult.length > 0}
+    <details class="nokey" data-testid="bg-no-result">
+      <summary>{noResult.length} {noResult.length === 1 ? "track has" : "tracks have"} no key to write (nothing to try again)</summary>
+      <p class="muted small">These were read fine. A drum-only, silent or atonal track has no key in it, so there is nothing to try again.</p>
+      <ul>
+        {#each noResult as r (r.track_id)}<li><b>{r.label}</b> ({r.kinds}): {r.reasons}</li>{/each}
+      </ul>
+    </details>
   {/if}
 </div>
 
@@ -142,6 +170,9 @@
   }
   .fail {
     margin-top: 14px;
+  }
+  .nokey {
+    margin-top: 10px;
   }
   .fail ul {
     margin: 6px 0 8px;

@@ -9,7 +9,8 @@
   import { toast } from "$lib/state/toast.svelte";
   import { gridMixesUsing } from "$lib/api/grid";
   import { editor, tempoMap } from "./editor.svelte";
-  import { fmtTime, lowerBound } from "./gridMath";
+  import { firstDownbeatSecs, fmtTime, lowerBound } from "./gridMath";
+  import { claimSpace } from "$lib/player/spaceClaim";
   import { Metronome } from "./metronome";
   import SectionList from "../analysis/SectionList.svelte";
   import Overview from "./Overview.svelte";
@@ -198,6 +199,8 @@
   }
 
   onMount(() => () => metro.close());
+  // Space plays this track here; the player bar's own Space shortcut stands aside while this is open
+  onMount(() => claimSpace(() => editor.trackId !== null));
 
   // ---- editing helpers ----
   let bpmText = $state("");
@@ -221,7 +224,7 @@
   }
 
   const canEdit = $derived(!!editor.doc && !editor.busy);
-  const firstBeatSecs = $derived(editor.doc ? editor.doc.beats[0].pos / editor.sampleRate : 0);
+  const downbeatSecs = $derived(firstDownbeatSecs(editor.doc, editor.sampleRate));
   const beatNo = $derived(beatSecs.length ? Math.max(0, lowerBound(beatSecs, head + 0.0005) - 1) + 1 : 0);
   const cueSecs = $derived(editor.cue === null ? null : editor.cue / editor.sampleRate);
   const strPath = $derived((editor.loaded?.location ?? "").replace(/\.[^./]+$/, ".str"));
@@ -310,7 +313,7 @@
         </span>
         {#if editor.doc}
           <span class="muted num">
-            {editor.bpm.toFixed(2)} BPM{meta?.key ? ` · ${meta.key}` : ""} · first downbeat {fmtTime(firstBeatSecs)}
+            {editor.bpm.toFixed(2)} BPM{meta?.key ? ` · ${meta.key}` : ""} · first downbeat {downbeatSecs === null ? "not set" : fmtTime(downbeatSecs)}
           </span>
         {/if}
       {/if}

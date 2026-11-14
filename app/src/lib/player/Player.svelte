@@ -49,8 +49,8 @@
   );
 
   /** The one status line under the title, worst first. */
-  const status = $derived.by((): { text: string; bad: boolean } | null => {
-    if (playback.error) return { text: playback.error, bad: true };
+  const status = $derived.by((): { text: string; bad: boolean; hint?: string } | null => {
+    if (playback.error) return { text: playback.error, bad: true, hint: "Press Space or Try again to retry." };
     if (track && engine.peaksProblem) return { text: `No waveform: ${engine.peaksProblem}`, bad: false };
     if (track && engine.beatsProblem) return { text: `No beat ticks: ${engine.beatsProblem}`, bad: false };
     if (loaded && engine.silent) return { text: "Browser preview: no audio, silent clock", bad: false };
@@ -106,6 +106,15 @@
     setChosen(h);
   }
 
+  // The bar's real height (it grows past --ph when the layout wraps), published for the toasts,
+  // which sit just above it.
+  let barPx = $state(0);
+  $effect(() => {
+    if (typeof document === "undefined" || barPx <= 0) return;
+    document.documentElement.style.setProperty("--player-h", `${barPx}px`);
+    return () => document.documentElement.style.removeProperty("--player-h");
+  });
+
   const seekFraction = (f: number) => playback.seek((mix?.fromSecs ?? 0) + f * span);
 
   function cueDown(e: PointerEvent) {
@@ -129,7 +138,7 @@
 
 <svelte:window bind:innerWidth={winW} bind:innerHeight={winH} />
 
-<footer class="player" class:resizing aria-label="Player" style="--ph: {barH}px; --ps: {scale}">
+<footer class="player" class:resizing aria-label="Player" bind:offsetHeight={barPx} style="--ph: {barH}px; --ps: {scale}">
   <!-- Drag up to make the bar taller. Double-click resets; Up / Down step, Home / End = min / max.
        A focusable separator is the ARIA window-splitter pattern; svelte only knows it as non-interactive. -->
   <!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
@@ -164,7 +173,9 @@
       <b class="title muted">Nothing loaded</b>
       <div class="muted line">Select a track and press Space</div>
     {/if}
-    {#if status}<div class="line status" class:bad={status.bad} title={status.text}>{status.text}</div>{/if}
+    {#if status}<div class="line status" class:bad={status.bad} title={status.text}>{status.text}</div>
+      {#if status.hint}<div class="line hint">{status.hint}</div>{/if}
+    {/if}
   </div>
 
   <PlayerWave
@@ -204,10 +215,10 @@
     <Button
       small
       variant="primary"
-      aria-label={playback.playing ? "Pause" : "Play"}
-      title="Play / pause (Space)"
+      aria-label={playback.error ? "Try again" : playback.playing ? "Pause" : "Play"}
+      title={playback.error ? "Open the file again and play it" : "Play / pause (Space)"}
       disabled={!loaded}
-      onclick={() => playback.toggle()}>{playback.playing ? "⏸" : "▶"}</Button
+      onclick={() => (playback.error ? playback.retry() : playback.toggle())}>{playback.error ? "↻" : playback.playing ? "⏸" : "▶"}</Button
     >
     <Button
       small
@@ -306,9 +317,17 @@
     color: var(--muted);
     font-style: italic;
   }
+  .hint {
+    color: var(--muted);
+  }
   .status.bad {
     color: var(--bad-text);
     font-style: normal;
+    white-space: normal;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    line-clamp: 3;
+    -webkit-box-orient: vertical;
   }
   .controls {
     display: flex;

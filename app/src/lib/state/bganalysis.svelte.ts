@@ -8,6 +8,7 @@ import {
   bgRetryFailures,
   bgRunNow,
   bgSaveSettings,
+  bgSetHold,
   bgSetPaused,
   bgSetPlaying,
   bgWatch,
@@ -18,9 +19,10 @@ import {
 } from "$lib/api/bganalysis";
 import { forgetPeaks } from "$lib/views/tracks/peakCache";
 import { peakTick } from "$lib/views/tracks/peakTick.svelte";
-import { groupKeys, libraryChanged } from "$lib/views/analysis/bgLogic";
+import { failureCount, groupKeys, libraryChanged, parseDismissed } from "$lib/views/analysis/bgLogic";
 import { energy } from "./energy.svelte";
 import { sections } from "./sections.svelte";
+import { loadPref, savePref } from "./prefStore";
 import { session } from "./session.svelte";
 import { toast } from "./toast.svelte";
 
@@ -31,10 +33,14 @@ export const DEFAULT_BG_SETTINGS: BgSettings = {
   energy: true,
   sections: true,
   pause_during_playback: true,
+  hold_during_sync_plan: true,
   key_min_confidence_pct: 0,
 };
 
 const NO_STATUS: BgStatus = { state: "no-library", detail: "", root: null, pacemaker: false, word: "", done: 0, total: 0, left: 0, label: "", failures: 0 };
+
+/** The failure note the owner hid, per library: hidden until more tracks fail. */
+const DISMISSED_KEY = "pm.bg.noteHidden.v1";
 
 /** Waits this long after the last finished result before reading energy / sections again. */
 const RELOAD_AFTER_MS = 1500;
@@ -44,8 +50,21 @@ class Bg {
   settings = $state<BgSettings>({ ...DEFAULT_BG_SETTINGS });
   status = $state<BgStatus>({ ...NO_STATUS });
   failures = $state.raw<BgFailure[]>([]);
-  /** The failure note was dismissed when the list was this long. */
-  dismissedAt = $state(0);
+  /** The failure note was hidden when the list was this long, per library root. Kept across
+   *  launches: the same unreadable file must not bring the note back at every start. */
+  #dismissed = $state<Record<string, number>>(loadPref(DISMISSED_KEY, parseDismissed, () => ({})));
+  get dismissedAt(): number {
+    return this.#dismissed[this.status.root ?? ""] ?? 0;
+  }
+  set dismissedAt(n: number) {
+    const root = this.status.root;
+    if (!root) return;
+    const next = { ...this.#dismissed };
+    if (n > 0) next[root] = n;
+    else delete next[root];
+    this.#dismissed = next;
+    savePref(DISMISSED_KEY, next);
+  }
   /** Settings have been read from the backend. */
   loaded = $state(false);
 
@@ -97,6 +116,11 @@ class Bg {
     bgSetPlaying(playing).catch(() => {});
   }
 
+  /** A Sync plan is on screen or being made: the worker waits (see `bgSetHold`). */
+  setHold(hold: boolean) {
+    bgSetHold(hold).catch(() => {});
+  }
+
   async setPaused(paused: boolean) {
     try {
       await bgSetPaused(paused);
@@ -134,13 +158,14 @@ class Bg {
   }
 
   dismissNote() {
-    this.dismissedAt = this.failures.length;
+    this.dismissedAt = failureCount(this.failures);
   }
 
-  /** Forgets the failure list and the "Hide", so the next status reads the list afresh. */
+  /** Forgets the failure list read for another library, so the next status reads it afresh. The
+   *  "Hide" is kept: it is remembered per library root (`dismissedAt`), and resetting it here
+   *  would bring the hidden note back on every launch, since the first status counts as a change. */
   private forgetFailures() {
     this.failures = [];
-    this.dismissedAt = 0;
     this.#lastFailures = -1;
   }
 
@@ -158,7 +183,7 @@ class Bg {
   private async refreshFailures() {
     try {
       this.failures = (await bgGet()).failures;
-      if (this.failures.length < this.dismissedAt) this.dismissedAt = 0;
+      if (failureCount(this.failures) < this.dismissedAt) this.dismissedAt = 0;
     } catch {
       /* the next status tick tries again */
     }

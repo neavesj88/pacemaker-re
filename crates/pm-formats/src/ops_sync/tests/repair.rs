@@ -150,3 +150,62 @@ fn a_repair_says_the_play_counts_come_on_the_next_sync() {
     fx.dst = Library::open(fx.dst.root()).unwrap();
     assert_eq!(item(&fx.plan(&SyncSettings::default()), &format!("track:{loc}")).action, SyncAction::UpdatePlays, "the next sync brings them");
 }
+
+/// The source's row is edited (a rating, a newer date) and its grid changes, so the rows differ.
+fn edit_source(fx: &mut Fx, loc: &str, date_modified: i64) {
+    let mut s = Library::open(fx.src.root()).unwrap();
+    s.con.execute("UPDATE tracks SET rating = 5, date_modified = ?1 WHERE location = ?2", params![date_modified, loc]).unwrap();
+    let (_, side) = s.track_paths(loc).unwrap();
+    std::fs::write(&side, b"changed sidecar").unwrap();
+    fx.src = s;
+}
+
+#[test]
+fn a_row_that_differs_does_not_leave_the_missing_audio_missing() {
+    let mut fx = Fx::new();
+    let (loc, (s_audio, _), (t_audio, t_side)) = both_sides(&mut fx);
+    std::fs::remove_file(&t_audio).unwrap();
+    edit_source(&mut fx, &loc, 4_000_000_000_000);
+    let settings = SyncSettings { tracks_on_both: TracksOnBoth::Source, ..SyncSettings::default() };
+    let p = fx.plan(&settings);
+    let it = item(&p, &format!("track:{loc}"));
+    assert_eq!(it.action, SyncAction::Update);
+    assert_eq!(it.bytes, std::fs::metadata(&s_audio).unwrap().len() + b"changed sidecar".len() as u64, "the audio counts toward the space line");
+    assert!(it.detail.contains("audio file is missing"), "{}", it.detail);
+    let r = fx.run(&p, &[]).unwrap();
+    assert_eq!((r.done, r.failed), (1, 0));
+    assert_eq!(std::fs::read(&t_audio).unwrap(), std::fs::read(&s_audio).unwrap(), "the audio came with the update");
+    assert_eq!(std::fs::read(&t_side).unwrap(), b"changed sidecar");
+    assert_eq!(stray_temps(fx.dst.root()), 0);
+    all_same(&fx.plan(&settings));
+}
+
+#[test]
+fn a_row_left_alone_still_gets_its_missing_files() {
+    for (mode, source_date) in [(TracksOnBoth::Leave, 4_000_000_000_000_i64), (TracksOnBoth::Newer, 0)] {
+        let mut fx = Fx::new();
+        let (loc, (s_audio, _), (t_audio, t_side)) = both_sides(&mut fx);
+        let t_side_before = std::fs::read(&t_side).unwrap();
+        std::fs::remove_file(&t_audio).unwrap();
+        edit_source(&mut fx, &loc, source_date);
+        let rows_before = row_dump(&fx.dst);
+        let settings = SyncSettings { tracks_on_both: mode, ..SyncSettings::default() };
+        let p = fx.plan(&settings);
+        let it = item(&p, &format!("track:{loc}"));
+        assert_eq!(it.action, SyncAction::Repair, "{mode:?}");
+        assert_eq!(it.detail, "the audio file is missing in the receiving library");
+        fx.run(&p, &[]).unwrap();
+        assert_eq!(std::fs::read(&t_audio).unwrap(), std::fs::read(&s_audio).unwrap(), "{mode:?}");
+        assert_eq!(row_dump(&fx.dst), rows_before, "{mode:?}: the row stays as the setting says");
+        assert_eq!(std::fs::read(&t_side).unwrap(), t_side_before, "{mode:?}: and so does the grid");
+    }
+}
+
+#[test]
+fn a_row_left_alone_with_nothing_missing_keeps_its_reason() {
+    let mut fx = Fx::new();
+    let (loc, _, _) = both_sides(&mut fx);
+    edit_source(&mut fx, &loc, 4_000_000_000_000);
+    let p = fx.plan(&SyncSettings { tracks_on_both: TracksOnBoth::Leave, ..SyncSettings::default() });
+    assert_eq!(reason(item(&p, &format!("track:{loc}"))), LEAVE_TRACK);
+}

@@ -13,6 +13,7 @@
   import { jobs } from "$lib/state/jobs.svelte";
   import { playback } from "$lib/state/playback.svelte";
   import { preview } from "$lib/views/mixes/preview.svelte";
+  import { sync } from "$lib/views/sync/sync.svelte";
   import { sections } from "$lib/state/sections.svelte";
   import { session } from "$lib/state/session.svelte";
   import Button from "$lib/ui/Button.svelte";
@@ -46,6 +47,14 @@
     // the live mix engine plays outside the player bar, so it is asked separately
     const playing = playback.playing || preview.playing;
     untrack(() => bg.setPlaying(playing));
+  });
+
+  // Every key the worker writes changes a row a Sync plan was made from, and the plan would be
+  // refused as stale. The plan stays in memory when the owner leaves the Sync view, so the worker
+  // waits for as long as a plan is being made or is kept, whichever view is open.
+  $effect(() => {
+    const hold = sync.planning || sync.plan !== null;
+    untrack(() => bg.setHold(hold));
   });
 
   const keyDialog = $derived(analysis.dialog);

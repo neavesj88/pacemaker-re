@@ -16,18 +16,24 @@ import type { Handlers } from "./types";
 
 type Kind = "peaks" | "keys" | "energy" | "sections";
 type MTrack = ReturnType<typeof libraryFor>["tracks"][number];
-type Failure = { kind: Kind; track_id: number; label: string; location: string; size: number; reason: string };
+type Failure = { kind: Kind; track_id: number; label: string; location: string; size: number; reason: string; no_result?: boolean; held_back?: boolean; file_missing?: boolean };
 
 const KINDS: Kind[] = ["peaks", "keys", "energy", "sections"];
 const WORD: Record<Kind, string> = { peaks: "waveforms", keys: "keys", energy: "energy", sections: "sections" };
 const TICK_MS = 380;
+// Opt-in samples for reviewing the two "nothing to retry" lists: open the preview with ?bgnotes.
+// Track 11 has no key in it (no result); track 12 has a weak one, held back whenever the floor is above 0.
+const NOTES = typeof location !== "undefined" && new URLSearchParams(location.search).has("bgnotes");
+const NO_KEY_TRACK = 11;
+const WEAK_KEY_TRACK = 12;
 const KEYS = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
 
-let settings = { enabled: true, waveforms: true, keys: true, energy: true, sections: true, pause_during_playback: true, key_min_confidence_pct: 0 };
+let settings = { enabled: true, waveforms: true, keys: true, energy: true, sections: true, pause_during_playback: true, hold_during_sync_plan: true, key_min_confidence_pct: 0 };
 let root: string | null = null;
 let manualRoot: string | null = null;
 let paused = false;
 let playing = false;
+let held = false;
 let failures: Failure[] = [];
 let lanes: { kind: Kind; items: MTrack[]; total: number; done: number }[] | null = null;
 let timer: ReturnType<typeof setInterval> | null = null;
@@ -48,7 +54,7 @@ function missing(k: Kind, tracks: MTrack[], computer: boolean): MTrack[] {
     case "peaks":
       return tracks.filter((t) => heldPeaks.has(t.location));
     case "keys":
-      return tracks.filter((t) => !t.key.trim());
+      return tracks.filter((t) => !t.key.trim() || (NOTES && (t.track_id === NO_KEY_TRACK || t.track_id === WEAK_KEY_TRACK)));
     case "energy": {
       if (!computer) return [];
       const m = new Set(bgEnergy.missing().map((t) => t.track_id));
@@ -79,13 +85,14 @@ function hold(): string | null {
   if (paused) return "paused";
   if (settings.pause_during_playback && playing) return "playing";
   if (jobLock.running) return "waiting";
+  if (held && settings.hold_during_sync_plan) return "held";
   return null;
 }
 
 const left = () => (lanes ?? []).reduce((n, l) => n + l.items.length, 0);
 
 function publish(patch: Partial<ReturnType<typeof blank>> = {}) {
-  status = { ...status, root, pacemaker: root ? libraryKind(root) === "pacemaker" : false, failures: failures.length, left: left(), ...patch };
+  status = { ...status, root, pacemaker: root ? libraryKind(root) === "pacemaker" : false, failures: failures.filter((f) => !f.no_result && !f.held_back).length, left: left(), ...patch };
   void emit("bg-analysis-status", status);
 }
 
@@ -113,6 +120,10 @@ function tick() {
   } else if (lane.kind === "peaks") {
     heldPeaks.delete(t.location);
     void emit("bg-analysis-changed", { kind: "peaks", root, locations: [t.location] });
+  } else if (lane.kind === "keys" && NOTES && t.track_id === NO_KEY_TRACK) {
+    failures.push({ kind: "keys", track_id: t.track_id, label: label(t), location: t.location, size: t.file_size, reason: "no clear key (too short, silent or atonal)", no_result: true });
+  } else if (lane.kind === "keys" && NOTES && t.track_id === WEAK_KEY_TRACK && settings.key_min_confidence_pct > 0) {
+    failures.push({ kind: "keys", track_id: t.track_id, label: label(t), location: t.location, size: t.file_size, reason: `low confidence: C major (${Math.max(0, settings.key_min_confidence_pct - 10)}%)`, held_back: true });
   } else if (lane.kind === "keys") {
     let s = 0;
     for (const c of t.location) s = (s * 31 + c.charCodeAt(0)) >>> 0;
@@ -145,6 +156,8 @@ export const handlers: Handlers = {
     if (!Number.isInteger(s.key_min_confidence_pct) || s.key_min_confidence_pct < 0 || s.key_min_confidence_pct > 100) {
       throw "The key confidence floor must be between 0 and 100 per cent.";
     }
+    // a record made under the old floor says nothing about the new one
+    if (s.key_min_confidence_pct !== settings.key_min_confidence_pct) failures = failures.filter((f) => !f.held_back);
     settings = { ...s };
     replan();
     return { ...settings };
@@ -167,6 +180,11 @@ export const handlers: Handlers = {
   },
   bganalysis_set_playing: (a) => {
     playing = !!a.playing;
+    tick();
+    return null;
+  },
+  bganalysis_set_hold: (a) => {
+    held = !!a.hold;
     tick();
     return null;
   },

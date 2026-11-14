@@ -62,3 +62,14 @@ export function tickStep(pxPerSec: number, minPx: number): number {
   for (const m of [1, 2, 5, 10]) if (m * mag >= raw) return m * mag;
   return 10 * mag;
 }
+
+/** Seconds of the first bar line: the beat the grid marks as the downbeat, not simply the first
+ *  beat. `null` when the file marks none or points past its beats. */
+export function firstDownbeatSecs(
+  doc: { beats: ArrayLike<{ pos: number }>; first_downbeat: number | null } | null,
+  sampleRate: number,
+): number | null {
+  if (!doc || doc.first_downbeat === null || sampleRate <= 0) return null;
+  const b = doc.beats[doc.first_downbeat];
+  return b ? b.pos / sampleRate : null;
+}

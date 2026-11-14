@@ -690,6 +690,27 @@ fn track_item(source: &Library, target: &Library, s: &TrackRow, t: Option<&Track
                         }
                     },
                 };
+                // a row that differs is no reason to leave a missing file missing
+                if let Some((t_audio, t_side)) = paths_of(target, &s.location) {
+                    match &item.action {
+                        SyncAction::Update => {
+                            // the grid comes with the update; the audio the target lacks comes with it
+                            if let (None, Some(n)) = (file_len(&t_audio), file_len(&audio)) {
+                                item.bytes += n;
+                                item.detail = if item.detail.is_empty() { format!("{AUDIO_MISSING}, so it is copied too") } else { format!("{}; {AUDIO_MISSING}, so it is copied too", item.detail) };
+                            }
+                        }
+                        SyncAction::Skip { .. } => {
+                            // the row is left as it is (the setting, or the target's is newer), the files are not
+                            let mut files = item.clone();
+                            repair_check(&mut files, &audio, &side, &t_audio, &t_side);
+                            if files.action == SyncAction::Repair {
+                                item = files;
+                            }
+                        }
+                        _ => {}
+                    }
+                }
             }
             // plays counted on the sending side come over even when nothing else changes
             if settings.play_counts == PlayCounts::Higher && plays_ahead(s.int("times_played"), s.int("last_played"), t.int("times_played"), t.int("last_played")) {
@@ -1160,6 +1181,11 @@ fn copy_track(source: &Library, target: &mut Library, row: &TrackRow, it: &SyncI
     if it.action == SyncAction::Update {
         let tid = it.target_id.ok_or_else(|| bad("no target row"))?;
         let previous = std::fs::read(&t_side).ok();
+        // the audio the target lacks (the plan said so) is copied first; only a copy made here is undone
+        let audio_made = file_len(&t_audio).is_none() && file_len(&s_audio).is_some();
+        if audio_made {
+            copy_checked(&s_audio, &t_audio)?;
+        }
         // copy_checked removes a copy that came out the wrong size, so the old grid goes back on that too
         let res = copy_checked(&s_side, &t_side).and_then(|_| update_row(&target.con, tid, row, settings).map_err(Error::from));
         if let Err(e) = res {
@@ -1167,6 +1193,9 @@ fn copy_track(source: &Library, target: &mut Library, row: &TrackRow, it: &SyncI
                 Some(old) => atomic_write(&t_side, &old),
                 None => std::fs::remove_file(&t_side),
             };
+            if audio_made {
+                let _ = std::fs::remove_file(&t_audio);
+            }
             return Err(e);
         }
         return Ok(Outcome::Done);

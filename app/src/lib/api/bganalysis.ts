@@ -15,11 +15,12 @@ export type BgSettings = {
   sections: boolean;
   /** Wait while a track or a mix preview plays. */
   pause_during_playback: boolean;
+  hold_during_sync_plan: boolean;
   /** A detected key below this confidence (per cent, 0-100) is listed, not written. */
   key_min_confidence_pct: number;
 };
 
-export type BgState = "no-library" | "off" | "manual" | "paused" | "playing" | "waiting" | "running" | "idle" | "blocked" | "error";
+export type BgState = "no-library" | "off" | "manual" | "paused" | "playing" | "waiting" | "held" | "running" | "idle" | "blocked" | "error";
 
 export type BgStatus = {
   state: BgState;
@@ -40,7 +41,20 @@ export type BgStatus = {
   failures: number;
 };
 
-export type BgFailure = { kind: BgKind; track_id: number; label: string; location: string; size: number; reason: string };
+export type BgFailure = {
+  kind: BgKind;
+  track_id: number;
+  label: string;
+  location: string;
+  size: number;
+  reason: string;
+  /** The file was read fine but has no result to give (no clear key): nothing to retry. */
+  no_result?: boolean;
+  /** A key was found but the confidence floor held it back; a new floor asks again. */
+  held_back?: boolean;
+  /** The audio file was not there; it is tried again once it is. */
+  file_missing?: boolean;
+};
 
 export type BgView = { settings: BgSettings; status: BgStatus; failures: BgFailure[] };
 
@@ -62,6 +76,8 @@ export const bgWatch = (root: string | null) => invoke<void>("bganalysis_watch",
 export const bgSetPaused = (paused: boolean) => invoke<void>("bganalysis_set_paused", { paused });
 /** The player is playing a track or a mix preview. */
 export const bgSetPlaying = (playing: boolean) => invoke<void>("bganalysis_set_playing", { playing });
+/** A Sync plan is on screen or being made: the worker waits, so the keys it writes cannot make the plan stale. */
+export const bgSetHold = (hold: boolean) => invoke<void>("bganalysis_set_hold", { hold });
 /** Starts the worker on the open library even if it is a Pacemaker (which it never starts on by itself). */
 export const bgRunNow = (root: string) => invoke<void>("bganalysis_run_now", { root });
 /** Forgets the tracks given up on, so they are tried again. */
