@@ -73,6 +73,8 @@ pub struct Stats {
     pub step_max_us: AtomicU64,
     /// Steps that took longer than the audio they produced.
     pub slow_steps: AtomicU64,
+    /// Passes of the worker loop (a spinning worker shows up here).
+    pub loops: AtomicU64,
 }
 
 pub type Getter = Box<dyn FnMut(&Track) -> SourceState + Send>;
@@ -105,6 +107,7 @@ impl Player {
             base_tl: 0,
             last_underruns: 0,
             last_pos: Instant::now(),
+            update_cost: 0,
             cl: vec![0.0; CHUNK],
             cr: vec![0.0; CHUNK],
         };
@@ -112,18 +115,35 @@ impl Player {
             .name("mix-live".into())
             .spawn(move || {
                 loop {
-                    let wait = if w.playing && w.ring.len() < TARGET_FRAMES as usize { Duration::ZERO } else { Duration::from_millis(4) };
+                    w.stats.loops.fetch_add(1, Relaxed);
+                    // while the last frames are queued there is nothing to render: wait, do not spin
+                    let wait = if w.playing && !w.ending && w.ring.len() < TARGET_FRAMES as usize { Duration::ZERO } else { Duration::from_millis(4) };
+                    let mut batch = Vec::new();
                     match rx.recv_timeout(wait) {
-                        Ok(Command::Shutdown) | Err(RecvTimeoutError::Disconnected) => break,
-                        Ok(c) => w.command(c),
+                        Ok(c) => batch.push(c),
                         Err(RecvTimeoutError::Timeout) => {}
+                        Err(RecvTimeoutError::Disconnected) => break,
                     }
                     while let Ok(c) = rx.try_recv() {
-                        if matches!(c, Command::Shutdown) {
-                            w.halt();
-                            return;
+                        batch.push(c);
+                    }
+                    // a drag sends an Update per mouse move: only the newest of them is built (it
+                    // carries the whole mix); Play / Seek / Pause keep their order
+                    let last_update = batch.iter().rposition(|c| matches!(c, Command::Update(..)));
+                    for (i, c) in batch.into_iter().enumerate() {
+                        match c {
+                            Command::Shutdown => {
+                                w.halt();
+                                return;
+                            }
+                            Command::Update(m, o) if last_update.is_some_and(|l| i < l) => {
+                                // superseded: remember the mix so a Play / Seek in between sees it
+                                let master = o.master_gain_db;
+                                w.mix = Some(m);
+                                w.opts = LiveOptions { master_gain_db: master, ..o };
+                            }
+                            c => w.command(c),
                         }
-                        w.command(c);
                     }
                     w.tick();
                 }
@@ -165,6 +185,8 @@ struct Worker {
     base_tl: i64,
     last_underruns: u64,
     last_pos: Instant,
+    /// Frames of audio time the last update took to build and render.
+    update_cost: u64,
     cl: Vec<f32>,
     cr: Vec<f32>,
 }
@@ -207,7 +229,7 @@ impl Worker {
                 self.emit_position();
             }
             Command::Update(mix, opts) => self.update(mix, opts),
-            Command::Play(f) => self.play(f),
+            Command::Play(f) => self.play(f, true),
             Command::Pause => {
                 if self.playing {
                     self.stop_device();
@@ -218,7 +240,7 @@ impl Worker {
             }
             Command::Seek(f) => {
                 if self.playing {
-                    self.play(f);
+                    self.play(f, false);
                 } else {
                     self.paused_at = f.max(0);
                     self.emit_position();
@@ -267,7 +289,8 @@ impl Worker {
         self.playing = false;
     }
 
-    fn play(&mut self, frame: i64) {
+    /// `wrap`: pressing Play at (or just before) the end starts the mix again; a seek only clamps.
+    fn play(&mut self, frame: i64, wrap: bool) {
         let t0 = Instant::now();
         if self.live.is_none() {
             self.build(frame.max(0));
@@ -279,7 +302,7 @@ impl Worker {
         }
         self.stop_device();
         let live = self.live.as_mut().unwrap();
-        let frame = if frame >= live.end() - 2205 { 0 } else { frame.max(0) };
+        let frame = if wrap && frame >= live.end() - 2205 { 0 } else { frame.clamp(0, live.end()) };
         live.seek(frame);
         self.base_idx = self.ring.head();
         self.base_tl = frame;
@@ -360,31 +383,46 @@ impl Worker {
             self.build(at);
             return;
         }
-        // where the edit takes over
-        let (tail, head) = (self.ring.tail(), self.ring.head());
-        let resume = if head >= tail + SAFE_FRAMES { tail + SAFE_FRAMES } else { head };
-        let tl = self.base_tl + (resume as i64 - self.base_idx as i64);
-        let built = Live::new(self.mix.as_ref().unwrap(), &self.opts, tl);
-        let mut fresh = match built {
-            Ok(l) => l,
-            Err(_) => {
-                // nothing audible any more: let the queued audio play out
-                self.live = None;
-                self.set_ending(true);
-                return;
+        // Where the edit takes over: far enough ahead that building and rendering finishes before
+        // the device gets there. The margin follows what the last update cost (an unoptimised build
+        // is 10 to 20 times slower than release), and a try that still lost the race is redone.
+        let mut margin = SAFE_FRAMES.max(self.update_cost * 2 + 256).min(TARGET_FRAMES);
+        let mut attempt = 0;
+        let (resume, tl, fresh, nl, nr, got, had_old) = loop {
+            attempt += 1;
+            let t0 = Instant::now();
+            let (tail, head) = (self.ring.tail(), self.ring.head());
+            let resume = if head >= tail + margin { tail + margin } else { head };
+            let tl = self.base_tl + (resume as i64 - self.base_idx as i64);
+            let mut fresh = match Live::new(self.mix.as_ref().unwrap(), &self.opts, tl) {
+                Ok(l) => l,
+                Err(_) => {
+                    // nothing audible any more: let the queued audio play out
+                    self.live = None;
+                    self.set_ending(true);
+                    return;
+                }
+            };
+            let (mut nl, mut nr) = (vec![0.0f32; XFADE_FRAMES], vec![0.0f32; XFADE_FRAMES]);
+            let got = fresh.render(&mut self.get, &mut nl, &mut nr);
+            let (mut ol, mut or) = (vec![0.0f32; XFADE_FRAMES], vec![0.0f32; XFADE_FRAMES]);
+            self.ring.read_at(resume, &mut ol, &mut or);
+            let had_old = head.saturating_sub(resume).min(XFADE_FRAMES as u64) as usize;
+            for k in 0..XFADE_FRAMES {
+                // old audio fades out only where there is some; where the queue ended the new one is alone
+                let w = if k < had_old { (k + 1) as f32 / XFADE_FRAMES as f32 } else { 1.0 };
+                nl[k] = ol[k] * (1.0 - w) + nl[k] * w;
+                nr[k] = or[k] * (1.0 - w) + nr[k] * w;
             }
+            let cost = (t0.elapsed().as_secs_f64() * f64::from(crate::RATE)) as u64;
+            self.update_cost = cost;
+            // the device passed the take-over point while this was being built: try again further ahead
+            if self.ring.tail() + 64 > resume && self.ring.head() > resume && attempt < 3 {
+                margin = SAFE_FRAMES.max(cost * 2 + 256).max(margin * 2).min(TARGET_FRAMES);
+                continue;
+            }
+            break (resume, tl, fresh, nl, nr, got, had_old);
         };
-        let (mut nl, mut nr) = (vec![0.0f32; XFADE_FRAMES], vec![0.0f32; XFADE_FRAMES]);
-        let got = fresh.render(&mut self.get, &mut nl, &mut nr);
-        let (mut ol, mut or) = (vec![0.0f32; XFADE_FRAMES], vec![0.0f32; XFADE_FRAMES]);
-        self.ring.read_at(resume, &mut ol, &mut or);
-        let had_old = head.saturating_sub(resume).min(XFADE_FRAMES as u64) as usize;
-        for k in 0..XFADE_FRAMES {
-            // old audio fades out only where there is some; where the queue ended the new one is alone
-            let w = if k < had_old { (k + 1) as f32 / XFADE_FRAMES as f32 } else { 1.0 };
-            nl[k] = ol[k] * (1.0 - w) + nl[k] * w;
-            nr[k] = or[k] * (1.0 - w) + nr[k] * w;
-        }
         self.ring.rewrite_from(resume, &nl[..got.max(had_old).min(XFADE_FRAMES)], &nr[..got.max(had_old).min(XFADE_FRAMES)]);
         self.base_idx = resume;
         self.base_tl = tl;
@@ -567,6 +605,81 @@ mod tests {
         assert!(wait_for(|| events.lock().unwrap().iter().rev().take(5).any(|e| matches!(e, Event::Position { sec, playing: true } if *sec >= 20.0 && *sec < 21.0)), 10.0));
         p.send(Command::Pause);
         assert!(wait_for(|| matches!(events.lock().unwrap().last(), Some(Event::Position { playing: false, .. })), 5.0));
+        drop(p);
+    }
+
+    /// A drag sends an Update every 30 ms for seconds: every one must be absorbed without the
+    /// device running dry or a click, and a backlog must not build up.
+    #[test]
+    fn a_stream_of_updates_while_playing_causes_no_underruns() {
+        let ring = Arc::new(Ring::new(1 << 15));
+        let (notify, _events) = collect_events();
+        let p = Player::spawn(ring.clone(), getter(3), notify);
+        let fake = Fake::start(ring.clone(), 480, 1.0, true);
+        let m = mix_of(3, 1.07);
+        p.send(Command::Load(m.clone(), LiveOptions::default()));
+        p.send(Command::Play(44100 * 14));
+        assert!(wait_for(|| ring.tail() > 4410, 10.0));
+        let u0 = ring.underruns();
+        let t = Instant::now();
+        let mut k = 0;
+        while t.elapsed().as_secs_f64() < 3.0 {
+            let g = -((k % 20) as f64) * 0.3;
+            p.send(Command::Update(m.clone(), LiveOptions { clip_gain_db: vec![g, 0.0, 0.0], ..LiveOptions::default() }));
+            k += 1;
+            std::thread::sleep(Duration::from_millis(30));
+        }
+        assert!(k > 80, "only {k} updates sent");
+        p.send(Command::Pause);
+        std::thread::sleep(Duration::from_millis(100));
+        assert_eq!(ring.underruns() - u0, 0, "the device ran dry during the updates");
+        let rec = fake.out.lock().unwrap().clone();
+        let worst = rec.windows(2).map(|w| (w[1] - w[0]).abs()).fold(0.0f32, f32::max);
+        assert!(worst < 0.1, "click of {worst}");
+        drop(p);
+        drop(fake);
+    }
+
+    /// While the last frames wait to be played the worker sleeps instead of spinning.
+    #[test]
+    fn the_worker_does_not_spin_at_the_end_of_the_mix() {
+        let ring = Arc::new(Ring::new(1 << 15));
+        let (notify, _ev) = collect_events();
+        let p = Player::spawn(ring.clone(), getter(1), notify);
+        // no consumer: the ring holds the whole short mix and nothing drains it
+        let m = {
+            let mut m = Mix::default();
+            m.tracks.push(track(1, 0.0, 0.15 * 44100.0, 1.0));
+            m
+        };
+        p.send(Command::Load(m, LiveOptions::default()));
+        p.send(Command::Play(0));
+        std::thread::sleep(Duration::from_millis(200));
+        let (steps, loops) = (p.stats.steps.load(Relaxed), p.stats.loops.load(Relaxed));
+        std::thread::sleep(Duration::from_millis(500));
+        assert_eq!(p.stats.steps.load(Relaxed), steps, "still rendering after the end");
+        // a 4 ms wait gives about 125 passes in 500 ms; a spinning loop gives hundreds of thousands
+        let passes = p.stats.loops.load(Relaxed) - loops;
+        assert!(passes < 400, "{passes} loop passes in 500 ms: the worker is spinning");
+        drop(p);
+    }
+
+    #[test]
+    fn seek_near_the_end_while_playing_does_not_restart() {
+        let ring = Arc::new(Ring::new(1 << 15));
+        let (notify, events) = collect_events();
+        let p = Player::spawn(ring.clone(), getter(1), notify);
+        let _fake = Fake::start(ring.clone(), 480, 1.0, false);
+        let m = {
+            let mut m = Mix::default();
+            m.tracks.push(track(1, 0.0, 10.0 * 44100.0, 1.0));
+            m
+        };
+        p.send(Command::Load(m, LiveOptions::default()));
+        p.send(Command::Play(0));
+        assert!(wait_for(|| ring.tail() > 4410, 10.0));
+        p.send(Command::Seek(10 * 44100 - 1000));
+        assert!(wait_for(|| events.lock().unwrap().iter().any(|e| matches!(e, Event::Position { sec, playing: false } if *sec > 9.9)), 5.0), "did not end near 10 s");
         drop(p);
     }
 

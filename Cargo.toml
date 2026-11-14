@@ -8,3 +8,10 @@ exclude = ["app/src-tauri", ".claude"]
 edition = "2021"
 license = "GPL-3.0-or-later"
 repository = "https://github.com/neavesj88/pacemaker-re"
+
+# The live mix engine renders on a worker thread against a ~90 ms deadline; unoptimised DSP misses it
+# (an edit while playing broke the audio in debug builds). Optimise the DSP crates in dev builds too.
+[profile.dev.package.pm-mixer]
+opt-level = 3
+[profile.dev.package.pm-formats]
+opt-level = 3

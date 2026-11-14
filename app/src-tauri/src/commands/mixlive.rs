@@ -137,11 +137,19 @@ struct Session {
 }
 
 impl Session {
-    fn shutdown(mut self) {
+    /// Stops everything (blocking: joins the decode and worker threads).
+    fn shutdown(self) {
+        drop(self);
+    }
+}
+
+/// However a session is dropped (replaced by an overlapping load, app exit) its decode thread and
+/// the decoded audio (up to the budget) go with it. The loader and `Shared` reference each other,
+/// so only the explicit stop breaks the cycle. The player joins its worker in its own drop, after this.
+impl Drop for Session {
+    fn drop(&mut self) {
         self.loader.shutdown();
         self.device.take();
-        // dropping the player joins its worker
-        drop(self.player);
     }
 }
 
@@ -214,7 +222,11 @@ pub async fn mix_live_load(app: AppHandle, state: State<'_, MixLive>, root: Stri
     })
     .await
     .map_err(|e| AppError::from(e.to_string()))??;
-    *state.0.lock().map_err(|_| AppError::from("The live player is locked."))? = Some(session);
+    // a load that overlapped this one may have stored a session meanwhile: stop that one too
+    let replaced = state.0.lock().map_err(|_| AppError::from("The live player is locked."))?.replace(session);
+    if let Some(s) = replaced {
+        tauri::async_runtime::spawn_blocking(move || s.shutdown()).await.ok();
+    }
     Ok(())
 }
 

@@ -50,3 +50,10 @@ lto = true
 opt-level = 3
 # unwind (not abort): a codec panic while analysing one file must not take the app down
 strip = true
+
+# The live mix engine renders on a worker thread against a ~90 ms deadline; unoptimised DSP misses it
+# (an edit while playing broke the audio in debug builds). Optimise the DSP crates in dev builds too.
+[profile.dev.package.pm-mixer]
+opt-level = 3
+[profile.dev.package.pm-formats]
+opt-level = 3
