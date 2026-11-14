@@ -55,6 +55,8 @@ test("doubling and halving undo each other, set does not", () => {
   assert.deepEqual(inverseOp({ kind: "halve" }), { kind: "double" });
   assert.equal(inverseOp({ kind: "set", bpm: 120 }), null);
   assert.match(undoDescription({ kind: "halve" }), /Doubles each track/);
+  assert.match(undoDescription({ kind: "halve" }), /odd beat.*gone for good/);
+  assert.doesNotMatch(undoDescription({ kind: "double" }), /gone for good/);
 });
 
 test("an undo covers only tracks still at the tempo the edit wrote", () => {

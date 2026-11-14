@@ -340,4 +340,39 @@ mod tests {
         assert_eq!(grid::double_times(&[1.0]), vec![1.0]);
         assert!(grid::double_times(&[]).is_empty());
     }
+
+    /// The same break played by a drummer whose tempo wanders: each beat lasts up to `swing` (a
+    /// fraction) longer or shorter than the nominal one, so no constant grid fits it.
+    fn dnb_drifting(bpm: f64, swing: f64) -> Vec<f32> {
+        let mut mono = vec![0f32; (SR as f64 * 40.0) as usize];
+        let mut seed = 7u32;
+        let mut t = 0.0;
+        let mut k = 0usize;
+        while t < 39.0 {
+            let beat = 60.0 / bpm * (1.0 + swing * (k as f64 * 0.35).sin());
+            match k % 4 {
+                0 => add_kick(&mut mono, t),
+                1 | 3 => add_noise_hit(&mut mono, t, 0.15, 25.0, 0.7, &mut seed),
+                _ => add_kick(&mut mono, t + 0.5 * beat),
+            }
+            add_noise_hit(&mut mono, t, 0.03, 120.0, 0.15, &mut seed);
+            add_noise_hit(&mut mono, t + 0.5 * beat, 0.03, 120.0, 0.15, &mut seed);
+            t += beat;
+            k += 1;
+        }
+        mono
+    }
+
+    #[test]
+    fn a_wandering_tempo_still_lands_in_the_range_with_a_grid_that_agrees() {
+        // 87 BPM wandering by 6 %: the default range has to double it, through the unlocked branch
+        let own = analyze_with(&dnb_drifting(87.0, 0.06), SR, None, tempo::BpmRange { lo: 70.0 });
+        assert!((own.bpm - 87.0).abs() < 4.0, "without the range it reads {}", own.bpm);
+        let r = analyze_with(&dnb_drifting(87.0, 0.06), SR, None, tempo::BpmRange::DNB_FULL_TIME);
+        assert!(!r.locked_grid, "the drifting signal must not lock a constant grid");
+        assert!(r.bpm >= 88.0 && r.bpm < 176.0, "bpm {}", r.bpm);
+        assert!((r.bpm - 174.0).abs() < 8.0, "bpm {}", r.bpm);
+        let g = grid_bpm(&r);
+        assert!((g - r.bpm).abs() < 8.0, "grid {g} vs bpm {}", r.bpm);
+    }
 }

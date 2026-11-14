@@ -87,7 +87,7 @@ export function undoDescription(op: TempoOp): string {
   const inv = op.kind === "double" ? "Halves" : "Doubles";
   const lost =
     op.kind === "halve"
-      ? " Doubling puts a beat midway between every two, so a grid that was uneven before the halving comes back even."
+      ? " Doubling puts a beat midway between every two, so a grid that was uneven before the halving comes back even, and when the first bar line was on an odd beat the beat before the first kept one is gone for good. The grid copy saved off the device before the halving is the way back to the exact original."
       : "";
   return `Takes back the last tempo edit by running its opposite on the same tracks: ${inv} each track's tempo.${lost} Tracks whose tempo is not the one that edit wrote are left out.`;
 }

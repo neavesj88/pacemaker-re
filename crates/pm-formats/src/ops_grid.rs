@@ -500,6 +500,17 @@ mod tests {
     }
 
     #[test]
+    fn halve_with_an_odd_downbeat_drops_the_leading_beat_and_double_does_not_bring_it_back() {
+        // pins the one thing Double cannot undo: Halve keeps beats from the downbeat's parity on
+        let g = grid(120.0, 2000, 40, Some(1));
+        let halved = apply(&g, GridEdit::Halve, ctx()).unwrap();
+        assert_eq!(halved.beats[0].pos, g.beats[1].pos, "beat 0 is dropped");
+        let back = apply(&halved, GridEdit::Double, ctx()).unwrap();
+        assert!(!back.beats.iter().any(|x| (x.pos - g.beats[0].pos).abs() <= 1), "the leading beat stays gone");
+        assert!(g.beats[1..].iter().all(|b| back.beats.iter().any(|x| (x.pos - b.pos).abs() <= 1)));
+    }
+
+    #[test]
     fn set_bpm_rebuilds_a_constant_grid_from_the_first_beat() {
         let mut g = grid(120.0, 3000, 8, Some(2));
         g.beats[3].pos += 900; // a wandering beat disappears in the rebuild
