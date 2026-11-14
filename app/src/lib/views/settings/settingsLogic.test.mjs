@@ -104,6 +104,7 @@ const PREF_ENTRIES = {
   "pacemaker-revival.mixexport": "mix-export",
   "pacemaker-revival.tracklist": "tracklist",
   "pm.mixes.recipes.v1": "auto-transitions",
+  "pm.mixes.tempo.v1": "mix-tempo",
   "pm.setbuilder.prefs.v1": "set-builder",
   "pacemaker-revival.setlist.v1": "setlist-print",
   "pacemaker-revival.vdj.v1": "virtualdj-export",
@@ -117,6 +118,9 @@ const VIEW_STATE = {
   "pm.mixes.list.v1": "how the mix list is sorted and filtered",
   "pm.mixes.tools.v1": "whether transitions are shown in the mix editor",
   "pm.mixes.sectionMarkers.v1": "whether section markers are drawn on clips",
+  "pm.mixes.picker.v1": "the Mix tab's track table: its columns, their widths and its sort",
+  "pm.mixes.pickerHeight.v1": "how tall the Mix tab's track table is",
+  "pm.mixes.vocalTools.v1": "which Wah tools of a mix the user made as Vocal tools (a note about the mix kept in this app, not a setting)",
   "pm.gridBatchNudgeMs": "the last nudge typed into the grid batch dialog",
   "pacemaker-revival.playerHeight": "how tall the player bar is (dragged on its top edge; Double-click resets)",
 };

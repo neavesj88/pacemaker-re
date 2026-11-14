@@ -3,6 +3,7 @@ import { tracklist } from "$lib/state/tracklist.svelte";
 import type { SettingsEntry } from "../settings/types";
 import MixExportSettings from "./MixExportSettings.svelte";
 import RecipeSettings from "./RecipeSettings.svelte";
+import TempoSettings from "./TempoSettings.svelte";
 import TracklistFields from "./TracklistFields.svelte";
 
 const entries: SettingsEntry[] = [
@@ -14,6 +15,15 @@ const entries: SettingsEntry[] = [
     keywords: "mix transition recipe crossfade cut bars auto sections",
     how: "inline",
     component: RecipeSettings,
+  },
+  {
+    id: "mix-tempo",
+    area: "Mixes",
+    title: "Tempo matching",
+    help: "How a track is matched to the mix tempo (half and double time included), how much stretch is applied without a warning, and what a new track does when it would need more.",
+    keywords: "mix tempo bpm match stretch half double time warning sync",
+    how: "inline",
+    component: TempoSettings,
   },
   {
     id: "mix-export",

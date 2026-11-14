@@ -38,6 +38,10 @@ pm-stems = { version = "0.1.0", path = "../../crates/pm-stems", features = ["ort
 ureq = "3.5.1"
 zip = { version = "9.5.1", default-features = false, features = ["deflate"] }
 
+# Audio output of the live mix player (WASAPI, shared mode). Already in the build through tauri
+# (same 0.62 line, MIT / Apache-2.0); cpal is not in the offline crate registry.
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.62", features = ["Win32_Foundation", "Win32_Media_Audio", "Win32_Security", "Win32_System_Com", "Win32_System_Threading"] }
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration
 [profile.release]
@@ -46,3 +50,10 @@ lto = true
 opt-level = 3
 # unwind (not abort): a codec panic while analysing one file must not take the app down
 strip = true
+
+# The live mix engine renders on a worker thread against a ~90 ms deadline; unoptimised DSP misses it
+# (an edit while playing broke the audio in debug builds). Optimise the DSP crates in dev builds too.
+[profile.dev.package.pm-mixer]
+opt-level = 3
+[profile.dev.package.pm-formats]
+opt-level = 3

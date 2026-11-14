@@ -7,13 +7,16 @@
   import EnvelopeSvg from "./EnvelopeSvg.svelte";
   import { clipTitle, duplicateSelection } from "./actions";
   import { SR, clock, fmtValue, toolColour, toolLabel } from "./layout";
+  import { vocalTools } from "./vocalTools.svelte";
 
   let { clip, process: p, ondelete }: { clip: Clip; process: ProcessDoc; ondelete: () => void } = $props();
 
   const type = $derived(p.kind === "tool" ? p.effects[0]?.name ?? p.toolType : p.kind);
   const tool = $derived(p.kind === "tool" ? (p as ToolDoc) : null);
-  const catalogue = $derived(E.toolTypesFor(vocal.mode).find((t) => t.name === type));
-  const name = $derived(toolLabel(type, vocal.mode));
+  /** A Wah tool the user made (or marked) as a Vocal tool: written as Wah, called Vocal here. */
+  const marked = $derived(tool && type === "Wah" && mixes.doc ? vocalTools.has(mixes.doc.id, p.id) : false);
+  const catalogue = $derived(E.toolTypesFor(marked && vocal.mode === "off" ? "vocal" : vocal.mode).find((t) => t.name === type));
+  const name = $derived(toolLabel(type, vocal.mode, marked));
   const clash = $derived(tool ? E.toolConflicts(clip, tool).length > 0 : false);
   let selNode = $state(-1);
 
@@ -120,6 +123,19 @@
   </div>
   <p class="note">Chops the clip on and off in eighth notes from the start of this block, at the tempo above (0 follows the clip's tempo). It has no curves.</p>
   <div class="warn">The file layout of a Trans tool has not been checked on a real Pacemaker or in the Tonium Editor (no mix with one has been seen). The preview and the audio export play it; if the device does not like it, delete the block and save again.</div>
+{/if}
+
+{#if tool && type === "Wah"}
+  <h4>Vocal</h4>
+  <div class="field">
+    <span class="lbl">Vocal tool</span>
+    <label class="check"><input type="checkbox" checked={marked} onchange={(e) => mixes.doc && vocalTools.set(mixes.doc.id, p.id, e.currentTarget.checked)} /> use as the vocal filter</label>
+  </div>
+  <p class="note">
+    Vocal and Wah are the same tool in the mix file (Wah, cut-off). On the Pacemaker it plays as the vocal filter only with Revival firmware and the Vocal flag switched on (Device view);
+    otherwise it plays as Wah. This app remembers which tools you made as Vocal, for the names here and for the live preview, which plays them as the vocal filter. The mark is kept in this
+    app, not in the mix, and a copy of the tool is a Wah tool until you mark it.
+  </p>
 {/if}
 
 {#if tool && params.length > 0}

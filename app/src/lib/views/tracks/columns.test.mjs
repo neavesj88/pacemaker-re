@@ -70,14 +70,15 @@ test("column order: repeats and unknown keys dropped, missing columns slotted af
   assert.deepEqual(cleanOrder(["title", "title", "nope", "artist"]).slice(0, 4), ["fav", "colour", "title", "artist"], "colour was missing, so it follows the heart");
   assert.deepEqual(cleanOrder("x"), KEYS);
   // an order saved before the new columns existed: they appear after the column before them
-  const old = KEYS.filter((k) => !["year", "label", "remixer", "composer", "comments", "added", "lastplayed", "format", "bitrate", "size"].includes(k));
+  const old = KEYS.filter((k) => !["year", "label", "remixer", "composer", "comments", "added", "lastplayed", "format", "bitrate", "size", "cases", "caseno"].includes(k));
   const swapped = ["fav", "colour", "artist", "title", ...old.slice(4)];
   const merged = cleanOrder(swapped);
   assert.equal(merged.length, KEYS.length);
   assert.deepEqual(merged.slice(0, 4), ["fav", "colour", "artist", "title"], "the saved order is kept");
   assert.equal(merged.indexOf("year"), merged.indexOf("tags") + 1, "a new column follows the column that precedes it by default");
   assert.equal(merged.indexOf("label"), merged.indexOf("year") + 1);
-  assert.equal(merged.at(-1), "size");
+  assert.equal(merged.indexOf("cases"), merged.indexOf("size") + 1, "the case columns follow Size");
+  assert.equal(merged.at(-1), "caseno");
 });
 
 test("moving a column: before another, to the end, never before the heart, the heart never moves", () => {

@@ -19,7 +19,7 @@ use pm_formats::mix::{LoopProc, Process, TempoMap, Track};
 
 use crate::audio::Source;
 use crate::env::Env;
-use crate::fx::{self, Fx, PeqMode, TICK};
+use crate::fx::{self, Fx, PeqPlan, TICK};
 use crate::sinc;
 use crate::stretch::Wsola;
 
@@ -239,7 +239,7 @@ pub struct ClipStream {
     tempo: TempoMap,
     scratch: Scratch,
     /// What a `Wah` tool renders as (see [`PeqMode`]).
-    peq: PeqMode,
+    peq: PeqPlan,
 }
 
 #[derive(Default)]
@@ -258,7 +258,7 @@ impl ClipStream {
     /// Builds the stream of `track` over decoded `src`; the first sample it will be asked for is
     /// `start_local` or earlier (it moves back to the start of any loop or reverse region that
     /// is still running there). `track` must outlive nothing: tools are cloned.
-    pub fn new(track: &Track, src: Arc<Source>, start_local: i64, peq: PeqMode) -> ClipStream {
+    pub fn new(track: &Track, src: Arc<Source>, start_local: i64, peq: PeqPlan) -> ClipStream {
         let aud_start = round(track.position.l_offset);
         let aud_end = round(track.position.length - track.position.r_offset);
         let tempo = TempoMap::new(&track.pitch);
@@ -499,7 +499,7 @@ impl ClipStream {
             if self.tools[ti].fxs.is_none() {
                 let fallback = self.bpm_at(a);
                 let tool = &self.tools[ti].tool;
-                let fxs: Vec<Box<dyn Fx>> = tool.effects.iter().filter_map(|e| fx::build(e, tool, fallback, self.peq)).collect();
+                let fxs: Vec<Box<dyn Fx>> = tool.effects.iter().filter_map(|e| fx::build(e, tool, fallback, self.peq.for_tool(tool))).collect();
                 let tail = fxs.iter().map(|f| f.tail()).max().unwrap_or(0) as i64;
                 self.tools[ti].tail_end = (b + tail).min(aud_end.max(b));
                 self.tools[ti].fxs = Some(fxs);

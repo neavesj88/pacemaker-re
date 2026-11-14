@@ -913,6 +913,22 @@ impl MixDoc {
         })
     }
 
+    /// The `SessionEventId`s (as they are in the `Mix` of [`MixDoc::to_mix`]) of the tools whose
+    /// document id is in `ids`. The live player uses them to tell Vocal tools from Wah tools.
+    pub fn tool_session_ids(&self, ids: &[String]) -> std::collections::HashSet<String> {
+        let mut out = std::collections::HashSet::new();
+        for c in &self.clips {
+            for p in &c.processes {
+                if let ProcessDoc::Tool(x) = p {
+                    if ids.iter().any(|i| *i == x.id) {
+                        out.insert(session_id(&x.id, &x.legacy_session_id));
+                    }
+                }
+            }
+        }
+        out
+    }
+
     /// Effective tempo of the clip that starts first, at its cue.
     fn derive_tempo(&self) -> Option<f64> {
         let first = self
@@ -1452,5 +1468,20 @@ pub mod tests {
         assert_eq!(a.len(), 32);
         assert!(a.chars().all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()));
         assert_ne!(a, b);
+    }
+    #[test]
+    fn tool_session_ids_name_only_the_asked_tools_as_the_mix_has_them() {
+        let doc = MixDoc::from_mix(1, &synthetic_mix());
+        let tools: Vec<(&String, String)> = doc.clips.iter().flat_map(|c| c.processes.iter()).filter_map(|p| if let ProcessDoc::Tool(t) = p { Some((&t.id, session_id(&t.id, &t.legacy_session_id))) } else { None }).collect();
+        assert!(tools.len() > 3);
+        let ids = vec![tools[1].0.clone()];
+        let got = doc.tool_session_ids(&ids);
+        assert_eq!(got.len(), 1);
+        assert!(got.contains(&tools[1].1));
+        // and it is the id the Mix carries on that tool
+        let mix = doc.to_mix().unwrap();
+        let in_mix = mix.tracks.iter().flat_map(|t| t.processes.iter()).any(|p| matches!(p, m::Process::Tool(t) if got.contains(&t.position.session_event_id)));
+        assert!(in_mix);
+        assert!(doc.tool_session_ids(&["nope".to_string()]).is_empty());
     }
 }

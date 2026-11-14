@@ -25,6 +25,7 @@ import { listMeta } from "./listmeta.svelte";
 import { listPrefs } from "./listPrefs.svelte";
 import { copyName, deleteLine, deleteSummary, exportSummary, planLine } from "./mixlist";
 import { preview } from "./preview.svelte";
+import { vocalTools } from "./vocalTools.svelte";
 import { mv } from "./view.svelte";
 
 /** Saves the open mix and refreshes the library-row cache (new modified date and play time). */
@@ -108,6 +109,7 @@ export function duplicateMix(m: MixSummary, done?: (id: number) => void) {
       const root = mixes.root;
       if (!root) throw new Error("no library is open");
       const made = await mixDuplicate(root, m.id, name);
+      vocalTools.copy(m.id, made.id);
       await reloadList();
       done?.(made.id);
       toast.show(`Made “${made.name}” from “${m.name}”`, "ok");
@@ -155,6 +157,7 @@ export function deleteMixes(ms: MixSummary[], done?: () => void) {
       if (!root) throw new Error("no library is open");
       const r = await mixDeleteMany(root, items);
       for (const d of r.deleted) listMeta.forget(d.id);
+      vocalTools.forget(r.deleted.map((d) => d.id));
       await reloadList();
       done?.();
       const s = deleteSummary(r);

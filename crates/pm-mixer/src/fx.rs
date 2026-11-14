@@ -46,6 +46,34 @@ pub enum PeqMode {
     VocalInverted,
 }
 
+/// What each `Wah` tool of a mix renders as. With no `vocal_tools` list every one uses `mode`
+/// (the export: the card decides). With a list, only the tools whose `SessionEventId` is in it
+/// are vocal filters (`mode`, or plain Vocal when the card has stock Wah) and every other Wah tool
+/// stays a Wah: the live preview of an app that lets a mix mix both, without any change to the file.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct PeqPlan {
+    pub mode: PeqMode,
+    pub vocal_tools: Option<std::sync::Arc<std::collections::HashSet<String>>>,
+}
+
+impl PeqPlan {
+    pub fn new(mode: PeqMode, vocal_tools: Option<std::sync::Arc<std::collections::HashSet<String>>>) -> PeqPlan {
+        PeqPlan { mode, vocal_tools }
+    }
+
+    /// The mode for one tool.
+    pub fn for_tool(&self, tool: &Tool) -> PeqMode {
+        match &self.vocal_tools {
+            None => self.mode,
+            Some(set) if set.contains(&tool.position.session_event_id) => match self.mode {
+                PeqMode::Wah => PeqMode::Vocal,
+                m => m,
+            },
+            Some(_) => PeqMode::Wah,
+        }
+    }
+}
+
 /// Builds the effect for one entry of a tool; `None` for a bypassed or unknown one.
 pub fn build(effect: &Effect, tool: &Tool, start_bpm_fallback: f64, peq: PeqMode) -> Option<Box<dyn Fx>> {
     if effect.bypassed {
@@ -709,6 +737,30 @@ impl Fx for Roll {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn tool_with_id(id: &str) -> Tool {
+        Tool {
+            name: "ToolProcess".into(),
+            bypassed: false,
+            effects: vec![],
+            position: pm_formats::mix::Position { start: 0.0, length: 1.0, l_offset: 0.0, r_offset: 0.0, limit_size: false, session_event_id: id.into() },
+            automation: Default::default(),
+        }
+    }
+
+    #[test]
+    fn peq_plan_picks_vocal_or_wah_per_tool() {
+        let set: std::sync::Arc<std::collections::HashSet<String>> = std::sync::Arc::new(["a".to_string()].into_iter().collect());
+        let live = PeqPlan::new(PeqMode::Wah, Some(set.clone()));
+        assert_eq!(live.for_tool(&tool_with_id("a")), PeqMode::Vocal);
+        assert_eq!(live.for_tool(&tool_with_id("b")), PeqMode::Wah);
+        // the card's inverted flag still decides the direction of a marked tool
+        let inv = PeqPlan::new(PeqMode::VocalInverted, Some(set));
+        assert_eq!(inv.for_tool(&tool_with_id("a")), PeqMode::VocalInverted);
+        assert_eq!(inv.for_tool(&tool_with_id("b")), PeqMode::Wah);
+        // no list: the card decides for every tool (the export)
+        assert_eq!(PeqPlan::new(PeqMode::Vocal, None).for_tool(&tool_with_id("b")), PeqMode::Vocal);
+    }
 
     #[test]
     fn hadamard_is_orthogonal_up_to_scale() {

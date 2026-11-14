@@ -6,7 +6,7 @@ import { loadPref, savePref } from "../../state/prefStore.ts";
 
 export type ColKey =
   | "fav" | "colour" | "title" | "artist" | "album" | "wave" | "bpm" | "key" | "energy" | "autoenergy" | "rating" | "plays" | "time" | "genre" | "tags"
-  | "year" | "label" | "remixer" | "composer" | "comments" | "added" | "lastplayed" | "format" | "bitrate" | "size";
+  | "year" | "label" | "remixer" | "composer" | "comments" | "added" | "lastplayed" | "format" | "bitrate" | "size" | "cases" | "caseno";
 
 export type ColDef = {
   key: ColKey;
@@ -51,7 +51,13 @@ export const COLUMNS: ColDef[] = [
   { key: "format", label: "Format", width: 64, min: 50, sort: "format", defaultOn: false },
   { key: "bitrate", label: "Bitrate", width: 78, min: 56, num: true, sort: "bit_rate", defaultOn: false },
   { key: "size", label: "Size", width: 76, min: 56, num: true, sort: "file_size", defaultOn: false },
+  // the cases (crates) that hold the track, and its place in the case chosen in the filter bar
+  { key: "cases", label: "Cases", width: 170, min: 70, sort: "cases", defaultOn: false },
+  { key: "caseno", label: "Case #", width: 80, min: 60, num: true, sort: "case_order", defaultOn: false },
 ];
+
+/** Columns that only make sense while a case is chosen in the filter bar. */
+export const CASE_ONLY: ColKey[] = ["caseno"];
 
 export type ViewPrefs = {
   visible: Record<string, boolean>;
@@ -64,6 +70,8 @@ export type ViewPrefs = {
   rememberView: boolean;
   /** "Find" in History clears the filters that hide the track instead of only saying so. */
   findClearsFilters: boolean;
+  /** Choosing a case in the filter bar sorts by the case's own order (the sort before is put back when the case is cleared). */
+  caseOrderOnPick: boolean;
 };
 
 const STORAGE_KEY = "pm.tracks.view.v1";
@@ -78,6 +86,7 @@ export function defaultPrefs(): ViewPrefs {
     sort: [{ field: "artist", asc: true }],
     rememberView: true,
     findClearsFilters: true,
+    caseOrderOnPick: true,
   };
 }
 
@@ -115,8 +124,8 @@ export function cleanOrder(raw: unknown): ColKey[] {
 }
 
 /** Saved prefs merged over the defaults, ignoring anything unknown or malformed. */
-export function mergePrefs(saved: unknown): ViewPrefs {
-  const prefs = defaultPrefs();
+export function mergePrefs(saved: unknown, base: ViewPrefs = defaultPrefs()): ViewPrefs {
+  const prefs: ViewPrefs = structuredClone(base);
   if (!saved || typeof saved !== "object") return prefs;
   const s = saved as Record<string, unknown> & Partial<ViewPrefs>;
   for (const c of COLUMNS) {
@@ -131,14 +140,16 @@ export function mergePrefs(saved: unknown): ViewPrefs {
   prefs.sort = cleanSort(s.sort) ?? cleanSort(legacy) ?? prefs.sort;
   if (typeof s.rememberView === "boolean") prefs.rememberView = s.rememberView;
   if (typeof s.findClearsFilters === "boolean") prefs.findClearsFilters = s.findClearsFilters;
+  if (typeof s.caseOrderOnPick === "boolean") prefs.caseOrderOnPick = s.caseOrderOnPick;
   return prefs;
 }
 
 /** The columns to draw: in the saved order, hidden ones left out. */
-export function shownColumns(prefs: Pick<ViewPrefs, "order" | "visible">): ColDef[] {
+export function shownColumns(prefs: Pick<ViewPrefs, "order" | "visible">, caseChosen = false): ColDef[] {
   const byKey = new Map(COLUMNS.map((c) => [c.key, c] as const));
   return prefs.order.flatMap((k) => {
     const c = byKey.get(k);
+    if (c && CASE_ONLY.includes(c.key)) return caseChosen ? [c] : [];
     return c && (c.fixed || prefs.visible[c.key]) ? [c] : [];
   });
 }
@@ -168,10 +179,24 @@ export function stepTarget(shown: readonly ColKey[], key: ColKey, step: -1 | 1):
   return { ok: true, before: shown[i + 2] ?? null };
 }
 
-export function loadPrefs(): ViewPrefs {
-  return loadPref(STORAGE_KEY, mergePrefs, () => defaultPrefs());
+/** The storage key of the Tracks view's layout; the Mix tab's table has its own. */
+export const TRACKS_KEY = STORAGE_KEY;
+export const MIX_PICKER_KEY = "pm.mixes.picker.v1";
+
+/** Defaults of the Mix tab's table: the same columns as the Tracks view, with Cases shown (the
+ *  point of picking from a crate), and a title-first sort that is easy to scan. */
+export function mixPickerDefaults(): ViewPrefs {
+  const d = defaultPrefs();
+  d.visible.cases = true;
+  d.widths.wave = 90;
+  d.widths.colour = 74; // room for the sort arrow: the header read "Colo…" at 58
+  return d;
 }
 
-export function savePrefs(prefs: ViewPrefs) {
-  savePref(STORAGE_KEY, prefs); // a failed save: the table still works, it just forgets
+export function loadPrefs(key: string = STORAGE_KEY, base: () => ViewPrefs = defaultPrefs): ViewPrefs {
+  return loadPref(key, (raw) => mergePrefs(raw, base()), () => base());
+}
+
+export function savePrefs(prefs: ViewPrefs, key: string = STORAGE_KEY) {
+  savePref(key, prefs); // a failed save: the table still works, it just forgets
 }

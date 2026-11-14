@@ -13,3 +13,9 @@ export { sameAudio };
 export function sameRender(rendered: MixDoc | null, renderedMode: VocalMode, doc: MixDoc | null, mode: VocalMode): boolean {
   return renderedMode === mode && sameAudio(rendered, doc);
 }
+
+/** The player bar volume (0..1) as the live mix's listening level in dB: 1 is 0 dB (as exported),
+ * the bottom of the slider is silence (-60 dB). */
+export function volumeToDb(v: number): number {
+  return v <= 0.001 ? -60 : Math.max(-60, 20 * Math.log10(Math.min(1, v)));
+}

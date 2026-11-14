@@ -87,9 +87,12 @@ fn decode_stereo(path: &Path) -> Result<(Vec<f32>, Vec<f32>, u32, usize), Error>
     let params = track.codec_params.as_ref().and_then(|p| p.audio()).ok_or_else(none)?.clone();
     let rate = params.sample_rate.ok_or_else(|| Error::Decode(format!("{name}: unknown sample rate")))?;
     let track_id = track.id;
+    let expect = track.num_frames.unwrap_or(0).min(1 << 28) as usize;
     let mut decoder = symphonia::default::get_codecs().make_audio_decoder(&params, &AudioDecoderOptions::default()).map_err(bad)?;
 
-    let (mut l, mut r) = (Vec::new(), Vec::new());
+    // reserved up front when the container says how long it is, so the vectors are not left
+    // with up to twice their length in spare capacity (the loader budgets by length)
+    let (mut l, mut r) = (Vec::with_capacity(expect), Vec::with_capacity(expect));
     let mut inter: Vec<f32> = Vec::new();
     let (mut glitches, mut last_len) = (0usize, 1152usize);
     loop {
@@ -123,5 +126,7 @@ fn decode_stereo(path: &Path) -> Result<(Vec<f32>, Vec<f32>, u32, usize), Error>
             Err(e) => return Err(bad(e)),
         }
     }
+    l.shrink_to_fit();
+    r.shrink_to_fit();
     Ok((l, r, rate, glitches))
 }

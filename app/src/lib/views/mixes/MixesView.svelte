@@ -21,8 +21,8 @@
   import { preview } from "./preview.svelte";
   import { mv } from "./view.svelte";
 
-  // leaving the view silences the preview; the open mix stays open
-  onDestroy(() => preview.pause());
+  // leaving the view silences the preview and lets the engine free the decoded audio; the open mix stays open
+  onDestroy(() => preview.release());
 
   // The Wah tool is called "Vocal" when the card is set up for the Vocal filter, and previews and
   // exports render it that way. Read the card's flag whenever a library is opened or re-read; the

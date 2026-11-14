@@ -1,6 +1,11 @@
 <script lang="ts">
-  // The timeline: ruler, two deck lanes with clips, the crossfade lane, one effects lane per
-  // deck and the tempo / key / gain envelope lanes, with the playhead over all of them.
+  // The timeline: a ruler, ONE mix bar and the tool strip under it, with the playhead over both.
+  //
+  // Every clip is on the same bar in its own colour. Where two clips overlap, the bar is split by
+  // height inside the overlap (see ClipBlock) and the crossfade is drawn on the overlap itself
+  // (FadeBlock). Tools, loops, reverse and ignore blocks sit in a thin strip attached under the bar,
+  // at the same horizontal position as the clip they belong to, with the clip's colour on their
+  // edge. One of the clips' envelopes (gain, tempo or key) can be drawn over the bar.
   //
   // Only what is near the viewport is rendered (clips, blocks, ruler marks, waveform canvases),
   // so a long mix with many clips stays as cheap as a short one.
@@ -8,31 +13,33 @@
   import * as E from "$lib/state/mixedit";
   import { mixes } from "$lib/state/mixes.svelte";
   import { laneOffset } from "$lib/state/dragLogic";
-  import { trackDropTarget, type DropOptions } from "$lib/state/trackDrag.svelte";
-  import { vocal } from "$lib/state/vocal.svelte";
+  import { trackDrag, trackDropTarget, type DropOptions } from "$lib/state/trackDrag.svelte";
   import ContextMenu, { type MenuItem } from "$lib/ui/ContextMenu.svelte";
-  import { addProcessAt, addTracks, autoTransition, beatmatch, clipTitle, duplicateSelection, neighbours, pasteAtPlayhead } from "./actions";
+  import { addProcessTo, addTracks, autoTransition, beatmatch, clipTitle, duplicateSelection, neighbours, pasteAtPlayhead, targetClip, toolChoices } from "./actions";
   import ClipBlock from "./ClipBlock.svelte";
   import EnvelopeSvg from "./EnvelopeSvg.svelte";
+  import FadeBlock from "./FadeBlock.svelte";
   import { toolPrefs } from "./listPrefs.svelte";
-  import { HEADER_W, PPS_MAX, PPS_MIN, SR, clamp, envToKey, keyToEnv, packRows, rulerTicks, mmss } from "./layout";
+  import { HEADER_W, PPS_MAX, PPS_MIN, SR, clamp, clipColour, envToKey, keyToEnv, packRows, rulerTicks, mmss } from "./layout";
   import { preview } from "./preview.svelte";
   import ToolBlock from "./ToolBlock.svelte";
-  import TransitionBlock from "./TransitionBlock.svelte";
   import { mv } from "./view.svelte";
 
   let { ondelete }: { ondelete: () => void } = $props();
 
   const RULER_H = 40;
-  const DECK_H = 64;
-  const CLIP_H = 52;
-  const XF_H = 46;
+  /** The bar: padding, then the clips (and the crossfades over their overlaps). It takes the height
+   * the pane has left, between a readable minimum and a maximum. */
+  const BAR_MIN = 190;
+  const BAR_MAX = 380;
+  const PAD = 6;
   const FX_ROW = 24;
-  const ENV_H = 60;
+  const ENV_TOP = 18;
 
   const doc = $derived(mixes.doc!);
   let scroller = $state<HTMLDivElement | null>(null);
   let root = $state<HTMLDivElement | null>(null);
+  let barEl = $state<HTMLDivElement | null>(null);
   let menu = $state<{ x: number; y: number; items: MenuItem[] } | null>(null);
 
   // snap distance follows the zoom: about 10 px
@@ -50,18 +57,23 @@
 
   const ticks = $derived(rulerTicks(Math.max(0, vis.l / mv.pps), Math.max(0, vis.r / mv.pps), mv.pps, bpm));
 
-  const decks = $derived([0, 1].map((d) => doc.clips.filter((c) => c.channel === d)));
-  const visibleDecks = $derived(decks.map((cs) => cs.filter((c) => inView(c.visibleStart, c.visibleEnd))));
+  /** A clip's colour: by the order the clips were added, so it never changes when a clip moves. */
+  const colours = $derived(new Map(doc.clips.map((c, i) => [c.id, clipColour(i)])));
+  const colourOf = (id: string | undefined) => (id ? (colours.get(id) ?? "var(--accent)") : "var(--accent)");
 
-  /** Tool lane of each deck: every process of the deck's clips, packed into rows. */
-  const fx = $derived(
-    decks.map((cs) => {
-      const items: { clip: Clip; p: ProcessDoc; start: number; end: number }[] = [];
-      for (const clip of cs) for (const p of clip.processes) items.push({ clip, p, start: clip.start + p.start, end: clip.start + p.start + p.length });
-      const { rows, count } = packRows(items);
-      return { items: items.map((it, i) => ({ ...it, row: rows[i] })), count };
-    }),
-  );
+  const visibleClips = $derived(doc.clips.filter((c) => inView(c.visibleStart, c.visibleEnd)));
+
+  /** The tool strip: every process of every clip, packed into rows so none hides another. */
+  const fx = $derived.by(() => {
+    const items: { clip: Clip; p: ProcessDoc; start: number; end: number }[] = [];
+    for (const clip of doc.clips) for (const p of clip.processes) items.push({ clip, p, start: clip.start + p.start, end: clip.start + p.start + p.length });
+    const { rows, count } = packRows(items);
+    return { items: items.map((it, i) => ({ ...it, row: rows[i] })), count: items.length === 0 ? 1 : count };
+  });
+  const fxH = $derived(fx.count * (FX_ROW + 2) + 8);
+  let viewH = $state(0);
+  const BAR_H = $derived(Math.min(BAR_MAX, Math.max(BAR_MIN, viewH - RULER_H - Math.max(40, fxH) - 2)));
+  const LANE_H = $derived(BAR_H - PAD * 2);
   const conflicts = $derived.by(() => {
     const out = new Set<string>();
     for (const c of doc.clips) {
@@ -72,7 +84,7 @@
 
   const visibleTransitions = $derived(doc.transitions.filter((t) => inView(t.start, t.start + t.length)));
 
-  /** Pairs of clips that overlap on different decks with no crossfade yet. */
+  /** Pairs of clips that overlap with no crossfade yet. */
   const gaps = $derived.by(() => {
     const out: { from: Clip; to: Clip; start: number; end: number }[] = [];
     const sorted = E.sortedClips(doc);
@@ -124,9 +136,13 @@
       }
     };
     s.addEventListener("wheel", wheel, { passive: false });
-    const ro = new ResizeObserver(() => (mv.viewW = s.clientWidth));
+    const size = () => {
+      mv.viewW = s.clientWidth;
+      viewH = s.clientHeight;
+    };
+    const ro = new ResizeObserver(size);
     ro.observe(s);
-    mv.viewW = s.clientWidth;
+    size();
     return () => {
       s.removeEventListener("wheel", wheel);
       ro.disconnect();
@@ -182,24 +198,9 @@
     el.addEventListener("pointercancel", up);
   }
 
-  // ---- lanes ----------------------------------------------------------------------------------
+  // ---- bar and menus --------------------------------------------------------------------------
 
-  function laneAt(clientY: number): number | null {
-    if (!root) return null;
-    let best: number | null = null;
-    let dist = Infinity;
-    root.querySelectorAll<HTMLElement>("[data-deck]").forEach((el) => {
-      const r = el.getBoundingClientRect();
-      const d = clientY >= r.top && clientY <= r.bottom ? 0 : Math.min(Math.abs(clientY - r.top), Math.abs(clientY - r.bottom));
-      if (d < dist) {
-        dist = d;
-        best = Number(el.dataset.deck);
-      }
-    });
-    return best;
-  }
-
-  /** Timeline sample under a pointer on a lane's track element. */
+  /** Timeline sample under a pointer on a track element. */
   function sampleAt(e: MouseEvent): number {
     const track = (e.currentTarget as HTMLElement).getBoundingClientRect();
     return Math.max(0, Math.round(mv.samples(e.clientX - track.left)));
@@ -210,21 +211,15 @@
     if (!(e.shiftKey || e.ctrlKey || e.metaKey)) mixes.clearSelection();
   }
 
-  function fxMenu(deck: number, at: number): MenuItem[] {
-    const add = (type: string, label: string): MenuItem => ({ label, onclick: () => addProcessAt(type, deck, at) });
-    return [
-      ...E.addableToolTypes(vocal.mode, toolPrefs.showTrans).map((t) => add(t.name, t.label)),
-      add("loop", "Loop"),
-      add("reverse", "Reverse"),
-      add("ignore", "Ignore"),
-    ];
+  /** The "Add tool" items for `clip`, placed at `at`. */
+  function toolItems(clip: Clip | undefined, at: number): MenuItem[] {
+    return toolChoices(toolPrefs.showTrans).map((t) => ({ label: t.label, onclick: () => addProcessTo(t.type, clip, at, t.vocal) }));
   }
 
-  function trackMenu(e: MouseEvent, deck: number | null, kind: "deck" | "fx" | "other") {
+  function trackMenu(e: MouseEvent) {
     e.preventDefault();
     const at = sampleAt(e);
     const items: MenuItem[] = [];
-    if (kind === "fx" && deck !== null) items.push(...fxMenu(deck, at).map((i) => ({ ...i, label: `Add ${i.label}` })));
     items.push({ label: "Paste at playhead", disabled: !mixes.clipboard, onclick: pasteAtPlayhead });
     items.push({ label: "Move playhead here", onclick: () => void preview.seek(at) });
     menu = { x: e.clientX, y: e.clientY, items };
@@ -233,16 +228,17 @@
   function clipMenu(e: MouseEvent, clip: Clip) {
     const { prev, next } = neighbours(doc, clip.id);
     const n = mixes.selected.length;
+    const at = Math.min(Math.max(mv.playhead, clip.visibleStart), clip.visibleEnd - E.MIN_LENGTH);
     const items: MenuItem[] = [
+      ...toolItems(clip, at).map((i) => ({ ...i, label: `Add ${i.label} here` })),
       { label: n > 1 ? `Duplicate ${n} items` : "Duplicate", onclick: duplicateSelection },
       { label: "Copy", onclick: () => mixes.copy() },
       { label: "Cut", onclick: () => mixes.cut() },
       { label: "Beat-match to previous", disabled: !prev, onclick: () => void beatmatch(clip.id) },
       { label: "Auto transition to next", disabled: !next, onclick: () => next && void autoTransition(clip.id, next.id) },
-      { label: clip.channel === 0 ? "Move to channel 2" : "Move to channel 1", disabled: n > 1, onclick: () => mixes.setChannel(clip.id, clip.channel === 0 ? 1 : 0) },
       { label: n > 1 ? `Delete ${n} items` : "Delete", danger: true, onclick: ondelete },
     ];
-    menu = { x: e.clientX, y: e.clientY, items };
+    menu = { x: Math.min(e.clientX, innerWidth - 230), y: Math.max(0, Math.min(e.clientY, innerHeight - items.length * 30 - 20)), items };
   }
 
   function processMenu(e: MouseEvent, _clip: Clip, p: ProcessDoc) {
@@ -263,25 +259,53 @@
     menu = { x: e.clientX, y: e.clientY, items };
   }
 
+  /** The "+ Tool" button of the strip: a tool for the selected clip (or the one under the playhead). */
+  function toolButton(e: MouseEvent) {
+    e.stopPropagation(); // the menu closes on any click that reaches the window
+    const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const clip = targetClip();
+    menu = { x: r.left, y: r.bottom + 2, items: clip ? toolItems(clip, mv.playhead) : [{ label: "Add a track first", disabled: true, onclick: () => {} }] };
+  }
+
   // ---- dropping tracks from the picker --------------------------------------------------------
 
   // Pointer drag from the picker (state/trackDrag.svelte.ts; HTML5 drag and drop does not reach the
-  // page in the Windows app). The lane under the pointer is the deck, the pointer's x the time.
-  function laneDrop(deck: number): DropOptions {
-    return {
-      scope: "mix",
-      accept: () => true,
-      ondrop: (ids, _hit, p) => {
-        if (ids.length === 0) return;
-        let at = Math.max(0, Math.round(mv.samples(laneOffset(p.x, p.node.getBoundingClientRect().left))));
-        const targets = E.snapTargets(doc, mixes.snap, [], [at - SR, at + SR], mixes.sectionLookup);
-        at = E.snap(at, targets, mixes.threshold);
-        void addTracks(ids, at, deck);
-      },
-    };
-  }
+  // page in the Windows app). The pointer's x is the time; the deck is chosen by the store.
+  const dropSample = (clientX: number, left: number) => {
+    const at = Math.max(0, Math.round(mv.samples(laneOffset(clientX, left))));
+    const targets = E.snapTargets(doc, mixes.snap, [], [at - SR, at + SR], mixes.sectionLookup);
+    return E.snap(at, targets, mixes.threshold);
+  };
+  const barDrop: DropOptions = {
+    scope: "mix",
+    accept: () => true,
+    ondrop: (ids, _hit, p) => {
+      if (ids.length === 0) return;
+      void addTracks(ids, dropSample(p.x, p.node.getBoundingClientRect().left));
+    },
+  };
 
-  // ---- envelope lane helpers ------------------------------------------------------------------
+  /** Where a track dragged over the bar would start (a marker line), while a "mix" drag runs. */
+  let dropAt = $state<number | null>(null);
+  $effect(() => {
+    if (!(trackDrag.active && trackDrag.scope === "mix") || !barEl) {
+      dropAt = null;
+      return;
+    }
+    const el = barEl;
+    const move = (e: PointerEvent) => {
+      const r = el.getBoundingClientRect();
+      const inside = e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom;
+      dropAt = inside ? dropSample(e.clientX, r.left) : null;
+    };
+    window.addEventListener("pointermove", move, true);
+    return () => {
+      window.removeEventListener("pointermove", move, true);
+      dropAt = null;
+    };
+  });
+
+  // ---- envelope overlay -----------------------------------------------------------------------
 
   function gainChange(c: Clip, nodes: EnvNode[]) {
     mixes.setEnvelope(c.id, { kind: "gain" }, nodes, { live: true });
@@ -289,15 +313,11 @@
   function keyChange(c: Clip, nodes: EnvNode[]) {
     mixes.setEnvelope(c.id, { kind: "key" }, envToKey(nodes, c.key), { live: true });
   }
-  function tempoLine(c: Clip, bpmValue: number) {
-    mixes.edit("Change tempo", (d) => E.setClipBpm(d, c.id, bpmValue), { group: `bpm:${c.id}` });
+  function tempoChange(c: Clip, nodes: EnvNode[]) {
+    mixes.edit("Change tempo", (d) => E.setTempoCurve(d, c.id, nodes.map((n) => ({ pos: n.pos, speed: n.value / c.bpm }))), { group: `bpm:${c.id}` });
   }
   const tempoNodes = (c: Clip): EnvNode[] => c.tempo.map((n) => ({ pos: n.pos, value: c.bpm * n.speed }));
-
-  const envClips = $derived(doc.clips.filter((c) => inView(c.visibleStart, c.visibleEnd)));
-  const laneIds = ["tempo", "key", "gain"] as const;
-  const laneTitle = { tempo: "Tempo", key: "Key", gain: "Gain" } as const;
-  const laneSub = { tempo: "BPM", key: "semitones", gain: "dB" } as const;
+  const overlayName = { gain: "Gain", tempo: "Tempo", key: "Key" } as const;
 </script>
 
 <div class="timeline" bind:this={root}>
@@ -307,7 +327,7 @@
       <!-- ruler -->
       <div class="row ruler" style:height="{RULER_H}px">
         <div class="hd corner">
-          <span class="muted">{bpm.toFixed(1)} BPM</span>
+          <span class="muted">{bpm.toFixed(2)} BPM</span>
         </div>
         <!-- svelte-ignore a11y_no_static_element_interactions -->
         <div class="track" style:width="{contentW}px" onpointerdown={scrub} title="Click or drag to place the playhead. Shift-drag marks a stretch to export (Shift-click clears it).">
@@ -323,97 +343,55 @@
         </div>
       </div>
 
-      <!-- deck lanes -->
-      {#each [0, 1] as deck (deck)}
-        <div class="row" style:height="{DECK_H}px">
-          <div class="hd">
-            <b>Channel {deck + 1}</b>
-            <span class="muted">deck {deck ? "B" : "A"} · {decks[deck].length} clip{decks[deck].length === 1 ? "" : "s"}</span>
-          </div>
-          <!-- svelte-ignore a11y_no_static_element_interactions -->
-          <div
-            class="track"
-            data-deck={deck}
-            style:width="{contentW}px"
-            onpointerdown={bgDown}
-            oncontextmenu={(e) => trackMenu(e, deck, "deck")}
-            use:trackDropTarget={laneDrop(deck)}
-          >
-            {#each visibleDecks[deck] as clip (clip.id)}
-              <ClipBlock {clip} height={CLIP_H} {laneAt} oncontext={clipMenu} />
-            {/each}
-            {#if doc.clips.length === 0 && deck === 0}
-              <div class="hint">Drag tracks here from the Tracks panel, or press “Add at playhead”.</div>
-            {/if}
-          </div>
-        </div>
-      {/each}
-
-      <!-- transitions -->
-      <div class="row" style:height="{XF_H + 4}px">
+      <!-- the mix bar -->
+      <div class="row" style:height="{BAR_H}px">
         <div class="hd">
-          <b>Transitions</b>
-          <span class="muted">{doc.transitions.length} crossfade{doc.transitions.length === 1 ? "" : "s"}</span>
+          <b>Mix</b>
+          <span class="muted">{doc.clips.length} track{doc.clips.length === 1 ? "" : "s"}, {doc.transitions.length} crossfade{doc.transitions.length === 1 ? "" : "s"}</span>
+          <ul class="legend" aria-label="Clip colours">
+            {#each doc.clips.slice(0, 8) as c (c.id)}
+              <li style:--c={colourOf(c.id)} title={clipTitle(c)}>{clipTitle(c)}</li>
+            {/each}
+            {#if doc.clips.length > 8}<li class="more">and {doc.clips.length - 8} more</li>{/if}
+          </ul>
         </div>
         <!-- svelte-ignore a11y_no_static_element_interactions -->
-        <div class="track" style:width="{contentW}px" onpointerdown={bgDown} oncontextmenu={(e) => trackMenu(e, null, "other")}>
-          {#each visibleTransitions as t (t.id)}
-            <TransitionBlock {t} height={XF_H - 4} oncontext={transitionMenu} />
-          {/each}
-          {#each gaps as g (g.from.id + g.to.id)}
-            {#if inView(g.start, g.end)}
-              <div class="ghost" style:left="{mv.x(g.start)}px" style:width="{Math.max(26, mv.x(g.end - g.start))}px" style:height="{XF_H - 4}px">
-                <button
-                  title="Add a crossfade over the overlap of “{clipTitle(g.from)}” and “{clipTitle(g.to)}”"
-                  onclick={() => mixes.addTransition(g.from.id, g.to.id, g.start, g.end - g.start)}>+ X-fade</button
-                >
-                <button title="Build a transition here with the recipe and length set in the Auto transition settings (select a crossfade or a clip to change them)" onclick={() => void autoTransition(g.from.id, g.to.id)}>Auto</button>
-              </div>
-            {/if}
-          {/each}
-        </div>
-      </div>
-
-      <!-- effects lanes, one per deck -->
-      {#each [0, 1] as deck (deck)}
-        {@const h = fx[deck].count * (FX_ROW + 2) + 8}
-        <div class="row" style:height="{Math.max(54, h)}px">
-          <div class="hd">
-            <span class="hrow"><b>Effects {deck + 1}</b></span>
-            <button
-              class="mini"
-              onclick={(e) => {
-                e.stopPropagation(); // the menu closes on any click that reaches the window
-                const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-                menu = { x: r.left, y: r.bottom + 2, items: fxMenu(deck, mv.playhead) };
-              }}>+ Tool ▾</button
-            >
-          </div>
-          <!-- svelte-ignore a11y_no_static_element_interactions -->
-          <div class="track" style:width="{contentW}px" onpointerdown={bgDown} oncontextmenu={(e) => trackMenu(e, deck, "fx")}>
-            {#each fx[deck].items as it (it.p.id)}
-              {#if inView(it.start, it.end)}
-                <ToolBlock clip={it.clip} process={it.p} top={4 + it.row * (FX_ROW + 2)} height={FX_ROW} conflict={conflicts.has(it.p.id)} oncontext={processMenu} />
+        <div
+          class="track mixbar"
+          bind:this={barEl}
+          style:width="{contentW}px"
+          onpointerdown={bgDown}
+          oncontextmenu={trackMenu}
+          use:trackDropTarget={barDrop}
+        >
+          <div class="lane" style:top="{PAD}px" style:height="{LANE_H}px">
+            {#each visibleClips as clip (clip.id)}
+              <ClipBlock {clip} colour={colourOf(clip.id)} height={LANE_H} oncontext={clipMenu} />
+            {/each}
+            {#each visibleTransitions as t (t.id)}
+              <FadeBlock {t} height={LANE_H} fromColour={colourOf(t.between?.from)} toColour={colourOf(t.between?.to)} oncontext={transitionMenu} />
+            {/each}
+            {#each gaps as g (g.from.id + g.to.id)}
+              {#if inView(g.start, g.end)}
+                <div class="ghost" style:left="{mv.x(g.start)}px" style:width="{Math.max(30, mv.x(g.end - g.start))}px" style:height="{LANE_H}px">
+                  <div class="ghostbtns">
+                    <button
+                      title="Add a crossfade over the overlap of “{clipTitle(g.from)}” and “{clipTitle(g.to)}”"
+                      onclick={() => mixes.addTransition(g.from.id, g.to.id, g.start, g.end - g.start)}>+ crossfade</button
+                    >
+                    <button title="Build a transition here with the recipe and length set in the Auto transition settings (select a crossfade or a clip to change them)" onclick={() => void autoTransition(g.from.id, g.to.id)}>Auto</button>
+                  </div>
+                </div>
               {/if}
             {/each}
-          </div>
-        </div>
-      {/each}
 
-      <!-- envelope lanes -->
-      {#each laneIds as lane (lane)}
-        {#if mv.lanes[lane]}
-          <div class="row" style:height="{ENV_H}px">
-            <div class="hd">
-              <span class="hrow"><b>{laneTitle[lane]}</b><button class="mini" onclick={() => (mv.lanes[lane] = false)} title="Hide this lane">Hide</button></span>
-              <span class="muted">{laneSub[lane]}</span>
-            </div>
-            <!-- svelte-ignore a11y_no_static_element_interactions -->
-            <div class="track env" style:width="{contentW}px" onpointerdown={bgDown}>
-              {#each envClips as c (c.id)}
+            <!-- the envelope overlay: every clip's line, editable on the selected clip only -->
+            {#if mv.overlay !== "none"}
+              {#each visibleClips as c (c.id)}
                 {@const w = Math.max(2, mv.x(c.visibleEnd - c.visibleStart))}
-                <div class="envclip" class:sel={mixes.selected.includes(c.id)} style:left="{mv.x(c.visibleStart)}px" style:width="{w}px">
-                  {#if lane === "gain"}
+                {@const edit = mixes.selected.includes(c.id)}
+                <div class="envclip" class:edit style:left="{mv.x(c.visibleStart)}px" style:width="{w}px" style:top="{ENV_TOP}px" style:height="{LANE_H - ENV_TOP}px" title={edit ? "" : `${overlayName[mv.overlay]} of ${clipTitle(c)}: select the clip to edit it`}>
+                  {#if mv.overlay === "gain"}
                     <EnvelopeSvg
                       nodes={c.gain}
                       d0={c.trimStart}
@@ -421,16 +399,17 @@
                       min={-12}
                       max={6}
                       width={w}
-                      height={ENV_H}
-                      colour="var(--green)"
+                      height={LANE_H - ENV_TOP}
+                      colour={edit ? "#fff" : colourOf(c.id)}
                       guides={[0]}
                       unit="dB"
                       label="Gain of {clipTitle(c)}"
+                      editable={edit}
                       snapValue={(v) => Math.round(v * 10) / 10}
                       onchange={(n) => gainChange(c, n)}
                       ondone={() => mixes.endGesture()}
                     />
-                  {:else if lane === "key"}
+                  {:else if mv.overlay === "key"}
                     <EnvelopeSvg
                       nodes={keyToEnv(c.key)}
                       d0={c.trimStart}
@@ -438,11 +417,12 @@
                       min={-12}
                       max={12}
                       width={w}
-                      height={ENV_H}
-                      colour="var(--accent)"
+                      height={LANE_H - ENV_TOP}
+                      colour={edit ? "#fff" : colourOf(c.id)}
                       guides={[0]}
                       unit="st"
                       label="Key of {clipTitle(c)}"
+                      editable={edit}
                       snapValue={Math.round}
                       onchange={(n) => keyChange(c, n)}
                       ondone={() => mixes.endGesture()}
@@ -455,36 +435,45 @@
                       min={c.bpm * 0.5}
                       max={c.bpm * 1.5}
                       width={w}
-                      height={ENV_H}
-                      colour="var(--l2a)"
+                      height={LANE_H - ENV_TOP}
+                      colour={edit ? "#fff" : colourOf(c.id)}
                       guides={[c.bpm]}
                       unit="BPM"
                       label="Tempo of {clipTitle(c)}"
-                      editable={c.tempo.length === 1}
+                      editable={edit}
                       snapValue={(v) => Math.round(v * 100) / 100}
-                      lineDrag={(v) => tempoLine(c, v)}
+                      onchange={(n) => tempoChange(c, n)}
                       ondone={() => mixes.endGesture()}
                     />
                   {/if}
                 </div>
               {/each}
-            </div>
-          </div>
-        {/if}
-      {/each}
+            {/if}
 
-      {#if !(mv.lanes.tempo && mv.lanes.key && mv.lanes.gain)}
-        <div class="row lanebar" style:height="28px">
-          <div class="hd"><span class="muted">Envelopes</span></div>
-          <div class="track" style:width="{contentW}px">
-            <span class="lanebtns">
-              {#each laneIds as lane (lane)}
-                {#if !mv.lanes[lane]}<button class="mini" onclick={() => (mv.lanes[lane] = true)}>+ {laneTitle[lane]} lane</button>{/if}
-              {/each}
-            </span>
+            {#if dropAt !== null}<div class="dropline" style:left="{mv.x(dropAt)}px" aria-hidden="true"><span>{mmss(dropAt / SR)}</span></div>{/if}
+            {#if doc.clips.length === 0}
+              <div class="hint">Drag tracks here from the table below, or select one and press “Add at playhead”.</div>
+            {/if}
           </div>
         </div>
-      {/if}
+      </div>
+
+      <!-- the tool strip, attached to the bar -->
+      <div class="row fxrow" style:height="{Math.max(40, fxH)}px">
+        <div class="hd">
+          <span class="hrow"><b>Tools</b></span>
+          <button class="mini" onclick={toolButton} title="Add a tool, loop, reverse or ignore to the selected clip (or the one under the playhead)">+ Tool ▾</button>
+        </div>
+        <!-- svelte-ignore a11y_no_static_element_interactions -->
+        <div class="track" style:width="{contentW}px" onpointerdown={bgDown} oncontextmenu={trackMenu}>
+          {#each fx.items as it (it.p.id)}
+            {#if inView(it.start, it.end)}
+              <ToolBlock clip={it.clip} process={it.p} top={4 + it.row * (FX_ROW + 2)} height={FX_ROW} conflict={conflicts.has(it.p.id)} accent={colourOf(it.clip.id)} oncontext={processMenu} />
+            {/if}
+          {/each}
+          {#if fx.items.length === 0}<div class="hint" style:top="12px">Right-click a clip, or use + Tool, to add Reverb, Echo, Vocal, EQ, a loop and more. They appear here under the clip they belong to.</div>{/if}
+        </div>
+      </div>
 
       <!-- playhead -->
       <!-- the clip keeps the line from showing over the sticky lane headers -->
@@ -554,6 +543,37 @@
     color: var(--text);
     font-weight: 600;
   }
+  .legend {
+    list-style: none;
+    margin: 4px 0 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    overflow: hidden;
+  }
+  .legend li {
+    font-size: 11px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: var(--text);
+  }
+  .legend li::before {
+    content: "";
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 2px;
+    margin-right: 5px;
+    background: var(--c);
+  }
+  .legend li.more {
+    color: var(--muted);
+  }
+  .legend li.more::before {
+    display: none;
+  }
   .track {
     position: relative;
     flex: 0 0 auto;
@@ -562,6 +582,14 @@
   .track:global([data-drop-over]) {
     box-shadow: inset 0 0 0 2px var(--accent);
     background: color-mix(in srgb, var(--accent) 10%, transparent);
+  }
+  .mixbar {
+    background: repeating-linear-gradient(0deg, transparent 0 47px, rgba(255, 255, 255, 0.03) 47px 48px);
+  }
+  .lane {
+    position: absolute;
+    left: 0;
+    right: 0;
   }
   .ruler {
     position: sticky;
@@ -665,46 +693,63 @@
   }
   .ghost {
     position: absolute;
-    top: 4px;
+    top: 0;
     box-sizing: border-box;
     border: 1px dashed var(--line-hi);
     border-radius: 4px;
+    background: rgba(0, 0, 0, 0.3);
     display: flex;
-    gap: 4px;
     align-items: center;
     justify-content: center;
     overflow: hidden;
+    pointer-events: none;
+    z-index: 4;
+  }
+  .ghostbtns {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    pointer-events: auto;
+    max-width: 100%;
   }
   .ghost button,
   .mini {
-    padding: 1px 6px;
+    padding: 2px 8px;
     font-size: 11px;
     white-space: nowrap;
   }
-  .env {
-    background: repeating-linear-gradient(0deg, transparent 0 29px, var(--line) 29px 30px);
-  }
   .envclip {
     position: absolute;
-    top: 0;
-    bottom: 0;
     overflow: hidden;
-    background: rgba(255, 255, 255, 0.025);
-    border-left: 1px solid var(--line);
-    border-right: 1px solid var(--line);
+    pointer-events: none;
+    z-index: 5;
   }
-  .envclip.sel {
-    background: var(--accent-soft);
+  .envclip.edit {
+    background: rgba(0, 0, 0, 0.3);
   }
-  .lanebar .track {
-    display: flex;
-    align-items: center;
+  .envclip.edit :global(svg) {
+    pointer-events: auto;
   }
-  .lanebtns {
-    position: sticky;
-    left: 140px;
-    display: flex;
-    gap: 6px;
-    padding-left: 8px;
+  .dropline {
+    position: absolute;
+    top: -4px;
+    bottom: -4px;
+    width: 2px;
+    margin-left: -1px;
+    background: var(--accent);
+    box-shadow: 0 0 6px var(--accent);
+    pointer-events: none;
+    z-index: 6;
+  }
+  .dropline span {
+    position: absolute;
+    top: 2px;
+    left: 4px;
+    font-size: 10px;
+    color: #000;
+    background: var(--accent);
+    border-radius: 2px;
+    padding: 0 3px;
+    white-space: nowrap;
   }
 </style>

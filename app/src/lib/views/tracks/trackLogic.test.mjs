@@ -206,3 +206,15 @@ test("cell text for dates and sizes", () => {
   assert.equal(formatSize(150 * 1024 * 1024), "150 MB");
   assert.equal(formatSize(3 * 1024 ** 3), "3.0 GB");
 });
+
+test("case sort: case order follows the chosen case's own order, tracks outside it last; the Cases column sorts by names", () => {
+  const list = [T(1, { title: "a" }), T(2, { title: "b" }), T(3, { title: "c" }), T(4, { title: "d" })];
+  const order = [3, 1, 4]; // the case, in case order; track 2 is not in it
+  const caseOf = { position: (id) => { const i = order.indexOf(id); return i < 0 ? null : i; }, names: (id) => ({ 1: ["Warm-up"], 2: [], 3: ["Peak", "Warm-up"], 4: ["Peak"] })[id] ?? [] };
+  const ids = (keys) => sortTracksBy(list, keys, () => false, () => undefined, () => null, caseOf).map((t) => t.track_id);
+  assert.deepEqual(ids([{ field: "case_order", asc: true }]), [3, 1, 4, 2]);
+  assert.deepEqual(ids([{ field: "case_order", asc: false }]), [4, 1, 3, 2], "a track outside the case stays last either way");
+  // Cases column: names joined alphabetically; tracks in no case last
+  assert.deepEqual(ids([{ field: "cases", asc: true }]), [4, 3, 1, 2]);
+  assert.deepEqual(ids([{ field: "cases", asc: false }]), [1, 3, 4, 2]);
+});

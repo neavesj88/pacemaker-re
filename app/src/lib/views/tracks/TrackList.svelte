@@ -8,7 +8,6 @@
   import { mmss } from "$lib/format";
   import { labelEditor, labels } from "$lib/state/labels.svelte";
   import { playback } from "$lib/state/playback.svelte";
-  import { selection } from "$lib/state/selection.svelte";
   import { session } from "$lib/state/session.svelte";
   import { armTrackDrag } from "$lib/state/trackDrag.svelte";
   import { holders } from "$lib/state/holders.svelte";
@@ -31,9 +30,43 @@
   import EnergyCell from "../analysis/EnergyCell.svelte";
   import { addToMix, buildSet, editGrid, editMetadata, playTrack, rate, revealInExplorer } from "./trackActions";
   import { formatDate, formatSize, keyColour, parseKey } from "./trackLogic";
+  import { caseMembers } from "$lib/state/caseMembers.svelte";
+  import { caseLookup } from "./trackFilter";
+  import type { TableState } from "./tableState.svelte";
   import { tracksState } from "./tracksState.svelte";
 
-  let { rows, root }: { rows: Track[]; root: string } = $props();
+  let {
+    rows,
+    root,
+    table = tracksState,
+    label = "Tracks",
+    dragFrom = "tracks",
+    onopen,
+    onadd,
+    marker,
+  }: {
+    rows: Track[];
+    root: string;
+    /** This table's own state (sort, columns, filters, selection). The Tracks view's by default. */
+    table?: TableState;
+    label?: string;
+    /** The drag scope name rows are dragged from ("tracks", or "mix:picker" in the Mix tab). */
+    dragFrom?: string;
+    /** Double-click / Enter on a row; without it the track is played. */
+    onopen?: (t: Track) => void;
+    /** "Add to mix" in the context menu; without it the context menu opens the Mix tab. */
+    onadd?: (ids: number[]) => void;
+    /** A short mark after the title (such as "x2" for a track already in the mix). */
+    marker?: (id: number) => string;
+  } = $props();
+
+  const addToMixFn = (ids: number[]) => (onadd ? onadd(ids) : addToMix(ids));
+  const caseNo = $derived(caseLookup(table.caseId, table.caseId === null ? null : caseMembers.tracksOf(table.caseId)));
+
+  // the case columns and the case filter read the case lists, once per change of the case list
+  $effect(() => {
+    if (table.caseId !== null || table.prefs.visible.cases) void caseMembers.ensure();
+  });
 
   const ROW = 28;
   const HEAD = 30;
@@ -44,23 +77,23 @@
   let viewH = $state(600);
   let anchorId: number | null = null;
 
-  const cols = $derived(tracksState.shownColumns);
-  const widthOf = (c: ColDef) => tracksState.prefs.widths[c.key];
+  const cols = $derived(table.shownColumns);
+  const widthOf = (c: ColDef) => table.prefs.widths[c.key];
   const totalW = $derived(cols.reduce((sum, c) => sum + widthOf(c), 0));
   const template = $derived(cols.map((c) => `${widthOf(c)}px`).join(" "));
   const bodyH = $derived(Math.max(0, viewH - HEAD));
   const start = $derived(Math.max(0, Math.floor(scrollTop / ROW) - OVERSCAN));
   const end = $derived(Math.min(rows.length, Math.ceil((scrollTop + bodyH) / ROW) + OVERSCAN));
   const slice = $derived(rows.slice(start, end));
-  const selSet = $derived(new Set(selection.trackIds));
+  const selSet = $derived(new Set(table.selectedIds));
 
   // ---- selection ------------------------------------------------------------------------
 
   const indexOfId = (id: number | null) => (id === null ? -1 : rows.findIndex((r) => r.track_id === id));
 
   function select(ids: number[], focus: number | null) {
-    selection.trackIds = ids;
-    tracksState.focusId = focus;
+    table.selectedIds = ids;
+    table.focusId = focus;
   }
 
   function rangeIds(fromId: number | null, toIndex: number): number[] {
@@ -74,14 +107,14 @@
     const id = t.track_id;
     if (e.shiftKey) {
       const range = rangeIds(anchorId, index);
-      select(e.ctrlKey || e.metaKey ? [...new Set([...selection.trackIds, ...range])] : range, id);
+      select(e.ctrlKey || e.metaKey ? [...new Set([...table.selectedIds, ...range])] : range, id);
     } else if (e.ctrlKey || e.metaKey) {
       anchorId = id;
       if (selSet.has(id)) {
-        const rest = selection.trackIds.filter((x) => x !== id);
+        const rest = table.selectedIds.filter((x) => x !== id);
         select(rest, rest.at(-1) ?? null);
       } else {
-        select([...selection.trackIds, id], id);
+        select([...table.selectedIds, id], id);
       }
     } else {
       anchorId = id;
@@ -113,7 +146,7 @@
     const i = Math.max(0, Math.min(rows.length - 1, index));
     const id = rows[i].track_id;
     if (extend) {
-      if (anchorId === null) anchorId = tracksState.focusId ?? id;
+      if (anchorId === null) anchorId = table.focusId ?? id;
       select(rangeIds(anchorId, i), id);
     } else {
       anchorId = id;
@@ -126,7 +159,7 @@
     if (e.altKey) return;
     // Keys pressed on the heart, the stars or a column header belong to that control.
     if (e.target instanceof Element && e.target.closest("button, input, select, textarea, .hcell")) return;
-    const cursor = indexOfId(tracksState.focusId);
+    const cursor = indexOfId(table.focusId);
     const page = Math.max(1, Math.floor(bodyH / ROW) - 1);
     const mod = e.ctrlKey || e.metaKey;
     switch (e.key) {
@@ -138,17 +171,20 @@
       case "End": moveTo(rows.length - 1, e.shiftKey); break;
       case "a":
         if (!mod) return;
-        select(rows.map((r) => r.track_id), tracksState.focusId ?? rows[0]?.track_id ?? null);
+        select(rows.map((r) => r.track_id), table.focusId ?? rows[0]?.track_id ?? null);
         break;
       case "Escape": select([], null); break;
       case "Enter":
-        if (tracksState.focusId === null) return;
-        playTrack(tracksState.focusId);
+        if (table.focusId === null) return;
+        if (onopen) {
+          const t = rows[cursor];
+          if (t) onopen(t);
+        } else playTrack(table.focusId);
         break;
       case " ":
-        if (tracksState.focusId === null) return;
-        if (playback.trackId === tracksState.focusId) playback.toggle();
-        else playTrack(tracksState.focusId);
+        if (table.focusId === null) return;
+        if (playback.trackId === table.focusId) playback.toggle();
+        else playTrack(table.focusId);
         break;
       default: {
         // 0-5 rates the track the inspector shows
@@ -165,20 +201,20 @@
   // touch a track the user can't see).
   $effect(() => {
     const visible = new Set(rows.map((r) => r.track_id));
-    const kept = selection.trackIds.filter((id) => visible.has(id));
-    if (kept.length !== selection.trackIds.length) selection.trackIds = kept;
-    if (tracksState.focusId !== null && !visible.has(tracksState.focusId)) tracksState.focusId = kept.at(-1) ?? null;
+    const kept = table.selectedIds.filter((id) => visible.has(id));
+    if (kept.length !== table.selectedIds.length) table.selectedIds = kept;
+    if (table.focusId !== null && !visible.has(table.focusId)) table.focusId = kept.at(-1) ?? null;
   });
 
   onMount(async () => {
     await tick();
-    const i = indexOfId(tracksState.focusId);
+    const i = indexOfId(table.focusId);
     if (i >= 0) scrollToIndex(i);
   });
 
   // ---- sort and column order (header clicks, drag, keyboard) ----------------------------
 
-  const sortKeys = $derived(tracksState.prefs.sort);
+  const sortKeys = $derived(table.prefs.sort);
 
   let headEl = $state<HTMLDivElement | null>(null);
   /** A header being dragged to a new place: the column, where it would land and the x of the marker. */
@@ -187,7 +223,7 @@
 
   function headerClick(e: MouseEvent, c: ColDef) {
     if (suppressClick || !c.sort) return;
-    tracksState.sortBy(c.sort, e.shiftKey);
+    table.sortBy(c.sort, e.shiftKey);
   }
 
   /** Where a column dropped at `clientX` would go: before the first other column whose middle is
@@ -228,7 +264,7 @@
       if (!active) return;
       suppressClick = true; // the click that follows the drop must not sort
       setTimeout(() => (suppressClick = false), 0);
-      if (commit && d) tracksState.moveColumn(d.key, d.before);
+      if (commit && d) table.moveColumn(d.key, d.before);
     };
     const up = () => finish(true);
     const cancel = () => finish(false);
@@ -241,7 +277,7 @@
     if (e.altKey && (e.key === "ArrowLeft" || e.key === "ArrowRight")) {
       e.preventDefault();
       e.stopPropagation();
-      if (tracksState.stepColumn(c.key, e.key === "ArrowLeft" ? -1 : 1)) {
+      if (table.stepColumn(c.key, e.key === "ArrowLeft" ? -1 : 1)) {
         await tick(); // moving the element in the page drops its focus
         headEl?.querySelector<HTMLElement>(`[data-col="${c.key}"]`)?.focus();
       }
@@ -251,7 +287,7 @@
     e.stopPropagation();
     if (!c.sort) return;
     e.preventDefault();
-    tracksState.sortBy(c.sort, e.shiftKey);
+    table.sortBy(c.sort, e.shiftKey);
   }
 
   // ---- column resize --------------------------------------------------------------------
@@ -263,12 +299,12 @@
     handle.setPointerCapture(e.pointerId);
     const x0 = e.clientX;
     const w0 = widthOf(c);
-    const move = (m: PointerEvent) => tracksState.setWidth(c.key, w0 + m.clientX - x0);
+    const move = (m: PointerEvent) => table.setWidth(c.key, w0 + m.clientX - x0);
     const stop = () => {
       handle.removeEventListener("pointermove", move);
       handle.removeEventListener("pointerup", stop);
       handle.removeEventListener("pointercancel", stop);
-      tracksState.save();
+      table.save();
     };
     handle.addEventListener("pointermove", move);
     handle.addEventListener("pointerup", stop);
@@ -286,7 +322,7 @@
       anchorId = t.track_id;
       select([t.track_id], t.track_id);
     }
-    menu = { x: Math.max(0, Math.min(e.clientX, innerWidth - 230)), y: Math.max(0, Math.min(e.clientY, innerHeight - 550)), ids: [...selection.trackIds] };
+    menu = { x: Math.max(0, Math.min(e.clientX, innerWidth - 230)), y: Math.max(0, Math.min(e.clientY, innerHeight - 550)), ids: [...table.selectedIds] };
   }
 
   const menuItems = $derived.by(() => {
@@ -294,14 +330,14 @@
     const ids = menu.ids;
     const one = ids.length === 1;
     const n = ids.length;
-    const allFav = ids.every((id) => tracksState.favourites.has(id));
+    const allFav = ids.every((id) => table.favourites.has(id));
     const again = ids.every((id) => energy.of(id) !== null);
     const sectionsAgain = ids.every((id) => sections.of(id) !== null);
     return [
       { label: "Play", onclick: () => playTrack(ids[0]) },
       { label: one ? "Edit metadata…" : `Edit metadata of ${n} tracks…`, onclick: () => editMetadata(ids) },
       { label: one ? "Tags, colour, energy…" : `Tags, colour, energy of ${n} tracks…`, onclick: () => labelEditor.edit(ids) },
-      { label: one ? "Add to mix" : `Add ${n} tracks to mix`, onclick: () => addToMix(ids) },
+      { label: one ? "Add to mix" : `Add ${n} tracks to mix`, onclick: () => addToMixFn(ids) },
       { label: one ? "Add to case…" : `Add ${n} tracks to case…`, onclick: () => addToCase.ask(ids) },
       { label: "Which cases hold this track…", onclick: () => holders.show(ids[0]), disabled: !one },
       { label: one ? "Build a set…" : `Build a set from ${n} tracks…`, onclick: () => buildSet(ids), disabled: one },
@@ -344,7 +380,7 @@
       select([t.track_id], t.track_id);
       return { ids: [t.track_id] };
     }
-    return { ids: [...selection.trackIds] };
+    return { ids: [...table.selectedIds] };
   }
 </script>
 
@@ -352,7 +388,7 @@
 <div
   class="scroller"
   role="grid"
-  aria-label="Tracks"
+  aria-label={label}
   aria-multiselectable="true"
   aria-rowcount={rows.length}
   tabindex="0"
@@ -394,7 +430,7 @@
     {#each slice as t, k (t.track_id)}
       {@const i = start + k}
       {@const need = session.needs.has(t.track_id)}
-      {@const fav = tracksState.favourites.has(t.track_id)}
+      {@const fav = table.favourites.has(t.track_id)}
       {@const lab = labels.get(t.track_id)}
       {@const selected = selSet.has(t.track_id)}
       <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
@@ -403,7 +439,7 @@
         class:alt={i % 2 === 1}
         class:sel={selected}
         class:dim={need}
-        class:focus={t.track_id === tracksState.focusId}
+        class:focus={t.track_id === table.focusId}
         role="row"
         tabindex="-1"
         aria-selected={selected}
@@ -412,9 +448,9 @@
         style:height="{ROW}px"
         style:grid-template-columns={template}
         onclick={(e) => clickRow(e, t, i)}
-        ondblclick={() => playTrack(t.track_id)}
+        ondblclick={() => (onopen ? onopen(t) : playTrack(t.track_id))}
         oncontextmenu={(e) => openMenu(e, t)}
-        onpointerdown={(e) => armTrackDrag(e, "tracks", () => dragRows(t))}
+        onpointerdown={(e) => armTrackDrag(e, dragFrom, () => dragRows(t))}
       >
         {#each cols as c (c.key)}
           <div class="cell" class:num={c.num} role="gridcell">
@@ -438,6 +474,7 @@
             {:else if c.key === "title"}
               {#if playback.trackId === t.track_id}<span class="now" title="Loaded in the player">▶</span>{/if}
               <span class="text">{t.title}</span>
+              {#if marker?.(t.track_id)}<em class="used" title="Already in this mix">{marker(t.track_id)}</em>{/if}
               {#if need}<span class="badge" title={session.needs.get(t.track_id)}>needs analysis</span>{/if}
             {:else if c.key === "artist"}
               <span class="text">{t.artist}</span>
@@ -486,6 +523,12 @@
               {t.times_played || ""}
             {:else if c.key === "time"}
               {mmss(t.play_time_secs)}
+            {:else if c.key === "cases"}
+              {@const names = caseMembers.namesOf(t.track_id)}
+              {#if names.length}<span class="text" title={names.join(", ")}>{names.join(", ")}</span>{/if}
+            {:else if c.key === "caseno"}
+              {@const pos = caseNo.position(t.track_id)}
+              {pos === null ? "" : pos + 1}
             {/if}
           </div>
         {/each}
@@ -641,6 +684,12 @@
   .now {
     color: var(--accent);
     font-size: 10px;
+  }
+  .used {
+    flex: none;
+    font-style: normal;
+    font-size: 11px;
+    color: var(--green);
   }
   .badge {
     flex: none;

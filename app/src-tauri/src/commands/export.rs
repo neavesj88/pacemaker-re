@@ -25,7 +25,7 @@
 pub mod encoding;
 pub mod loudness;
 pub mod range;
-mod render;
+pub(crate) mod render;
 pub mod tracklist;
 pub mod setlist;
 pub mod vdj;

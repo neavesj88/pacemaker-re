@@ -5,6 +5,7 @@
   import { toast } from "$lib/state/toast.svelte";
   import Stars from "$lib/ui/Stars.svelte";
   import { errText } from "./actions";
+  import BpmField from "./BpmField.svelte";
   import { confirm } from "./confirm.svelte";
   import { clock } from "./layout";
   import { listMeta } from "./listmeta.svelte";
@@ -45,20 +46,9 @@
 </div>
 <div class="field">
   <label for="mx-tempo">Mix tempo</label>
-  <input
-    id="mx-tempo"
-    type="number"
-    min="40"
-    max="250"
-    step="0.1"
-    placeholder="from the first track"
-    value={doc.tempoBpm ?? ""}
-    onchange={(e) => {
-      const v = e.currentTarget.valueAsNumber;
-      mixes.setTempo(Number.isFinite(v) && v > 0 ? v : null);
-    }}
-  />
+  <BpmField id="mx-tempo" value={doc.tempoBpm} onset={(v) => mixes.setTempo(v)} label="Mix tempo" placeholder="first track" />
 </div>
+<div class="muted small">The tempo tracks are matched to when added or synced (or double or half of it). Not stored in the mix file.</div>
 {#if meta}
   <div class="field">
     <span class="lbl">Rating</span>
@@ -109,8 +99,8 @@
 </div>
 
 <p class="note">
-  Click a clip, tool or crossfade to edit it. Drag clips onto a channel; they snap to the beat grids. Click an empty spot
-  on a tool or envelope to add a node; right-click a node to remove it.
+  Click a clip, tool or crossfade to edit it. Drag clips along the bar; they snap to the beat grids, and clips that overlap are shown one above the other with the crossfade drawn on the overlap.
+  Click the curve of a selected crossfade to add a node; right-click a node to remove it.
 </p>
 
 <style>

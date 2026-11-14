@@ -15,7 +15,7 @@ use pm_formats::mix::{Mix, Track, Transition};
 use crate::audio::{self, Source};
 use crate::clip::ClipStream;
 use crate::env::Env;
-use crate::fx::PeqMode;
+use crate::fx::{PeqMode, PeqPlan};
 use crate::loudness::{Measure, Meter};
 use crate::master::Limiter;
 use crate::Error;
@@ -27,7 +27,7 @@ pub const BLOCK: i64 = 4096;
 /// a block boundary) and the lead-in is dropped, so the filters, delays and the limiter are
 /// already settled when the first kept frame is reached, as they are in the full render. About
 /// 190 ms, many times the longest smoothing the Vocal filter does (10 ms).
-const PREROLL: i64 = 8 * 1024;
+pub(crate) const PREROLL: i64 = 8 * 1024;
 
 /// Provides the decoded audio of a track. The app implements it with the library lookup (and a
 /// small cache for previews); tests use [`DirResolver`].
@@ -57,6 +57,8 @@ pub struct Options {
     /// What `Wah` tools render as. The default is the stock Wah stand-in; the app sets the mode
     /// of the library the mix belongs to (the same for a preview and an export).
     pub peq: PeqMode,
+    /// With a list, only the `Wah` tools whose `SessionEventId` is in it render as the vocal filter (see [`PeqPlan`]).
+    pub vocal_tools: Option<Arc<std::collections::HashSet<String>>>,
     /// Gain in dB applied to each clip before it meets the crossfader, by index into
     /// `mix.tracks` (a missing entry, or a non-finite one, is 0 dB). Used for per-clip levelling.
     pub clip_gain_db: Vec<f64>,
@@ -77,6 +79,11 @@ pub struct Options {
 pub type Sink<'a> = dyn FnMut(&[f32], &[f32]) -> Result<(), Error> + 'a;
 
 impl Options {
+    /// The plan the clip streams build their tool effects from.
+    pub(crate) fn peq_plan(&self) -> PeqPlan {
+        PeqPlan::new(self.peq, self.vocal_tools.clone())
+    }
+
     pub fn window_secs(from_sec: f64, to_sec: f64) -> Options {
         let f = |s: f64| (s.max(0.0) * crate::RATE as f64).round() as i64;
         Options { from: f(from_sec), to: Some(f(to_sec)), ..Options::default() }
@@ -154,22 +161,130 @@ pub fn export_span(mix: &Mix) -> Option<(i64, i64)> {
     Some((a.iter().map(|c| c.start).min()?, a.iter().map(|c| c.end).max()?))
 }
 
+/// What asking for a clip's audio gave.
+pub enum SourceState {
+    /// Decoded and ready.
+    Ready(Arc<Source>),
+    /// Still being decoded (the live engine only): the clip is silent for now and asked again at
+    /// the next block.
+    Pending,
+    /// Cannot be loaded; the clip is left out for good.
+    Failed(String),
+}
+
 /// A clip as the engine sees it.
-struct Slot<'a> {
-    track: &'a Track,
+pub(crate) struct Slot {
+    pub(crate) track: Track,
     /// Audible range on the timeline, `[vs, ve)`.
-    vs: i64,
-    ve: i64,
-    fades: Vec<Fade>,
-    stream: Option<ClipStream>,
-    dead: bool,
-    finished: bool,
+    pub(crate) vs: i64,
+    pub(crate) ve: i64,
+    pub(crate) fades: Vec<Fade>,
+    pub(crate) stream: Option<ClipStream>,
+    pub(crate) dead: bool,
+    pub(crate) finished: bool,
     /// Per-clip levelling factor (1 = none).
-    trim: f32,
+    pub(crate) trim: f32,
+}
+
+/// The slots of a mix: one per audible clip, with the fades of its transitions assigned.
+pub(crate) fn make_slots(mix: &Mix, clip_gain_db: &[f64], warnings: &mut Vec<String>) -> Vec<Slot> {
+    let mut slots: Vec<Slot> = audible_clips(mix)
+        .into_iter()
+        .map(|a| Slot { track: mix.tracks[a.index].clone(), vs: a.start, ve: a.end, fades: Vec::new(), stream: None, dead: false, finished: false, trim: lin(clip_gain_db.get(a.index).copied().unwrap_or(0.0)) })
+        .collect();
+    assign_fades(&mut slots, mix, warnings);
+    slots
+}
+
+/// Counters a block render keeps.
+#[derive(Default)]
+pub(crate) struct Tally {
+    pub(crate) warnings: Vec<String>,
+    pub(crate) rendered: usize,
+    pub(crate) failed: usize,
+}
+
+/// Sums the audible clips over the timeline frames `[b0, b1)` into `ml` / `mr` (overwritten):
+/// each clip's stream, its levelling and the crossfader gain of its transitions. `cl` / `cr` are
+/// scratch of at least `b1 - b0` frames. The one place this is done, so a live engine and an
+/// offline render cannot sound different.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn mix_block(
+    slots: &mut [Slot],
+    b0: i64,
+    b1: i64,
+    ml: &mut [f32],
+    mr: &mut [f32],
+    cl: &mut [f32],
+    cr: &mut [f32],
+    peq: &PeqPlan,
+    get: &mut dyn FnMut(&Track) -> SourceState,
+    tally: &mut Tally,
+) {
+    let n = (b1 - b0) as usize;
+    ml[..n].fill(0.0);
+    mr[..n].fill(0.0);
+    for (si, slot) in slots.iter_mut().enumerate() {
+        if slot.dead || slot.finished || slot.vs >= b1 {
+            continue;
+        }
+        if slot.ve <= b0 {
+            slot.stream = None;
+            slot.finished = true;
+            continue;
+        }
+        let (lo, hi) = (slot.vs.max(b0), slot.ve.min(b1));
+        let start = r(slot.track.position.start);
+        if slot.stream.is_none() {
+            match get(&slot.track) {
+                SourceState::Ready(src) => {
+                    if src.glitches > 0 {
+                        tally.warnings.push(format!("clip {}: {} corrupt audio frame(s) were replaced by silence", si + 1, src.glitches));
+                    }
+                    tally.rendered += 1;
+                    slot.stream = Some(ClipStream::new(&slot.track, src, lo - start, peq.clone()));
+                }
+                SourceState::Pending => continue,
+                SourceState::Failed(e) => {
+                    tally.warnings.push(format!("clip {} skipped: {e}", si + 1));
+                    tally.failed += 1;
+                    slot.dead = true;
+                    continue;
+                }
+            }
+        }
+        let m = (hi - lo) as usize;
+        let off = (lo - b0) as usize;
+        let stream = slot.stream.as_mut().unwrap();
+        stream.render(lo - start, &mut cl[..m], &mut cr[..m]);
+        if slot.trim != 1.0 {
+            for k in 0..m {
+                cl[k] *= slot.trim;
+                cr[k] *= slot.trim;
+            }
+        }
+        if slot.fades.is_empty() {
+            for k in 0..m {
+                ml[off + k] += cl[k];
+                mr[off + k] += cr[k];
+            }
+        } else {
+            for k in 0..m {
+                let t = lo + k as i64;
+                let g: f32 = slot.fades.iter().map(|f| f.gain(t)).product();
+                ml[off + k] += cl[k] * g;
+                mr[off + k] += cr[k] * g;
+            }
+        }
+        if hi >= slot.ve {
+            slot.stream = None;
+            slot.finished = true;
+        }
+    }
 }
 
 /// One crossfade a clip takes part in.
-struct Fade {
+pub(crate) struct Fade {
     ts: i64,
     te: i64,
     later: bool,
@@ -204,7 +319,7 @@ impl Fade {
 /// notes/mix-format.md), so the rule is geometric: of the clips audible during the transition,
 /// the one that starts last is the incoming clip and, of the rest, the one that ends last is the
 /// outgoing clip.
-fn assign_fades(slots: &mut [Slot], mix: &Mix, warnings: &mut Vec<String>) {
+pub(crate) fn assign_fades(slots: &mut [Slot], mix: &Mix, warnings: &mut Vec<String>) {
     for (ti, tr) in mix.transitions.iter().enumerate() {
         if tr.bypassed {
             continue;
@@ -236,15 +351,11 @@ pub fn render(
     progress: &mut dyn FnMut(f64) -> bool,
     sink: &mut Sink,
 ) -> Result<Rendered, Error> {
-    let mut warnings = Vec::new();
-    let mut slots: Vec<Slot> = audible_clips(mix)
-        .into_iter()
-        .map(|a| Slot { track: &mix.tracks[a.index], vs: a.start, ve: a.end, fades: Vec::new(), stream: None, dead: false, finished: false, trim: lin(opts.clip_gain_db.get(a.index).copied().unwrap_or(0.0)) })
-        .collect();
+    let mut tally = Tally::default();
+    let mut slots = make_slots(mix, &opts.clip_gain_db, &mut tally.warnings);
     if slots.is_empty() {
         return Err(Error::Invalid("the mix has no audible clips".into()));
     }
-    assign_fades(&mut slots, mix, &mut warnings);
 
     let end_all = slots.iter().map(|s| s.ve).max().unwrap();
     let mut from = opts.from.max(0);
@@ -274,70 +385,15 @@ pub fn render(
     let mut written = 0u64;
     // frames the limiter has produced so far, the dropped lead-in included
     let mut emitted = 0u64;
-    let (mut clips_rendered, mut clips_failed) = (0usize, 0usize);
 
     let mut b0 = begin;
     while b0 < to {
         let b1 = (b0 + BLOCK).min(to);
         let n = (b1 - b0) as usize;
-        ml[..n].fill(0.0);
-        mr[..n].fill(0.0);
-        for (si, slot) in slots.iter_mut().enumerate() {
-            if slot.dead || slot.finished || slot.vs >= b1 {
-                continue;
-            }
-            if slot.ve <= b0 {
-                slot.stream = None;
-                slot.finished = true;
-                continue;
-            }
-            let (lo, hi) = (slot.vs.max(b0), slot.ve.min(b1));
-            let start = r(slot.track.position.start);
-            if slot.stream.is_none() {
-                match res.source(slot.track) {
-                    Ok(src) => {
-                        if src.glitches > 0 {
-                            warnings.push(format!("clip {}: {} corrupt audio frame(s) were replaced by silence", si + 1, src.glitches));
-                        }
-                        clips_rendered += 1;
-                        slot.stream = Some(ClipStream::new(slot.track, src, lo - start, opts.peq));
-                    }
-                    Err(e) => {
-                        warnings.push(format!("clip {} skipped: {e}", si + 1));
-                        clips_failed += 1;
-                        slot.dead = true;
-                        continue;
-                    }
-                }
-            }
-            let m = (hi - lo) as usize;
-            let off = (lo - b0) as usize;
-            let stream = slot.stream.as_mut().unwrap();
-            stream.render(lo - start, &mut cl[..m], &mut cr[..m]);
-            if slot.trim != 1.0 {
-                for k in 0..m {
-                    cl[k] *= slot.trim;
-                    cr[k] *= slot.trim;
-                }
-            }
-            if slot.fades.is_empty() {
-                for k in 0..m {
-                    ml[off + k] += cl[k];
-                    mr[off + k] += cr[k];
-                }
-            } else {
-                for k in 0..m {
-                    let t = lo + k as i64;
-                    let g: f32 = slot.fades.iter().map(|f| f.gain(t)).product();
-                    ml[off + k] += cl[k] * g;
-                    mr[off + k] += cr[k] * g;
-                }
-            }
-            if hi >= slot.ve {
-                slot.stream = None;
-                slot.finished = true;
-            }
-        }
+        mix_block(&mut slots, b0, b1, &mut ml, &mut mr, &mut cl, &mut cr, &opts.peq_plan(), &mut |t| match res.source(t) {
+            Ok(src) => SourceState::Ready(src),
+            Err(e) => SourceState::Failed(e.to_string()),
+        }, &mut tally);
         if master != 1.0 {
             for k in 0..n {
                 ml[k] *= master;
@@ -413,7 +469,7 @@ pub fn render(
         written += (ol.len() - drop) as u64;
     }
     let loudness = meters.map(|(pre, out)| RenderLoudness { pre_limiter: pre.finish(), output: out.finish() });
-    Ok(Rendered { frames: written, warnings, clips_rendered, clips_failed, loudness })
+    Ok(Rendered { frames: written, warnings: tally.warnings, clips_rendered: tally.rendered, clips_failed: tally.failed, loudness })
 }
 
 /// The loudness of one clip on its own: what it contributes before the crossfader, the clip
@@ -454,7 +510,7 @@ pub fn measure_clips(mix: &Mix, res: &dyn Resolver, opts: &Options, progress: &m
                 continue;
             }
         };
-        let mut stream = ClipStream::new(track, src, c.start - start, opts.peq);
+        let mut stream = ClipStream::new(track, src, c.start - start, opts.peq_plan());
         let mut meter = Meter::new(crate::RATE);
         let mut t = c.start;
         while t < c.end {

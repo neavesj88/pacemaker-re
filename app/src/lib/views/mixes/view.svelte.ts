@@ -4,7 +4,21 @@
 import { session } from "$lib/state/session.svelte";
 import { HEADER_W, PPS_MAX, PPS_MIN, SR, clamp, fromPx, toPx } from "./layout";
 
-export type EnvLaneId = "tempo" | "key" | "gain";
+/** Which envelope is drawn over the clips of the bar (one at a time, so the lines never fight). */
+export type EnvOverlay = "none" | "gain" | "tempo" | "key";
+
+const PICKER_KEY = "pm.mixes.pickerHeight.v1";
+export const PICKER_MIN = 160;
+
+/** The remembered height of the track table under the mix (px); null = not set yet. */
+function loadPickerHeight(): number | null {
+  try {
+    const v = Number(localStorage.getItem(PICKER_KEY));
+    return Number.isFinite(v) && v >= PICKER_MIN ? Math.min(2000, v) : null;
+  } catch {
+    return null;
+  }
+}
 
 const SECTION_MARKERS_KEY = "pm.mixes.sectionMarkers.v1";
 
@@ -29,6 +43,8 @@ class MixView {
   /** Keep the playhead in view while playing. */
   follow = $state(true);
   pickerOpen = $state(true);
+  /** Height of the track table under the mix, px (dragged by its top edge, remembered). */
+  pickerH = $state(loadPickerHeight() ?? 380);
   /** An audio export is rendering. */
   exporting = $state(false);
   /** Progress of the running audio export, 0..1. */
@@ -42,7 +58,8 @@ class MixView {
   /** Draw detected sections on the clips (also needs "show markers on waveforms" in the Sections
    * panel's settings). Clips of tracks without sections draw nothing either way. */
   sectionMarkers = $state(loadSectionMarkers());
-  lanes = $state<Record<EnvLaneId, boolean>>({ tempo: false, key: false, gain: true });
+  /** The envelope drawn over the clips (toolbar buttons Gain / Tempo / Key). */
+  overlay = $state<EnvOverlay>("none");
   /** Library tracks the tracks view asked to add; consumed when a mix is open. */
   pending = $state.raw<number[]>([]);
 
@@ -50,6 +67,16 @@ class MixView {
     this.sectionMarkers = on;
     try {
       localStorage.setItem(SECTION_MARKERS_KEY, on ? "1" : "0");
+    } catch {
+      // not remembered this time
+    }
+  }
+
+  setPickerHeight(h: number, save = false) {
+    this.pickerH = Math.max(PICKER_MIN, Math.min(2000, Math.round(h)));
+    if (!save) return;
+    try {
+      localStorage.setItem(PICKER_KEY, String(this.pickerH));
     } catch {
       // not remembered this time
     }

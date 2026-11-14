@@ -96,6 +96,12 @@ impl LibResolver {
         Ok(LibResolver { paths })
     }
 
+    /// The audio file of a library track on the volume, for callers that decode it themselves
+    /// (the live player keeps its own, bigger, decode cache).
+    pub fn path(&self, track_id: i64) -> Option<&Path> {
+        self.paths.get(&track_id).map(PathBuf::as_path)
+    }
+
     /// Whether the engine will find audio for this library track id (false for a removed track or
     /// a file that is not on the volume: the engine leaves such a clip out of the render).
     pub fn has(&self, track_id: i64) -> bool {

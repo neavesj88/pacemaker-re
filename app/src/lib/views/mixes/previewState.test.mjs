@@ -2,7 +2,7 @@
 //
 //   node --experimental-strip-types src/lib/views/mixes/previewState.test.mjs      (from app/)
 import assert from "node:assert/strict";
-import { sameAudio, sameRender } from "./previewState.ts";
+import { sameAudio, sameRender, volumeToDb } from "./previewState.ts";
 
 let n = 0;
 const test = (name, fn) => {
@@ -32,6 +32,14 @@ test("a preview rendered in one Vocal mode is out of date in another", () => {
   assert.ok(!sameRender(doc, "inverted", doc, "off"));
   assert.ok(sameRender(doc, "vocal", { ...doc, name: "C" }, "vocal"));
   assert.ok(!sameRender(doc, "vocal", { ...doc, lengthSec: 5 }, "vocal"));
+});
+
+test("the volume slider maps to a listening level in dB", () => {
+  assert.equal(volumeToDb(1), 0);
+  assert.equal(volumeToDb(0), -60);
+  assert.ok(Math.abs(volumeToDb(0.5) + 6.0206) < 1e-3);
+  assert.equal(volumeToDb(0.0001), -60);
+  assert.equal(volumeToDb(2), 0);
 });
 
 console.log(`${n} passed`);

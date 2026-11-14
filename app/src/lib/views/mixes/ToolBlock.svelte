@@ -5,6 +5,7 @@
   import { mixes } from "$lib/state/mixes.svelte";
   import { vocal } from "$lib/state/vocal.svelte";
   import { toolColour, toolLabel } from "./layout";
+  import { vocalTools } from "./vocalTools.svelte";
   import { mv } from "./view.svelte";
 
   let {
@@ -13,6 +14,7 @@
     top,
     height,
     conflict = false,
+    accent = "var(--muted)",
     oncontext,
   }: {
     clip: Clip;
@@ -20,6 +22,8 @@
     top: number;
     height: number;
     conflict?: boolean;
+    /** The colour of the clip the block belongs to, drawn as a stripe on its left edge. */
+    accent?: string;
     oncontext: (e: MouseEvent, clip: Clip, p: ProcessDoc) => void;
   } = $props();
 
@@ -28,8 +32,9 @@
   const left = $derived(mv.x(clip.start + p.start));
   const width = $derived(Math.max(4, mv.x(p.length)));
   const selected = $derived(mixes.selected.includes(p.id));
+  const marked = $derived(p.kind === "tool" && mixes.doc ? vocalTools.has(mixes.doc.id, p.id) : false);
   const colour = $derived(toolColour(type));
-  const label = $derived(p.kind === "loop" ? `Loop ×${p.iterations}` : toolLabel(type, vocal.mode));
+  const label = $derived(p.kind === "loop" ? `Loop ×${p.iterations}` : toolLabel(type, vocal.mode, marked));
 
   /** The first parameter's curve, drawn inside the block as a hint (the editor is in the inspector). */
   const hint = $derived.by(() => {
@@ -115,6 +120,7 @@
   style:top="{top}px"
   style:height="{height}px"
   style:background={colour}
+  style:--accent-clip={accent}
   onpointerdown={down}
   onpointermove={(e) => (hover = zone(e) !== "move")}
   onpointerleave={() => (hover = false)}
@@ -145,6 +151,7 @@
     cursor: grab;
     outline: none;
     border: 1px solid rgba(0, 0, 0, 0.35);
+    border-left: 4px solid var(--accent-clip);
   }
   .block.edge {
     cursor: ew-resize;
@@ -164,7 +171,7 @@
   }
   .label {
     position: absolute;
-    left: 6px;
+    left: 5px;
     top: 50%;
     transform: translateY(-50%);
     white-space: nowrap;
