@@ -4,8 +4,9 @@
 // storage keyed by library and mix, for labels and for the live preview (Vocal tools render as the
 // vocal filter, Wah tools as Wah). Nothing here is ever written to the device file.
 //
-// Copies and pastes get new tool ids; a copy of a Vocal tool is a Wah tool again until it is
-// marked (the tool's inspector has the switch).
+// Copies and pastes of a tool get new tool ids; a copy of a Vocal tool is a Wah tool again until it
+// is marked (the tool's inspector has the switch). Save as and Duplicate keep the ids, so they copy
+// the marks (copy()); deleting mixes forgets theirs (forget()).
 import { loadPref, savePref } from "$lib/state/prefStore";
 import { session } from "$lib/state/session.svelte";
 
@@ -39,6 +40,22 @@ class VocalTools {
     const cur = this.#all[key] ?? [];
     const next = on ? [...new Set([...cur, processId])] : cur.filter((x) => x !== processId);
     this.#all = { ...this.#all, [key]: next };
+    savePref(STORAGE_KEY, this.#all);
+  }
+
+  /** A copy of a mix (Save as, Duplicate) keeps its tools' ids, so it keeps the Vocal marks too. */
+  copy(fromMixId: number, toMixId: number) {
+    const from = this.#all[this.#key(fromMixId)];
+    if (!from || from.length === 0) return;
+    this.#all = { ...this.#all, [this.#key(toMixId)]: [...from] };
+    savePref(STORAGE_KEY, this.#all);
+  }
+
+  /** Drops the marks of mixes that were deleted (they would sit in storage for ever). */
+  forget(mixIds: number[]) {
+    const keys = new Set(mixIds.map((id) => this.#key(id)));
+    if (![...keys].some((k) => k in this.#all)) return;
+    this.#all = Object.fromEntries(Object.entries(this.#all).filter(([k]) => !keys.has(k)));
     savePref(STORAGE_KEY, this.#all);
   }
 

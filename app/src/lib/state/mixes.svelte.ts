@@ -11,6 +11,7 @@
 //
 // `doc` is a raw (non-proxied) state: documents are replaced, never mutated, so snapshots for undo
 // share the beat grids and untouched clips.
+import { vocalTools } from "$lib/views/mixes/vocalTools.svelte";
 import {
   mixAutoTransition,
   mixBeatmatch,
@@ -189,6 +190,7 @@ class Mixes {
     this.busy = true;
     try {
       const saved = await mixSaveAs(root, doc, name);
+      vocalTools.copy(doc.id, saved.id);
       void this.refreshList();
       try {
         this.#load(await mixOpen(root, saved.id));
@@ -538,9 +540,16 @@ class Mixes {
     if (c && choice && choice.factor !== 1) {
       // the backend lines the beats up at the reference tempo itself; this clip is closer to half
       // or double of it, so it plays at that instead and keeps its place (the beats are not
-      // re-aligned: that needs the grids matched at the other ratio)
+      // re-aligned: that needs the grids matched at the other ratio). Held back when it would
+      // stretch the track more than the setting allows: never silently stretch a lot.
+      if (exceeds(choice.speed, tempoPrefs.value.warnPct)) {
+        throw new Error(`nothing changed: ${choice.factor === 2 ? "double" : "half"} time would stretch this track ${stretchText(choice.stretchPct)}, more than the ${tempoPrefs.value.warnPct} % limit in the settings. Use "Sync to previous clip" and then "Match anyway" to do it regardless`);
+      }
       this.edit("Match tempo", (d) => E.setClipBpm(d, clipId, choice.playsAt));
       return { ...s, targetBpm: choice.playsAt, speed: choice.speed, notes: [...s.notes, `Matched at ${choice.factor === 2 ? "double" : "half"} time (${stretchText(choice.stretchPct)}); the beats were not re-aligned`] };
+    }
+    if (c && s.speed > 0 && exceeds(s.speed, tempoPrefs.value.warnPct)) {
+      throw new Error(`nothing changed: matching the beats would stretch this track ${stretchText((s.speed - 1) * 100)}, more than the ${tempoPrefs.value.warnPct} % limit in the settings. Use "Sync to previous clip" and then "Match anyway" to do it regardless`);
     }
     this.edit("Beat-match", (d) => E.applyBeatmatch(d, s));
     return s;
@@ -558,21 +567,30 @@ class Mixes {
   /** Plays every clip at `target` BPM (or double / half of it), one undo step. Clips that would be
    * stretched more than the setting allows are left as they are and returned, so the caller can
    * name them. */
-  syncAll(target: number): { applied: number; kept: { clip: Clip; choice: TempoChoice }[] } {
+  syncAll(target: number): { applied: number; already: number; kept: { clip: Clip; choice: TempoChoice }[]; ramps: Clip[] } {
     const start = this.doc;
-    if (!start) return { applied: 0, kept: [] };
+    if (!start) return { applied: 0, already: 0, kept: [], ramps: [] };
     let d = start;
     let applied = 0;
+    let already = 0;
     const kept: { clip: Clip; choice: TempoChoice }[] = [];
+    const ramps: Clip[] = [];
     for (const c of start.clips) {
+      // a clip the user ramped is theirs: not flattened or rescaled by a bulk action (the single
+      // clip "Sync" does scale a ramp, because there the user picked that clip)
+      if (c.tempo.length > 1) {
+        ramps.push(c);
+        continue;
+      }
       const r = E.syncClipTo(d, c.id, target, tempoPrefs.value.warnPct);
       if (r.applied) {
         d = r.doc;
         applied++;
-      } else if (r.choice && r.choice.stretchPct !== 0 && exceeds(r.choice.speed, tempoPrefs.value.warnPct)) kept.push({ clip: c, choice: r.choice });
+      } else if (r.already) already++;
+      else if (r.choice && r.choice.stretchPct !== 0 && exceeds(r.choice.speed, tempoPrefs.value.warnPct)) kept.push({ clip: c, choice: r.choice });
     }
     if (d !== start) this.edit("Match all to the mix tempo", () => d);
-    return { applied, kept };
+    return { applied, already, kept, ramps };
   }
 
   /** Asks for a transition between two clips, `bars` long (null = the backend's default of 16).

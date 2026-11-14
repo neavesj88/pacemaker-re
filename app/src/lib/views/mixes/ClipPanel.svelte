@@ -71,7 +71,7 @@
   function sync(target: number | null, what: string) {
     if (!target) return;
     const r = mixes.syncClip(clip.id, target);
-    held = r.applied || !r.choice ? null : { what, target, choice: r.choice };
+    held = r.applied || r.already || !r.choice ? null : { what, target, choice: r.choice };
   }
   function matchAnyway() {
     if (!held) return;
@@ -115,6 +115,13 @@
 <div class="field">
   <label for="cp-bpm">Plays at</label>
   <BpmField id="cp-bpm" value={eff} onset={setBpm} label="Plays at" disabled={!(clip.bpm > 0)} />
+</div>
+<div class="field">
+  <span class="lbl">Octave</span>
+  <span class="inline">
+    <button class="nudge" disabled={!(clip.bpm > 0)} title="Half time: play at half the current tempo (the other octave, when the automatic match chose wrongly)" onclick={() => setBpm(eff / 2)}>×½ half time</button>
+    <button class="nudge" disabled={!(clip.bpm > 0)} title="Double time: play at twice the current tempo" onclick={() => setBpm(eff * 2)}>×2 double time</button>
+  </span>
 </div>
 <div class="field">
   <label for="cp-pct">Pitch / speed</label>

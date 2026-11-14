@@ -59,6 +59,13 @@ class CaseMembers {
     }
   }
 
+  /** A case was written (reordered, a track added or removed, swapped for one of equal length): the
+   *  count-and-time key cannot see that, so read again if anything was read before. */
+  invalidate() {
+    this.#key = "";
+    if (this.order.size > 0) void this.ensure();
+  }
+
   reset() {
     this.#seq++;
     this.#key = "";

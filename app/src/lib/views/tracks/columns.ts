@@ -189,6 +189,7 @@ export function mixPickerDefaults(): ViewPrefs {
   const d = defaultPrefs();
   d.visible.cases = true;
   d.widths.wave = 90;
+  d.widths.colour = 74; // room for the sort arrow: the header read "Colo…" at 58
   return d;
 }
 

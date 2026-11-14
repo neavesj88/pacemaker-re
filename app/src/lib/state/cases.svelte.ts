@@ -47,6 +47,7 @@ import { caseExport } from "./caseExport.svelte";
 import { EXT, FORMAT_LABEL, saveSuggestion } from "./exportLogic";
 import { jobs } from "./jobs.svelte";
 import { session } from "./session.svelte";
+import { caseMembers } from "./caseMembers.svelte";
 import { referencedCases } from "./smartRules";
 import { toast } from "./toast.svelte";
 
@@ -105,6 +106,7 @@ class Cases {
       this.loaded = true;
       this.favourites = new Set(favs);
       session.setCases(infos.map((c) => ({ id: c.id, name: c.name, play_time_secs: c.play_time_secs, track_count: c.track_count })));
+      caseMembers.invalidate();
       if (this.open) {
         const now = session.library.cases.find((c) => c.id === this.open!.id);
         if (now) this.open = now;

@@ -740,8 +740,17 @@ export function retempoClip(c: Clip, tempo: TempoNode[]): Clip {
 export function setClipBpm(doc: MixDoc, clipId: string, bpm: number): MixDoc {
   const c = clipOf(doc, clipId);
   if (!c || !(bpm > 0) || !(c.bpm > 0)) return doc;
-  return replaceClip(doc, clipId, (x) => retempoClip(x, [{ pos: 0, speed: bpm / x.bpm }]));
+  const speed = bpm / c.bpm;
+  // the same limit as the tempo curve editor (setTempoNodeAt / setTempoCurve): one range for every path
+  if (!(speed > MIN_SPEED) || speed > MAX_SPEED) return doc;
+  // already a constant tempo at this speed: no new document, so no empty undo step or dirty flag
+  if (c.tempo.length === 1 && c.tempo[0].pos === 0 && Math.abs(c.tempo[0].speed - speed) < 1e-9) return doc;
+  return replaceClip(doc, clipId, (x) => retempoClip(x, [{ pos: 0, speed }]));
 }
+
+/** Playback speeds a clip's tempo may have, against the track's own tempo (exclusive, inclusive). */
+export const MIN_SPEED = 0.1;
+export const MAX_SPEED = 4;
 
 /** The tempo (BPM) a clip plays at where its audible part starts. */
 export const clipPlaysAt = (c: Clip): number => effectiveBpm(c, c.trimStart);
@@ -749,17 +758,33 @@ export const clipPlaysAt = (c: Clip): number => effectiveBpm(c, c.trimStart);
 /** Speed of a clip against its track's own tempo where its audible part starts (1 = unstretched). */
 export const clipSpeed = (c: Clip): number => (c.bpm > 0 ? clipPlaysAt(c) / c.bpm : 1);
 
-export type SyncResult = { doc: MixDoc; choice: TempoChoice | null; applied: boolean };
+export type SyncResult = {
+  doc: MixDoc;
+  choice: TempoChoice | null;
+  applied: boolean;
+  /** The clip already plays at the target: nothing to change, nothing held back. */
+  already?: boolean;
+};
 
 /** Plays a clip at `target` BPM, or at double or half of it, whichever stretches the track least.
  * When that still stretches it by more than `thresholdPct` per cent and `force` is not set, the
- * document is returned unchanged with `applied: false` and the choice, so the caller can warn. */
+ * document is returned unchanged with `applied: false` and the choice, so the caller can warn. A
+ * clip that already plays at the target is returned as it is (`already`). A clip with a tempo ramp
+ * keeps its shape: the whole curve is scaled so the clip starts at the target. */
 export function syncClipTo(doc: MixDoc, clipId: string, target: number, thresholdPct: number, force = false): SyncResult {
   const c = clipOf(doc, clipId);
   const choice = c ? chooseTempo(c.bpm, target) : null;
   if (!c || !choice) return { doc, choice, applied: false };
+  const cur = clipPlaysAt(c);
+  if (Math.abs(choice.playsAt - cur) < 1e-7 * Math.max(1, cur)) return { doc, choice, applied: false, already: true };
   if (!force && exceeds(choice.speed, thresholdPct)) return { doc, choice, applied: false };
-  return { doc: setClipBpm(doc, clipId, choice.playsAt), choice, applied: true };
+  if (c.tempo.length > 1) {
+    const k = choice.playsAt / cur;
+    const next = setTempoCurve(doc, clipId, c.tempo.map((n) => ({ ...n, speed: n.speed * k })));
+    return { doc: next, choice, applied: next !== doc };
+  }
+  const next = setClipBpm(doc, clipId, choice.playsAt);
+  return { doc: next, choice, applied: next !== doc };
 }
 
 /** Sets the pitch / tempo percentage of a clip: it plays at its track tempo times (1 + pct / 100). */
@@ -773,7 +798,7 @@ export function setClipPercent(doc: MixDoc, clipId: string, pct: number): MixDoc
  * moves the speed of the node at `pos`. Nodes stay in order; a ramp is linear between nodes. */
 export function setTempoNodeAt(doc: MixDoc, clipId: string, pos: number, speed: number): MixDoc {
   const c = clipOf(doc, clipId);
-  if (!c || !(speed > 0.1) || speed > 4) return doc;
+  if (!c || !(speed > MIN_SPEED) || speed > MAX_SPEED) return doc;
   const p = Math.max(0, Math.round(pos));
   const rest = c.tempo.filter((n) => n.pos !== p);
   const tempo = [...rest, { pos: p, speed }].sort((a, b) => a.pos - b.pos);
@@ -784,7 +809,7 @@ export function setTempoNodeAt(doc: MixDoc, clipId: string, pos: number, speed: 
  * are refused. */
 export function setTempoCurve(doc: MixDoc, clipId: string, tempo: TempoNode[]): MixDoc {
   const c = clipOf(doc, clipId);
-  if (!c || tempo.length === 0 || tempo.some((n) => !(n.speed > 0.1) || n.speed > 4)) return doc;
+  if (!c || tempo.length === 0 || tempo.some((n) => !(n.speed > MIN_SPEED) || n.speed > MAX_SPEED)) return doc;
   const sorted = [...tempo].map((n) => ({ ...n, pos: Math.max(0, Math.round(n.pos)) })).sort((a, b) => a.pos - b.pos);
   return replaceClip(doc, clipId, (x) => retempoClip(x, sorted));
 }

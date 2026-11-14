@@ -1235,8 +1235,8 @@ test("clip colours: a stable palette of distinct colours, bands in the clip's ow
   assert.equal(new Set(L.CLIP_COLOURS).size, L.CLIP_COLOURS.length);
   assert.ok(L.CLIP_COLOURS.length >= 8);
   assert.equal(L.clipColour(0), L.CLIP_COLOURS[0]);
-  assert.equal(L.clipColour(L.CLIP_COLOURS.length), L.CLIP_COLOURS[0], "the palette repeats");
-  assert.equal(L.clipColour(-1), L.CLIP_COLOURS.at(-1));
+  assert.ok(!L.CLIP_COLOURS.includes(L.clipColour(L.CLIP_COLOURS.length)), "the ninth clip is not one of the first eight");
+  assert.equal(L.clipColour(-1), L.CLIP_COLOURS[0], "a bad index falls back to the first");
   assert.equal(L.lighten("#000000", 1), "#ffffff");
   assert.equal(L.lighten("#102030", 0), "#102030");
   const b = L.clipBands("#4aa8ff");
@@ -1265,6 +1265,44 @@ test("Vocal is always in the tool menu, next to Wah, and is written as the Wah s
   assert.equal(L.toolLabel("Wah", "off", false), "Wah");
   assert.equal(L.toolLabel("Wah", "vocal", false), "Vocal");
   assert.equal(L.toolLabel("Reverb", "off", true), "Reverb");
+});
+
+test("a match that changes nothing makes no new document; a ramp is scaled, not flattened; one speed limit everywhere", () => {
+  const g = grid(128, 0, 400, 0);
+  const c = clip("a", 0, 30 * BAR, 128, 1, g);
+  const d = doc([c], { tempoBpm: 128 });
+  // already at the target: the same document, so no undo step and no dirty flag
+  const same = E.syncClipTo(d, "a", 128, 8);
+  assert.equal(same.applied, false);
+  assert.equal(same.already, true);
+  assert.equal(same.doc, d);
+  assert.equal(E.setClipBpm(d, "a", 128), d);
+  // a ramp: Sync to 134 scales every node, the shape (ratio between nodes) stays
+  const ramp = E.setTempoNodeAt(d, "a", 10 * BAR, 1.05);
+  const r = E.syncClipTo(ramp, "a", 134, 8);
+  assert.equal(r.applied, true);
+  assert.equal(r.doc.clips[0].tempo.length, 2, "the ramp survives");
+  close(E.clipPlaysAt(r.doc.clips[0]), 134, 0.01);
+  const sp = r.doc.clips[0].tempo.map((n) => n.speed);
+  close(sp[1] / sp[0], 1.05, 1e-6, "ratio between the nodes");
+  // one limit for every path: 0.1 < speed <= 4
+  assert.equal(E.setClipPercent(d, "a", 900), d, "+900 % is speed 10");
+  assert.equal(E.setClipBpm(d, "a", 128 * 5), d);
+  assert.notEqual(E.setClipBpm(d, "a", 128 * 4), d);
+  assert.equal(E.setClipBpm(d, "a", 12.8), d, "speed 0.1 itself is refused");
+});
+
+test("clip colours: never the same for two clips, however many", () => {
+  const seen = new Set();
+  for (let i = 0; i < 64; i++) {
+    const col = L.clipColour(i);
+    assert.match(col, /^#[0-9a-f]{6}$/, `clip ${i}`);
+    assert.ok(!seen.has(col), `clip ${i} repeats ${col}`);
+    seen.add(col);
+  }
+  assert.equal(L.clipColour(0), L.CLIP_COLOURS[0]);
+  assert.equal(L.hslHex(0, 1, 0.5), "#ff0000");
+  assert.equal(L.hslHex(120, 1, 0.5), "#00ff00");
 });
 
 // the set builder's solver and mix layout have their own test file; running it here keeps one entry point

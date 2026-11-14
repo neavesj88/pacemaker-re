@@ -128,7 +128,23 @@ export const BAND_COLOURS = { low: "#ff48a8", mid: "#e070ff", high: "#00ff46" } 
  * not change when a clip is moved). Clearly different hues, bright enough for the dark theme.
  * Hex because the waveform is drawn on a canvas. */
 export const CLIP_COLOURS = ["#4aa8ff", "#ff9f43", "#3ddc97", "#ff5d7a", "#b48cff", "#ffd23b", "#2ee6d6", "#ff7ad9"] as const;
-export const clipColour = (index: number): string => CLIP_COLOURS[((index % CLIP_COLOURS.length) + CLIP_COLOURS.length) % CLIP_COLOURS.length];
+/** #rrggbb from hue (degrees), saturation and lightness (0..1). */
+export function hslHex(h: number, sat: number, light: number): string {
+  const k = (n: number) => (n + h / 30) % 12;
+  const a = sat * Math.min(light, 1 - light);
+  const f = (n: number) => light - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)));
+  return `#${[f(0), f(8), f(4)].map((v) => Math.round(v * 255).toString(16).padStart(2, "0")).join("")}`;
+}
+
+/** The first eight clips get the hand-picked colours; after that the hue steps by the golden angle
+ * (so neighbours stay far apart however many clips there are) and the lightness cycles, so clip
+ * 9 and clip 1 never share a colour. */
+export function clipColour(index: number): string {
+  const i = Math.max(0, Math.floor(index));
+  if (i < CLIP_COLOURS.length) return CLIP_COLOURS[i];
+  const n = i - CLIP_COLOURS.length;
+  return hslHex((n * 137.508 + 20) % 360, 0.78, [0.62, 0.52, 0.72][Math.floor(n / 8) % 3]);
+}
 
 /** `hex` mixed toward white by `amount` (0..1), as #rrggbb. */
 export function lighten(hex: string, amount: number): string {

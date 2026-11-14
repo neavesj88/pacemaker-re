@@ -188,9 +188,13 @@
   function matchAll() {
     if (!mixTempo) return;
     const r = mixes.syncAll(mixTempo);
-    const bits = r.applied > 0 ? [`${r.applied} track${r.applied === 1 ? "" : "s"} matched to ${mixTempo.toFixed(2)} BPM.`] : r.kept.length > 0 ? [] : ["Every track already plays at the mix tempo."];
+    const bits: string[] = [];
+    if (r.applied > 0) bits.push(`${r.applied} track${r.applied === 1 ? "" : "s"} matched to ${mixTempo.toFixed(2)} BPM.`);
+    if (r.already > 0 && r.applied > 0) bits.push(`${r.already} already played at it.`);
+    if (r.applied === 0 && r.kept.length === 0 && r.ramps.length === 0) bits.push("Every track already plays at the mix tempo.");
+    if (r.ramps.length > 0) bits.push(`Left alone because they have a tempo ramp (use Sync on the clip to rescale it): ${r.ramps.map((c) => clipTitle(c)).join("; ")}.`);
     if (r.kept.length > 0) bits.push(`Left at their own tempo, because matching would stretch them too much: ${r.kept.map((k) => `${clipTitle(k.clip)} (${stretchText(k.choice.stretchPct)})`).join("; ")}.`);
-    toast.show(bits.join(" "), r.kept.length > 0 ? "info" : "ok", 9000);
+    toast.show(bits.join(" "), r.kept.length > 0 || r.ramps.length > 0 ? "info" : "ok", 9000);
   }
   const OVERLAYS: { id: EnvOverlay; label: string; tip: string }[] = [
     { id: "gain", label: "Gain", tip: "Draw each clip's gain curve over the bar; select a clip to edit its curve (click adds a node, right-click removes it)" },
