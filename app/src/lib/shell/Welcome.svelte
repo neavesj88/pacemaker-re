@@ -10,7 +10,20 @@
 
 <div class="welcome">
   <RMark size={96} />
-  {#if offer.start}
+  {#if offer.unreadable}
+    <h1>Your library settings could not be read</h1>
+    <p>
+      Nothing was opened, because the file that says where your library is cannot be trusted. The message above names the file.
+      Open a folder or a Pacemaker below, or save the settings again to use the default location. A copy of the damaged file is
+      kept next to it, with <code>.bad</code> added to its name.
+    </p>
+    <div class="actions">
+      <Button variant="primary" onclick={() => session.saveComputer({ path: "", open_at_start: true })} title="Replaces the damaged settings with the defaults (the Music folder, in a folder called Pacemaker Revival). Nothing is opened or made yet.">
+        Use the default location
+      </Button>
+      <Button onclick={() => session.chooseComputerFolder()}>Choose a folder for it…</Button>
+    </div>
+  {:else if offer.start}
     <h1>Start your library</h1>
     <p>Your tracks, mixes and cases live in a library on this computer. You do not need the Pacemaker to work on them.</p>
     <div class="actions">
@@ -21,6 +34,12 @@
         </Button>
       {/if}
     </div>
+    {#if offer.missingPath}
+      <p class="where">
+        Your settings say the library is in <code>{offer.missingPath}</code>, but nothing is there. If it is on a drive or
+        folder that is not connected, connect it and restart the app. Nothing was made.
+      </p>
+    {/if}
     <p class="where">
       It will be made in <code>{session.computer?.path}</code>
       <Button small variant="link" onclick={() => session.chooseComputerFolder()}>Change…</Button>

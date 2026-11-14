@@ -63,9 +63,23 @@ assert.equal(startupRoot(info(false, true)), null, "nothing to open yet");
 assert.equal(startupRoot(null), null, "not read yet");
 
 // the Welcome screen
-assert.deepEqual(welcomeOffer(info(false, true), []), { start: true, open: false, copyFrom: null });
-assert.deepEqual(welcomeOffer(info(false, true), ["G:\\", "H:\\"]), { start: true, open: false, copyFrom: "G:\\" }, "copy is offered when a Pacemaker is there");
-assert.deepEqual(welcomeOffer(info(true, false), ["G:\\"]), { start: false, open: true, copyFrom: null }, "no copy offer once a library exists");
-assert.deepEqual(welcomeOffer(null, ["G:\\"]), { start: false, open: false, copyFrom: null });
+const offer = (o) => ({ unreadable: false, missingPath: null, ...o });
+assert.deepEqual(welcomeOffer(info(false, true), []), offer({ start: true, open: false, copyFrom: null }));
+assert.deepEqual(welcomeOffer(info(false, true), ["G:\\", "H:\\"]), offer({ start: true, open: false, copyFrom: "G:\\" }), "copy is offered when a Pacemaker is there");
+assert.deepEqual(welcomeOffer(info(true, false), ["G:\\"]), offer({ start: false, open: true, copyFrom: null }), "no copy offer once a library exists");
+assert.deepEqual(welcomeOffer(null, ["G:\\"]), offer({ start: false, open: false, copyFrom: null }));
+
+// a damaged computer-library.json: NOTHING opens by itself, not even a library that exists at the default
+// path, and the Welcome screen offers neither "start" nor "open" until the user chooses
+const damaged = { exists: true, path: lib, unreadable: true, settings: { open_at_start: true } };
+assert.equal(startupRoot(damaged), null, "the default library is not opened when the settings file is unreadable");
+assert.deepEqual(welcomeOffer(damaged, ["G:\\"]), { start: false, open: false, copyFrom: null, unreadable: true, missingPath: null });
+assert.equal(startupRoot({ ...damaged, unreadable: false }), lib, "a readable file still opens it");
+
+// a path in the file that does not exist: not opened, not made; the screen says where it looked
+const gone = { exists: false, path: "E:/Music/Lib", settings: { path: "E:/Music/Lib", open_at_start: true } };
+assert.equal(startupRoot(gone), null);
+assert.equal(welcomeOffer(gone, []).missingPath, "E:/Music/Lib");
+assert.equal(welcomeOffer(info(false, true), []).missingPath, null, "the default location is just a library not made yet, not a missing one");
 
 console.log("place.test.mjs ok");

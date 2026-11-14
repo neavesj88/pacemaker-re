@@ -86,18 +86,32 @@ export function pickerOptions(
   return out;
 }
 
-export type StartupInfo = { exists: boolean; path: string; settings: { open_at_start: boolean } } | null;
+export type StartupInfo = { exists: boolean; path: string; unreadable?: boolean; settings: { path?: string; open_at_start: boolean } } | null;
 
 /** The library to open when the app starts: the one on this computer, only when it is there and
- *  the setting is on. A Pacemaker is never opened by itself (see `Session.refreshVolumes`). */
+ *  the setting is on. A Pacemaker is never opened by itself (see `Session.refreshVolumes`). When the
+ *  settings file could not be read nothing is opened, not even the default: the path is then a
+ *  guess, and the user chooses on the Welcome screen. */
 export function startupRoot(info: StartupInfo): string | null {
-  return info && info.exists && info.settings.open_at_start ? info.path : null;
+  return info && !info.unreadable && info.exists && info.settings.open_at_start ? info.path : null;
 }
 
 /** What the Welcome screen leads with. "start": no library on this computer yet. "open": there is
  *  one but it was not opened at start (the setting is off). "copyFrom" is offered on top of "start"
- *  when a Pacemaker is plugged in (the first one). */
-export function welcomeOffer(info: StartupInfo, volumes: string[]): { start: boolean; open: boolean; copyFrom: string | null } {
+ *  when a Pacemaker is plugged in (the first one). "unreadable": the settings file is damaged, so
+ *  neither is offered until the user chooses what to do. "missingPath": the folder the settings
+ *  name is not there (a drive that is not connected, a folder that was moved); nothing was made. */
+export function welcomeOffer(
+  info: StartupInfo,
+  volumes: string[],
+): { start: boolean; open: boolean; copyFrom: string | null; unreadable: boolean; missingPath: string | null } {
+  if (info?.unreadable) return { start: false, open: false, copyFrom: null, unreadable: true, missingPath: null };
   const start = !!info && !info.exists;
-  return { start, open: !!info && info.exists, copyFrom: start && volumes.length > 0 ? volumes[0] : null };
+  return {
+    start,
+    open: !!info && info.exists,
+    copyFrom: start && volumes.length > 0 ? volumes[0] : null,
+    unreadable: false,
+    missingPath: start && info?.settings.path ? info.path : null,
+  };
 }
