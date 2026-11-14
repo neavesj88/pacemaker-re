@@ -590,6 +590,70 @@ fn run_analysis(dir: &Path, root: &str, targets: &[TrackRef], settings: &Setting
     Ok(JobOutcome { ok: ok + skipped, failed, summary })
 }
 
+// ---- the background queue's use of this analysis ---------------------------------------------
+
+/// What `commands/bganalysis` uses; see the same type in `energy.rs`. A track whose beat grid was
+/// edited since it was measured counts as missing, exactly as in the job's own plan.
+pub(crate) struct Bg {
+    dir: PathBuf,
+    root: String,
+    fresh: std::collections::BTreeMap<String, Entry>,
+    last_save: std::time::Instant,
+    /// Entries in the saved file at the last save: the bigger it is, the less often it is rewritten.
+    cached: usize,
+}
+
+impl Bg {
+    pub(crate) fn new(dir: &Path, root: &str) -> Self {
+        Bg { dir: dir.to_path_buf(), root: root.to_string(), fresh: std::collections::BTreeMap::new(), last_save: std::time::Instant::now(), cached: 0 }
+    }
+
+    pub(crate) fn missing(&self, lib: &Library) -> Result<Vec<crate::commands::bganalysis::queue::Item>, String> {
+        let settings = load_settings(&self.dir);
+        let mut refs = refs_of(lib).map_err(|e| e.to_string())?;
+        let (cache, _) = load_cache(&self.dir, &self.root);
+        check_grids(Path::new(&self.root), &mut refs, &cache, None);
+        Ok(pick_targets(&refs, &cache, None, false, &settings)
+            .into_iter()
+            .map(|t| crate::commands::bganalysis::queue::Item { id: t.id, location: t.location, size: t.size, label: t.label })
+            .collect())
+    }
+
+    /// Measures one track; Ok carries the words for the status line. A track with no usable grid
+    /// is a result too (nothing to measure, not measured again until its grid changes).
+    pub(crate) fn measure_one(&mut self, item: &crate::commands::bganalysis::queue::Item) -> Result<String, String> {
+        let t = TrackRef { id: item.id, location: item.location.clone(), size: item.size, label: item.label.clone(), grid: GridCheck::Unchecked };
+        match measure(Path::new(&self.root), &t)? {
+            Measure::Done(m) => {
+                self.fresh.insert(t.location, Entry { size: t.size, grid: m.grid, duration_secs: m.duration_secs, edges: m.edges, rows: m.rows, skip: None });
+                Ok("measured".into())
+            }
+            Measure::Skip(why, grid) => {
+                self.fresh.insert(t.location, Entry { size: t.size, grid, duration_secs: 0.0, edges: Vec::new(), rows: Vec::new(), skip: Some(why.reason().into()) });
+                Ok(why.reason().into())
+            }
+        }
+    }
+
+    pub(crate) fn due(&self) -> bool {
+        !self.fresh.is_empty() && (self.fresh.len() >= FLUSH_EVERY || self.last_save.elapsed() >= std::time::Duration::from_secs(2 + self.cached as u64 / 2000))
+    }
+
+    pub(crate) fn flush(&mut self) -> Result<bool, String> {
+        if self.fresh.is_empty() {
+            return Ok(false);
+        }
+        let (mut cache, _) = load_cache(&self.dir, &self.root);
+        cache.tracks.extend(self.fresh.iter().map(|(k, v)| (k.clone(), v.clone())));
+        self.cached = cache.tracks.len();
+        self.last_save = std::time::Instant::now();
+        // the results are dropped only once they are on disk, so a failed save is tried again
+        save_cache(&self.dir, &self.root, &cache)?;
+        self.fresh.clear();
+        Ok(true)
+    }
+}
+
 // ---- commands --------------------------------------------------------------------------------
 
 /// Every track's sections under the saved settings, with the counts for the UI. Read-only: it

@@ -78,7 +78,7 @@ pub(crate) fn audio_path(root: &Path, location: &str) -> AppResult<PathBuf> {
     Ok(root.join(naming::MUSIC_DIR).join(rel))
 }
 
-fn peaks_blocking(state: &PeaksState, cache_dir: &Path, root: &str, location: &str, width: usize) -> AppResult<Vec<peaks::Column>> {
+pub(crate) fn peaks_blocking(state: &PeaksState, cache_dir: &Path, root: &str, location: &str, width: usize) -> AppResult<Vec<peaks::Column>> {
     let audio = audio_path(Path::new(root), location)?;
     // the volume is part of the identity: two devices can hold the same location string
     let id = format!("{root}|{location}");
