@@ -285,24 +285,40 @@ pub async fn mix_live_play(state: State<'_, MixLive>, from_sec: f64) -> AppResul
     if !from_sec.is_finite() {
         return Err("The start position is not a number.".into());
     }
-    let mut g = state.0.lock().map_err(|_| AppError::from("The live player is locked."))?;
-    let s = g.as_mut().ok_or_else(not_loaded)?;
-    if s.device.is_none() || s.shared.device_failed.load(Acquire) {
-        // a device that failed is dropped first (its thread has ended)
-        s.device.take();
-        s.shared.device_failed.store(false, Release);
-        let sh = s.shared.clone();
+    // open the device without holding the state lock: a slow driver must not block every live command
+    let need = {
+        let mut g = state.0.lock().map_err(|_| AppError::from("The live player is locked."))?;
+        let s = g.as_mut().ok_or_else(not_loaded)?;
+        if s.device.is_none() || s.shared.device_failed.load(Acquire) {
+            // a device that failed is dropped first (its thread has ended)
+            s.device.take();
+            s.shared.device_failed.store(false, Release);
+            Some((s.ring.clone(), s.shared.clone(), s.player.sender()))
+        } else {
+            None
+        }
+    };
+    if let Some((ring, sh, tx)) = need {
+        let sh2 = sh.clone();
         let on_err = Arc::new(move |e: String| {
-            sh.device_failed.store(true, Release);
-            sh.playing.store(false, Release);
-            if let Ok(mut m) = sh.error.lock() {
+            sh2.device_failed.store(true, Release);
+            sh2.playing.store(false, Release);
+            if let Ok(mut m) = sh2.error.lock() {
                 *m = e;
             }
-            sh.emit_status();
+            // the worker must stop too, or it keeps reporting a playing position at a standstill
+            let _ = tx.send(Command::Pause);
+            sh2.emit_status();
         });
-        match Device::open(s.ring.clone(), on_err) {
+        let opened = tauri::async_runtime::spawn_blocking(move || Device::open(ring, on_err)).await.map_err(|e| AppError::from(e.to_string()))?;
+        let mut g = state.0.lock().map_err(|_| AppError::from("The live player is locked."))?;
+        let s = g.as_mut().ok_or_else(not_loaded)?;
+        match opened {
             Ok(d) => {
-                s.device = Some(d);
+                // a second Play may have opened one meanwhile: keep that one
+                if s.device.is_none() {
+                    s.device = Some(d);
+                }
                 if let Ok(mut m) = s.shared.error.lock() {
                     m.clear();
                 }
@@ -316,6 +332,8 @@ pub async fn mix_live_play(state: State<'_, MixLive>, from_sec: f64) -> AppResul
             }
         }
     }
+    let g = state.0.lock().map_err(|_| AppError::from("The live player is locked."))?;
+    let s = g.as_ref().ok_or_else(not_loaded)?;
     if let Ok(mut m) = s.shared.message.lock() {
         m.clear();
     }

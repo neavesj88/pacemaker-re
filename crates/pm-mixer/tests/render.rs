@@ -15,7 +15,9 @@ const SR: usize = RATE as usize;
 // ---------------------------------------------------------------------------------------------
 
 fn dir(name: &str) -> PathBuf {
-    let d = std::env::temp_dir().join(format!("pm-mixer-test-{}-{}", name, std::process::id()));
+    // unique per call: tests that share a name (the tool tests) run in parallel threads and wrote the same files
+    static N: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    let d = std::env::temp_dir().join(format!("pm-mixer-test-{}-{}-{}", name, std::process::id(), N.fetch_add(1, std::sync::atomic::Ordering::Relaxed)));
     std::fs::create_dir_all(&d).unwrap();
     d
 }

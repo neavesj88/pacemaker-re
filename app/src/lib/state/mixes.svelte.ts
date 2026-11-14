@@ -65,19 +65,6 @@ export type EditOptions = {
   dirties?: boolean;
 };
 
-/** After an edit that moved, resized or added a clip, overlapping clips are put on different decks
- * (the user never manages decks). Edits that leave every audible range alone are not touched, so
- * a mix that opened fine is not rewritten. */
-function settleDecks(before: MixDoc, after: MixDoc): MixDoc {
-  if (after.clips === before.clips) return after;
-  const old = new Map(before.clips.map((c) => [c.id, c]));
-  const moved = after.clips.some((c) => {
-    const o = old.get(c.id);
-    return !o || o.visibleStart !== c.visibleStart || o.visibleEnd !== c.visibleEnd;
-  });
-  return moved ? E.normalizeChannels(after) : after;
-}
-
 class Mixes {
   /** The open document, or null. Replace it through the actions below, never mutate it. */
   doc = $state.raw<MixDoc | null>(null);
@@ -245,7 +232,7 @@ class Mixes {
     if (!before) return;
     let after = fn(before);
     if (after === before) return;
-    after = settleDecks(before, after);
+    after = E.settleDecks(before, after);
     const now = Date.now();
     if (opts.dirties === false) {
       // not part of the saved document (the reference tempo): no undo step, history untouched
@@ -544,6 +531,9 @@ class Mixes {
       // stretch the track more than the setting allows: never silently stretch a lot. A tempo
       // ramp keeps its shape (the whole curve is scaled).
       const choice = hd.choice;
+      if (hd.outOfRange) {
+        throw new Error(`nothing changed: ${choice.factor === 2 ? "double" : "half"} time would push part of this clip's tempo curve outside the 0.1 to 4 speed range`);
+      }
       if (hd.held) {
         throw new Error(`nothing changed: ${choice.factor === 2 ? "double" : "half"} time would stretch this track ${stretchText(choice.stretchPct)}, more than the ${tempoPrefs.value.warnPct} % limit in the settings. Use "Sync to previous clip" and then "Match anyway" to do it regardless`);
       }

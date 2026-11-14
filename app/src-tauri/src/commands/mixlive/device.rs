@@ -77,8 +77,13 @@ mod win {
                     }
                 })
                 .map_err(|e| e.to_string())?;
-            match rx.recv() {
+            // a driver call that hangs (a Bluetooth endpoint that went away) must not hang the caller
+            match rx.recv_timeout(std::time::Duration::from_secs(5)) {
                 Ok(Ok(())) => Ok(Device { stop, join: Some(join) }),
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                    stop.store(true, Release);
+                    Err("The audio output did not answer within 5 seconds. Check the output device and try again.".into())
+                }
                 Ok(Err(e)) => {
                     let _ = join.join();
                     Err(e)

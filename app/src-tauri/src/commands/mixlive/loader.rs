@@ -225,7 +225,8 @@ impl Loader {
                     Some(size) => g.bytes + size <= g.budget,
                     None => g.bytes < g.budget,
                 };
-                fits || farthest_held.is_some_and(|f| g.dist_of(w.id) < f)
+                // a clip in use (distance 0) is always wanted: the budget is soft by the clips playing now
+                fits || g.distance(w) == 0 || farthest_held.is_some_and(|f| g.dist_of(w.id) < f)
             })
             .min_by_key(|w| g.distance(w))
             .map(|w| (w.id, w.path.clone().unwrap()))
@@ -236,10 +237,8 @@ impl Loader {
     /// even when it alone is over budget.
     fn evict(&self, g: &mut Inner) {
         while g.bytes > g.budget {
-            let ready: Vec<(i64, i64)> = g.cache.iter().filter(|(_, e)| matches!(e, Entry::Ready(..))).map(|(id, _)| (*id, g.dist_of(*id))).collect();
-            if ready.len() < 2 {
-                break;
-            }
+            // a clip in use (distance 0) is never dropped: a crossfade needs both of its clips
+            let ready: Vec<(i64, i64)> = g.cache.iter().filter(|(_, e)| matches!(e, Entry::Ready(..))).map(|(id, _)| (*id, g.dist_of(*id))).filter(|(_, d)| *d > 0).collect();
             let Some((id, _)) = ready.into_iter().max_by_key(|(_, d)| *d) else { break };
             if let Some(Entry::Ready(_, b)) = g.cache.remove(&id) {
                 g.bytes -= b;
@@ -355,6 +354,23 @@ mod tests {
             std::thread::sleep(Duration::from_micros(200));
         }
         wait("clip 2 in use at 25 s", || matches!(l.get(2), SourceState::Ready(_)));
+        l.shutdown();
+    }
+
+    #[test]
+    fn two_overlapping_clips_both_stay_under_a_small_budget() {
+        let d = dir("overlap");
+        for k in 0..2 {
+            wav(&d.join(format!("{k}.wav")), 1.0);
+        }
+        // room for 1.5 clips, both in use at the position
+        let l = Loader::start(44100 * BYTES_PER_FRAME * 3 / 2, Arc::new(|| {}));
+        let w = |k: i64| Wanted { id: k, path: Some(d.join(format!("{k}.wav"))), start: 0, end: 44100 };
+        l.set_position(100);
+        l.set_wanted(vec![w(0), w(1)]);
+        wait("both decoded", || matches!(l.get(0), SourceState::Ready(_)) && matches!(l.get(1), SourceState::Ready(_)));
+        std::thread::sleep(Duration::from_millis(400));
+        assert!(matches!(l.get(0), SourceState::Ready(_)) && matches!(l.get(1), SourceState::Ready(_)), "neither clip in use is dropped");
         l.shutdown();
     }
 

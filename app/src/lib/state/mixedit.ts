@@ -429,17 +429,26 @@ export function resizeClip(doc: MixDoc, id: string, edge: "left" | "right", pos:
   return replaceClip(doc, id, (x) => ({ ...x, trimEnd: x.start + x.length - v }));
 }
 
+/** The most a clip added with both decks busy may lie over another clip, as a fraction of its own
+ * length: more than that and it goes after the clips instead of onto a long stretch of them. */
+export const ADD_MAX_OVERLAP = 0.25;
+
 /** Where a clip of audible length `len` can go at or after `from` without overlapping a clip on
- * its own deck: the free deck at `from`, else the same at the nearest clip end after it. */
-export function freeSlot(doc: MixDoc, from: number, len: number, exclude: string[] = []): { start: number; channel: number } {
+ * its own deck: the free deck at `from`, else the same at the nearest clip end after it, as long as
+ * it lies over no clip by more than `maxOverlap` of its length; failing that after the last clip. */
+export function freeSlot(doc: MixDoc, from: number, len: number, exclude: string[] = [], maxOverlap = ADD_MAX_OVERLAP): { start: number; channel: number } {
   const clips = doc.clips.filter((c) => !exclude.includes(c.id));
-  const free = (s: number) => [0, 1].find((ch) => !clips.some((c) => (c.channel === 1 ? 1 : 0) === ch && Math.min(c.visibleEnd, s + len) - Math.max(c.visibleStart, s) > 0));
+  const lap = (s: number, c: Clip) => Math.min(c.visibleEnd, s + len) - Math.max(c.visibleStart, s);
+  const free = (s: number) => [0, 1].find((ch) => !clips.some((c) => (c.channel === 1 ? 1 : 0) === ch && lap(s, c) > 0));
   const starts = [from, ...clips.map((c) => c.visibleEnd).filter((e) => e > from)].sort((a, b) => a - b);
   for (const s of starts) {
     const ch = free(s);
-    if (ch !== undefined) return { start: s, channel: ch };
+    if (ch === undefined) continue;
+    // the first try (the asked-for spot) may overlap as much as the user means; later ones may not
+    if (s === from || clips.every((c) => lap(s, c) <= len * maxOverlap)) return { start: s, channel: ch };
   }
-  return { start: from, channel: freeChannel(doc, from, from + len, exclude) };
+  const end = Math.max(from, ...clips.map((c) => c.visibleEnd));
+  return { start: end, channel: free(end) ?? 0 };
 }
 
 /** Adds a clip so that its audible start is at `start`, on `channel` or the free deck. With both
@@ -784,6 +793,8 @@ export type SyncResult = {
   applied: boolean;
   /** The clip already plays at the target: nothing to change, nothing held back. */
   already?: boolean;
+  /** Not applied because the (scaled) tempo curve would leave the speed range, not because of the stretch limit. */
+  outOfRange?: boolean;
 };
 
 /** Plays a clip at `target` BPM, or at double or half of it, whichever stretches the track least.
@@ -812,7 +823,7 @@ export function syncClipTo(doc: MixDoc, clipId: string, target: number, threshol
       if (again === doc) break;
       next = again;
     }
-    return { doc: next, choice, applied: next !== doc };
+    return { doc: next, choice, applied: next !== doc, outOfRange: next === doc };
   }
   const next = setClipBpm(doc, clipId, choice.playsAt);
   return { doc: next, choice, applied: next !== doc };
@@ -821,13 +832,14 @@ export function syncClipTo(doc: MixDoc, clipId: string, target: number, threshol
 /** The half / double-time branch of Beat-match: when the clip is closer to half or double of
  * `target`, it plays at that (a ramp keeps its shape) unless that stretches it more than
  * `thresholdPct` (`held`). `null` when the clip matches at the target itself (factor 1). */
-export function matchHalfDouble(doc: MixDoc, clipId: string, target: number, thresholdPct: number): { doc: MixDoc; choice: TempoChoice; held: boolean } | null {
+export function matchHalfDouble(doc: MixDoc, clipId: string, target: number, thresholdPct: number): { doc: MixDoc; choice: TempoChoice; held: boolean; outOfRange: boolean } | null {
   const c = clipOf(doc, clipId);
   const choice = c ? chooseTempo(c.bpm, target) : null;
   if (!c || !choice || choice.factor === 1) return null;
   const r = syncClipTo(doc, clipId, target, thresholdPct);
-  const held = !r.applied && !r.already;
-  return { doc: r.doc, choice, held };
+  const outOfRange = !!r.outOfRange;
+  const held = !r.applied && !r.already && !outOfRange;
+  return { doc: r.doc, choice, held, outOfRange };
 }
 
 /** Sets the pitch / tempo percentage of a clip: it plays at its track tempo times (1 + pct / 100). */
@@ -869,8 +881,11 @@ export function removeTempoNode(doc: MixDoc, clipId: string, index: number): Mix
 // Decks. The user never manages decks: overlapping clips are moved to different ones here.
 // ---------------------------------------------------------------------------------------------
 
-/** True when two clips are audible together for more than a short moment. */
-const overlaps = (a: Clip, b: Clip) => Math.min(a.visibleEnd, b.visibleEnd) - Math.max(a.visibleStart, b.visibleStart) > MIN_LENGTH;
+/** True when two clips are audible together at all: the same threshold as the save check in the
+ * backend (`EPS` in doc.rs, one sample), or a sliver of overlap would be refused at save with no
+ * deck control to fix it. */
+export const DECK_EPS = 1;
+const overlaps = (a: Clip, b: Clip) => Math.min(a.visibleEnd, b.visibleEnd) - Math.max(a.visibleStart, b.visibleStart) > DECK_EPS;
 
 /** Keeps the rule "clips that overlap sit on different decks" without the user touching decks. A
  * clip that overlaps another on its own deck (and has no crossfade over that overlap) moves to the
@@ -893,6 +908,20 @@ export function normalizeChannels(doc: MixDoc): MixDoc {
   }
   if (!changed) return doc;
   return refresh({ ...doc, clips: doc.clips.map((c) => ((chan.get(c.id) ?? c.channel) === c.channel ? c : { ...c, channel: chan.get(c.id) ?? c.channel }) ) });
+}
+
+/** After an edit that moved, resized or added a clip, or changed the crossfades (one that covered
+ * an overlap on a shared deck may be gone), overlapping clips are put on different decks (the user
+ * never manages decks). Edits that leave every audible range and every transition alone are not
+ * touched, so a mix that opened fine is not rewritten. */
+export function settleDecks(before: MixDoc, after: MixDoc): MixDoc {
+  if (after.clips === before.clips) return after.transitions === before.transitions ? after : normalizeChannels(after);
+  const old = new Map(before.clips.map((c) => [c.id, c]));
+  const moved = after.clips.some((c) => {
+    const o = old.get(c.id);
+    return !o || o.visibleStart !== c.visibleStart || o.visibleEnd !== c.visibleEnd;
+  });
+  return moved || after.transitions !== before.transitions ? normalizeChannels(after) : after;
 }
 
 /** The slices of a clip's audible part by how many clips are audible together there, for drawing

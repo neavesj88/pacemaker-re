@@ -237,7 +237,7 @@
 </div>
 <p class="note">
   Beat-match moves this clip so its beats sit on the previous clip's; it changes the clip's tempo and start. The curves are drawn over the clips on the bar (one kind at a time): with a
-  curve on, click on the selected clip to add a node, drag to move it, right-click to remove it; drag the clip by its name.
+  curve on, click on the selected clip to add a node, drag to move it, right-click to remove it; drag the clip by its name (an incoming clip under a crossfade is grabbed outside the crossfade, or zoom in).
 </p>
 
 {#if menu}

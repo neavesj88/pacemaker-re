@@ -153,7 +153,8 @@ impl Player {
                 }));
                 if run.is_err() {
                     w.playing = false;
-                    w.ring.flush();
+                    // fade the device out (no click), then drop what is queued
+                    w.stop_device();
                     const DEAD: &str = "The live player stopped unexpectedly. Close and reopen the mix to play it again.";
                     (w.notify)(Event::Note(DEAD.into()));
                     w.emit_position();
@@ -161,7 +162,7 @@ impl Player {
                         if matches!(c, Command::Shutdown) {
                             break;
                         }
-                        if matches!(c, Command::Play(_)) {
+                        if matches!(c, Command::Play(_) | Command::Pause | Command::Seek(_) | Command::Load(..)) {
                             (w.notify)(Event::Note(DEAD.into()));
                         }
                     }
@@ -173,6 +174,11 @@ impl Player {
 
     pub fn send(&self, c: Command) {
         let _ = self.tx.send(c);
+    }
+
+    /// A handle that can send commands from elsewhere (the device's error callback).
+    pub fn sender(&self) -> Sender<Command> {
+        self.tx.clone()
     }
 }
 

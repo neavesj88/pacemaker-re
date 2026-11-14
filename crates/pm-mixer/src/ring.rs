@@ -96,8 +96,13 @@ impl Ring {
         self.last.store(last, Release);
     }
 
-    /// Asks the callback to play (fade in) or stop (fade out).
+    /// Asks the callback to play (fade in) or stop (fade out). Starting clears `stopped` here, not
+    /// only in the callback: a stop requested within one device period of the start must wait for
+    /// a fill that has seen `run == false`, not trust the flag left from before.
     pub fn set_run(&self, run: bool) {
+        if run {
+            self.stopped.store(false, Release);
+        }
         self.run.store(run, Release);
     }
 

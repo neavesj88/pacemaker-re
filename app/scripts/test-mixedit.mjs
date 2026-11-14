@@ -1330,8 +1330,11 @@ test("a ramped clip synced to a target really starts at the target; half/double 
   const busy = doc([clip("x", 0, 10 * BAR, 120, 1, null, { channel: 0 }), clip("y", 0, 12 * BAR, 120, 1, null, { channel: 1 })]);
   const added = E.addClip(busy, clip("n", 0, 4 * BAR, 120, 1, null), 2 * BAR);
   const n = added.clips.find((q) => q.id === "n");
-  assert.equal(n.visibleStart, 10 * BAR, "after the first clip that frees a deck");
+  // 10 bars would lie 2 of its 4 bars over y: more than the cap, so after both
+  assert.equal(n.visibleStart, 12 * BAR, "after the clips, not over most of one");
   assert.equal(n.channel, 0);
+  const roomy = doc([clip("x", 0, 10 * BAR, 120, 1, null, { channel: 0 }), clip("y", 0, 10.5 * BAR, 120, 1, null, { channel: 1 })]);
+  assert.equal(E.addClip(roomy, clip("n", 0, 4 * BAR, 120, 1, null), 2 * BAR).clips.at(-1).visibleStart, 10 * BAR, "a small overlap is fine");
   assert.equal(added.problems?.length ?? 0, busy.problems?.length ?? 0, "no new overlap problem");
 });
 
