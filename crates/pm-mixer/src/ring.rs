@@ -26,6 +26,8 @@ pub struct Ring {
     /// The callback has faded out and is not consuming; set by the callback.
     stopped: AtomicBool,
     underruns: AtomicU64,
+    /// The queue holds the last frames of the stream: running dry afterwards is not an underrun.
+    last: AtomicBool,
 }
 
 /// The callback's own state (kept by the device thread, not shared).
@@ -46,6 +48,7 @@ impl Ring {
             run: AtomicBool::new(false),
             stopped: AtomicBool::new(true),
             underruns: AtomicU64::new(0),
+            last: AtomicBool::new(false),
         }
     }
 
@@ -86,6 +89,11 @@ impl Ring {
     /// Whether the callback has faded out and is idle.
     pub fn stopped(&self) -> bool {
         self.stopped.load(Acquire)
+    }
+
+    /// Says that the frames queued now are the end of the stream (or, with `false`, that more follow).
+    pub fn set_last(&self, last: bool) {
+        self.last.store(last, Release);
     }
 
     /// Asks the callback to play (fade in) or stop (fade out).
@@ -172,7 +180,7 @@ impl Ring {
         self.tail.store(tail + n as u64, Release);
         if n < frames {
             out[2 * n..].fill(0.0);
-            if run {
+            if run && !self.last.load(Acquire) {
                 self.underruns.fetch_add(1, Relaxed);
             } else {
                 st.gain = 0.0;
@@ -215,6 +223,22 @@ mod tests {
             assert_eq!((*l, *r), (want, -want), "frame {k}");
         }
         assert_eq!(ring.underruns(), 0);
+    }
+
+    #[test]
+    fn running_dry_after_the_last_frames_is_not_an_underrun() {
+        let ring = Ring::new(64);
+        ring.set_run(true);
+        let mut st = Consumer::default();
+        let (l, r) = ramp(10, 1.0);
+        ring.push(&l, &r);
+        ring.set_last(true);
+        let mut out = vec![0.0; 2 * 32];
+        ring.fill(&mut out, &mut st);
+        assert_eq!(ring.underruns(), 0, "the end of the stream");
+        ring.set_last(false);
+        ring.fill(&mut out, &mut st);
+        assert_eq!(ring.underruns(), 1, "the same shortage in the middle of a stream counts");
     }
 
     #[test]

@@ -170,6 +170,13 @@ struct Worker {
 }
 
 impl Worker {
+    /// Marks that the last frames of the mix are (not) in the ring: the device running dry after them
+    /// is the end of the music, not an underrun.
+    fn set_ending(&mut self, e: bool) {
+        self.ending = e;
+        self.ring.set_last(e);
+    }
+
     fn note(&self, s: impl Into<String>) {
         (self.notify)(Event::Note(s.into()));
     }
@@ -276,7 +283,7 @@ impl Worker {
         live.seek(frame);
         self.base_idx = self.ring.head();
         self.base_tl = frame;
-        self.ending = false;
+        self.set_ending(false);
         self.playing = true;
         self.paused_at = frame;
         self.last_underruns = self.ring.underruns();
@@ -292,7 +299,7 @@ impl Worker {
     /// Renders one chunk into the ring.
     fn refill_once(&mut self) {
         let Some(live) = self.live.as_mut() else {
-            self.ending = true;
+            self.set_ending(true);
             return;
         };
         let t = Instant::now();
@@ -308,6 +315,7 @@ impl Worker {
         debug_assert_eq!(pushed, n, "refill never asks for more than the ring has free");
         if n < CHUNK {
             self.ending = true;
+            self.ring.set_last(true);
         }
         for w in live.take_warnings() {
             (self.notify)(Event::Note(w));
@@ -362,7 +370,7 @@ impl Worker {
             Err(_) => {
                 // nothing audible any more: let the queued audio play out
                 self.live = None;
-                self.ending = true;
+                self.set_ending(true);
                 return;
             }
         };
@@ -380,7 +388,7 @@ impl Worker {
         self.ring.rewrite_from(resume, &nl[..got.max(had_old).min(XFADE_FRAMES)], &nr[..got.max(had_old).min(XFADE_FRAMES)]);
         self.base_idx = resume;
         self.base_tl = tl;
-        self.ending = got < XFADE_FRAMES;
+        self.set_ending(got < XFADE_FRAMES);
         self.live = Some(fresh);
         if let Some(l) = self.live.as_mut() {
             l.set_master_db(master);
@@ -519,7 +527,7 @@ mod tests {
         let ring = Arc::new(Ring::new(1 << 15));
         let (notify, events) = collect_events();
         let p = Player::spawn(ring.clone(), getter(3), notify);
-        let fake = Fake::start(ring.clone(), 480, 4.0, true);
+        let fake = Fake::start(ring.clone(), 480, 2.0, true);
         let m = mix_of(3, 1.0);
         p.send(Command::Load(m.clone(), LiveOptions::default()));
         // inside the crossfade of clips 1 and 2 (16 s to 20 s)
@@ -588,9 +596,16 @@ mod tests {
         let t = Instant::now();
         p.send(Command::Play(0));
         let mut seeks = 0;
+        let mut seen = 0;
         while t.elapsed().as_secs() < 180 {
-            std::thread::sleep(Duration::from_millis(500));
+            std::thread::sleep(Duration::from_millis(20));
+            // say when an underrun happens, so it can be matched with what the worker was doing
+            if ring.underruns() != seen {
+                seen = ring.underruns();
+                println!("underrun #{seen} at {:.2} s of the run, ring holds {} frames, {seeks} seek(s) so far", t.elapsed().as_secs_f64(), ring.len());
+            }
             if ring.tail() as f64 / 44100.0 > 100.0 * (seeks + 1) as f64 {
+                println!("seek at {:.2} s of the run", t.elapsed().as_secs_f64());
                 p.send(Command::Seek(0));
                 seeks += 1;
             }
