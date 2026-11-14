@@ -1,9 +1,21 @@
+import { bpmRange } from "$lib/state/bpmRange.svelte";
 import { energy } from "$lib/state/energy.svelte";
 import { sections } from "$lib/state/sections.svelte";
 import type { SettingsEntry } from "../settings/types";
+import BpmRangeFields from "./BpmRangeFields.svelte";
 import KeySettingsFields from "./KeySettingsFields.svelte";
 
 const entries: SettingsEntry[] = [
+  {
+    id: "bpm-range",
+    area: "Analysis",
+    title: "BPM range",
+    help: "The window analysed tempos are doubled or halved into: 88-176 reads drum & bass at about 174, 78-156 matches the original Editor (about 87), and tracks read with another range can be re-analysed.",
+    keywords: "bpm range tempo half time double drum bass dnb 174 87 editor analyse fold",
+    load: () => bpmRange.ensure(),
+    how: "inline",
+    component: BpmRangeFields,
+  },
   {
     id: "key-detection",
     area: "Analysis",

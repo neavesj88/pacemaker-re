@@ -283,6 +283,23 @@ pub fn fold_to_range(env: &Envelope, g: &Grid, duration: f64, range: crate::temp
     g
 }
 
+/// A beat line midway between every two beats (the tracked beats of a variable-tempo track
+/// brought up into a faster range); the last beat keeps the spacing of the one before it.
+pub fn double_times(times: &[f64]) -> Vec<f64> {
+    let mut out = Vec::with_capacity(times.len() * 2);
+    for w in times.windows(2) {
+        out.push(w[0]);
+        out.push(0.5 * (w[0] + w[1]));
+    }
+    if let Some(&last) = times.last() {
+        out.push(last);
+        if times.len() >= 2 {
+            out.push(last + 0.5 * (last - times[times.len() - 2]));
+        }
+    }
+    out
+}
+
 /// Every other beat, starting with whichever of the two parities carries more kick energy.
 pub fn stronger_parity(env: &Envelope, times: &[f64]) -> Vec<f64> {
     let fps = env.frames_per_sec();

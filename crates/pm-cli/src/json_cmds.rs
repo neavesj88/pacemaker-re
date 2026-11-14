@@ -46,7 +46,7 @@ pub enum Done {
 
 pub const USAGE: &str = "\
 usage:
-  pm volumes | pm ls <volume> | pm add <volume> <audio>...
+  pm volumes | pm ls <volume> | pm add <volume> [--bpm-range 88-176] <audio>...
   pm health <volume> [--strict]
   pm backup <volume> <dest-folder> [--audio] [--verify]
   pm verify <backup-folder> [--problems-only]

@@ -73,7 +73,8 @@ pub fn add_tracks(app: AppHandle, lock: State<'_, JobLock>, root: String, files:
         let mut lib = Library::open(Path::new(&root))?;
         let total = files.len();
         let mut done = 0;
-        Ok(ingest::add_files(&mut lib, &files, |ev| {
+        let range = super::analysis::bpm_range::current(app);
+        Ok(ingest::add_files(&mut lib, &files, range, |ev| {
             done += 1;
             events::emit(app, JOB_PROGRESS, progress_of("add", ev, done, total));
         }).into())

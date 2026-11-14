@@ -11,24 +11,51 @@ pub const MAX_BPM: f64 = 200.0;
 /// Preferred tempo window, the analogue of DJ software's "BPM range" setting: candidate
 /// tempos are doubled or halved into [lo, 2 * lo).
 ///
-/// The default matches the original Editor (observed range 79-150: it folds 158 to 79 and
-/// drum & bass to ~87), because the device syncs tracks by BPM and a library mixing our
-/// analysis with the Editor's must agree. [`BpmRange::DNB_FULL_TIME`] gives the rekordbox-style
-/// reading (drum & bass at ~174).
-#[derive(Debug, Clone, Copy)]
+/// The default is [`BpmRange::DNB_FULL_TIME`] (88-176): drum & bass reads at its real ~174 and
+/// everything from 88 to 175 keeps its own number. The original Editor folds into 78-156 instead
+/// ([`BpmRange::EDITOR_COMPATIBLE`], observed range 79-150: it folds 158 to 79 and drum & bass
+/// to ~87), which halves every drum & bass track; mixing one of those with a 130 BPM track then
+/// slows the 130 track right down, so that is no longer the default. The device syncs tracks by
+/// BPM, so a library mixing tracks the Editor analysed (drum & bass at ~87) with ours (~174)
+/// can disagree about those tracks; the app can list and re-analyse them. A tempo of 176 or more
+/// does not fit 88-176 (180 reads as 90): [`BpmRange::PRESETS`] has 98-196 for that.
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct BpmRange {
     pub lo: f64,
 }
 
 impl Default for BpmRange {
     fn default() -> Self {
-        Self::EDITOR_COMPATIBLE
+        Self::DNB_FULL_TIME
     }
 }
 
 impl BpmRange {
+    /// 78-156, what the original Editor does.
     pub const EDITOR_COMPATIBLE: BpmRange = BpmRange { lo: 78.0 };
+    /// 88-176, drum & bass at full time.
     pub const DNB_FULL_TIME: BpmRange = BpmRange { lo: 88.0 };
+    /// 98-196, for fast drum & bass and hardcore.
+    pub const FAST: BpmRange = BpmRange { lo: 98.0 };
+    /// 68-136, slow music (hip-hop, downtempo) at its own tempo, house at half time.
+    pub const SLOW: BpmRange = BpmRange { lo: 68.0 };
+    /// The windows the app offers, lowest first.
+    pub const PRESETS: [BpmRange; 4] = [Self::SLOW, Self::EDITOR_COMPATIBLE, Self::DNB_FULL_TIME, Self::FAST];
+
+    /// The preset whose low end is `lo`, if there is one.
+    pub fn from_lo(lo: f64) -> Option<BpmRange> {
+        Self::PRESETS.into_iter().find(|r| (r.lo - lo).abs() < 1e-9)
+    }
+
+    /// The window's top, exclusive.
+    pub fn hi(&self) -> f64 {
+        2.0 * self.lo
+    }
+
+    /// Whether `bpm` lies inside the window.
+    pub fn contains(&self, bpm: f64) -> bool {
+        bpm >= self.lo && bpm < self.hi()
+    }
 
     pub fn fold(&self, mut bpm: f64) -> f64 {
         while bpm < self.lo {
@@ -97,13 +124,29 @@ mod tests {
 
     #[test]
     fn fold_into_range() {
-        assert_eq!(BpmRange::default().fold(174.0), 87.0);
-        assert_eq!(BpmRange::default().fold(158.0), 79.0);
-        assert_eq!(BpmRange::default().fold(150.0), 150.0);
+        let e = BpmRange::EDITOR_COMPATIBLE;
+        assert_eq!(e.fold(174.0), 87.0);
+        assert_eq!(e.fold(158.0), 79.0);
+        assert_eq!(e.fold(150.0), 150.0);
+        assert_eq!(BpmRange::default(), BpmRange::DNB_FULL_TIME, "drum & bass at full time is the default");
         let r = BpmRange::DNB_FULL_TIME;
         assert_eq!(r.fold(87.0), 174.0);
         assert_eq!(r.fold(174.0), 174.0);
         assert_eq!(r.fold(256.0), 128.0);
         assert_eq!(r.fold(128.0), 128.0);
+    }
+
+    #[test]
+    fn presets_round_trip_and_cover_every_tempo_once() {
+        for r in BpmRange::PRESETS {
+            assert_eq!(BpmRange::from_lo(r.lo), Some(r));
+            for bpm in [60.0, 87.0, 100.0, 128.0, 143.0, 174.0, 180.0, 199.0] {
+                assert!(r.contains(r.fold(bpm)), "{bpm} in {}-{}", r.lo, r.hi());
+            }
+        }
+        assert_eq!(BpmRange::from_lo(90.0), None);
+        assert_eq!(BpmRange::FAST.fold(90.0), 180.0);
+        assert_eq!(BpmRange::DNB_FULL_TIME.fold(180.0), 90.0);
+        assert_eq!(BpmRange::SLOW.fold(136.0), 68.0);
     }
 }

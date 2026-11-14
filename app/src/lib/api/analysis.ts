@@ -216,3 +216,18 @@ export const planSections = (root: string, trackIds?: number[], recompute = fals
 
 /** Forgets every saved section result of the library; returns how many. */
 export const clearSections = (root: string) => invoke<number>("analysis_sections_clear", { root });
+
+// ---- BPM range -------------------------------------------------------------------------------
+// The window every analysed tempo is doubled or halved into. Kept by the app (one small file in
+// its config folder); adding tracks, re-analysing, the grid editor's re-analyse and the grid
+// batch re-analyse all read it when they start.
+
+export type BpmRangeSettings = {
+  /** Low end of the window; the high end is twice that. One of 68, 78, 88, 98 (see state/bpmRangeLogic.ts). */
+  lo: number;
+};
+
+export const bpmRangeGet = () => invoke<BpmRangeSettings>("analysis_bpm_range_get");
+
+/** Saves the range (the backend only accepts one of the offered windows) and returns what was saved. */
+export const bpmRangeSet = (settings: BpmRangeSettings) => invoke<BpmRangeSettings>("analysis_bpm_range_set", { settings });

@@ -8,6 +8,7 @@
 //! track at once, so a table asking for fifty waveforms neither stalls the UI nor decodes a file
 //! fifty times.
 
+pub mod bpm_range;
 pub mod energy;
 pub mod sections;
 
@@ -326,6 +327,8 @@ macro_rules! analysis_commands {
                 $crate::commands::analysis::analysis_peaks,
                 $crate::commands::analysis::analysis_detect_keys,
                 $crate::commands::analysis::analysis_set_keys,
+                $crate::commands::analysis::bpm_range::analysis_bpm_range_get,
+                $crate::commands::analysis::bpm_range::analysis_bpm_range_set,
                 $crate::commands::analysis::energy::analysis_energy_state,
                 $crate::commands::analysis::energy::analysis_energy_settings,
                 $crate::commands::analysis::energy::analysis_energy_save_settings,

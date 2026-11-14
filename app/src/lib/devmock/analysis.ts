@@ -71,7 +71,26 @@ export function mockAutoEnergy(trackId: number): number | null {
   return mockEnergyState().entries.find((e) => e.track_id === trackId)?.energy ?? null;
 }
 
+/** The BPM range the mock saves (low end); `foldBpm` is what the mock's analysis does with it. */
+export let bpmRangeLo = 88;
+const RANGE_LOS = [68, 78, 88, 98];
+
+/** The mock's analysis: the track's tempo folded into the saved window, as the real analyser does. */
+export function foldBpm(bpm: number): number {
+  let b = bpm;
+  while (b < bpmRangeLo) b *= 2;
+  while (b >= 2 * bpmRangeLo) b /= 2;
+  return b;
+}
+
 export const handlers: Handlers = {
+  analysis_bpm_range_get: () => ({ lo: bpmRangeLo }),
+  analysis_bpm_range_set: (a) => {
+    const lo = a.settings?.lo;
+    if (!RANGE_LOS.includes(lo)) throw "The BPM range must be one of 68-136, 78-156, 88-176, 98-196.";
+    bpmRangeLo = lo;
+    return { lo };
+  },
   // like the real quick write: every entry is checked first, then all are written or none; a
   // Camelot code or free text is refused, flats are stored as the detector spells them (sharps)
   analysis_set_keys: (a) => {

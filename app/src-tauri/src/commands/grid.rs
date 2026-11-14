@@ -44,7 +44,8 @@ pub fn grid_edit(doc: GridDoc, edit: GridEdit, sample_rate: u32, total_frames: O
 
 /// Analyses the track's audio again and returns the new grid without saving it.
 #[tauri::command]
-pub async fn grid_analyse(root: String, track_id: i64) -> AppResult<GridDoc> {
+pub async fn grid_analyse(app: AppHandle, root: String, track_id: i64) -> AppResult<GridDoc> {
+    let range = crate::commands::analysis::bpm_range::current(&app);
     tauri::async_runtime::spawn_blocking(move || {
         let lib = Library::open_read_only(Path::new(&root))?;
         let load = lib.load_grid(track_id)?;
@@ -52,7 +53,7 @@ pub async fn grid_analyse(root: String, track_id: i64) -> AppResult<GridDoc> {
         if !audio.is_file() {
             return Err("The audio file is missing from the volume.".into());
         }
-        let result = pm_analysis::analyze_file(&audio).app()?;
+        let result = pm_analysis::analyze_file_with(&audio, range).app()?;
         Ok(GridDoc::from(&result.to_str_analysis()))
     })
     .await
