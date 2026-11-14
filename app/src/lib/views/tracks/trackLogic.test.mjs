@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { LABEL_COLOURS } from "../../state/labels.ts";
-import {
+import { bpmText,
   COLOUR_SORT_ORDER, filterTracks, formatDate, formatSize, keyName, keysCompatible, matchingTracks, NO_FILTER, parseBpm, parseKey, sortClick, sortTracks, sortTracksBy, uniqueGenres,
 } from "./trackLogic.ts";
 
@@ -217,4 +217,11 @@ test("case sort: case order follows the chosen case's own order, tracks outside 
   // Cases column: names joined alphabetically; tracks in no case last
   assert.deepEqual(ids([{ field: "cases", asc: true }]), [4, 3, 1, 2]);
   assert.deepEqual(ids([{ field: "cases", asc: false }]), [1, 3, 4, 2]);
+});
+
+test("bpmText: two decimals, a dash for none or a track that needs analysis", () => {
+  assert.equal(bpmText(128, false), "128.00");
+  assert.equal(bpmText(63.25, false), "63.25");
+  assert.equal(bpmText(140.5, true), "–");
+  assert.equal(bpmText(0, false), "–");
 });

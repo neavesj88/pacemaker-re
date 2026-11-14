@@ -20,9 +20,13 @@ test("sizes, dates and lengths read plainly and the same everywhere", () => {
   assert.equal(fmtBytes(6_500_000), "6.2 MB");
   assert.equal(fmtDate(-1), "never");
   assert.equal(fmtDate(0, "-"), "-");
-  assert.equal(fmtDate(1_700_000_000_000), "2023-11-14");
+  // local time, like the Tracks columns: just after local midnight is still that day
+  assert.equal(fmtDate(new Date(2026, 0, 1, 0, 30).getTime()), "2026-01-01");
+  assert.equal(fmtDate(new Date(2026, 0, 1, 23, 30).getTime()), "2026-01-01");
   assert.equal(fmtLength(0), "–");
   assert.equal(fmtLength(65), "1:05");
+  assert.equal(fmtLength(4325), "1:12:05", "hours, like the Tracks table");
+  assert.equal(fmtLength(200.7), "3:20");
 });
 
 test("the comparison puts differing fields first and folds the rest, losing none", () => {
@@ -120,7 +124,7 @@ test("the plan reads out every change to every copy", () => {
   const [g] = planSentences(plan());
   assert.equal(g.keeper, "Sample Artist - Sample Title (#1)");
   assert.equal(g.copies[0].label, "Sample Artist - Sample Title (copy) (#2)", "two copies with one title stay tellable apart by id");
-  assert.equal(g.stats, "The kept track gets: rating 2 → 4, plays 3 → 9, last played never → 2023-11-14.");
+  assert.equal(g.stats, `The kept track gets: rating 2 → 4, plays 3 → 9, last played never → ${fmtDate(1_700_000_000_000)}.`);
   assert.deepEqual(g.copies[0].parts, [
     "its place in “Sample Case” goes to the kept track",
     "leaves “Other Case” (the kept track is there already)",

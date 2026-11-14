@@ -9,12 +9,14 @@ import { jobs } from "$lib/state/jobs.svelte";
 import { playback } from "$lib/state/playback.svelte";
 import { session } from "$lib/state/session.svelte";
 import { toast } from "$lib/state/toast.svelte";
+import { tableRows } from "./tableRows.svelte";
 
 // An empty queue: next / previous walk the Tracks table as it is shown when they are pressed,
 // not a list left over from playing somewhere else.
 export const playTrack = (trackId: number) => playback.load(trackId, true, []);
 
-export const editMetadata = (ids: number[]) => metadataEditor.edit([...ids]);
+/** Opens the metadata dialog; Previous / Next follow `order` (the rows of the table it was opened from). */
+export const editMetadata = (ids: number[], order: number[] = tableRows.ids) => metadataEditor.edit([...ids], order);
 
 // The architecture note names deep-link keys "<area>.<name>", the cross-area brief names them
 // plainly; both are passed so whichever the receiving view reads is found.

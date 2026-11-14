@@ -57,6 +57,10 @@ export function keysCompatible(a: Camelot, b: Camelot): boolean {
   return d === 1 || d === 11;
 }
 
+/** The BPM as the Tracks table shows it: two decimals, a dash when the track has none or needs
+ *  analysis (its stored tempo is not trusted then). */
+export const bpmText = (bpm: number, needsAnalysis: boolean): string => (bpm && !needsAnalysis ? bpm.toFixed(2) : "–");
+
 /** Hue-per-number colour for a key badge; keys that mix well sit next to each other. */
 export const keyColour = (c: Camelot) => `hsl(${(c.num * 30 + 300) % 360} 70% 62%)`;
 

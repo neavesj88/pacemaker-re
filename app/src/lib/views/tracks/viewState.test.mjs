@@ -21,6 +21,7 @@ test("a full state round trips through JSON", () => {
     bpmMax: "128.5",
     keyFilter: "compat:8A",
     labelFilter: { tags: ["peak", "warm up"], tagMode: "all", colours: ["red", "blue"], energyMin: 3, energyMax: 9 },
+    caseId: 7,
     sort: [{ field: "bpm", asc: false }, { field: "title", asc: true }],
   };
   assert.deepEqual(sanitiseViewState(JSON.parse(JSON.stringify(s))), s);
@@ -99,4 +100,15 @@ test("the description names every condition", () => {
   }
   assert.ok(describeViewState({ ...s, keyFilter: "compat:8A" }).includes("keys compatible with 8A"));
   assert.ok(describeViewState({ ...s, onlyNeeds: false, onlyAnalysed: true }).includes("only analysed"));
+});
+
+test("the chosen case is part of the state: a clear state has none, a saved one reads back", () => {
+  assert.equal(emptyViewState().caseId, null);
+  assert.equal(sanitiseViewState({ query: "x" }).caseId, null, "a file saved before cases were kept");
+  for (const bad of ["7", -1, 1.5, NaN, {}, true]) assert.equal(sanitiseViewState({ caseId: bad }).caseId, null, String(bad));
+  const withCase = { ...emptyViewState(), caseId: 3 };
+  assert.ok(!viewStateIsClear(withCase), "Save the current view must not say nothing is filtered");
+  assert.ok(!sameViewState(withCase, emptyViewState()));
+  assert.equal(describeViewState(withCase, undefined, (id) => (id === 3 ? "Warm-up" : undefined)), "only the case “Warm-up”");
+  assert.equal(describeViewState(withCase), "only the case “(removed)”");
 });

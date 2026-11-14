@@ -23,7 +23,8 @@
   let busy = $state(false);
 
   const sortLabel = (k: SortSpec) => COLUMNS.find((c) => c.sort === k.field)?.label || (k.field === "fav" ? "Favourite" : k.field);
-  const describe = (s: Parameters<typeof describeViewState>[0]) => describeViewState(s, sortLabel);
+  const caseName = (id: number) => session.library?.cases.find((c) => c.id === id)?.name;
+  const describe = (s: Parameters<typeof describeViewState>[0]) => describeViewState(s, sortLabel, caseName);
 
   // what a save would store: the same capture the save itself takes
   const current = $derived(tracksState.captureState(withSort));
@@ -152,7 +153,7 @@
         <input type="checkbox" checked={tracksState.prefs.findClearsFilters} onchange={(e) => tracksState.setFindClearsFilters(e.currentTarget.checked)} />
         “Find” from History clears the filters that hide the track
       </label>
-      <p class="muted small">Presets and the remembered view are kept by this app only; they are not on the device.</p>
+      <p class="muted small">Presets and the remembered view are kept by this app only; they are not {session.isComputer ? "stored in the music library" : "on the device"}.</p>
     </div>
   {/if}
 </div>
@@ -247,6 +248,7 @@
     gap: 6px;
   }
   form input:not([type]) {
+    box-sizing: border-box;
     width: 100%;
   }
   .check {

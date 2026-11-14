@@ -11,6 +11,7 @@
   import Button from "$lib/ui/Button.svelte";
   import Modal from "$lib/ui/Modal.svelte";
   import Table, { type Column } from "$lib/ui/Table.svelte";
+  import BpmKey from "./BpmKey.svelte";
   import PlayLogSettings from "./PlayLogSettings.svelte";
   import TrackLogModal from "./TrackLogModal.svelte";
   import { PERIODS, fmtBytes, groupByDay, hitNote, periodLabel, periodRange, retentionLabel, type Period } from "./playlogLogic";
@@ -26,6 +27,9 @@
     byId: Map<number, Track>;
     ask: (name: string, ids: number[], source: string) => void;
   } = $props();
+
+  // a library on this computer has no device of its own: its counters came from a Pacemaker via Sync
+  const dev = $derived(session.isComputer ? "this library" : "the device");
 
   type Sub = "sessions" | "most";
   type Row = { key: string; track: Track; hit?: LogHit; rank?: LogRank };
@@ -161,7 +165,7 @@
     try {
       await playlogClear(root);
       confirmClear = false;
-      toast.show("Play log deleted. The device and its counters were not changed.", "ok");
+      toast.show(`Play log deleted. ${session.isComputer ? "This library" : "The device"} and its counters were not changed.`, "ok");
       // With logging on, the counters as they are now become the new baseline straight away.
       await playlog.record(root);
     } catch (e) {
@@ -183,18 +187,18 @@
 {#snippet trackCells(r: Row, key: string)}
   {#if key === "title"}{r.track.title}
   {:else if key === "artist"}{r.track.artist}
-  {:else if key === "bpm"}{r.track.bpm ? r.track.bpm.toFixed(1) : ""}
-  {:else if key === "key"}{r.track.key}
+  {:else if key === "bpm"}<BpmKey track={r.track} field="bpm" />
+  {:else if key === "key"}<BpmKey track={r.track} field="key" />
   {:else if key === "time"}{mmss(r.track.play_time_secs)}{/if}
 {/snippet}
 
 <div class="top">
   <span class="muted">
-    A record of how the device's play counters changed, kept by this app.
+    A record of how the play counters of {dev} changed, kept by this app.
     {#if data?.has_log}
       Logging since {dayLabel(data.started_at)}, {data.events} change{data.events === 1 ? "" : "s"} recorded, {fmtBytes(data.file_bytes)},
       {retentionLabel(data.retention_days)}.
-      {#if data.log_root}This log belongs to the drive or path <b>{data.log_root}</b>.{/if}
+      {#if data.log_root}This log belongs to the {session.isComputer ? "folder" : "drive or path"} <b>{data.log_root}</b>.{/if}
     {/if}
   </span>
   <span class="grow"></span>
@@ -212,7 +216,7 @@
   {#if !data.enabled}
     <div class="note warn" role="status">
       <b>Play logging is off.</b>
-      Nothing is recorded when you open a library, so new plays will not appear here. Turn it on in Log settings. The device keeps counting either way.
+      Nothing is recorded when you open a library, so new plays will not appear here. Turn it on in Log settings. {session.isComputer ? "The counters" : "The device"} keep counting either way.
     </div>
   {/if}
 
@@ -277,7 +281,7 @@
       <b>No play log yet for this library.</b>
       {#if data.enabled}
         The first time a library is opened with logging on, the play counters at that moment become the starting point. From then on each
-        change is recorded, and plays are worked out from them: open the library again after a night on the device and it appears here.
+        change is recorded, and plays are worked out from them: open the library again after {session.isComputer ? "more plays have come in with Sync" : "a night on the device"} and it appears here.
         Plays before the starting point can only be seen as a count.
       {:else}
         Turn logging on in Log settings; the next time the library is opened its counters become the starting point.
@@ -320,7 +324,7 @@
     </div>
 
     <div class="legend muted">
-      Times are the device's clock. A <b>~</b> means the play is not exact (hover it for why).
+      Times are {session.isComputer ? "the clock of the library they were read from" : "the device's clock"}. A <b>~</b> means the play is not exact (hover it for why).
       {#if data.removed_plays > 0}
         {data.removed_plays} play{data.removed_plays === 1 ? "" : "s"} of tracks no longer in the library {data.removed_plays === 1 ? "is" : "are"} not listed.
       {/if}
@@ -356,7 +360,7 @@
             </section>
           {/each}
         {:else}
-          <p class="empty">No plays are logged for {words}. Plays appear after the library is opened again following a session on the device.</p>
+          <p class="empty">No plays are logged for {words}. Plays appear after the library is opened again following {session.isComputer ? "a Sync that brought in new plays" : "a session on the device"}.</p>
         {/each}
         {#if data.sessions.length < data.sessions_total}
           <div class="more">
@@ -403,26 +407,31 @@
     <summary>How plays are worked out, and what cannot be known</summary>
     <ul>
       <li>
-        The Pacemaker stores only each track's play count and the time of its last play. Each time a library is opened here, any track whose
-        counters changed is written to the log. A play is a rise in the count; its time is the device's last-played time.
+        {session.isComputer ? "A library on this computer stores" : "The Pacemaker stores"} only each track's play count and the time of its last play. Each time a library is opened here, any track whose
+        counters changed is written to the log. A play is a rise in the count; its time is {session.isComputer ? "the library's" : "the device's"} last-played time.
       </li>
       <li>
-        The log only sees the device when it is opened in this app. If a track was played three times between two openings, it shows as three
+        The log only sees {session.isComputer ? "the library" : "the device"} when it is opened in this app. If a track was played three times between two openings, it shows as three
         plays at its latest time (marked ~); a track played on several nights between two openings looks like one night. Open the library more often for finer detail.
       </li>
       <li>
-        A session is plays whose times are within the pause chosen above; the device records no sessions, and a track played twice in one session
+        A session is plays whose times are within the pause chosen above; {session.isComputer ? "the library records" : "the device records"} no sessions, and a track played twice in one session
         is listed once with a count, not at each real position in the running order.
       </li>
       <li>
-        Times come from the device's clock; if it was wrong the log is wrong the same way. A count that goes down (a reset, or a track put back
-        on the card) is counted from zero. A play of a track that was added after the last snapshot is counted from zero too.
+        Times come from {session.isComputer ? "the clock of the library they were read from" : "the device's clock"}; if it was wrong the log is wrong the same way. A count that goes down (a reset, or a track put back
+        {session.isComputer ? "in the library" : "on the card"}) is counted from zero. A play of a track that was added after the last snapshot is counted from zero too.
       </li>
-      <li>Plays before logging began are only a count (shown in a track's History). Plays in this app's own player are not counted: the device writes the counters.</li>
+      <li>Plays before logging began are only a count (shown in a track's History). Plays in this app's own player are not counted: {session.isComputer ? "the counters come from the library" : "the device writes the counters"}.</li>
       <li>
-        The log is stored on this computer, not on the Pacemaker, and the device cannot show it. The card carries no identity the app can rely on, so the log is
-        tied to the drive letter or path it was opened at: a card that turns up at a new letter is offered the matching log of the old one (it is never merged
-        silently), and a different card at the same letter is detected and not mixed in. The checks and their thresholds are in Log settings.
+        {#if session.isComputer}
+          The log is stored on this computer, apart from the library. It is tied to the folder the library was opened at: a library that turns up in a new folder is offered the
+          matching log of the old one (it is never merged silently), and a different library in the same folder is detected and not mixed in. The checks and their thresholds are in Log settings.
+        {:else}
+          The log is stored on this computer, not on the Pacemaker, and the device cannot show it. The card carries no identity the app can rely on, so the log is
+          tied to the drive letter or path it was opened at: a card that turns up at a new letter is offered the matching log of the old one (it is never merged
+          silently), and a different card at the same letter is detected and not mixed in. The checks and their thresholds are in Log settings.
+        {/if}
       </li>
     </ul>
   </details>
@@ -447,7 +456,7 @@
       {/if}
     </ul>
     <p class="m">
-      It cannot be undone. The Pacemaker, its play counters, your cases and mixes are not changed.
+      It cannot be undone. {session.isComputer ? "The library" : "The Pacemaker"}, its play counters, your cases and mixes are not changed.
       {data.enabled ? "Logging is on, so a new log starts now from the counters as they are, with no dates for earlier plays." : "Logging is off, so no new log starts."}
     </p>
     {#snippet actions()}

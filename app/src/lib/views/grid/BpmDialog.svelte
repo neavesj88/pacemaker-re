@@ -14,9 +14,14 @@
   let text = $state("");
   let touched = $state(false);
 
-  // start from the tempo the track has now
+  // Start from the tempo the track has now, once. `track` is a new object whenever the library
+  // patches that track (background key analysis, a star click), and that must not put the old
+  // tempo back over what is being typed.
+  let seeded = false;
   $effect.pre(() => {
-    text = track && track.bpm > 0 ? fmtBpm(track.bpm) : "";
+    if (seeded || !track) return;
+    seeded = true;
+    text = track.bpm > 0 ? fmtBpm(track.bpm) : "";
   });
 
   const parsed = $derived(parseTempo(text));

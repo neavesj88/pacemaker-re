@@ -5,7 +5,8 @@
   import { gridBatch } from "$lib/state/gridBatch.svelte";
   import { suspects } from "$lib/state/gridSuspects.svelte";
   import Button from "$lib/ui/Button.svelte";
-  import { COLUMNS } from "./columns";
+  import { CASE_ONLY, COLUMNS } from "./columns";
+  import { popoverPlace, type PopoverPlace } from "./popoverPlace";
   import { labelFilterActive } from "$lib/state/labels";
   import LabelFilterBar from "./LabelFilterBar.svelte";
   import PresetsMenu from "./PresetsMenu.svelte";
@@ -44,6 +45,13 @@
   } = $props();
 
   let chooser = $state(false);
+  /** Where the column list sits: under its button, kept inside the window (see popoverPlace). */
+  let place = $state<PopoverPlace | null>(null);
+  function toggleChooser(e: MouseEvent) {
+    e.stopPropagation();
+    chooser = !chooser;
+    if (chooser) place = popoverPlace(e.currentTarget as HTMLElement, 260);
+  }
 
   /** Every case, by name; the chosen one stays listed even if the case list is re-read. */
   const caseOptions = $derived([...(session.library?.cases ?? [])].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" })));
@@ -105,7 +113,7 @@
   );
 </script>
 
-<svelte:window onclick={() => (chooser = false)} />
+<svelte:window onclick={() => (chooser = false)} onresize={() => (chooser = false)} onkeydown={(e) => e.key === "Escape" && (chooser = false)} />
 
 <div class="bar">
   {#if ownSearch}
@@ -175,16 +183,18 @@
   <QueryHelp />
 
   <div class="chooser">
-    <Button small active={chooser} onclick={(e) => (e.stopPropagation(), (chooser = !chooser))}>Columns</Button>
-    {#if chooser}
+    <Button small active={chooser} aria-expanded={chooser} onclick={toggleChooser}>Columns</Button>
+    {#if chooser && place}
       <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-      <div class="pop" onclick={(e) => e.stopPropagation()}>
+      <div class="pop" role="dialog" tabindex="-1" aria-label="Columns" style:left="{place.left}px" style:top="{place.top}px" style:width="{place.width}px" style:max-height="{place.maxHeight}px" onclick={(e) => e.stopPropagation()}>
         {#each table.prefs.order.map((k) => COLUMNS.find((c) => c.key === k)!).filter((c) => !c.fixed) as c (c.key)}
-          <label>
+          <label title={CASE_ONLY.includes(c.key) ? "Shown only while a case is chosen in the filter bar; it numbers the tracks in the case's order" : undefined}>
             <input type="checkbox" checked={table.prefs.visible[c.key]} onchange={() => table.toggleColumn(c.key)} />
-            {c.label}
+            {c.label}{CASE_ONLY.includes(c.key) ? " (while a case is chosen)" : ""}
           </label>
         {/each}
+        <div class="opts muted">Options</div>
+        <label title="On a wide window Title and Artist share the spare room; their widths are the least they get. A column you drag keeps the width you gave it (Reset columns undoes that). Off: every column keeps its width."><input type="checkbox" checked={table.prefs.fillWidth} onchange={(e) => table.setFillWidth(e.currentTarget.checked)} /> Title and Artist fill a wide window</label>
         <label><input type="checkbox" checked={table.prefs.caseOrderOnPick} onchange={(e) => table.setCaseOrderOnPick(e.currentTarget.checked)} /> Choosing a case sorts by case order</label>
         <p class="hint muted">Drag a column header to move it. Click a header to sort, shift-click to add a second key.</p>
         <Button small variant="link" onclick={() => table.resetColumns()}>Reset columns</Button>
@@ -263,15 +273,12 @@
     position: relative;
   }
   .pop {
-    position: absolute;
-    right: 0;
-    top: calc(100% + 4px);
+    position: fixed;
     z-index: 30;
+    box-sizing: border-box;
     display: flex;
     flex-direction: column;
     gap: 4px;
-    min-width: 140px;
-    max-height: 70vh;
     overflow-y: auto;
     padding: 8px 10px;
     background: var(--panel);
@@ -287,9 +294,16 @@
   .pop input {
     padding: 0;
   }
+  .opts {
+    margin-top: 4px;
+    padding-top: 6px;
+    border-top: 1px solid var(--line);
+    font-size: 11px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
   .hint {
     margin: 4px 0 0;
-    max-width: 200px;
     font-size: 11px;
     line-height: 1.4;
   }

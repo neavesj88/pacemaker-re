@@ -18,7 +18,7 @@
   import { tempo } from "$lib/state/tempo.svelte";
   import ContextMenu from "$lib/ui/ContextMenu.svelte";
   import Stars from "$lib/ui/Stars.svelte";
-  import type { ColDef, ColKey } from "./columns";
+  import { gridTemplate, type ColDef, type ColKey } from "./columns";
   import ColourSwatch from "./ColourSwatch.svelte";
   import EnergyBar from "./EnergyBar.svelte";
   import MiniWave from "./MiniWave.svelte";
@@ -80,7 +80,8 @@
   const cols = $derived(table.shownColumns);
   const widthOf = (c: ColDef) => table.prefs.widths[c.key];
   const totalW = $derived(cols.reduce((sum, c) => sum + widthOf(c), 0));
-  const template = $derived(cols.map((c) => `${widthOf(c)}px`).join(" "));
+  let resizing = $state<ColKey | null>(null);
+  const template = $derived(gridTemplate(cols, table.prefs.widths, table.prefs.fillWidth, resizing, table.prefs.pinned));
   const bodyH = $derived(Math.max(0, viewH - HEAD));
   const start = $derived(Math.max(0, Math.floor(scrollTop / ROW) - OVERSCAN));
   const end = $derived(Math.min(rows.length, Math.ceil((scrollTop + bodyH) / ROW) + OVERSCAN));
@@ -298,13 +299,26 @@
     const handle = e.currentTarget as HTMLElement;
     handle.setPointerCapture(e.pointerId);
     const x0 = e.clientX;
-    const w0 = widthOf(c);
-    const move = (m: PointerEvent) => table.setWidth(c.key, w0 + m.clientX - x0);
+    // a Title/Artist column that is filling a wide window is drawn wider than its saved width:
+    // the drag starts from what is on screen. Nothing is saved until the pointer moves; on
+    // release the column stays at the width it ended on (pinned), the other one takes the spare room.
+    const drawn = (handle.closest('[role="columnheader"]') as HTMLElement | null)?.getBoundingClientRect().width;
+    const w0 = drawn && drawn > 0 ? Math.round(drawn) : widthOf(c);
+    let moved = false;
+    const move = (m: PointerEvent) => {
+      if (!moved && m.clientX === x0) return;
+      // fix the column to px in the same render that gives it its dragged width, so pressing the grip never jumps it
+      moved = true;
+      resizing = c.key;
+      table.setWidth(c.key, w0 + m.clientX - x0);
+    };
     const stop = () => {
+      if (moved) table.pinColumn(c.key);
+      resizing = null;
       handle.removeEventListener("pointermove", move);
       handle.removeEventListener("pointerup", stop);
       handle.removeEventListener("pointercancel", stop);
-      table.save();
+      if (moved) table.save();
     };
     handle.addEventListener("pointermove", move);
     handle.addEventListener("pointerup", stop);
@@ -335,7 +349,7 @@
     const sectionsAgain = ids.every((id) => sections.of(id) !== null);
     return [
       { label: "Play", onclick: () => playTrack(ids[0]) },
-      { label: one ? "Edit metadata…" : `Edit metadata of ${n} tracks…`, onclick: () => editMetadata(ids) },
+      { label: one ? "Edit metadata…" : `Edit metadata of ${n} tracks…`, onclick: () => editMetadata(ids, rows.map((r) => r.track_id)) },
       { label: one ? "Tags, colour, energy…" : `Tags, colour, energy of ${n} tracks…`, onclick: () => labelEditor.edit(ids) },
       { label: one ? "Add to mix" : `Add ${n} tracks to mix`, onclick: () => addToMixFn(ids) },
       { label: one ? "Add to case…" : `Add ${n} tracks to case…`, onclick: () => addToCase.ask(ids) },
