@@ -104,11 +104,16 @@ class Bg {
   }
 
   /** "Run now": starts on the open library, a Pacemaker included. */
+  /** When "check now" was last pressed, so a check that finds nothing still shows it happened. */
+  checkedAt = $state(0);
+
   async runNow() {
     const root = session.library?.root;
     if (!root) return;
     try {
       await bgRunNow(root);
+      this.checkedAt = Date.now();
+      toast.show("Checking this library for anything missing. If nothing is, nothing runs.");
     } catch (e) {
       toast.show(String(e), "bad");
     }

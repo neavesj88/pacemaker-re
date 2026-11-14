@@ -62,9 +62,10 @@
 <label class="opt">
   <input type="number" min="0" max="100" step="5" value={s.key_min_confidence_pct} onchange={saveFloor} aria-label="Confidence floor for background keys, per cent" />
   <span>
-    Confidence floor for keys, per cent
+    Confidence floor for background keys, per cent
     <small class="muted">
-      A key found below this is not written; the track is listed under "couldn't be analysed" instead. 0 writes every result.
+      Applies to background analysis only; the manual Key detection section has its own floor. A key found below this is not written; the track is listed under
+      "couldn't be analysed" instead. 0 writes every result.
     </small>
   </span>
 </label>
@@ -77,6 +78,9 @@
   <Button small disabled={!lib || !s.enabled} onclick={() => bg.runNow()}>
     {pacemaker ? "Run now on this Pacemaker" : "Check this library now"}
   </Button>
+  {#if bg.checkedAt}
+    <span class="muted small" data-testid="bg-checked-at">Checked at {new Date(bg.checkedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</span>
+  {/if}
 </div>
 {#if pacemaker}
   <p class="muted small">

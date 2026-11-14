@@ -57,6 +57,8 @@ const KEY_MAX_WAIT: Duration = Duration::from_secs(3);
 const RECHECK: Duration = Duration::from_secs(1);
 /// How soon a worker that could not save or could not read the library tries again.
 const RETRY_SAVE: Duration = Duration::from_secs(10);
+/// The longest wait before keys are tried again after saving them failed.
+const KEY_HOLD_MAX: Duration = Duration::from_secs(300);
 const RETRY_SCAN: Duration = Duration::from_secs(30);
 /// Status events are sent at most this often while tracks fly past (the last of a lane always goes).
 const STATUS_EVERY: Duration = Duration::from_millis(120);
@@ -327,6 +329,9 @@ struct Real {
     sections: sections::Bg,
     key_min_confidence: f32,
     pending_keys: Vec<(i64, String)>,
+    /// Set when saving keys failed (not the other lanes): the worker then leaves keys alone for a
+    /// growing while so energy and sections keep going and nothing is decoded again every 10 s.
+    keys_failed: bool,
     last_key_save: Instant,
     /// Set when a save failed: tried again before the next track, and the run stops while it fails.
     save_failed: Option<String>,
@@ -349,6 +354,7 @@ impl Real {
             sections: sections::Bg::new(cfg_dir, root),
             key_min_confidence: f32::from(settings.key_min_confidence_pct) / 100.0,
             pending_keys: Vec::new(),
+            keys_failed: false,
             last_key_save: Instant::now(),
             save_failed: None,
             present: None,
@@ -381,17 +387,36 @@ impl Real {
         if self.pending_keys.is_empty() {
             return Ok(());
         }
-        let ticket = self.env.begin_write(&self.root_path)?;
-        let mut lib = Library::open(&self.root_path).map_err(|e| e.to_string())?;
+        let ticket = self.env.begin_write(&self.root_path).inspect_err(|_| self.keys_failed = true)?;
+        let mut lib = Library::open(&self.root_path).map_err(|e| { self.keys_failed = true; e.to_string() })?;
         // a key is only ever filled in: one the user set (or re-detected) while this result waited
         // is not replaced by the older one
         let blank: HashSet<i64> = lib.track_ids_without_key().map_err(|e| e.to_string())?.into_iter().collect();
         let todo: Vec<(i64, String)> = self.pending_keys.iter().filter(|(id, _)| blank.contains(id)).cloned().collect();
         let (_, bad) = if todo.is_empty() { (0, Vec::new()) } else { analysis::write_keys(&mut lib, &todo) };
+        // told apart by looking, not by the error text: a track that is gone is skipped, a write
+        // that failed for any other reason (locked, read-only or full music.db) keeps the keys
+        let gone: HashSet<i64> = if bad.is_empty() {
+            HashSet::new()
+        } else {
+            let alive: HashSet<i64> = lib.tracks().map_err(|e| e.to_string())?.into_iter().map(|t| t.track_id).collect();
+            bad.iter().map(|(id, _)| *id).filter(|id| !alive.contains(id)).collect()
+        };
         drop(lib);
         drop(ticket);
+        if let Some((_, why)) = bad.iter().find(|(id, _)| !gone.contains(id)) {
+            // the keys that did get written are announced; the rest stay held for the retry
+            let bad_ids: HashSet<i64> = bad.iter().map(|(id, _)| *id).collect();
+            let done: Vec<KeyAt> = todo.iter().filter(|(id, _)| !bad_ids.contains(id)).map(|(track_id, key)| KeyAt { track_id: *track_id, key: key.clone() }).collect();
+            self.pending_keys.retain(|(id, _)| bad_ids.contains(id) && !gone.contains(id));
+            if !done.is_empty() {
+                self.env.changed(Changed::Keys { root: self.root.clone(), keys: done });
+            }
+            self.keys_failed = true;
+            return Err(format!("could not save keys: {why}"));
+        }
         // a track removed meanwhile cannot be keyed, one that got a key meanwhile keeps it
-        let keys: Vec<KeyAt> = todo.into_iter().filter(|(id, _)| !bad.iter().any(|(b, _)| b == id)).map(|(track_id, key)| KeyAt { track_id, key }).collect();
+        let keys: Vec<KeyAt> = todo.into_iter().filter(|(id, _)| !gone.contains(id)).map(|(track_id, key)| KeyAt { track_id, key }).collect();
         self.pending_keys.clear();
         self.last_key_save = Instant::now();
         if !keys.is_empty() {
@@ -636,11 +661,15 @@ pub struct Worker {
     engine: Engine,
     engine_root: Option<String>,
     epoch: u64,
+    /// After a key save failed: keys are left out of the plan until this time, and each failure in
+    /// a row doubles the wait (up to KEY_HOLD_MAX), so the other lanes run and nothing is decoded in vain.
+    keys_hold: Option<Instant>,
+    keys_fails: u32,
 }
 
 impl Worker {
     pub fn new(env: Arc<dyn Env>, shared: Arc<Shared>, cfg_dir: PathBuf, cache_dir: PathBuf, peaks: Arc<PeaksState>) -> Self {
-        Worker { env, shared, cfg_dir, cache_dir, peaks, engine: Engine::default(), engine_root: None, epoch: u64::MAX }
+        Worker { env, shared, cfg_dir, cache_dir, peaks, engine: Engine::default(), engine_root: None, epoch: u64::MAX, keys_hold: None, keys_fails: 0 }
     }
 
     fn set_state(&self, stop: &Stop) {
@@ -712,7 +741,24 @@ impl Worker {
         status.pacemaker = library_kind(&root) == PACEMAKER;
         status.failures = self.engine.failures.len();
         let mut ctl = Ctl { env: &self.env, shared: &self.shared, root: root.clone(), epoch, status, lanes: Vec::new(), seen: Vec::new(), last_emit: Instant::now() - STATUS_EVERY };
-        let end = self.engine.run(&settings, &mut real, &mut ctl);
+        let mut run_settings = settings;
+        if let Some(until) = self.keys_hold {
+            if Instant::now() < until {
+                run_settings.keys = false;
+            } else {
+                // the wait is over: the keys left out of the plan are looked for again
+                self.keys_hold = None;
+                self.engine.replan();
+            }
+        }
+        let end = self.engine.run(&run_settings, &mut real, &mut ctl);
+        if real.keys_failed {
+            self.keys_fails = self.keys_fails.saturating_add(1);
+            let wait = RETRY_SAVE.saturating_mul(1u32 << self.keys_fails.min(5)).min(KEY_HOLD_MAX);
+            self.keys_hold = Some(Instant::now() + wait);
+        } else if self.keys_hold.is_none() && run_settings.keys == settings.keys && !real.has_held() {
+            self.keys_fails = 0;
+        }
         if real.deferred || real.save_failed.is_some() || real.has_held() {
             // results held back (a user job, a blocked save, a stop) die with `real` while the
             // engine has already popped their tracks: find those tracks missing again
@@ -752,7 +798,11 @@ impl Worker {
                     drop(g);
                     self.env.status(&s);
                 }
-                Wait::Change(tick_now(&self.shared))
+                match self.keys_hold {
+                    // keys are waiting out a failed save: come back when the wait is over
+                    Some(until) => Wait::Timeout(until.saturating_duration_since(Instant::now()).max(Duration::from_secs(1)), tick_now(&self.shared)),
+                    None => Wait::Change(tick_now(&self.shared)),
+                }
             }
             RunEnd::Stopped(Stop::Replan) => Wait::Now,
             RunEnd::Stopped(stop) => {
@@ -760,7 +810,7 @@ impl Worker {
                 let tick = tick_now(&self.shared);
                 match stop {
                     Stop::Job | Stop::Playing => Wait::Timeout(RECHECK, tick),
-                    Stop::Blocked(_) => Wait::Timeout(RETRY_SAVE, tick),
+                    Stop::Blocked(_) => Wait::Timeout(self.keys_hold.map_or(RETRY_SAVE, |u| u.saturating_duration_since(Instant::now()).max(RETRY_SAVE)), tick),
                     Stop::Scan(_) => Wait::Timeout(RETRY_SCAN, tick),
                     _ => Wait::Change(tick),
                 }
@@ -1315,9 +1365,34 @@ mod tests {
         w.step();
         assert_eq!(env.last_state(), "blocked");
         assert_eq!(keys_of(&vol), vec!["", "", "", ""], "nothing could be written");
+        assert!(w.keys_hold.is_some(), "keys wait before the next try");
+        // the save works again, but the wait is still running: keys are not decoded in vain
         env.refuse.store(false, Ordering::SeqCst);
         w.step();
+        assert_eq!(keys_of(&vol), vec!["", "", "", ""], "keys are left alone during the wait");
+        w.keys_hold = Some(Instant::now() - Duration::from_secs(1));
+        w.step();
         assert_eq!(keys_of(&vol).iter().filter(|k| !k.is_empty()).count(), 3, "the dropped keys were redone");
+        assert!(w.keys_hold.is_none() && w.keys_fails == 0, "a good save ends the back-off");
+        std::fs::remove_dir_all(&base).unwrap();
+    }
+
+    #[test]
+    fn a_failing_key_save_does_not_stop_the_energy_lane() {
+        let (base, vol, _) = library("keyhold");
+        let env = TestEnv::new();
+        let s = Settings { waveforms: false, sections: false, ..Settings::default() };
+        let (mut w, _) = worker(&env, &base, &vol, s);
+        env.refuse.store(true, Ordering::SeqCst);
+        w.step();
+        assert_eq!(env.last_state(), "blocked");
+        assert!(w.keys_hold.is_some());
+        let energy_events = || env.changed.lock().unwrap().iter().filter(|c| matches!(c, Changed::Energy { .. })).count();
+        let before = energy_events();
+        // still refused, still inside the wait: keys are skipped, energy gets its turn
+        w.step();
+        assert!(energy_events() > before, "energy ran while keys waited");
+        assert_eq!(keys_of(&vol), vec!["", "", "", ""]);
         std::fs::remove_dir_all(&base).unwrap();
     }
 
@@ -1335,6 +1410,50 @@ mod tests {
         assert!(real.save_failed.is_some() && real.has_held(), "step() replans on exactly this state");
         assert!(matches!(real.process(Kind::Keys, &items[1], &Settings::default()), Outcome::Later(_)));
         assert!(real.has_held(), "still held after the run stopped Blocked");
+        std::fs::remove_dir_all(&base).unwrap();
+    }
+
+    #[test]
+    fn a_failing_database_write_keeps_the_keys_and_reports_it() {
+        let (base, vol, _) = library("dbfail");
+        let env = TestEnv::new();
+        let mut real = real_for(&env, &base, &vol);
+        let items = real.missing(Kind::Keys).unwrap();
+        assert!(matches!(real.process(Kind::Keys, &items[0], &Settings::default()), Outcome::Done { .. }));
+        assert_eq!(real.pending_keys.len(), 1);
+        // music.db turns read-only (locked, full or protected drives fail the same way)
+        let db = std::fs::read_dir(&vol).unwrap().flatten().flat_map(|d| std::fs::read_dir(d.path()).into_iter().flatten().flatten()).map(|d| d.path()).find(|p| p.file_name().is_some_and(|n| n == "music.db")).expect("music.db");
+        let mut perm = std::fs::metadata(&db).unwrap().permissions();
+        perm.set_readonly(true);
+        std::fs::set_permissions(&db, perm.clone()).unwrap();
+        let r = real.save_keys();
+        #[allow(clippy::permissions_set_readonly_false)]
+        perm.set_readonly(false);
+        std::fs::set_permissions(&db, perm).unwrap();
+        assert!(r.is_err(), "a failed write must not look like a removed track");
+        assert_eq!(real.pending_keys.len(), 1, "the key is kept for the retry");
+        assert!(real.keys_failed);
+        assert!(env.key_events().is_empty());
+        // and once the database is writable again the held key is saved
+        real.save_keys().unwrap();
+        assert!(real.pending_keys.is_empty());
+        assert_eq!(keys_of(&vol).iter().filter(|k| !k.is_empty()).count(), 1);
+        std::fs::remove_dir_all(&base).unwrap();
+    }
+
+    #[test]
+    fn a_removed_track_is_skipped_not_an_error() {
+        let (base, vol, ids) = library("gone");
+        let env = TestEnv::new();
+        let mut real = real_for(&env, &base, &vol);
+        let items = real.missing(Kind::Keys).unwrap();
+        let item = items.iter().find(|i| i.id == ids[0]).unwrap();
+        assert!(matches!(real.process(Kind::Keys, item, &Settings::default()), Outcome::Done { .. }));
+        real.pending_keys.push((9999, "Am".into()));
+        // an id the library does not have: dropped quietly, the real key still saved
+        real.save_keys().unwrap();
+        assert!(real.pending_keys.is_empty() && !real.keys_failed);
+        assert_eq!(env.key_events().len(), 1);
         std::fs::remove_dir_all(&base).unwrap();
     }
 
