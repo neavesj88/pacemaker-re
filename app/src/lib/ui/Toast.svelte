@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { nav } from "$lib/state/nav.svelte";
   import { session } from "$lib/state/session.svelte";
   import { toast } from "$lib/state/toast.svelte";
 
@@ -24,7 +25,8 @@
   });
 </script>
 
-<div class="toasts" aria-live="polite" style="bottom: {lift + GAP}px">
+<!-- In the mix editor the clip panel fills the lower right, so the messages sit in the middle there -->
+<div class="toasts" class:centre={nav.view === "mixes"} aria-live="polite" style="bottom: {lift + GAP}px">
   {#each toast.items as t (t.id)}
     <div class="toast {t.kind}" role={t.kind === "bad" ? "alert" : "status"}>
       <span class="text">{t.text}{#if t.count > 1} <span class="times">×{t.count}</span>{/if}</span>
@@ -45,6 +47,13 @@
     gap: 6px;
     max-width: min(560px, calc(100vw - 28px));
     pointer-events: none;
+  }
+  .toasts.centre {
+    right: auto;
+    left: 50%;
+    transform: translateX(-50%);
+    width: max-content;
+    align-items: stretch;
   }
   .toast {
     display: flex;

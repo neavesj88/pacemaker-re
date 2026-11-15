@@ -26,9 +26,12 @@ export function stripVisible(s: BgStatus): boolean {
 }
 
 /** The sidebar's status while the background worker has work left but is holding it back, so "All
- *  tracks analysed" does not stand next to tracks with flat waveforms. Null when it is not waiting. */
-export function waitingNote(s: BgStatus): string | null {
-  if (s.left <= 0) return null;
+ *  tracks analysed" does not stand next to tracks with flat waveforms. Null when it is not waiting.
+ *  `pending` is the work the energy and sections panels count themselves (only for kinds that are
+ *  switched on in the background): the worker's own `left` is not refreshed while it is held, so
+ *  tracks added during the hold would not show in it. */
+export function waitingNote(s: BgStatus, pending = 0): string | null {
+  if (s.left <= 0 && pending <= 0) return null;
   switch (s.state) {
     case "playing":
       return "Analysis waiting for playback";

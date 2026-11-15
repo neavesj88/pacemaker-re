@@ -135,6 +135,9 @@ test("the sidebar says when analysis is held back, and nothing when it is not", 
   assert.equal(waitingNote({ ...base, state: "playing" }), "Analysis waiting for playback");
   assert.equal(waitingNote({ ...base, state: "held" }), "Analysis waiting for the Sync plan");
   assert.equal(waitingNote({ ...base, state: "playing", left: 0 }), null, "nothing left, nothing to wait for");
+  assert.equal(waitingNote({ ...base, state: "playing", left: 0 }, 3), "Analysis waiting for playback", "tracks added while it was held count");
+  assert.equal(waitingNote({ ...base, state: "running", left: 0 }, 3), null);
+  assert.equal(waitingNote({ ...base, state: "idle", left: 0 }, 3), null, "idle is not a wait");
   assert.equal(waitingNote({ ...base, state: "running" }), null);
   assert.equal(waitingNote({ ...base, state: "idle" }), null);
 });

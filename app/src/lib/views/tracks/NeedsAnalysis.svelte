@@ -16,6 +16,13 @@
   import Button from "$lib/ui/Button.svelte";
   import { analysisLabel } from "./needsLabel";
 
+  // Energy and sections the panels count as missing, for the kinds the worker makes by itself.
+  const pending = $derived(
+    (bg.settings.enabled && bg.settings.energy && energy.state ? Math.max(0, energy.state.total - energy.state.ready) : 0) +
+      (bg.settings.enabled && bg.settings.sections && sections.state ? Math.max(0, sections.state.total - sections.state.ready) : 0),
+  );
+  const waiting = $derived(waitingNote(bg.status, pending));
+
   function toggleNeeds() {
     filters.onlyNeeds = !filters.onlyNeeds;
     if (filters.onlyNeeds) {
@@ -34,8 +41,8 @@
     disabled={!jobs.canWrite}
     title="Rewrite the beat grid (.str) of these tracks from their audio {session.isComputer ? 'in the library' : 'on the device'}"
   >Analyse {session.needs.size}…</Button>
-{:else if waitingNote(bg.status)}
-  <div class="stat warn" title="The rest of the analysis (waveforms, keys, energy) carries on by itself; see the strip under the views.">{waitingNote(bg.status)}</div>
+{:else if waiting}
+  <div class="stat warn" title="The rest of the analysis (waveforms, keys, energy) carries on by itself; see the strip under the views.">{waiting}</div>
 {:else}
   <div class="stat">All tracks analysed</div>
 {/if}

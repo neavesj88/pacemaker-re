@@ -82,6 +82,7 @@ test("sorting: text, numbers, Camelot order, favourites, stable ties, direction"
   assert.deepEqual(ids("bpm"), [2, 4, 3, 1]);
   assert.deepEqual(ids("bpm", false), [1, 4, 3, 2]);
   assert.deepEqual(ids("key"), [2, 1, 4, 3]);
+  assert.deepEqual(ids("key", false), [4, 1, 2, 3], "a track with no key stays at the bottom when reversed");
   assert.deepEqual(ids("rating"), [4, 1, 3, 2]);
   assert.deepEqual(ids("fav", false, (id) => id === 3), [3, 2, 4, 1]);
   assert.equal(list[0].track_id, 1, "input is not mutated");

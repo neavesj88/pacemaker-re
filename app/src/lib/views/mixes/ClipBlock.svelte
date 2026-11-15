@@ -50,8 +50,16 @@
       return { ...sl, x0, x1: Math.max(x0 + 1, x1), top: sl.band * bh, bh, first: i === 0, last: i === list.length - 1 };
     });
   });
-  /** Where the title goes: the top of the band the clip starts in. */
-  const titleTop = $derived((segs[0]?.top ?? 0) + 3);
+  /** Where the title goes: the top of the band the clip starts in. When the clip starts inside a
+   *  crossfade, the first stretch heard alone is used instead, so the name is not drawn over the fade
+   *  curve (only if enough of that stretch is on screen to read it). */
+  const titlePlace = $derived.by(() => {
+    const first = segs[0];
+    const alone = segs.find((sg) => sg.count === 1);
+    if (first && first.count > 1 && alone && width - alone.x0 >= 90) return { left: alone.x0 + 7, top: alone.top + 3 };
+    return { left: 7, top: (first?.top ?? 0) + 3 };
+  });
+  const titleTop = $derived(titlePlace.top);
   let box = $state<HTMLDivElement | null>(null);
 
   // The canvas covers the viewport plus half a screen each side, in 256 px steps, so scrolling
@@ -210,9 +218,9 @@
     {#if wt > wf}<ClipWave {clip} pps={mv.pps} from={wf} to={wt} height={sg.bh - 2} top={sg.top + 1} {bands} />{/if}
   {/each}
   {#if mv.sectionMarkers && sections.showMarkers}<ClipSections {clip} pps={mv.pps} />{/if}
-  <span class="title" style:top="{titleTop}px" style:max-width="{Math.max(0, width - 8)}px">{title}<em>{tempoText}</em></span>
+  <span class="title" style:top="{titleTop}px" style:left="{titlePlace.left}px" style:max-width="{Math.max(0, width - titlePlace.left - 1)}px">{title}<em>{tempoText}</em></span>
   {#if stretchBadge}
-    <span class="stretch" style:top="{titleTop + 16}px" title="This track plays {Math.abs(speed * 100 - 100).toFixed(1)} % {speed > 1 ? 'faster' : 'slower'} than its own tempo, more than the stretch limit in the settings. The clip's panel offers to keep its own tempo.">{stretchBadge}</span>
+    <span class="stretch" style:top="{titleTop + 16}px" style:left="{titlePlace.left}px" title="This track plays {Math.abs(speed * 100 - 100).toFixed(1)} % {speed > 1 ? 'faster' : 'slower'} than its own tempo, more than the stretch limit in the settings. The clip's panel offers to keep its own tempo.">{stretchBadge}</span>
   {/if}
   {#if broken}<span class="warn" title={clip.track?.problem ?? "track unavailable"}>{clip.track?.problem ?? "track unavailable"}</span>{/if}
   {#if clip.trimStart > SR * 0.05}<span class="cue" style:top="{segs[0]?.top ?? 0}px" title="Cue point: audio before it is hidden"></span>{/if}

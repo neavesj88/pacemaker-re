@@ -123,7 +123,12 @@
   );
 </script>
 
-<svelte:window bind:innerHeight={winH} onclick={() => (chooser = false)} onresize={() => (chooser = false)} onkeydown={(e) => e.key === "Escape" && (chooser = false)} />
+<svelte:window bind:innerHeight={winH} onclick={() => (chooser = false)} onresize={() => (chooser = false)} onkeydown={(e) => {
+    if (e.key === "Escape") {
+      chooser = false;
+      filtersOpen = false;
+    }
+  }} />
 
 <div class="bar" class:short>
   {#if ownSearch}
@@ -247,6 +252,27 @@
   }
   .filters.collapsed {
     display: none;
+  }
+  /* on a short window the opened filters float over the table instead of pushing it down, so the
+     rows (the point of the picker) keep their room */
+  .short .filters:not(.collapsed) {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    position: absolute;
+    left: 8px;
+    right: 8px;
+    top: 100%;
+    z-index: 30;
+    padding: 8px 10px;
+    background: var(--panel);
+    border: 1px solid var(--line-hi);
+    border-radius: 6px;
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+  }
+  .bar.short {
+    position: relative;
   }
   .short .legend {
     display: none;

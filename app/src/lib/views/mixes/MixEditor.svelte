@@ -192,6 +192,11 @@
 
   /** The mix tempo the toolbar shows: the reference tempo, else the first clip's. */
   const mixTempo = $derived(doc.tempoBpm ?? (doc.clips[0] ? E.effectiveBpm(doc.clips[0], doc.clips[0].trimStart) : null));
+  /** The mix tempo was changed and differs from the first track's: it is not saved with the mix, so
+   *  the next time the mix is opened it starts at the first track's tempo again. */
+  const tempoUnsaved = $derived(
+    doc.tempoBpm != null && doc.clips[0] != null && Math.abs(E.effectiveBpm(doc.clips[0], doc.clips[0].trimStart) - doc.tempoBpm) >= 0.05,
+  );
   function setMixTempo(v: number) {
     mixes.setTempo(v);
   }
@@ -249,6 +254,7 @@
     <span class="ctl" title="The tempo the mix is matched to: new tracks and the Match buttons play at this, or at double or half of it, whichever stretches the track least. Not stored in the mix file: when a mix is opened again it starts at its first track's tempo.">
       Mix tempo
       <BpmField value={mixTempo} onset={setMixTempo} label="Mix tempo" disabled={doc.clips.length === 0} />
+      {#if tempoUnsaved}<span class="tempo-note">Not saved with the mix</span>{/if}
     </span>
     <Button small disabled={!mixTempo} onclick={matchAll} title="Play every track at the mix tempo (or double or half of it); a track that would need more stretch than the setting allows keeps its own tempo">Match all</Button>
     <span class="sep"></span>
@@ -378,6 +384,11 @@
     align-items: center;
     gap: 8px;
     margin-left: auto;
+  }
+  .tempo-note {
+    font-size: 11px;
+    color: var(--warn);
+    white-space: nowrap;
   }
   .ctl {
     display: inline-flex;

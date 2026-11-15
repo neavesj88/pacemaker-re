@@ -1,15 +1,24 @@
 <script lang="ts">
+  import { cases } from "$lib/state/cases.svelte";
   import { nav } from "$lib/state/nav.svelte";
   import { session } from "$lib/state/session.svelte";
   import SmartCases from "$lib/views/cases/SmartCases.svelte";
   import NeedsAnalysis from "$lib/views/tracks/NeedsAnalysis.svelte";
   import { views } from "$lib/views/registry";
+  import type { ViewId } from "$lib/views/ids";
+
+  /** Pressing the entry of the view already showing goes back to its list: for Cases that leaves an
+   *  open case or smart case editor (asking first about unsaved edits). */
+  function pick(id: ViewId) {
+    if (id === nav.view && id === "cases" && (cases.open || cases.smartOpen !== null)) cases.leave(() => cases.close());
+    else nav.go(id);
+  }
 </script>
 
 {#snippet section(id: "library" | "tools", title: string)}
   <div class="sect">{title}</div>
   {#each views.filter((v) => v.section === id && (!v.visible || v.visible())) as v (v.id)}
-    <button class:active={nav.view === v.id} onclick={() => nav.go(v.id)}>
+    <button class:active={nav.view === v.id} onclick={() => pick(v.id)}>
       {v.title ? v.title() : v.label}
       {#if v.count && session.library}<span>{v.count(session.library)}</span>{/if}
     </button>

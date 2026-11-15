@@ -206,9 +206,13 @@ function comparatorFor(
     case "cases": return withMissing((t) => { const n = caseOf.names(t.track_id); return n.length > 0 ? n.join(", ") : null; }, (x, y) => collator.compare(x, y));
     case "fav": return (a, b) => (Number(isFavourite(a.track_id)) - Number(isFavourite(b.track_id))) * dir;
     case "key": {
-      const rank = new Map<number, number>();
-      for (const t of rows) rank.set(t.track_id, keyRank(parseKey(t.key)));
-      return (a, b) => (rank.get(a.track_id)! - rank.get(b.track_id)!) * dir;
+      // a track with no (readable) key comes last whichever way it sorts
+      const rank = new Map<number, number | null>();
+      for (const t of rows) {
+        const c = parseKey(t.key);
+        rank.set(t.track_id, c ? keyRank(c) : null);
+      }
+      return withMissing((t) => rank.get(t.track_id) ?? null, (x, y) => x - y);
     }
     case "bpm":
     case "rating":
