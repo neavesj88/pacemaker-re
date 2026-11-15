@@ -86,14 +86,17 @@
     Bar lines on the player's waveform stop being drawn when a bar gets narrower than this, so a long track on a narrow window
     is not covered in lines. A lower number keeps the grid on longer tracks.
   </p>
-  <div class="row">
-    <label for="wave-colours" class="k">Waveform colours</label>
-    <select id="wave-colours" value={appearance.waveTheme} onchange={(e) => appearance.setWaveTheme(normaliseWaveTheme(e.currentTarget.value))}>
-      {#each WAVE_THEMES as t (t)}<option value={t}>{WAVE_THEME_NAMES[t]}</option>{/each}
-    </select>
-    <span class="swatch" aria-hidden="true">
-      {#each [WAVE_COLOURS[appearance.waveTheme].low, WAVE_COLOURS[appearance.waveTheme].mid, WAVE_COLOURS[appearance.waveTheme].high] as c (c)}<i style:background={c}></i>{/each}
-    </span>
+  <div class="row" role="radiogroup" aria-label="Waveform colours">
+    <span class="k">Waveform colours</span>
+    {#each WAVE_THEMES as t (t)}
+      <label class="choice">
+        <input type="radio" name="wave-colours" value={t} checked={appearance.waveTheme === t} onchange={() => appearance.setWaveTheme(normaliseWaveTheme(t))} />
+        {WAVE_THEME_NAMES[t]}
+        <span class="swatch" aria-hidden="true">
+          <i style:background={WAVE_COLOURS[t].low}></i><i style:background={WAVE_COLOURS[t].mid}></i><i style:background={WAVE_COLOURS[t].high}></i>
+        </span>
+      </label>
+    {/each}
   </div>
   <p class="muted note">The player, the track pictures, the clips of a mix and the grid editor. Calm keeps the waveforms in the app's own green; Neon is the pink, lilac and bright green of the original mockup.</p>
   <p class="muted note">Other messages (saved, copied) disappear by themselves after a few seconds. Any message has a × to close it.</p>
@@ -114,6 +117,11 @@
   .k {
     color: var(--muted);
     min-width: 130px;
+  }
+  .choice {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
   }
   .swatch {
     display: inline-flex;
