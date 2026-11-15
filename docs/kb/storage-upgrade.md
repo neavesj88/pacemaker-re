@@ -3,7 +3,7 @@ id: storage-upgrade
 title: Upgrading the storage to a microSD card
 topic: Firmware and hardware
 order: 2
-keywords: storage upgrade, microsd, sd card, adapter, zif, ce, ipod classic, iflash, 64 gb, capacity, 8 gb, 8.46, hard drive replacement, partition, fat32, restore hard drive, format, u3, uhs, a1, fake card, dual slot, sintech, lba, pio, dma
+keywords: storage upgrade, microsd, sd card, adapter, zif, ce, ipod classic, iflash, 64 gb, capacity, 8 gb, 8.46, hard drive replacement, partition, fat32, restore hard drive, format, u3, uhs, a1, fake card, dual slot, sintech, lba, pio, dma, memory upgrade, memory card, sdcard, bigger drive, more space, upgrade the drive
 summary: Replace the Pacemaker's 1.8-inch hard drive with a microSD card on a ZIF adapter. What to buy (in general terms), what we used, what works, what to avoid, and why firmware decides how much of the card you can use.
 ---
 
@@ -29,10 +29,10 @@ For other ways to replace the drive (a solid-state drive, a CompactFlash route, 
 
 - A **genuine card from a well-known maker**, bought from a seller that gets stock from the maker. Keep the receipt.
 - **UHS Speed Class U1 or U3**, and ideally also **A1** (Application Performance class). Speed matters because the Pacemaker reads while it plays and writes the library. The U1/U3 meaning is from the SD Association; the A1/A2 advice is general knowledge and was not checked here.
-- A **sensible size, 32 to 128 GB.** The adapter this guide used reports a 28-bit address range, which tops out at 128 GiB (about 137 GB), so anything above that is not usable. 64 GB is a good fit. The old drives were 60 or 120 GB, and nothing larger has been tested.
+- A **sensible size, 32 to 128 GB.** The Pacemaker's disk driver addresses the disk with 28-bit sector numbers (the adapter this guide used reports no 48-bit support), which tops out at 128 GiB (about 137 GB), so anything above that is not usable. 64 GB is a good fit. The old drives were 60 or 120 GB, and nothing larger than that has been tested.
 - **One card in one slot.** On a dual-slot adapter, use slot 1 only.
 - **Testing the card before you trust it** with a capacity test such as H2testw, which catches fakes.
-- A **FAT32** library (what the Pacemaker mounts). Not exFAT.
+- A **FAT32** library. The Pacemaker's code mounts FAT32 (vfat) only. exFAT has not been tested, so do not use it.
 
 ## What to avoid
 
@@ -69,11 +69,11 @@ The Pacemaker mounts these by number. Windows will not make a FAT32 volume large
 2. **Open the Pacemaker** (back screws, lift the back plate straight up). Lift the black latch on the ZIF connector and slide the ribbon out **at the drive end only**. Take photos as you go.
 3. **Fit the adapter** with the microSD card in slot 1, in place of the drive. Keep the rubber mounts the same way up as the old ones. Check that the ribbon clears the other parts when the case closes.
 4. **Switch on.** Because the new storage is empty or unrecognised, the Pacemaker fails to mount it five times and shows "Sorry friend... hard drive needs checking". Press **Continue**, then **Restore** at "Restore hard drive?". **Restore erases both partitions.** The Pacemaker formats the storage, restarts, and shows "Hard drive restored. Please upgrade firmware."
-   - On **stock firmware** this formatting only uses about 8.46 GB of the card.
-   - On Revival firmware, or after a PC partitioning, it uses the full size.
+   - On **stock firmware** the Pacemaker sees only about 8.46 GB of the card, so Restore may size the partitions from that rather than from the real size. This has **not been observed** (see the last section). After the restore, check the sizes on the Device page's Storage card, and partition from a PC if they are too small.
+   - On Revival firmware, or after a PC partitioning, the full size is visible.
 5. **Put a firmware file on the storage.** Take the card out, put it in the card reader and open it in the app, then follow [Installing firmware with the app](install-firmware.md). Use Revival firmware 180096073 or later for the full capacity. Put the card back and power on **with USB unplugged**.
 6. **Check the size.** Open the Device page and look at the **Storage** card. For a 64 GB card it should show most of the 64 GB (the system partition and the units used by Windows take some of it).
-7. **Put the library back.** Copy it from your backup. The project's `restore-library.py` script does this with checks: see [Ways to install firmware](firmware-methods.md). Settings are reset by the firmware install, so also restore or re-apply them: the `--settings-only` option of the script does it, and the Settings presets card does it from the app.
+7. **Put the library back.** Copy it from your backup. The project's `restore-library.py` script does this with checks: see [Ways to install firmware](firmware-methods.md). A default backup has no audio files in it, so for the music to come back the backup must have been made with **Include the audio files** ticked; otherwise copy the music over from its original folders. Settings are reset by the firmware install, so also restore or re-apply them: the `--settings-only` option of the script does it, and the Settings presets card does it from the app.
 8. Open the library in the app and run **Library health**.
 
 ## What is verified and what is not

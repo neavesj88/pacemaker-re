@@ -32,7 +32,7 @@ A Pacemaker's battery is a single lithium-polymer cell. After many years it hold
 | 803448, 1400 mAh | 48 x 34 x 8 mm | Fitted. About 2 mm thinner. The easier option |
 | 1000 mAh | (size reported with a typo) | Fitted. "More room than needed" |
 | 1500 mAh, 3.7 V | (2019) | Fitted. 1 to 2 mm too tall until the old hard-drive retaining brackets were removed |
-| 103050, 1600 mAh | 50 x 30 x 10 mm | Ordered. Not reported as fitted |
+| 103050, 1600 mAh | (not stated; the code suggests about 50 x 30 x 10 mm, unverified) | Ordered. Not reported as fitted |
 
 A 1300 mAh iPod Mini cell was suggested once and never reported fitted.
 
@@ -55,11 +55,11 @@ A 1300 mAh iPod Mini cell was suggested once and never reported fitted.
 ## The steps (as people did it)
 
 1. **Switch off and unplug everything**: the mains adapter and the USB cable. Do not work on it while a charger is connected.
-2. **Open the case** with a small Philips screwdriver (PH00 or PH0) and plastic tools. The screw count and any clips are undocumented, so photograph every layer. Do not pry at the display (a square screen under round glass), the ribbon cables or the ZIF hard-drive cable. A loose ZIF ribbon gives the "hard drive needs checking" error.
+2. **Open the case** with a small Philips screwdriver and plastic tools. The screw count and any clips are undocumented, so photograph every layer. Do not pry at the display (a square screen under round glass), the ribbon cables or the ZIF hard-drive cable. A loose ZIF ribbon gives the "hard drive needs checking" error.
 3. **Note the polarity.** Photograph the connector and the leads, then **measure the leads with a multimeter** before disconnecting anything.
-4. **Cut the original connector off** with a few millimetres of lead. Solder it to the new cell's leads **with the right polarity**, and cover each joint with heat-shrink or Kapton tape. Do not bend or heat the tab area of a pouch cell. Or connect to the board's header only if you can confirm the pin order.
+4. **Cut the original connector off** with a few millimetres of lead. **Cut and insulate one lead at a time** (tape over the bare end straight away) and never let the two leads touch: a charged pouch cell shorts instantly. Solder it to the new cell's leads **with the right polarity**, and cover each joint with heat-shrink or Kapton tape. Do not bend or heat the tab area of a pouch cell. Or connect to the board's header only if you can confirm the pin order.
 5. **Check the fit before closing.** The cell must clear the connector on the left of the bay, the hard-drive locating stays and the two moulded plastic feet, and **nothing may press on the pouch**. If it is too tall, use a thinner cell (the 1400 mAh one) or, if the hard drive has been replaced by something smaller, remove the retaining brackets that are no longer needed.
-6. **Close up, reseat the ZIF ribbon fully,** and switch on with the **mains adapter connected** the first time. Watch the battery percentage in the Pacemaker's status screen.
+6. **Before the first power-on, check the finished joint again.** With a multimeter, confirm the polarity at the connector matches your photos and the old cell. Only then close up, reseat the ZIF ribbon fully, and switch on with the **mains adapter connected**. Watch the battery percentage in the Pacemaker's status screen.
 
 ## If something goes wrong
 

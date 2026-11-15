@@ -33,7 +33,8 @@ For putting a whole backed-up library onto a freshly prepared card, with checks.
 restore-library.py BACKUP_DIR MANIFEST TARGET_ROOT [--pfw FILE] [--settings-only]
 ```
 
-- `BACKUP_DIR` is a backup folder made by the Device page's Backup (it holds a copy of the library). `MANIFEST` is the SHA-256 list saved beside it. `TARGET_ROOT` is the FAT32 volume of the new storage.
+- `BACKUP_DIR` is a backup folder made by the Device page's Backup (it holds a copy of the library). `MANIFEST` is the `MANIFEST.sha256` file the Backup writes inside that folder (one SHA-256 and path per line). `TARGET_ROOT` is the FAT32 volume of the new storage.
+- **A default backup holds no audio.** The Backup card only copies the music files when **Include the audio files** is ticked, so to get the music back with this script, make the backup with that box ticked.
 - Each file is checked against the list, copied, read back and checked again. A file that is already there with the right checksum is skipped, so it is **safe to run again** after an interruption.
 - By default it skips `settings.dat` (the Pacemaker deletes it after an install) and `system.xml` (rewritten at every start).
 - `--pfw FILE` also copies the firmware into `.Pacemaker`.

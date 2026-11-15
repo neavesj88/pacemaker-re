@@ -1,7 +1,8 @@
 """Copy a backed-up Pacemaker library onto a freshly restored drive, checking every file.
 
-The backup is a copy of the device's FAT32 volume plus a `sha256sum`-style manifest
-(`<hash> *./relative/path` per line). Each file is copied, read back and hashed; files already
+The backup is a copy of the device's FAT32 volume plus a manifest with one `<hash>  <relative/path>`
+line per file. The Device page's Backup writes it inside the backup folder as MANIFEST.sha256; the
+`sha256sum` form `<hash> *./path` also works. Each file is copied, read back and hashed; files already
 present with the right hash are skipped, so the script can be re-run after an interruption.
 
   restore-library.py BACKUP_DIR MANIFEST TARGET_ROOT [--pfw FILE] [--settings-only]
@@ -28,6 +29,12 @@ def sha256(path: Path) -> str:
     return h.hexdigest()
 
 
+def parse_line(line: str) -> tuple[str, str]:
+    """One manifest line: `<hash>  <path>` (the app, two spaces) or `<hash> *./<path>` (sha256sum)."""
+    digest, rel = line.split(" ", 1)
+    return digest, rel.lstrip(" *").removeprefix("./")
+
+
 def put(src: Path, dst: Path, want: str) -> str:
     if dst.exists() and dst.stat().st_size == src.stat().st_size and sha256(dst) == want:
         return "kept"
@@ -50,8 +57,9 @@ def main() -> None:
 
     entries = []
     for line in a.manifest.read_text(encoding="utf-8").splitlines():
-        digest, rel = line.split(" ", 1)
-        rel = rel.lstrip("*").removeprefix("./")
+        if not line.strip():
+            continue
+        digest, rel = parse_line(line)
         wanted = rel == ".Pacemaker/settings.dat" if a.settings_only else rel not in SKIPPED
         if wanted:
             entries.append((digest, rel))

@@ -25,8 +25,8 @@ The Pacemaker takes a **1.8-inch PATA drive with a 40-pin ZIF ribbon**. It does 
 ## Things that apply to every option
 
 - **Backup first.** Back up the library with the Device page and verify it: see [The Device page](device-page.md).
-- **Size limit.** The Pacemaker's disk driver uses 28-bit addresses, which is **128 GiB** (about 137 GB) at the most. Anything bigger is not usable. The old drive was 120 GB and nothing larger has been tried.
-- **FAT32 only.** The Pacemaker mounts a FAT32 library, not exFAT or NTFS. The system partition is ext3.
+- **Size limit.** The Pacemaker's disk driver uses 28-bit addresses (with the adapter we used, which reports no 48-bit support), which is **128 GiB** (about 137 GB) at the most. Anything bigger is not usable. The old drive was 120 GB and nothing larger has been tried.
+- **FAT32.** The Pacemaker's code mounts a FAT32 (vfat) library. exFAT and NTFS have not been tested. The system partition is ext3.
 - **After the swap**, the Pacemaker shows "Restore hard drive?" (and then "Please upgrade firmware"). That is normal: it needs a partition layout and a firmware file. See [Upgrading the storage to a microSD card](storage-upgrade.md) and [Installing firmware with the app](install-firmware.md).
 - **The ZIF ribbon tears easily.** Disconnect only the drive end. Replacement ribbons from shops can be longer and have contacts on a different side. The ribbon width (two widths exist) is not settled, so look at yours.
 - **Opening the case.** The back plate has screws that sources say are T5 or T7 Torx. Check yours. Lift the back plate straight up so the power and button boards do not snag.

@@ -25,7 +25,7 @@
   const groups = $derived(group(entries, query));
   const total = $derived(groups.reduce((n, g) => n + g.entries.length, 0));
   /** Help articles that match the same words (a few; the Help view has them all). Empty while nothing is typed. */
-  const helpHits = $derived(query.trim() ? searchHelp(helpIndex(), query, 5) : []);
+  const helpHits = $derived(query.trim() ? searchHelp(helpIndex(), query, 5, { partial: false }) : []);
   const dialog = $derived(entries.find((e) => e.id === dialogId && e.how === "dialog") ?? null);
 
   /** Runs the entry's loader (its saved values); false if it failed, with the reason shown. */

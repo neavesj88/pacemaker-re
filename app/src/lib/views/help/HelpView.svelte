@@ -45,15 +45,24 @@
     });
   });
 
-  // a new article starts at the top; a link to a heading scrolls to it
+  // Every openHelp(id) bumps `jump`: the reader goes to the heading it names, or to the top of a new article, and the
+  // article's row in the list comes into view. Clicking the same heading twice therefore works twice. Coming back to Help
+  // without a new jump (the sidebar, F1) puts the reader back where it was left.
   $effect(() => {
+    const jump = help.jump;
     const id = help.articleId;
     const anchor = help.anchor;
     void tick().then(() => {
       if (!readerEl) return;
+      if (jump === help.appliedJump) {
+        readerEl.scrollTop = help.scrollTop;
+        return;
+      }
+      help.appliedJump = jump;
       const target = id && anchor ? readerEl.querySelector<HTMLElement>(`#h-${CSS.escape(anchor)}`) : null;
       if (target) target.scrollIntoView({ block: "start" });
       else readerEl.scrollTop = 0;
+      if (id) document.getElementById(`help-row-${id}`)?.scrollIntoView({ block: "nearest" });
     });
   });
 
@@ -62,7 +71,11 @@
   }
 
   function onSearchKey(e: KeyboardEvent) {
-    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+    // the focus stays in the search box, so the page keys scroll the open article from here
+    if ((e.key === "PageDown" || e.key === "PageUp") && readerEl && entry) {
+      e.preventDefault();
+      readerEl.scrollBy({ top: (e.key === "PageDown" ? 1 : -1) * readerEl.clientHeight * 0.9 });
+    } else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
       if (visible.length === 0) return;
       e.preventDefault();
       cursor = Math.min(visible.length - 1, Math.max(0, cursor + (e.key === "ArrowDown" ? 1 : -1)));
@@ -78,6 +91,9 @@
       help.query = "";
     }
   }
+
+  /** Short windows start with the outline folded, so the article text gets the room. */
+  const roomy = typeof window === "undefined" || window.innerHeight >= 720;
 
   const goBack = () => nav.go(help.returnTo && help.returnTo !== "help" ? help.returnTo : "tracks");
 </script>
@@ -110,6 +126,7 @@
         {#if hits.length === 0}
           <p class="none">No article matches “{query.trim()}”. Try fewer or different words, or pick a topic below.</p>
         {:else}
+          {#if hits[0].partial}<p class="none">No article has all of those words. These have some of them.</p>{/if}
           <ul class="results">
             {#each hits as h, i (h.article.id)}
               <li>
@@ -150,16 +167,18 @@
       {/if}
     </nav>
 
-    <article class="reader" bind:this={readerEl} aria-label={entry ? entry.article.title : "Help"}>
+    <!-- focusable so the keyboard can scroll it (PageUp, PageDown, arrows) once a link or Tab has put the focus here -->
+    <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+    <article class="reader" bind:this={readerEl} tabindex="0" aria-label={entry ? entry.article.title : "Help"} onscroll={() => (help.scrollTop = readerEl?.scrollTop ?? 0)}>
       {#if entry}
         <div class="crumb muted">{entry.article.topic}</div>
         <h1>{entry.article.title}</h1>
         <p class="lead muted">{entry.article.summary}</p>
         {#if outline.length >= 3}
-          <p class="outline">
-            <span class="muted">In this article:</span>
-            {#each outline as o, oi (oi)}{#if o.t === "h"}<button type="button" class="xref" onclick={() => openArticle(entry.article.id, o.slug)}>{o.text}</button>{/if}{/each}
-          </p>
+          <details class="outline" open={roomy}>
+            <summary class="muted">In this article</summary>
+            <p>{#each outline as o, oi (oi)}{#if o.t === "h"}<button type="button" class="xref" onclick={() => openArticle(entry.article.id, o.slug)}>{o.text}</button>{/if}{/each}</p>
+          </details>
         {/if}
         <ArticleBody blocks={entry.blocks} known={(id) => index.byId.has(id)} onhelp={openArticle} />
       {:else}
@@ -303,8 +322,13 @@
     padding: 14px 28px 40px;
     box-sizing: border-box;
   }
+  .reader:focus-visible {
+    outline: 1px solid var(--line-hi);
+    outline-offset: -2px;
+  }
+  /* a comfortable line length, but wider on a big screen so the text does not hug the left edge */
   .reader > :global(*) {
-    max-width: 780px;
+    max-width: clamp(780px, 55vw, 1100px);
   }
   .crumb {
     font-size: 12px;
@@ -318,11 +342,17 @@
     line-height: 1.5;
   }
   .outline {
+    margin: 0 0 8px;
+    font-size: 12px;
+  }
+  .outline summary {
+    cursor: pointer;
+  }
+  .outline p {
     display: flex;
     flex-wrap: wrap;
     gap: 4px 14px;
-    margin: 0 0 8px;
-    font-size: 12px;
+    margin: 4px 0 0;
   }
   .xref {
     padding: 0;

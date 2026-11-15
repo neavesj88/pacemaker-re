@@ -117,7 +117,7 @@ describe("search", () => {
     assert.ok(ids.includes("bpm-keys-waveforms") && ids.includes("mixes-crossfades-tempo"), ids.join());
   });
   it("every word must be found", () => {
-    assert.deepEqual(L.search(index, "battery zzzqqq"), []);
+    assert.deepEqual(L.search(index, "battery zzzqqq", 50, { partial: false }), []);
     assert.deepEqual(L.search(index, ""), []);
     assert.deepEqual(L.search(index, "   "), []);
     assert.ok(L.search(index, "battery").length > L.search(index, "battery 1100").length);
@@ -236,5 +236,105 @@ describe("the articles in docs/kb", () => {
       const body = articles.find((x) => x.id === id).body;
       assert.ok(!/library on this (device|card)|this computer'?s? (device|card)/i.test(body), id);
     }
+  });
+});
+
+const real = (id) => index.byId.get(id).blocks;
+const listSizes = (blocks) => blocks.filter((b) => b.t === "ol" || b.t === "ul").map((b) => `${b.t}${b.items.length}`);
+
+describe("nested lists", () => {
+  it("a sub-list under an item stays under it and the numbers go on", () => {
+    const b = L.parseMarkdown("1. one\n2. two\n   - sub a\n   - sub b\n3. three\n4. four");
+    assert.equal(b.length, 1);
+    assert.equal(b[0].t, "ol");
+    assert.equal(b[0].items.length, 4);
+    assert.equal(b[0].subs[1].t, "ul");
+    assert.equal(b[0].subs[1].items.length, 2);
+    assert.equal(b[0].subs[0], null);
+  });
+  it("numbered sub-steps nest instead of joining the main list", () => {
+    const b = L.parseMarkdown("1. a\n2. b\n   1. b1\n   2. b2\n3. c");
+    assert.equal(b.length, 1);
+    assert.equal(b[0].items.length, 3);
+    assert.equal(b[0].subs[1].items.length, 2);
+    assert.equal(b[0].subs[1].t, "ol");
+  });
+  it("a numbered list keeps counting across a blank line, and a list may start at another number", () => {
+    const b = L.parseMarkdown("1. a\n\n2. b\n\n3. c");
+    assert.equal(b.length, 1);
+    assert.equal(b[0].items.length, 3);
+    assert.equal(L.parseMarkdown("4. a\n5. b")[0].start, 4);
+  });
+  it("a plain paragraph or another kind of list still ends a list", () => {
+    assert.deepEqual(L.parseMarkdown("- a\n- b\n\ntext\n\n- c").map((x) => x.t), ["ul", "p", "ul"]);
+    assert.deepEqual(L.parseMarkdown("- a\n1. b").map((x) => x.t), ["ul", "ol"]);
+  });
+  it("text and links inside a nested list are found by the text and link scans", () => {
+    const b = L.parseMarkdown("1. a\n   - see [it](storage-upgrade.md#what-works) deep");
+    assert.ok(L.blocksText(b).includes("deep"));
+    assert.deepEqual(L.helpLinks(b), [{ id: "storage-upgrade", anchor: "what-works" }]);
+  });
+  it("the real articles: install-firmware has one list of 8 steps, the sub-steps under step 7", () => {
+    const ols = real("install-firmware").filter((b) => b.t === "ol");
+    const main = ols.find((b) => b.items.length === 8);
+    assert.ok(main, listSizes(real("install-firmware")).join());
+    assert.equal(main.subs[6].items.length, 4);
+    assert.ok(main.items[7].map((n) => n.text).join("").startsWith("Open the Device page again"));
+  });
+  it("the real articles: storage-upgrade steps run 1 to 8 in one list", () => {
+    const steps = real("storage-upgrade").filter((b) => b.t === "ol");
+    assert.equal(steps.length, 1, listSizes(real("storage-upgrade")).join());
+    assert.equal(steps[0].items.length, 8);
+    assert.equal(steps[0].subs[3].items.length, 2);
+  });
+  it("the real articles: firmware-methods DFU steps and free-space steps are not split in two", () => {
+    const dfu = real("firmware-methods").filter((b) => b.t === "ol");
+    assert.ok(dfu.some((b) => b.items.length === 6), listSizes(real("firmware-methods")).join());
+    const fs = real("free-space").filter((b) => b.t === "ol");
+    assert.equal(fs.length, 1, listSizes(real("free-space")).join());
+  });
+});
+
+describe("search finds what people type", () => {
+  const ids = (q, n = 3) => top(q, n);
+  it("a misspelt word finds the article it was meant for", () => {
+    assert.equal(ids("batery")[0], "battery-replacement");
+    assert.equal(ids("batterry")[0], "battery-replacement");
+    assert.ok(ids("fimware", 4).includes("install-firmware"), ids("fimware", 4).join());
+    assert.equal(L.editDistance("fimware", "firmware", 1), 1);
+    assert.equal(L.editDistance("batery", "battery", 1), 1);
+    assert.equal(L.editDistance("abcd", "abdc", 1), 1, "a swap is one edit");
+    assert.ok(L.editDistance("abcdef", "uvwxyz", 2) > 2);
+  });
+  it("a short word is never guessed at", () => {
+    assert.deepEqual(L.fuzzyWords(index, "bat"), []);
+    assert.deepEqual(L.search(index, "zzqx"), []);
+  });
+  it("memory words find the storage upgrade", () => {
+    assert.equal(ids("memory upgrade")[0], "storage-upgrade");
+    assert.equal(ids("memory card")[0], "storage-upgrade");
+    assert.equal(ids("sdcard")[0], "storage-upgrade");
+    assert.equal(ids("bigger drive")[0], "storage-upgrade");
+  });
+  it("it will not turn on / wont charge find the power article", () => {
+    for (const q of ["wont turn on", "won't turn on", "will not turn on", "wont charge", "won't charge", "dead"]) assert.ok(ids(q, 2).includes("pm-power-charging"), `${q}: ${ids(q, 2).join()}`);
+  });
+  it("US and UK spellings find each other", () => {
+    assert.ok(L.search(index, "colors").length > 0);
+    assert.equal(L.search(index, "colors").length, L.search(index, "colours").length);
+    assert.ok(L.search(index, "analyze").length > 0);
+    assert.equal(L.search(index, "analyze").length, L.search(index, "analyse").length);
+    assert.deepEqual(L.spellingVariants("colors"), ["colours"]);
+    assert.deepEqual(L.spellingVariants("analyze"), ["analyse"]);
+    assert.deepEqual(L.spellingVariants("organise"), ["organize"]);
+  });
+  it("when no article has every word, the ones with some are listed and marked partial", () => {
+    const h = L.search(index, "battery zzzqqq");
+    assert.ok(h.length > 0 && h.every((x) => x.partial));
+    assert.equal(h[0].article.id, "battery-replacement");
+    assert.ok(L.search(index, "battery").every((x) => !x.partial));
+  });
+  it("small words alone do not make a partial match of everything", () => {
+    assert.deepEqual(L.search(index, "the zzzqqq"), []);
   });
 });

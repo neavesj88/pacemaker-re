@@ -1,6 +1,6 @@
 <script lang="ts">
   // Draws the blocks the reader (helpLogic.ts) made. Every piece is text: nothing here is {@html}.
-  import type { Block, Inline } from "./helpLogic";
+  import type { Block, Inline, ListBlock } from "./helpLogic";
 
   let {
     blocks,
@@ -26,6 +26,22 @@
   {/each}
 {/snippet}
 
+{#snippet list(b: ListBlock)}
+  {#if b.t === "ul"}
+    <ul>
+      {#each b.items as it, ii (ii)}
+        <li>{@render inl(it)}{#if b.subs[ii]}{@render list(b.subs[ii]!)}{/if}</li>
+      {/each}
+    </ul>
+  {:else}
+    <ol start={b.start}>
+      {#each b.items as it, ii (ii)}
+        <li>{@render inl(it)}{#if b.subs[ii]}{@render list(b.subs[ii]!)}{/if}</li>
+      {/each}
+    </ol>
+  {/if}
+{/snippet}
+
 {#each blocks as b, bi (bi)}
   {#if b.t === "h"}
     {#if b.level === 2}<h2 id="h-{b.slug}">{b.text}</h2>
@@ -35,10 +51,8 @@
     <p>{@render inl(b.inl)}</p>
   {:else if b.t === "note"}
     <p class="note">{@render inl(b.inl)}</p>
-  {:else if b.t === "ul"}
-    <ul>{#each b.items as it, ii (ii)}<li>{@render inl(it)}</li>{/each}</ul>
-  {:else if b.t === "ol"}
-    <ol>{#each b.items as it, ii (ii)}<li>{@render inl(it)}</li>{/each}</ol>
+  {:else if b.t === "ul" || b.t === "ol"}
+    {@render list(b)}
   {:else if b.t === "code"}
     <pre><code>{b.text}</code></pre>
   {:else if b.t === "table"}
@@ -82,6 +96,10 @@
   }
   li {
     margin: 2px 0;
+  }
+  li > ul,
+  li > ol {
+    margin: 3px 0 4px;
   }
   ol li::marker {
     color: var(--accent);

@@ -15,9 +15,9 @@ summary: A picture of how your library spreads over tempo, key, genre and energy
 
 Three grids, chosen by the tabs:
 
-- **BPM by key**: how many tracks you have in each tempo band and key.
-- **BPM by genre**: tempo bands against genres.
-- **Key by energy**: appears once tracks have an energy (your rating or the estimate). If it has not, a link offers to analyse energy.
+- **BPM × Key**: how many tracks you have in each tempo band and key.
+- **BPM × Genre**: tempo bands against genres.
+- **Key × Energy**: appears once tracks have an energy (your rating or the estimate). If it has not, a link offers to analyse energy.
 
 The colour of a cell shows how many tracks it holds (the legend runs from few to many) and **thin** cells are marked. The line above the grid says how many tracks were placed and why others were left out (no BPM because they still need analysis, no key, no genre, a BPM outside the range shown).
 

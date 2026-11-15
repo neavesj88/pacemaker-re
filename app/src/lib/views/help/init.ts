@@ -1,7 +1,7 @@
 // Startup hook (run by the shell): F1 opens Help from anywhere, and Ctrl+/ opens it with the cursor
 // in the search box. Neither does anything while a dialog is open, because Help would appear behind it.
 import type { Unlisten } from "$lib/api/events";
-import { openHelp } from "./help.svelte";
+import { openHelp, trackReturnView } from "./help.svelte";
 
 function dialogOpen(): boolean {
   return document.querySelector("dialog[open], [aria-modal=true]") !== null;
@@ -19,5 +19,9 @@ export default function init(): Unlisten {
     }
   };
   window.addEventListener("keydown", down);
-  return () => window.removeEventListener("keydown", down);
+  const stopTracking = trackReturnView();
+  return () => {
+    window.removeEventListener("keydown", down);
+    stopTracking();
+  };
 }

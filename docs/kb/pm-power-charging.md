@@ -3,7 +3,7 @@ id: pm-power-charging
 title: Power and charging
 topic: Using the Pacemaker
 order: 2
-keywords: power on, power off, shutdown, charging, charge, usb charge, power adapter, battery life, mix mode, play mode, standby, low battery, blinking power symbol
+keywords: power on, power off, shutdown, charging, charge, usb charge, power adapter, battery life, mix mode, play mode, standby, low battery, blinking power symbol, wont turn on, will not turn on, wont charge, will not charge, dead, does not start, no power
 summary: How to switch the Pacemaker on and off, charge it from USB or the adapter, and how long a charge lasts.
 ---
 
@@ -23,7 +23,7 @@ Source: the official User's Manual v2.0, unless marked. See [Controls tour](pm-c
 - Or connect the **power adapter** to the power jack. The adapter is the fastest. Charging speed over USB depends on the port. (Verified)
 - While charging over USB, press the **settings button** to turn on the data connection if you want the computer to see the drive: see [Connecting to a computer](pm-computer-connection.md). (Verified)
 - A **blinking power symbol** means the battery needs charging. (Verified)
-- The Pacemaker can run from the adapter with the battery flat or even absent (reported by users). Useful for a long set or a test. (Likely)
+- The Pacemaker can run from the adapter with the battery absent, or worn but not fully flat (reported by users). Useful for a long set or a test. (Likely)
 
 ## How long it lasts
 
