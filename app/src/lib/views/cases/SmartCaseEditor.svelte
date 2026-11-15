@@ -258,7 +258,7 @@
   {@const proceed = leaving}
   <ConfirmDialog
     title="Discard unsaved changes?"
-    message={`The smart case “${draft.name.trim() || "New smart case"}” has changes that are not saved. Leaving now discards them.${mixKeptNote(mixes.doc?.name ?? null, mixes.dirty, mixes.undoDepth)}`}
+    message={`The smart case “${draft.name.trim() || "New smart case"}” has changes that are not saved. Leaving now discards them.${mixKeptNote(mixes.doc?.name ?? null, mixes.dirty)}`}
     confirmLabel="Discard changes"
     onconfirm={() => proceed()}
     onclose={() => (leaving = null)}

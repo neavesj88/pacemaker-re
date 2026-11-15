@@ -361,7 +361,7 @@
       { label: one ? "Tags, colour, energy…" : `Tags, colour, energy of ${n} tracks…`, onclick: () => labelEditor.edit(ids) },
       { label: one ? "Add to mix" : `Add ${n} tracks to mix`, onclick: () => addToMixFn(ids) },
       { label: one ? "Add to case…" : `Add ${n} tracks to case…`, onclick: () => addToCase.ask(ids) },
-      { label: "Which cases hold this track…", onclick: () => holders.show(ids[0]), disabled: !one },
+      { label: one ? "Which cases hold this track…" : "Which cases hold these tracks…", onclick: () => holders.show(ids[0]), disabled: !one },
       { label: one ? "Build a set…" : `Build a set from ${n} tracks…`, onclick: () => buildSet(ids), disabled: one },
       {
         label: allFav ? (one ? "Remove from favourites" : `Remove ${n} from favourites`) : one ? "Favourite" : `Favourite ${n} tracks`,

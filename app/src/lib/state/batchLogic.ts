@@ -209,20 +209,23 @@ export const previewKey = (kind: BatchKind, nudgeMs: number, ids: readonly numbe
 export const bothNote = (kind: LibraryKind = "pacemaker") =>
   `The beat grid (.str) and the BPM of each track are rewritten together, so they always agree. Each track's previous beat grid is first copied ${kind === "computer" ? "out of the library" : "off the device"} (the app's data folder, next to the music.db snapshots), because Restore from a snapshot does not bring beat grids back.`;
 
+/** Where a change lands, for the question: the drive of a Pacemaker, "on this computer" otherwise (never the long path). */
+const where = (root: string, lib: LibraryKind) => (lib === "computer" ? "on this computer" : `on ${root} `);
+
 /** The confirmation's question: "Halve the BPM of 3 tracks on P:\ ?". */
-export function opTitle(kind: BatchKind, n: number, root: string, nudgeMs = 0): string {
+export function opTitle(kind: BatchKind, n: number, root: string, nudgeMs = 0, lib: LibraryKind = "pacemaker"): string {
   const tracks = `${n} track${n === 1 ? "" : "s"}`;
   switch (kind) {
     case "nudge":
-      return `Move the beat lines of ${tracks} by ${fmtShift(nudgeMs)} on ${root} ?`;
+      return `Move the beat lines of ${tracks} by ${fmtShift(nudgeMs)} ${where(root, lib)}?`;
     case "halve":
-      return `Halve the BPM of ${tracks} on ${root} ?`;
+      return `Halve the BPM of ${tracks} ${where(root, lib)}?`;
     case "double":
-      return `Double the BPM of ${tracks} on ${root} ?`;
+      return `Double the BPM of ${tracks} ${where(root, lib)}?`;
     case "suggested":
-      return `Apply the suggested half / double fix to ${tracks} on ${root} ?`;
+      return `Apply the suggested half / double fix to ${tracks} ${where(root, lib)}?`;
     case "reanalyse":
-      return `Replace the beat grid of ${tracks} with a new analysis on ${root} ?`;
+      return `Replace the beat grid of ${tracks} with a new analysis ${where(root, lib)}?`;
   }
 }
 

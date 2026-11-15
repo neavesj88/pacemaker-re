@@ -1,7 +1,7 @@
 // Run: node --experimental-strip-types --test src/lib/views/analysis/bgLogic.test.mjs
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { clampPct, failureCount, failureNote, failureRows, groupKeys, heldBackRows, libraryChanged, noResultRows, parseDismissed, pauseAction, statusLine, stripVisible } from "./bgLogic.ts";
+import { clampPct, failureCount, failureNote, failureRows, groupKeys, heldBackRows, libraryChanged, noResultRows, parseDismissed, pauseAction, statusLine, stripVisible, waitingNote } from "./bgLogic.ts";
 
 const base = { state: "running", detail: "", root: "C:\\Lib", pacemaker: false, word: "waveforms", done: 12, total: 40, left: 100, label: "A - B", failures: 0 };
 const fail = (kind, track_id, reason, label = `Track ${track_id}`) => ({ kind, track_id, label, location: `/pmdb_tracks/${track_id}.mp3`, size: 1, reason });
@@ -129,4 +129,12 @@ test("the failure list is read again when the worker changes state, not only whe
   assert.ok(failuresStale({ failures: 0, state: "idle" }, { failures: 1, state: "idle" }));
   // floor lowered to 0: the held-back record goes, the real count stays 0, the worker runs then goes idle
   assert.ok(failuresStale({ failures: 0, state: "running" }, { failures: 0, state: "idle" }));
+});
+
+test("the sidebar says when analysis is held back, and nothing when it is not", () => {
+  assert.equal(waitingNote({ ...base, state: "playing" }), "Analysis waiting for playback");
+  assert.equal(waitingNote({ ...base, state: "held" }), "Analysis waiting for the Sync plan");
+  assert.equal(waitingNote({ ...base, state: "playing", left: 0 }), null, "nothing left, nothing to wait for");
+  assert.equal(waitingNote({ ...base, state: "running" }), null);
+  assert.equal(waitingNote({ ...base, state: "idle" }), null);
 });

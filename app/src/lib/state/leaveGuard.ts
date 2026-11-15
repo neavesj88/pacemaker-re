@@ -29,20 +29,18 @@ export function unsavedWork(): UnsavedWork[] {
   return out;
 }
 
-const edits = (n: number) => (n === 1 ? "1 unsaved edit" : `${n} unsaved edits`);
-
 /** The line for an open mix with unsaved edits. */
-export function mixLine(name: string, undoDepth: number): string {
-  return undoDepth > 0 ? `The mix “${name}”: ${edits(undoDepth)}` : `The mix “${name}”: unsaved changes`;
+export function mixLine(name: string): string {
+  // no count: the undo depth keeps growing across saves, so it is not "edits since the last save"
+  return `The mix “${name}”: unsaved changes`;
 }
 
 /** What an unsaved-edits question about something else says about an open mix with unsaved edits:
  *  switching tabs keeps the mix draft, so the question must not look as if it covered it. Empty when
  *  there is no such mix. */
-export function mixKeptNote(name: string | null, dirty: boolean, undoDepth: number): string {
+export function mixKeptNote(name: string | null, dirty: boolean): string {
   if (!name || !dirty) return "";
-  const what = undoDepth > 0 ? ` (${edits(undoDepth)})` : "";
-  return ` The mix “${name}”${what} is not affected: it stays open in Mixes until you save or close it.`;
+  return ` The mix “${name}” has unsaved changes, but it is not affected: it stays open in Mixes until you save or close it.`;
 }
 
 /** The line for the beat grid editor: what is unsaved on which track. */

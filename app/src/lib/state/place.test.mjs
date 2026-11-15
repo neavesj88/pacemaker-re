@@ -2,7 +2,7 @@
 // The same table of paths as the Rust tests of library_kind (commands/library/kind.rs): the
 // browser preview and the app must agree on what is a Pacemaker and what is this computer.
 import assert from "node:assert/strict";
-import { midSentence, missingComputerPath, libraryKind, libraryLabel, pickerOptions, placeWords, sameRoot, startupRoot, welcomeOffer } from "./place.ts";
+import { libraryAsObject, midSentence, missingComputerPath, libraryKind, libraryLabel, pickerOptions, placeWords, sameRoot, startupRoot, welcomeOffer } from "./place.ts";
 
 const kinds = (paths, want) => {
   for (const p of paths) assert.equal(libraryKind(p), want, JSON.stringify(p));
@@ -95,5 +95,8 @@ assert.equal(missingComputerPath({ ...gone, unreadable: true }), null, "unreadab
 
 assert.equal(midSentence("This computer"), "this computer");
 assert.equal(midSentence("Pacemaker (P:)"), "Pacemaker (P:)");
+
+assert.equal(libraryAsObject("This computer"), "the library on this computer");
+assert.equal(libraryAsObject("Pacemaker (P:)"), "Pacemaker (P:)");
 
 console.log("place.test.mjs ok");

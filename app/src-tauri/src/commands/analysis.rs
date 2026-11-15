@@ -308,7 +308,7 @@ fn detect_keys(
         parts.push(format!("{} already had that key", ok - written));
     }
     if skipped > 0 {
-        parts.push(format!("{skipped} skipped"));
+        parts.push(format!("{skipped} skipped (no clear key found in them)"));
     }
     if failed > 0 {
         parts.push(format!("{failed} failed"));

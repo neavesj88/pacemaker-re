@@ -25,6 +25,24 @@ export function stripVisible(s: BgStatus): boolean {
   }
 }
 
+/** The sidebar's status while the background worker has work left but is holding it back, so "All
+ *  tracks analysed" does not stand next to tracks with flat waveforms. Null when it is not waiting. */
+export function waitingNote(s: BgStatus): string | null {
+  if (s.left <= 0) return null;
+  switch (s.state) {
+    case "playing":
+      return "Analysis waiting for playback";
+    case "waiting":
+      return "Analysis waiting for your job";
+    case "held":
+      return "Analysis waiting for the Sync plan";
+    case "paused":
+      return "Analysis paused";
+    default:
+      return null;
+  }
+}
+
 /** The one line of the strip, for example "Analysing in the background: 12 of 40 - waveforms". */
 export function statusLine(s: BgStatus): string {
   const more = s.left > 0 ? ` (${s.left} left in all)` : "";

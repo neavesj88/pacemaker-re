@@ -15,6 +15,7 @@ import {
   trackLabel,
   type KeySettings,
 } from "./keyLogic";
+import { bg } from "./bganalysis.svelte";
 import { jobs } from "./jobs.svelte";
 import { loadPref, savePref } from "./prefStore";
 import { session } from "./session.svelte";
@@ -30,6 +31,16 @@ export type KeyDialog = { kind: "detect" | "set"; ids: number[] };
 class Analysis {
   /** Tracks of the open library that have no key (the ones "Detect keys" fills in). */
   keyless = $derived((session.library?.tracks ?? []).filter((t) => !t.key.trim()));
+
+  /** The keyless tracks the background worker already read without finding a key (drum-only, silent
+   *  or atonal): trying them again gives the same answer, so the sidebar does not offer them. */
+  noKeyFound = $derived.by(() => {
+    const ids = new Set(bg.failures.filter((f) => f.kind === "keys" && f.no_result).map((f) => f.track_id));
+    return this.keyless.filter((t) => ids.has(t.track_id));
+  });
+
+  /** What the sidebar's "Detect keys" button offers: keyless tracks not already known to have no key. */
+  offered = $derived(this.keyless.filter((t) => !this.noKeyFound.includes(t)));
 
   /** How key detection treats existing keys and weak results; remembered between runs. */
   settings = $state<KeySettings>(loadSettings());
@@ -51,7 +62,7 @@ class Analysis {
    *  settings are shown and changed before the usual confirmation. */
   askDetectKeys(ids?: number[]) {
     if (!session.library) return;
-    const list = ids ? this.tracksOf(ids) : this.keyless;
+    const list = ids ? this.tracksOf(ids) : this.offered;
     if (list.length === 0) {
       session.error = "There are no tracks to detect a key for.";
       return;

@@ -412,13 +412,14 @@
             {/each}
             {#each gaps as g (g.from.id + g.to.id)}
               {#if inView(g.start, g.end)}
+                {@const gw = Math.max(30, mv.x(g.end - g.start))}
                 <div class="ghost" style:left="{mv.x(g.start)}px" style:width="{Math.max(30, mv.x(g.end - g.start))}px" style:height="{LANE_H}px">
-                  <div class="ghostbtns">
+                  <div class="ghostbtns" class:compact={gw < 110}>
                     <button
                       title="Add a crossfade over the overlap of “{clipTitle(g.from)}” and “{clipTitle(g.to)}”"
-                      onclick={() => mixes.addTransition(g.from.id, g.to.id, g.start, g.end - g.start)}>+ crossfade</button
+                      onclick={() => mixes.addTransition(g.from.id, g.to.id, g.start, g.end - g.start)}>{gw < 110 ? "+" : "+ crossfade"}</button
                     >
-                    <button title="Build a transition here with the recipe and length set in the Auto transition settings (select a crossfade or a clip to change them)" onclick={() => void autoTransition(g.from.id, g.to.id)}>Auto</button>
+                    <button title="Build a transition here with the recipe and length set in the Auto transition settings (select a crossfade or a clip to change them)" onclick={() => void autoTransition(g.from.id, g.to.id)}>{gw < 110 ? "A" : "Auto"}</button>
                   </div>
                 </div>
               {/if}
@@ -750,6 +751,10 @@
     gap: 6px;
     pointer-events: auto;
     max-width: 100%;
+  }
+  /* a narrow overlap (zoomed far out) shows a symbol, so the words cannot spill over the clip names */
+  .ghostbtns.compact button {
+    padding: 2px 5px;
   }
   .ghost button,
   .mini {

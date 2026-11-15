@@ -11,7 +11,7 @@ registerLeaveGuard(() => {
   const doc = mixes.doc;
   if (!doc || !mixes.dirty) return null;
   return {
-    lines: [mixLine(doc.name, mixes.undoDepth)],
+    lines: [mixLine(doc.name)],
     save: async () => {
       await saveMix();
       return !mixes.dirty;

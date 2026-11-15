@@ -93,7 +93,7 @@ test("detection leaves keyed tracks alone unless replacing is on", () => {
 test("each confirmation line says what happens to that track's key", () => {
   const s = { overwrite: true, minConfidencePct: 40 };
   assert.equal(detectLine(t(2, "Am"), s), "Track 2: key Am is replaced by the detected key if the result reaches 40% confidence");
-  assert.equal(detectLine(t(1, ""), { overwrite: false, minConfidencePct: 0 }), "Track 1: no key yet, the detected key is written");
+  assert.equal(detectLine(t(1, ""), { overwrite: false, minConfidencePct: 0 }), "Track 1: no key yet, a key is written only if one is found");
   // an untitled track is named by its file
   assert.match(detectLine({ ...t(5, ""), title: "" }, DEFAULT_KEY_SETTINGS), /^f5\.mp3: /);
 });

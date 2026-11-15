@@ -32,16 +32,19 @@ export function rowLine(r: TempoRow): string {
 /** Rows the job will change. */
 export const changing = (rows: TempoRow[]) => rows.filter((r) => r.skip === null);
 
+/** Where a change lands, for the question: the drive of a Pacemaker, "on this computer" otherwise (never the long path). */
+const where = (root: string, lib: LibraryKind) => (lib === "computer" ? "on this computer" : `on ${root} `);
+
 /** The confirmation's question: "Halve the BPM of 3 tracks on P:\ ?". */
-export function opTitle(op: TempoOp, n: number, root: string): string {
+export function opTitle(op: TempoOp, n: number, root: string, lib: LibraryKind = "pacemaker"): string {
   const tracks = `${n} track${n === 1 ? "" : "s"}`;
   switch (op.kind) {
     case "halve":
-      return `Halve the BPM of ${tracks} on ${root} ?`;
+      return `Halve the BPM of ${tracks} ${where(root, lib)}?`;
     case "double":
-      return `Double the BPM of ${tracks} on ${root} ?`;
+      return `Double the BPM of ${tracks} ${where(root, lib)}?`;
     case "set":
-      return `Set the BPM of ${tracks} to ${fmtBpm(op.bpm)} on ${root} ?`;
+      return `Set the BPM of ${tracks} to ${fmtBpm(op.bpm)} ${where(root, lib)}?`;
   }
 }
 

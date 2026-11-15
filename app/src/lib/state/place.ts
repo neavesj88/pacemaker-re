@@ -131,3 +131,7 @@ export function welcomeOffer(
 
 /** A picker label inside a sentence: "This computer" is only capitalised at the start of one. */
 export const midSentence = (label: string): string => label.replace(/^This computer/, "this computer");
+
+/** A library named as the thing being closed or opened: "the library on this computer" rather than
+ *  "this computer" (which reads as if the machine closes). Other labels are used as they are. */
+export const libraryAsObject = (label: string): string => (label === "This computer" ? "the library on this computer" : label);

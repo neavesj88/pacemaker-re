@@ -120,5 +120,5 @@ export function detectLine(t: KeyTrack, s: KeySettings): string {
   const only = floor > 0 ? ` if the result reaches ${floor}% confidence` : "";
   return t.key.trim()
     ? `${name}: key ${t.key.trim()} is replaced by the detected key${only}`
-    : `${name}: no key yet, the detected key is written${only}`;
+    : `${name}: no key yet, a key is written only if one is found${only}`;
 }

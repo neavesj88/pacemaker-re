@@ -31,6 +31,7 @@ test("only rows without a reason are counted as changes", () => {
 
 test("the wording names the edit, and the Set wording warns that the grid is replaced", () => {
   assert.equal(opTitle({ kind: "halve" }, 3, "P:\\"), "Halve the BPM of 3 tracks on P:\\ ?");
+  assert.equal(opTitle({ kind: "halve" }, 3, "C:/x/computer", "computer"), "Halve the BPM of 3 tracks on this computer?");
   assert.equal(opTitle({ kind: "double" }, 1, "/mnt/pm"), "Double the BPM of 1 track on /mnt/pm ?");
   assert.equal(opTitle({ kind: "set", bpm: 127.5 }, 1, "P:\\"), "Set the BPM of 1 track to 127.50 on P:\\ ?");
   assert.match(opDescription({ kind: "set", bpm: 128 }), /Tempo changes inside the track are lost/);

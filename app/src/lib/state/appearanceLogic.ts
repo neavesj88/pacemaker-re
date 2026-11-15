@@ -49,7 +49,7 @@ export function normaliseGridMin(raw: unknown): number {
   return finite(raw) && (GRID_MIN_CHOICES as readonly number[]).includes(raw) ? raw : GRID_MIN_DEFAULT;
 }
 
-/** The colours of the three-band waveforms (low, mid, high: player bar, track pictures, mix clips,
+/** The colours of the three-band waveforms (low, mid, high: player bar, track pictures, the mix editor's overview,
  *  grid editor). Matrix green, calm (the app's own green in three quiet steps, darkest outside) is
  *  the default; Neon is the original pink, lilac and bright green. */
 export const WAVE_THEME_KEY = "pacemaker-revival.waveColours";

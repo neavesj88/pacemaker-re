@@ -1,7 +1,7 @@
 <script lang="ts">
   import "./leaveGuards";
   import { unsavedWork } from "$lib/state/leaveGuard";
-  import { libraryKind, libraryLabel, midSentence } from "$lib/state/place";
+  import { libraryAsObject, libraryKind, libraryLabel, midSentence } from "$lib/state/place";
   import { session } from "$lib/state/session.svelte";
   import Button from "$lib/ui/Button.svelte";
   import Modal from "$lib/ui/Modal.svelte";
@@ -56,7 +56,7 @@
 
 {#if leaving}
   <Modal title="Unsaved changes" onclose={cancel}>
-    <p>Opening {target ? `${target}` : "another library"} closes {session.library ? midSentence(libraryLabel(session.library.kind, session.library.root, session.computer?.path ?? null)) : "this one"}, and these changes are lost:</p>
+    <p>Opening {target ? midSentence(libraryAsObject(target)) : "another library"} closes {session.library ? midSentence(libraryAsObject(libraryLabel(session.library.kind, session.library.root, session.computer?.path ?? null))) : "this one"}, and these changes are lost:</p>
     <ul>
       {#each lines as l, i (i)}<li>{l}</li>{/each}
     </ul>

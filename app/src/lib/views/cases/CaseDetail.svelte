@@ -596,7 +596,7 @@
   {@const proceed = leaving}
   <ConfirmDialog
     title="Discard unsaved changes?"
-    message={`The details of the case “${open.name}” (name, genre, year, rating, producer, remixer or comments) have changes that are not saved. Leaving now discards them.${mixKeptNote(mixes.doc?.name ?? null, mixes.dirty, mixes.undoDepth)}`}
+    message={`The details of the case “${open.name}” (name, genre, year, rating, producer, remixer or comments) have changes that are not saved. Leaving now discards them.${mixKeptNote(mixes.doc?.name ?? null, mixes.dirty)}`}
     confirmLabel="Discard changes"
     onconfirm={() => proceed()}
     onclose={() => (leaving = null)}

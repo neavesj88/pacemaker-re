@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { LABEL_COLOURS } from "../../state/labels.ts";
-import { bpmText,
+import { inspectorTrackId, bpmText,
   COLOUR_SORT_ORDER, filterTracks, formatDate, formatSize, keyName, keysCompatible, matchingTracks, NO_FILTER, parseBpm, parseKey, sortClick, sortTracks, sortTracksBy, uniqueGenres,
 } from "./trackLogic.ts";
 
@@ -224,4 +224,12 @@ test("bpmText: two decimals, a dash for none or a track that needs analysis", ()
   assert.equal(bpmText(63.25, false), "63.25");
   assert.equal(bpmText(140.5, true), "–");
   assert.equal(bpmText(0, false), "–");
+});
+
+test("the inspector follows the highlighted row when the last click is no longer one of them", () => {
+  assert.equal(inspectorTrackId(5, []), 5, "nothing highlighted: the last click stands");
+  assert.equal(inspectorTrackId(null, []), null);
+  assert.equal(inspectorTrackId(5, [3, 5, 9]), 5, "still highlighted: the last click wins");
+  assert.equal(inspectorTrackId(5, [7]), 7, "a case or History highlighted another row");
+  assert.equal(inspectorTrackId(null, [7, 8]), 8);
 });

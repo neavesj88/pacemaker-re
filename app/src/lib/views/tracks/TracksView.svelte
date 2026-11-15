@@ -12,7 +12,7 @@
   import Inspector from "./Inspector.svelte";
   import TrackList from "./TrackList.svelte";
   import { tableRows } from "./tableRows.svelte";
-  import { parseKey, uniqueGenres } from "./trackLogic";
+  import { inspectorTrackId, parseKey, uniqueGenres } from "./trackLogic";
   import { tracksState } from "./tracksState.svelte";
 
   const library = $derived(session.library);
@@ -24,7 +24,8 @@
   const rows = $derived(tableRows.rows);
 
   const byId = $derived(new Map(all.map((t) => [t.track_id, t])));
-  const focus = $derived(tracksState.focusId === null ? null : (byId.get(tracksState.focusId) ?? null));
+  const focusIdNow = $derived(inspectorTrackId(tracksState.focusId, selection.trackIds));
+  const focus = $derived(focusIdNow === null ? null : (byId.get(focusIdNow) ?? null));
   const filtersActive = $derived(
     !!(filters.query || filters.onlyNeeds || tracksState.genre || tracksState.bpmMin || tracksState.bpmMax || tracksState.keyFilter || tracksState.onlyAnalysed || labelFilterActive(tracksState.labelFilter) || tracksState.onlySuspect || tracksState.caseId !== null),
   );

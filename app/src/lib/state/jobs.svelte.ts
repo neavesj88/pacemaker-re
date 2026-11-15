@@ -8,6 +8,7 @@ import { reanalyseTracks } from "$lib/api/tracks";
 import { baseName } from "$lib/format";
 import { mixesNote } from "./mixNote";
 import { appearance } from "./appearance.svelte";
+import { plainError } from "./plainError";
 import { session } from "./session.svelte";
 
 export type Job = {
@@ -116,7 +117,7 @@ class Jobs {
     job.total = ev.total;
     job.current = ev.label;
     job.bpm = ev.bpm;
-    if (ev.status === "failed") job.failures.push({ label: ev.label, error: ev.error ?? "failed" });
+    if (ev.status === "failed") job.failures.push({ label: ev.label, error: plainError(ev.error ?? "failed") });
   }
 
   async onDone(ev: DoneEvent) {

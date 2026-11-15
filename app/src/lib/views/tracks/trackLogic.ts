@@ -302,3 +302,13 @@ export function matchingTracks(focus: Track, list: Track[], bpmPct = 4, needs: R
     })
     .sort((a, b) => Math.abs(a.bpm - focus.bpm) - Math.abs(b.bpm - focus.bpm) || a.track_id - b.track_id);
 }
+
+/** The track the inspector describes: the one last clicked, as long as it is still highlighted. The
+ *  selection is shared with Cases and History, which highlight a row without telling the Tracks view
+ *  which one was clicked; then the inspector follows the highlighted row (the last of them) so the
+ *  two never name different tracks. With nothing highlighted the last click stands. */
+export function inspectorTrackId(focusId: number | null, selectedIds: readonly number[]): number | null {
+  if (selectedIds.length === 0) return focusId;
+  if (focusId !== null && selectedIds.includes(focusId)) return focusId;
+  return selectedIds[selectedIds.length - 1];
+}

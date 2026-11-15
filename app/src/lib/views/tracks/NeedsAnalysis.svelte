@@ -2,6 +2,8 @@
   // The "need analysis" block at the foot of the sidebar (a fixed slot rendered by
   // shell/Sidebar.svelte). Tracks-owned.
   import { analysis } from "$lib/state/analysis.svelte";
+  import { bg } from "$lib/state/bganalysis.svelte";
+  import { waitingNote } from "$lib/views/analysis/bgLogic";
   import { bpmRange } from "$lib/state/bpmRange.svelte";
   import { rangeLabel } from "$lib/state/bpmRangeLogic";
   import { cases } from "$lib/state/cases.svelte";
@@ -32,6 +34,8 @@
     disabled={!jobs.canWrite}
     title="Rewrite the beat grid (.str) of these tracks from their audio {session.isComputer ? 'in the library' : 'on the device'}"
   >Analyse {session.needs.size}…</Button>
+{:else if waitingNote(bg.status)}
+  <div class="stat warn" title="The rest of the analysis (waveforms, keys, energy) carries on by itself; see the strip under the views.">{waitingNote(bg.status)}</div>
 {:else}
   <div class="stat">All tracks analysed</div>
 {/if}
@@ -51,8 +55,13 @@
     {analysisLabel("Sections", "Find sections", sections.state.ready, sections.state.total)}
   </Button>
 {/if}
-{#if analysis.keyless.length > 0}
+{#if analysis.offered.length > 0}
   <Button small onclick={() => analysis.askDetectKeys()} disabled={!jobs.canWrite} title="Work out the key from the audio, only for tracks that have none">
-    Detect {analysis.keyless.length} key{analysis.keyless.length === 1 ? "" : "s"}…
+    Detect {analysis.offered.length} key{analysis.offered.length === 1 ? "" : "s"}…
   </Button>
+{/if}
+{#if analysis.noKeyFound.length > 0}
+  <div class="stat" title="These were read and have no steady pitch (drum-only, silent or atonal), so detecting again would find nothing. Set a key by hand from the track menu.">
+    {analysis.noKeyFound.length} track{analysis.noKeyFound.length === 1 ? " has" : "s have"} no key to find
+  </div>
 {/if}

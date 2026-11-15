@@ -157,6 +157,7 @@ test("a preview belongs to the operation and tracks it was made for", () => {
 
 test("the wording names the operation and says BPM and grid change together", () => {
   assert.equal(opTitle("halve", 3, "P:\\"), "Halve the BPM of 3 tracks on P:\\ ?");
+  assert.equal(opTitle("halve", 3, "C:/x/computer", 0, "computer"), "Halve the BPM of 3 tracks on this computer?");
   assert.equal(opTitle("nudge", 1, "/mnt/pm", -12.5), "Move the beat lines of 1 track by −12.5 ms on /mnt/pm ?");
   assert.match(opTitle("suggested", 2, "P:\\"), /suggested half \/ double fix to 2 tracks/);
   assert.match(opTitle("reanalyse", 1, "P:\\"), /new analysis/);
