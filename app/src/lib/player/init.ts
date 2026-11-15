@@ -1,7 +1,9 @@
 // Startup hook (run by the shell): starts the playback engine and the player's keyboard
 // shortcuts. Space plays / pauses (or plays the highlighted track when nothing is loaded);
 // C is the CUE button while held. Neither fires while a text field has the focus, and Space yields
-// to a row, editor or view that already handled the key (see spaceClaim.ts).
+// to a row, editor or view that already handled the key (see spaceClaim.ts). With the pointer over
+// the mix timeline or the player's waveform, Space moves the cue / playhead to the time under the
+// pointer instead (hoverCue.ts); Alt then means "exactly here, no beat snap".
 import type { Unlisten } from "$lib/api/events";
 import { playback } from "$lib/state/playback.svelte";
 import { nav } from "$lib/state/nav.svelte";
@@ -10,6 +12,9 @@ import { session } from "$lib/state/session.svelte";
 import { engine } from "./engine.svelte";
 import { preview } from "$lib/views/mixes/preview.svelte";
 import { playerOwnsSpace, spaceStopsMix } from "./spaceClaim";
+import { decideSpace } from "./hoverCue";
+import { hoverCue } from "./hoverCue.svelte";
+import { toSamples } from "$lib/views/mixes/layout";
 
 /** True when the key press belongs to something being typed into. */
 function typing(t: EventTarget | null): boolean {
@@ -41,9 +46,29 @@ export default function init(): Unlisten {
   const stopEngine = engine.start();
 
   const down = (e: KeyboardEvent) => {
-    if (e.ctrlKey || e.metaKey || e.altKey || typing(e.target) || !session.library) return;
+    if (e.key === "Alt") hoverCue.exact = true;
+    if (e.ctrlKey || e.metaKey || typing(e.target) || !session.library) return;
+    // Alt is only for the hover cue (exact time); every other shortcut leaves Alt chords alone
+    if (e.altKey && !(e.code === "Space" && hoverCue.surface !== null)) return;
     if (e.code === "Space") {
       if (!spaceFree(e.target)) return;
+      const hover = decideSpace({
+        surface: hoverCue.surface,
+        typing: false,
+        ownedByControl: false,
+        mixPlayingElsewhere: spaceStopsMix(preview.playing, nav.view),
+      });
+      if (hover !== "default") {
+        e.preventDefault(); // the page must not scroll, and the mix editor sees the press as handled
+        if (e.repeat) return;
+        if (hover === "move-mix-cue") void preview.seek(toSamples(hoverCue.secs));
+        else {
+          // the cue flag moves; a track that is playing carries on from there
+          playback.setCue(hoverCue.secs);
+          if (playback.playing) playback.seek(hoverCue.secs);
+        }
+        return;
+      }
       // a table row, the mix editor or the grid editor already acted on this press: one key, one
       // action (two toggles in a row left the player paused)
       if (!playerOwnsSpace(e.defaultPrevented)) return;
@@ -65,13 +90,18 @@ export default function init(): Unlisten {
     }
   };
   const up = (e: KeyboardEvent) => {
+    if (e.key === "Alt") hoverCue.exact = false;
     if (typing(e.target)) return;
     if (e.code === "Space") {
       if (session.library && spaceFree(e.target)) e.preventDefault();
     } else if (e.code === "KeyC") engine.cueRelease();
   };
   // losing the window while CUE is held must not leave it playing
-  const blur = () => engine.cueRelease();
+  const blur = () => {
+    engine.cueRelease();
+    hoverCue.exact = false;
+    hoverCue.clear();
+  };
 
   window.addEventListener("keydown", down);
   window.addEventListener("keyup", up);

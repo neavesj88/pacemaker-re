@@ -48,6 +48,7 @@ Delete removes the selected clips after asking, and Ctrl+Z brings them back unti
 The transport at the bottom of the editor plays the mix live from the computer.
 
 - **Play** or the Space bar plays and pauses. The first and last buttons jump to the start and the end.
+- **Point at the timeline and press Space** to move the playhead to that spot. A thin line with a time shows where it will go. If the mix is playing it carries on from there; if it is stopped, only the playhead moves. With **Snap** on, the playhead goes to the nearest beat (when the track under it has a beat grid); hold **Alt** while pressing Space to put it exactly under the pointer. With the pointer anywhere else, Space plays and pauses.
 - **follow playhead** scrolls the timeline with the playhead. **Master** is the preview volume only (it is not saved in the mix).
 - The preview plays the crossfades, tools and tempo changes of the mix. When you have set loudness for the export, the preview plays at the level the last analysis found, and says "export level".
 - A long mix reads the tracks nearest the playhead first. How much decoded audio is kept in memory is the Playback memory setting.

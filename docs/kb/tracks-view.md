@@ -3,7 +3,7 @@ id: tracks-view
 title: The Tracks view
 topic: Tracks
 order: 1
-keywords: tracks, table, columns, sort, filter, genre, bpm, key, case, analysed, missing, suspect, favourite, heart, context menu, right click, saved views, presets, column chooser, waveform column
+keywords: tracks, table, columns, sort, filter, genre, bpm, key, case, analysed, missing, suspect, favourite, heart, context menu, right click, saved views, presets, column chooser, waveform column, player, space, cue, hover, shortcut
 summary: The table of every track in the open library, its columns, filters, sorting, saved filters and the right-click menu.
 ---
 
@@ -54,3 +54,9 @@ Rows can be dragged onto a case in the sidebar. Ticking several rows first appli
 ## The needs-analysis note
 
 At the bottom of the sidebar a note says how many tracks need analysis (they have no usable beat grid, and their BPM shows a dash), with **Show them** to filter the table to those tracks and **Analyse N...** to start. Other buttons appear there when there is more to do: tracks read outside the BPM range (**Review**), energy, sections and keys. See [Background analysis](background-analysis.md).
+
+## The player bar
+
+The bar at the bottom plays the selected track. **Space** plays and pauses. **C** is the CUE button while it is held.
+
+To move the cue, point at the waveform and press **Space**. A thin line with a time shows where the cue will go. The cue flag moves there. If the track is playing it carries on from that point; if it is stopped, only the cue moves, and the CUE button then jumps back to it. The cue lands exactly under the pointer. With the pointer anywhere else, Space plays and pauses as usual, and it always types a space while you are in a text box.

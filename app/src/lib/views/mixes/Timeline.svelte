@@ -9,7 +9,7 @@
   //
   // Only what is near the viewport is rendered (clips, blocks, ruler marks, waveform canvases),
   // so a long mix with many clips stays as cheap as a short one.
-  import { untrack } from "svelte";
+  import { onDestroy, untrack } from "svelte";
   import type { Clip, EnvNode, ProcessDoc, TransitionDoc } from "$lib/api/mixes";
   import * as E from "$lib/state/mixedit";
   import { mixes } from "$lib/state/mixes.svelte";
@@ -23,6 +23,8 @@
   import { toolPrefs } from "./listPrefs.svelte";
   import { HEADER_W, PPS_MAX, PPS_MIN, SR, clamp, clipColour, envToKey, keyToEnv, packRows, rulerTicks, mmss } from "./layout";
   import { preview } from "./preview.svelte";
+  import { cueTime, hoverLabel, timelineSecs } from "$lib/player/hoverCue";
+  import { hoverCue } from "$lib/player/hoverCue.svelte";
   import ToolBlock from "./ToolBlock.svelte";
   import { mv } from "./view.svelte";
 
@@ -196,6 +198,38 @@
     if (px > right - 24 && px < right + 400) mv.scrollLeft = Math.max(0, px - (mv.viewW - HEADER_W) * 0.15);
   });
 
+  // ---- hover, then Space ----------------------------------------------------------------------
+  // The pointer's time is shared with the one Space handler (player/init.ts), which moves the
+  // playhead there. With Snap on it lands on the nearest beat (Alt = exactly under the pointer), so
+  // the hairline shows the snapped time. Recomputed when the pointer moves, the timeline scrolls or
+  // zooms, Alt changes or the mix is edited.
+  let pointerX = $state<number | null>(null);
+  $effect(() => {
+    const x = pointerX;
+    const exact = hoverCue.exact;
+    const d = doc;
+    const snapOn = mixes.snap !== "off";
+    void mv.scrollLeft;
+    void mv.pps;
+    // (untracked: the shared hover is written here, never read back)
+    if (x === null || !scroller) return untrack(() => hoverCue.clear("mix"));
+    const sec = timelineSecs(x, scroller.getBoundingClientRect().left, HEADER_W, mv.scrollLeft, mv.pps);
+    if (sec === null) return untrack(() => hoverCue.clear("mix"));
+    let beats: number[] = [];
+    if (snapOn && !exact) {
+      const at = Math.round(sec * SR);
+      beats = E.snapTargets(d, "beat", [], [at - 4 * SR, at + 4 * SR], mixes.sectionLookup).map((t) => t / SR);
+    }
+    const at = cueTime(sec, beats, snapOn, exact);
+    untrack(() => hoverCue.set("mix", at));
+  });
+  const hoverMove = (e: PointerEvent) => {
+    pointerX = e.clientX;
+    hoverCue.exact = e.altKey;
+  };
+  const hoverLeave = () => (pointerX = null);
+  onDestroy(() => hoverCue.clear("mix"));
+
   // ---- ruler ----------------------------------------------------------------------------------
 
   function scrub(e: PointerEvent) {
@@ -361,7 +395,8 @@
   const overlayName = { gain: "Gain", tempo: "Tempo", key: "Key" } as const;
 </script>
 
-<div class="timeline" bind:this={root}>
+<!-- svelte-ignore a11y_no_static_element_interactions -->
+<div class="timeline" bind:this={root} onpointermove={hoverMove} onpointerleave={hoverLeave}>
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div class="scroller" bind:this={scroller} {onscroll}>
     <div class="inner" style:width="{HEADER_W + contentW}px">
@@ -529,6 +564,9 @@
         {/if}
         {#if mv.rangeBand}
           <div class="xrange" style:left="{HEADER_W + mv.x(mv.rangeBand.from)}px" style:width="{Math.max(2, mv.x(mv.rangeBand.to - mv.rangeBand.from))}px" title="The part of the mix the export will contain"></div>
+        {/if}
+        {#if hoverCue.surface === "mix"}
+          <div class="hair" style:left="{HEADER_W + mv.x(hoverCue.secs * SR)}px"><span>{hoverLabel(hoverCue.secs)}</span></div>
         {/if}
         <div class="playhead" style:left="{HEADER_W + mv.x(mv.playhead)}px"><span>{mmss(mv.playhead / SR)}</span></div>
       </div>
@@ -726,6 +764,28 @@
     background: var(--green);
     box-shadow: 0 0 6px var(--green);
     pointer-events: none;
+  }
+  /* where Space would put the playhead */
+  .hair {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 1px;
+    background: var(--text);
+    opacity: 0.8;
+    pointer-events: none;
+  }
+  .hair span {
+    position: absolute;
+    top: 3px;
+    left: 4px;
+    font-size: 10px;
+    line-height: 14px;
+    padding: 0 4px;
+    border-radius: 2px;
+    background: var(--deep);
+    color: var(--text);
+    white-space: nowrap;
   }
   .playhead span {
     position: absolute;
