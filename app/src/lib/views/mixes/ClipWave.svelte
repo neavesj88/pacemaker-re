@@ -17,7 +17,21 @@
     height,
     top = 0,
     bands,
-  }: { clip: Clip; pps: number; from: number; to: number; height: number; top?: number; bands?: { low: string; mid: string; high: string } } = $props();
+    opacity = 1,
+    layer = 1,
+  }: {
+    clip: Clip;
+    pps: number;
+    from: number;
+    to: number;
+    height: number;
+    top?: number;
+    bands?: { low: string; mid: string; high: string };
+    /** Less than 1 where another clip is heard at the same time, so the one underneath shows. */
+    opacity?: number;
+    /** Stacking order (the clip that came in last is on top). */
+    layer?: number;
+  } = $props();
 
   // the colours of Settings > Waveform colours, unless a caller passes its own
   const colours = $derived(bands ?? appearance.waveBands);
@@ -108,7 +122,7 @@
   }
 </script>
 
-<canvas bind:this={canvas} style:left="{from}px" style:top="{top}px" style:width="{width}px" style:height="{height}px" aria-hidden="true"></canvas>
+<canvas bind:this={canvas} style:left="{from}px" style:top="{top}px" style:width="{width}px" style:height="{height}px" style:opacity style:z-index={layer} aria-hidden="true"></canvas>
 
 <style>
   canvas {

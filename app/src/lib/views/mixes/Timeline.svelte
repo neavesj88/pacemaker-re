@@ -16,7 +16,7 @@
   import { laneOffset } from "$lib/state/dragLogic";
   import { trackDrag, trackDropTarget, type DropOptions } from "$lib/state/trackDrag.svelte";
   import ContextMenu, { type MenuItem } from "$lib/ui/ContextMenu.svelte";
-  import { addProcessTo, addTracks, autoTransition, beatmatch, clipTitle, duplicateSelection, neighbours, pasteAtPlayhead, targetClip, toolChoices } from "./actions";
+  import { addProcessTo, addTracks, autoTransition, beatAlign, beatmatch, clipTitle, duplicateSelection, neighbours, pasteAtPlayhead, targetClip, toolChoices } from "./actions";
   import ClipBlock from "./ClipBlock.svelte";
   import EnvelopeSvg from "./EnvelopeSvg.svelte";
   import FadeBlock from "./FadeBlock.svelte";
@@ -274,6 +274,7 @@
       { label: "Copy", onclick: () => mixes.copy() },
       { label: "Cut", onclick: () => mixes.cut() },
       { label: "Beat-match to previous", disabled: !prev, onclick: () => void beatmatch(clip.id) },
+      { label: "Beat-align to neighbour", disabled: doc.clips.length < 2, onclick: () => beatAlign(clip.id) },
       { label: "Auto transition to next", disabled: !next, onclick: () => next && void autoTransition(clip.id, next.id) },
       { label: n > 1 ? `Delete ${n} items` : "Delete", danger: true, onclick: ondelete },
     ];
@@ -293,6 +294,7 @@
   function transitionMenu(e: MouseEvent, t: TransitionDoc) {
     const items: MenuItem[] = [
       { label: t.bypassed ? "Enable" : "Mute", onclick: () => mixes.edit("Mute crossfade", (d) => E.updateTransition(d, t.id, (x) => ({ ...x, bypassed: !x.bypassed }))) },
+      { label: "Beat-align the clips", onclick: () => beatAlign() },
       { label: "Delete", danger: true, onclick: ondelete },
     ];
     menu = { x: e.clientX, y: e.clientY, items };
@@ -493,6 +495,7 @@
               {/each}
             {/if}
 
+            {#if mixes.alignCue !== null}<div class="aligncue" style:left="{mv.x(mixes.alignCue)}px" aria-hidden="true"></div>{/if}
             {#if dropAt !== null}<div class="dropline" style:left="{mv.x(dropAt)}px" aria-hidden="true"><span>{mmss(dropAt / SR)}</span></div>{/if}
             {#if doc.clips.length === 0}
               <div class="hint">Drag tracks here from the table below, or select one and press “Add at playhead”.</div>
@@ -774,6 +777,30 @@
     padding: 2px 8px;
     font-size: 11px;
     white-space: nowrap;
+  }
+  /* the beat a dragged clip was just lined up on, drawn through both clips for a moment */
+  .aligncue {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    margin-left: -1px;
+    background: var(--green);
+    box-shadow: 0 0 6px var(--green);
+    pointer-events: none;
+    z-index: 6;
+    animation: aligncue 1.6s ease-out forwards;
+  }
+  @keyframes aligncue {
+    0% {
+      opacity: 1;
+    }
+    70% {
+      opacity: 1;
+    }
+    100% {
+      opacity: 0;
+    }
   }
   .envclip {
     position: absolute;

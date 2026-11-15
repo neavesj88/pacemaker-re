@@ -6,7 +6,7 @@
   import { mixes } from "$lib/state/mixes.svelte";
   import EnvelopeSvg from "./EnvelopeSvg.svelte";
   import RecipeSettings from "./RecipeSettings.svelte";
-  import { autoTransition, beatmatch, clipTitle } from "./actions";
+  import { autoTransition, beatAlign, beatmatch, clipTitle } from "./actions";
   import { CURVE_PRESETS, CURVE_SCALE, SR, barBeat, clock, curveName, curveToEnv, envToCurve } from "./layout";
   import { recipePrefs } from "./recipePrefs.svelte";
   import { RECIPES, lengthLabel, nearestLength, recipeDef, requestedBars, type RecipeId } from "$lib/state/transitionRecipes";
@@ -17,7 +17,10 @@
   const from = $derived(t.between ? E.clipOf(doc, t.between.from) : undefined);
   const to = $derived(t.between ? E.clipOf(doc, t.between.to) : undefined);
   const bpm = $derived(doc.tempoBpm ?? (to ? E.effectiveBpm(to, to.trimStart) : 120));
-  const bars = $derived((t.length / SR) / ((60 / bpm) * 4));
+  /** Where it is heard (inside the audio both clips share); the stored range when they do not overlap. */
+  const heard = $derived(E.effectiveFade(doc, t));
+  const at = $derived(heard ?? { start: t.start, length: t.length, clamped: false });
+  const bars = $derived((at.length / SR) / ((60 / bpm) * 4));
   const name = $derived(curveName(t.curve));
   let boxW = $state(250);
   let selNode = $state(-1);
@@ -51,8 +54,16 @@
   {#if from && to}“{clipTitle(from)}” into “{clipTitle(to)}”{:else}between two clips (not matched to clips by the layout){/if}
 </div>
 
-<div class="field"><span class="lbl">Starts</span><span class="val">bar {barBeat(t.start, bpm).bar} · {clock(t.startSec)}</span></div>
-<div class="field"><span class="lbl">Length</span><span class="val">{bars.toFixed(bars % 1 === 0 ? 0 : 1)} bars · {clock(t.lengthSec)}</span></div>
+<div class="field"><span class="lbl">Starts</span><span class="val">bar {barBeat(at.start, bpm).bar} · {clock(at.start / SR)}</span></div>
+<div class="field"><span class="lbl">Length</span><span class="val">{bars.toFixed(bars % 1 === 0 ? 0 : 1)} bars · {clock(at.length / SR)}</span></div>
+{#if !heard}
+  <div class="muted small">The two clips are not heard together inside this crossfade, so it does nothing in playback or export. Move a clip so they overlap, or delete it.</div>
+{:else if at.clamped}
+  <div class="muted small">
+    This crossfade reaches past the audio the two clips share (stored: {(t.length / SR).toFixed(1)} s). Playback, export and the drawing cut it to the overlap shown above.
+    <button onclick={() => mixes.edit("Fit crossfade to overlap", (d) => E.fitTransition(d, t.id))} title="Store the cut length, so the file says what is heard">Fit to overlap</button>
+  </div>
+{/if}
 <div class="field">
   <span class="lbl">Active</span>
   <label class="check"><input type="checkbox" checked={!t.bypassed} onchange={(e) => patch(e.currentTarget.checked ? "Enable crossfade" : "Mute crossfade", (x) => ({ ...x, bypassed: !e.currentTarget.checked }))} /> {t.bypassed ? "muted" : "on"}</label>
@@ -127,6 +138,7 @@
 
 <div class="buttons">
   <button disabled={!to} onclick={() => to && void beatmatch(to.id)} title="Match the later clip's tempo and beats to the clip before it">Beat-match clips</button>
+  <button disabled={!from || !to} onclick={() => beatAlign()} title="Move the later clip, without changing its tempo, to the nearest place where its beat grid lines up with the earlier clip's (at the grain of the Snap setting)">Beat-align</button>
   <button class="danger" onclick={ondelete}>Delete…</button>
 </div>
 

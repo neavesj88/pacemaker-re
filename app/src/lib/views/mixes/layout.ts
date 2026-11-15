@@ -252,3 +252,56 @@ export const CURVE_SCALE = 10000;
 export const curveToEnv = (curve: CurveNode[]): EnvNode[] => curve.map((n) => ({ pos: Math.round(n.x * CURVE_SCALE), value: n.value }));
 
 export const envToCurve = (nodes: EnvNode[]): CurveNode[] => nodes.map((n) => ({ x: n.pos / CURVE_SCALE, value: n.value }));
+
+// ---------------------------------------------------------------------------------------------
+// Overlaps on the one mix bar
+// ---------------------------------------------------------------------------------------------
+
+/** How opaque a clip's waveform is where another clip is heard at the same time. */
+export const OVERLAP_OPACITY = 0.62;
+
+/** One stretch of a clip's audible part. There are deliberately no lanes: every stretch is drawn
+ * the full height of the bar, and where clips overlap they lie over each other, each in its own
+ * colour and see-through, as in the original Editor. */
+export type ClipSlice = {
+  /** Timeline samples. */
+  from: number;
+  to: number;
+  /** Another clip is audible together with this one here. */
+  overlapped: boolean;
+  /** Stacking order among the clips heard here: 0 is the earliest clip (underneath), the clip that
+   * came in last is on top and takes the click. */
+  layer: number;
+  /** Opacity of the waveform and body: 1 alone, `OVERLAP_OPACITY` when overlapped. */
+  opacity: number;
+};
+
+/** The audible part of clip `id` cut at every point another clip starts or ends inside it. Clips
+ * are ranked by audible start (ties by order in the list). */
+export function clipSlices(clips: { id: string; visibleStart: number; visibleEnd: number }[], id: string): ClipSlice[] {
+  const me = clips.find((c) => c.id === id);
+  if (!me || !(me.visibleEnd > me.visibleStart)) return [];
+  const order = clips.map((c, i) => ({ c, i })).sort((a, b) => a.c.visibleStart - b.c.visibleStart || a.i - b.i).map((x) => x.c);
+  const others = order.filter((o) => o.id !== id && o.visibleEnd > me.visibleStart && o.visibleStart < me.visibleEnd);
+  const cuts = new Set<number>([me.visibleStart, me.visibleEnd]);
+  for (const o of others) {
+    if (o.visibleStart > me.visibleStart && o.visibleStart < me.visibleEnd) cuts.add(o.visibleStart);
+    if (o.visibleEnd > me.visibleStart && o.visibleEnd < me.visibleEnd) cuts.add(o.visibleEnd);
+  }
+  const xs = [...cuts].sort((a, b) => a - b);
+  const out: ClipSlice[] = [];
+  for (let i = 0; i + 1 < xs.length; i++) {
+    const [from, to] = [xs[i], xs[i + 1]];
+    const mid = (from + to) / 2;
+    const active = order.filter((o) => o.visibleStart <= mid && o.visibleEnd > mid);
+    const overlapped = active.length > 1;
+    out.push({ from, to, overlapped, layer: Math.max(0, active.findIndex((o) => o.id === id)), opacity: overlapped ? OVERLAP_OPACITY : 1 });
+  }
+  return out;
+}
+
+/** Where a clip's name goes, in pixels from the top of the bar: at the top, or below the crossfade
+ * strip (`stripH` high) when the clip starts inside an overlap and the strip lies over its start. */
+export function titleTop(slices: ClipSlice[], stripH: number): number {
+  return slices[0]?.overlapped ? stripH + 3 : 3;
+}

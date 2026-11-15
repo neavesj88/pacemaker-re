@@ -9,7 +9,9 @@
   import { tracklist } from "$lib/state/tracklist.svelte";
   import { toast } from "$lib/state/toast.svelte";
   import Button from "$lib/ui/Button.svelte";
-  import { describe, clipTitle, duplicateSelection, errText, pasteAtPlayhead } from "./actions";
+  import { beatAlign, describe, clipTitle, duplicateSelection, errText, pasteAtPlayhead } from "./actions";
+  import { snapPrefs } from "./snapPrefs.svelte";
+  import type { SnapGrain } from "$lib/state/snapPrefs";
   import BpmField from "./BpmField.svelte";
   import { confirm } from "./confirm.svelte";
   import { cancelExport, closeMix, exportAudio, newMix, reloadChangedMix, saveMix, saveMixAs } from "./flow";
@@ -259,15 +261,18 @@
     </span>
     <Button small disabled={!mixTempo} onclick={matchAll} title="Play every track at the mix tempo (or double or half of it); a track that would need more stretch than the setting allows keeps its own tempo">Match all</Button>
     <span class="sep"></span>
-    <label class="ctl">Snap
-      <select bind:value={mixes.snap} title="Section snaps to where detected sections begin (intro, build, drop, breakdown, outro; Tracks, Sections panel). A clip whose track has none snaps to its phrase lines instead.">
+    <label class="ctl follow" title="Snap on: a clip dragged over or up against another one is lined up with that clip's beat grid (downbeat on downbeat for Bar, phrase start on phrase start for Phrase), using the tracks' real grids. Hold Alt while dragging to move freely. Remembered.">
+      <input type="checkbox" checked={snapPrefs.value.on} onchange={(e) => mixes.setSnap({ on: e.currentTarget.checked })} /> Snap
+    </label>
+    <span class="ctl">
+      <select value={snapPrefs.value.grain} disabled={!snapPrefs.value.on} onchange={(e) => mixes.setSnap({ grain: e.currentTarget.value as SnapGrain })} aria-label="Snap to" title="What a clip is lined up on. Section snaps to where detected sections begin (intro, build, drop, breakdown, outro; Tracks, Sections panel); a clip whose track has none snaps to its phrase lines instead.">
         <option value="beat">Beat</option>
         <option value="bar">Bar</option>
         <option value="phrase">Phrase (8 bars)</option>
         <option value="section">Section</option>
-        <option value="off">Off</option>
       </select>
-    </label>
+    </span>
+    <Button small disabled={doc.clips.length < 2} onclick={() => beatAlign()} title="Move the selected clip (or, with a crossfade selected, its incoming clip) to the nearest place where its beat grid lines up with its neighbour's, at the grain chosen here. Its tempo does not change. A clip without a beat grid is not moved. Undo puts it back.">Beat-align</Button>
     <label class="ctl follow" title={sections.showMarkers ? "Draw the detected sections (intro, build, drop, breakdown, outro) on the clips. Clips of tracks without sections show nothing." : "Turned off in the Sections panel's settings (show markers on waveforms)"}>
       <input type="checkbox" checked={mv.sectionMarkers && sections.showMarkers} disabled={!sections.showMarkers} onchange={(e) => mv.setSectionMarkers(e.currentTarget.checked)} /> sections
     </label>

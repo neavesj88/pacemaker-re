@@ -105,6 +105,7 @@ const PREF_ENTRIES = {
   "pacemaker-revival.tracklist": "tracklist",
   "pm.mixes.recipes.v1": "auto-transitions",
   "pm.mixes.tempo.v1": "mix-tempo",
+  "pm.mixes.snap.v1": "mix-snap",
   "pm.setbuilder.prefs.v1": "set-builder",
   "pacemaker-revival.setlist.v1": "setlist-print",
   "pacemaker-revival.vdj.v1": "virtualdj-export",

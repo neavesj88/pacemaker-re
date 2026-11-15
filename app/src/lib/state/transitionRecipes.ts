@@ -20,6 +20,10 @@ import type { Clip, CurveNode, EnvNode, MixDoc, ToolDoc, ToolSuggestion, Transit
 export type RecipeId = "bassSwap" | "longBlend" | "echoOut" | "filterSweep" | "dropSwap" | "hardCut";
 /** Where a hard cut falls inside its window. */
 export type CutAt = "start" | "end";
+/** Where an automatic crossfade sits: "end" = it ends with the outgoing clip, "start" = at the
+ * incoming clip's first beat (the backend's own placement). See state/crossfadeLength.ts. */
+export type CrossfadePlace = "end" | "start";
+export const CROSSFADE_PLACES: CrossfadePlace[] = ["end", "start"];
 /** What to do when a tool the recipe wants to add would overlap one the user already has. */
 export type ConflictPolicy = "ask" | "skip" | "replace";
 /** Which end of an auto transition may move onto the nearest section boundary (detected sections
@@ -124,9 +128,13 @@ export function nearestLength(recipe: RecipeId, bars: number): number {
 export type RecipePrefs = {
   /** The recipe the Auto buttons use. */
   recipe: RecipeId;
-  /** The length they use, in bars; null = each recipe's own natural length. A recipe that does
-   * not offer this length uses the nearest one it does. */
+  /** "Auto crossfade length": the length they use, in bars (default 16); null = each recipe's own
+   * natural length. A recipe that does not offer this length uses the nearest one it does, and it
+   * is cut to the audio both clips share. */
   bars: number | null;
+  /** Where the crossfade sits: "end" = it ends with the outgoing clip (state/crossfadeLength.ts),
+   * "start" = at the incoming clip's first beat (the backend's own placement). */
+  placeAt: CrossfadePlace;
   /** Where a hard cut falls. */
   cutAt: CutAt;
   /** What to do about tools of the same kind already in the way. */
@@ -146,7 +154,7 @@ export function sectionEdgeWords(edge: SectionEdge): string {
 /** The range of `sectionReachBars`. */
 export const SECTION_REACH = { min: 1, max: 32 } as const;
 
-export const DEFAULT_RECIPE_PREFS: RecipePrefs = { recipe: "bassSwap", bars: null, cutAt: "end", onConflict: "ask", sectionEdge: "off", sectionReachBars: 8 };
+export const DEFAULT_RECIPE_PREFS: RecipePrefs = { recipe: "bassSwap", bars: 16, placeAt: "end", cutAt: "end", onConflict: "ask", sectionEdge: "off", sectionReachBars: 8 };
 
 /** Saved prefs merged over the defaults, ignoring anything unknown or malformed. */
 export function mergeRecipePrefs(saved: unknown): RecipePrefs {
@@ -155,6 +163,9 @@ export function mergeRecipePrefs(saved: unknown): RecipePrefs {
   const s = saved as Record<string, unknown>;
   if (typeof s.recipe === "string" && (RECIPE_IDS as string[]).includes(s.recipe)) out.recipe = s.recipe as RecipeId;
   if (typeof s.bars === "number" && Number.isFinite(s.bars) && s.bars >= 0.25 && s.bars <= 128) out.bars = s.bars;
+  // a saved null is the user's choice of "each recipe's own", not a missing value
+  else if (s.bars === null) out.bars = null;
+  if (typeof s.placeAt === "string" && (CROSSFADE_PLACES as string[]).includes(s.placeAt)) out.placeAt = s.placeAt as CrossfadePlace;
   if (s.cutAt === "start" || s.cutAt === "end") out.cutAt = s.cutAt;
   if (s.onConflict === "ask" || s.onConflict === "skip" || s.onConflict === "replace") out.onConflict = s.onConflict;
   if (typeof s.sectionEdge === "string" && (SECTION_EDGES as string[]).includes(s.sectionEdge)) out.sectionEdge = s.sectionEdge as SectionEdge;

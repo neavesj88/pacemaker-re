@@ -100,7 +100,7 @@
 </div>
 
 <p class="note">
-  Click a clip, tool or crossfade to edit it. Drag clips along the bar; they snap to the beat grids, and clips that overlap are shown one above the other with the crossfade drawn on the overlap.
+  Click a clip, tool or crossfade to edit it. Drag clips along the bar; with Snap on they line up with a neighbour's beat grid (hold Alt to move freely), and clips that overlap lie over each other with the crossfade drawn on the overlap.
   Click the curve of a selected crossfade to add a node; right-click a node to remove it.
 </p>
 

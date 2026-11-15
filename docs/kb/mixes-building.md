@@ -33,8 +33,9 @@ Tracks are matched to the mix tempo as they are added if that setting is on: see
 
 ## Moving around the timeline
 
-- Clips sit on one bar in their own colours. Drag a clip by its name to move it. Drag a clip edge to trim it.
-- **Snap** chooses what a move snaps to: Beat, Bar, Phrase (8 bars), Section (where detected sections begin) or Off.
+- Clips sit on one bar in their own colours. Drag a clip by its name to move it. Drag a clip edge to trim it. Where two clips overlap they are drawn over each other, each in its own colour and see-through, with the crossfade lines over both. A click in the overlap takes the clip that comes in last; reach the earlier one on its own part, by its edge, or with Tab.
+- **Snap** (tick box, on by default) lines a clip up with its neighbour's beat grid when you drag it over, or up against, another clip: downbeat on downbeat for Bar, phrase start on phrase start for Phrase, any beat for Beat. The box next to it chooses Beat, Bar (the default), Phrase (8 bars) or Section (where detected sections begin). Hold **Alt** while dragging to move freely. Both choices are remembered. A green line shows the beat it lined up on.
+- **Beat-align** (toolbar, the clip panel, and the right-click menu) does the same in one step for the selected clip, or for the incoming clip of a selected crossfade, and Undo puts it back. It moves the clip to the nearest place where the grids agree and does not change its tempo, so use **Match all** first when the tempos differ. A clip whose track has no beat grid is not moved; the message says so.
 - **Zoom** and **Fit** change the scale. Ctrl and the wheel zooms at the pointer.
 - The **sections** tick draws the detected sections on the clips.
 - **Curves** (Gain, Tempo, Key) draw one kind of envelope over the bar so you can edit it: click on the selected clip to add a node, drag to move it, right-click to remove it.

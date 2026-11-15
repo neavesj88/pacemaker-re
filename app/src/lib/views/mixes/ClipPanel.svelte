@@ -6,7 +6,7 @@
   import { mixes } from "$lib/state/mixes.svelte";
   import { exceeds, stretchText, type TempoChoice } from "$lib/state/tempoMatch";
   import ContextMenu, { type MenuItem } from "$lib/ui/ContextMenu.svelte";
-  import { addProcessTo, autoTransition, beatmatch, clipTitle, duplicateSelection, neighbours, toolChoices } from "./actions";
+  import { addProcessTo, autoTransition, beatAlign, beatmatch, clipTitle, duplicateSelection, neighbours, toolChoices } from "./actions";
   import BpmField from "./BpmField.svelte";
   import { barBeat, clock, fmtSemis, keyToEnv, SR } from "./layout";
   import { toolPrefs } from "./listPrefs.svelte";
@@ -218,6 +218,7 @@
 <div class="buttons">
   <button onclick={toolMenu} title="Add a tool, loop, reverse or ignore to this clip at the playhead">+ Tool ▾</button>
   <button disabled={!nb.prev} onclick={() => void beatmatch(clip.id)} title={nb.prev ? "Match tempo and beats to the previous clip (half or double time when that stretches this track less)" : "There is no earlier clip"}>Beat-match</button>
+  <button onclick={() => beatAlign(clip.id)} title="Move this clip, without changing its tempo, to the nearest place where its beat grid lines up with its neighbour's (at the grain of the Snap setting). A clip without a beat grid is not moved.">Beat-align</button>
   <button disabled={!nb.next} onclick={() => nb.next && void autoTransition(clip.id, nb.next.id)} title="Transition into the next clip with the recipe set below">Auto transition</button>
 </div>
 <details class="defaults">
@@ -238,7 +239,7 @@
 </div>
 <p class="note">
   Beat-match moves this clip so its beats sit on the previous clip's; it changes the clip's tempo and start. The curves are drawn over the clips on the bar (one kind at a time): with a
-  curve on, click on the selected clip to add a node, drag to move it, right-click to remove it; drag the clip by its name (an incoming clip under a crossfade is grabbed outside the crossfade, or zoom in).
+  curve on, click on the selected clip to add a node, drag to move it, right-click to remove it; drag the clip by its name (where clips overlap they lie over each other: a click there takes the clip that came in last, the earlier one is grabbed by its own part, its edge handles or Tab).
 </p>
 
 {#if menu}

@@ -16,6 +16,7 @@ Where two clips overlap on the bar, the overlap is a **crossfade**. Click it to 
 - **Curve.** Presets are Linear, Fast in, Slow in, Equal power and Cut. You can also draw your own: click to add a node, drag to move it.
 - **Fade after.** Whether the outgoing clip fades out after half or three quarters of the overlap.
 - **Mute** switches the crossfade off.
+- A crossfade only plays, draws and exports where **both clips are heard**: it starts no earlier than the incoming clip and ends no later than the end of the outgoing clip (trims included). If a stored fade is longer (you trimmed or moved a clip after making it), the bar shows "cut to overlap" and the panel offers **Fit to overlap** to save the shorter length. The file is never changed unless you do that.
 - **Beat-match clips** matches the later clip's tempo and beats to the clip before it.
 
 ### Transition recipes
@@ -30,6 +31,8 @@ A recipe builds the crossfade and the tools around it in one go. Choose it in th
 | Filter sweep | The outgoing track is thinned out with a rising high-pass while the incoming track opens up from a low-pass | 2 to 32 (8 default) |
 | Drop swap | The outgoing track builds (bass out, rising high-pass, a beat-repeat on the last bar) and the incoming track hits at full on the last beat | 2 to 16 (8 default) |
 | Hard cut | A straight cut with no blend. The cut falls at the end of the length (a phrase is 8 bars), or at the start | one beat to 8 (8 default) |
+
+**Auto crossfade length** (Settings, Mixes, Auto transitions; 16 bars by default) is how long an automatic crossfade is. It is never longer than the audio both clips share and is a whole number of bars. **Crossfade sits** says where it goes: by default it ends with the outgoing clip, starting on a bar line of the incoming clip when it has a beat grid; the other choice starts it on the incoming clip's first beat.
 
 If your own tools are in the way, what happens to them is set in Settings, Mixes, Auto transitions. A recipe needs the two clips to overlap by at least its shortest length; the app tells you if they do not.
 

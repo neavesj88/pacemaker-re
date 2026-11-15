@@ -3,6 +3,8 @@
 import type { Clip, MixDoc } from "$lib/api/mixes";
 import * as E from "$lib/state/mixedit";
 import { mixes } from "$lib/state/mixes.svelte";
+import { placeTransition } from "$lib/state/crossfadeLength";
+import { alignGrainOf } from "$lib/state/snapPrefs";
 import { alignSuggestion } from "$lib/state/sectionTransition";
 import { toast } from "$lib/state/toast.svelte";
 import { vocal } from "$lib/state/vocal.svelte";
@@ -19,6 +21,7 @@ import {
 import { confirm } from "./confirm.svelte";
 import { SR, mmss, toolLabel } from "./layout";
 import { recipePrefs } from "./recipePrefs.svelte";
+import { snapPrefs } from "./snapPrefs.svelte";
 import { vocalTools } from "./vocalTools.svelte";
 import { mv } from "./view.svelte";
 import { addKept, keptNote } from "./previewState";
@@ -222,6 +225,30 @@ export async function beatmatch(clipId: string) {
   }
 }
 
+/** The Beat-align button and menu entry: lines the selected clip up with its neighbour's beat grid at
+ * the Snap setting's grain (bars for "section"), or, with a crossfade selected, the incoming clip of
+ * that overlap with the outgoing one. One undo step; the result (or why nothing moved) is shown. */
+export function beatAlign(clipId?: string) {
+  const doc = mixes.doc;
+  if (!doc) return;
+  let id = clipId;
+  let against: string | undefined;
+  if (!id) {
+    const t = doc.transitions.find((x) => mixes.selected.includes(x.id));
+    const f = t ? E.effectiveFade(doc, t) : null;
+    if (f) {
+      id = f.to.id;
+      against = f.from.id;
+    } else id = doc.clips.find((c) => mixes.selected.includes(c.id))?.id ?? targetClip()?.id;
+  }
+  if (!id) {
+    toast.show("Beat-align: select a clip or a crossfade first.", "bad", 6000);
+    return;
+  }
+  const r = mixes.beatAlign(id, alignGrainOf(snapPrefs.value), against);
+  toast.show(r.moved ? `Beat-align: ${r.message}` : `Beat-align: nothing moved. ${r.message}`, r.moved ? "ok" : "bad", 8000);
+}
+
 export type AutoOptions = {
   /** The recipe; default is the one in the settings. */
   recipe?: RecipeId;
@@ -251,10 +278,12 @@ export async function autoTransition(fromId: string, toId: string, opts: AutoOpt
     const base = await mixes.autoTransition(fromId, toId, false, bars);
     const doc = mixes.doc;
     if (!doc) return;
-    // with the section setting on, the window may move onto section boundaries first (the backend
-    // knows nothing of sections); off, or without sections near, this is the backend's own window
-    const aligned = alignSuggestion(doc, base, prefs, mixes.sectionLookup, def.lengths[0] * 4 * base.beat);
-    const built = buildRecipe(doc, aligned.suggestion, recipe, { cutAt: prefs.cutAt, moved: aligned.moved }, E.recipeKit);
+    // the crossfade ends with the outgoing clip (setting "Crossfade sits"), never beyond the audio
+    // both clips share; then, with the section setting on, the window may move onto section
+    // boundaries (the backend knows nothing of either); a window nothing moved is the backend's own
+    const placed = placeTransition(doc, base, bars, prefs.placeAt);
+    const aligned = alignSuggestion(doc, placed.suggestion, prefs, mixes.sectionLookup, def.lengths[0] * 4 * base.beat);
+    const built = buildRecipe(doc, aligned.suggestion, recipe, { cutAt: prefs.cutAt, moved: placed.moved || aligned.moved }, E.recipeKit);
     const old = opts.replacing ? E.find(doc, opts.replacing) : null;
     const replacing = old?.kind === "transition" ? old.transition : null;
     const way = toolsInTheWay(doc, built, replacing);

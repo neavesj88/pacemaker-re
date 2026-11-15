@@ -14,6 +14,9 @@ import * as E from "../src/lib/state/mixedit.ts";
 import * as TM from "../src/lib/state/tempoMatch.ts";
 import * as R from "../src/lib/state/transitionRecipes.ts";
 import * as ST from "../src/lib/state/sectionTransition.ts";
+import * as SP from "../src/lib/state/snapPrefs.ts";
+import * as CL from "../src/lib/state/crossfadeLength.ts";
+
 import * as L from "../src/lib/views/mixes/layout.ts";
 import * as ML from "../src/lib/views/mixes/mixlist.ts";
 import * as PS from "../src/lib/views/mixes/previewState.ts";
@@ -184,8 +187,11 @@ test("snapping: targets, nearest, and a dragged clip's beats landing on another 
   const opts = { mode: "bar", threshold: 8000 };
   const s = E.snapClipStart(d, "b", 3 * BAR - 5000 + 1234, opts);
   close(s, 3 * BAR - 5000, 1e-6);
-  // too far: unchanged
-  assert.equal(E.snapClipStart(d, "b", 3 * BAR + BAR / 2, { mode: "bar", threshold: 100 }), 3 * BAR + BAR / 2);
+  // overlapping a neighbour that has a grid: always lined up, whatever the pixel threshold (4 bars here: nearer than 3)
+  assert.equal(E.snapClipStart(d, "b", 3 * BAR + BAR / 2, { mode: "bar", threshold: 100 }), 4 * BAR - 5000);
+  // far from every neighbour (more than a bar of gap) the old rule applies: only within the threshold
+  const far = doc([clip("a", 0, 10 * BAR, 120, 1, grid(120, 0, 100, 0)), clip("b", 0, 10 * BAR, 120, 1, grid(120, 5000, 100, 0), { channel: 1 })]);
+  assert.equal(E.snapClipStart(far, "b", 40 * BAR + BAR / 2, { mode: "bar", threshold: 100 }), 40 * BAR + BAR / 2);
   // with no grid anywhere the reference tempo's grid is used
   const lone = doc([clip("c", 0, 10 * BAR, 120, 1, null)]);
   const t = E.snapTargets(lone, "beat", ["c"], [0, 5 * BEAT]);
@@ -480,11 +486,11 @@ test("recipe lengths: labels, nearest, requested", () => {
 test("recipe settings: defaults, merge ignores junk", () => {
   assert.deepEqual(R.mergeRecipePrefs(undefined), R.DEFAULT_RECIPE_PREFS);
   assert.deepEqual(R.mergeRecipePrefs("x"), R.DEFAULT_RECIPE_PREFS);
-  assert.deepEqual(R.DEFAULT_RECIPE_PREFS, { recipe: "bassSwap", bars: null, cutAt: "end", onConflict: "ask", sectionEdge: "off", sectionReachBars: 8 });
+  assert.deepEqual(R.DEFAULT_RECIPE_PREFS, { recipe: "bassSwap", bars: 16, placeAt: "end", cutAt: "end", onConflict: "ask", sectionEdge: "off", sectionReachBars: 8 });
   assert.deepEqual(R.mergeRecipePrefs({ recipe: "echoOut", bars: 4, cutAt: "start", onConflict: "replace" }), { ...R.DEFAULT_RECIPE_PREFS, recipe: "echoOut", bars: 4, cutAt: "start", onConflict: "replace" });
   assert.deepEqual(R.mergeRecipePrefs({ recipe: "nope", bars: -3, cutAt: "middle", onConflict: 7, sectionEdge: "middle", sectionReachBars: "8" }), R.DEFAULT_RECIPE_PREFS);
-  assert.equal(R.mergeRecipePrefs({ bars: 1000 }).bars, null);
-  assert.equal(R.mergeRecipePrefs({ bars: "8" }).bars, null);
+  assert.equal(R.mergeRecipePrefs({ bars: 1000 }).bars, 16);
+  assert.equal(R.mergeRecipePrefs({ bars: "8" }).bars, 16);
   assert.equal(R.mergeRecipePrefs({ bars: 0.25 }).bars, 0.25);
 });
 
@@ -1208,28 +1214,340 @@ test("decks are automatic: overlapping clips end up on different decks and a doc
   assert.equal(three.clips.length, 3);
 });
 
-test("overlapSlices cuts a clip by how many clips are heard together, the earlier clip on top", () => {
-  const a = clip("a", 0, 10 * BAR, 120, 1, null);
-  const b = clip("b", 8 * BAR, 10 * BAR, 120, 1, null, { channel: 1 });
-  const d = doc([a, b]);
-  const sa = E.overlapSlices(d, d.clips[0]);
-  assert.equal(sa.length, 2);
-  assert.deepEqual(sa.map((s) => [s.band, s.count]), [[0, 1], [0, 2]]);
+// ---- snap + beat-align ------------------------------------------------------------------------
+
+/** Timeline times of a clip's audible beats at or above `kinds`. */
+const pointTimes = (c, kinds) => E.clipBeatPoints(c).filter((b) => kinds.includes(b.kind) && b.time >= c.visibleStart - 1 && b.time <= c.visibleEnd + 1).map((b) => b.time);
+/** Smallest distance in samples of any time of `xs` to any of `ys`. */
+const nearestGap = (xs, ys) => Math.min(...xs.map((x) => Math.min(...ys.map((y) => Math.abs(x - y)))));
+/** The first bar line of `c` at or after its audible start, and the distance of that beat to the outgoing clip's nearest bar line. */
+const incomingOnOutgoingBar = (doc, outId, inId) => {
+  const out = doc.clips.find((c) => c.id === outId);
+  const inc = doc.clips.find((c) => c.id === inId);
+  const first = pointTimes(inc, ["bar", "phrase"]).sort((a, b) => a - b)[0];
+  return nearestGap([first], pointTimes(out, ["bar", "phrase"]));
+};
+
+test("beat-align: the incoming clip's beat lands exactly on a beat of the outgoing clip (rendered timeline maths)", () => {
+  // outgoing: downbeat at frame 3000; incoming: downbeat at frame 11111, dropped at an arbitrary place
+  const out = clip("out", 0, 60 * BAR, 120, 1, grid(120, 3000, 600, 0));
+  const inc = clip("in", 40 * BAR + 7777, 40 * BAR, 120, 1, grid(120, 11111, 400, 0), { channel: 1 });
+  const d = doc([out, inc]);
+  assert.ok(incomingOnOutgoingBar(d, "out", "in") > 100, "the fixture starts off the grid");
+  for (const grain of ["beat", "bar", "phrase"]) {
+    const r = E.beatAlignClip(d, "in", grain);
+    assert.equal(r.moved, true, grain);
+    const moved = r.doc.clips.find((c) => c.id === "in");
+    // beat i of the incoming clip is on a beat of the outgoing one, to the sample (the start is whole samples)
+    const kinds = grain === "beat" ? ["beat", "bar", "phrase"] : grain === "bar" ? ["bar", "phrase"] : ["phrase"];
+    const outPts = pointTimes(r.doc.clips[0], kinds);
+    const inPts = pointTimes(moved, kinds).filter((t) => t >= moved.visibleStart && t <= r.doc.clips[0].visibleEnd);
+    assert.ok(inPts.length > 0);
+    for (const t of inPts) assert.ok(nearestGap([t], outPts) <= 0.5 + 1e-6, `${grain}: every ${grain} of the incoming clip is on one of the outgoing clip's (off by ${nearestGap([t], outPts)})`);
+    // idempotent: the second press finds it already lined up
+    const again = E.beatAlignClip(r.doc, "in", grain);
+    assert.equal(again.moved, false, `${grain} again`);
+    assert.match(again.message, /Already lined up/);
+    // the move is what playback uses: the document's start, nothing else changed
+    assert.equal(moved.start, r.result.start);
+    assert.equal(moved.length, inc.length);
+    assert.equal(moved.bpm, inc.bpm);
+  }
+});
+
+test("beat-align moves the least distance and respects the downbeat", () => {
+  // the incoming grid's downbeat is beat 2 of its file: bars are 2 beats later than beat 0
+  const out = clip("out", 0, 60 * BAR, 120, 1, grid(120, 0, 600, 0));
+  const inc = clip("in", 30 * BAR, 40 * BAR, 120, 1, grid(120, 0, 400, 2), { channel: 1 });
+  const d = doc([out, inc]);
+  const r = E.beatAlignClip(d, "in", "bar");
+  // incoming bars sit at start + 2 beats + k bars; they must reach the outgoing bars (multiples of BAR): shift by 2 beats
+  const moved = r.doc.clips[1];
+  assert.equal(r.doc.clips[1].start % BAR, BAR - 2 * BEAT);
+  assert.ok(Math.abs(r.result.shift) <= BAR / 2, "no more than half a bar");
+  assert.equal(incomingOnOutgoingBar(r.doc, "out", "in"), 0);
+  assert.ok(moved.start !== inc.start);
+  // beats alone ignore the downbeat: a half-beat offset moves by half a beat at most
+  const inc2 = { ...inc, start: 30 * BAR + BEAT / 2 };
+  const r2 = E.beatAlignClip(doc([out, inc2]), "in", "beat");
+  assert.ok(Math.abs(r2.result.shift) <= BEAT / 2 + 1);
+});
+
+test("beat-align: half and double tempo line up on the beats they share", () => {
+  const out = clip("out", 0, 60 * BAR, 120, 1, grid(120, 0, 600, 0));
+  // 240 BPM material played at 0.5 speed = 120 BPM: same tempo; and 60 BPM material at double speed
+  const dbl = clip("dbl", 30 * BAR + 3333, 40 * BAR, 240, 0.5, grid(240, 1000, 1600, 0), { channel: 1 });
+  const r = E.beatAlignClip(doc([out, dbl]), "dbl", "beat");
+  assert.equal(r.moved, true);
+  assert.equal(r.result.tempoMatched, true);
+  const moved = r.doc.clips[1];
+  const outPts = pointTimes(r.doc.clips[0], ["beat", "bar", "phrase"]);
+  for (const t of pointTimes(moved, ["beat", "bar", "phrase"]).filter((x) => x < r.doc.clips[0].visibleEnd)) assert.ok(nearestGap([t], outPts) <= 0.5 + 1e-6);
+  // a 240 BPM track left at its own tempo is double time: every beat of the outgoing clip is a beat of it
+  const fast = clip("fast", 30 * BAR + 5, 40 * BAR, 240, 1, grid(240, 700, 1600, 0), { channel: 1 });
+  const rf = E.beatAlignClip(doc([out, fast]), "fast", "beat");
+  assert.equal(rf.result.tempoMatched, true, "double time counts as matched");
+  const outBeats = pointTimes(rf.doc.clips[0], ["beat", "bar", "phrase"]);
+  const fastBeats = pointTimes(rf.doc.clips[1], ["beat", "bar", "phrase"]);
+  assert.ok(outBeats.every((t) => t < rf.doc.clips[1].visibleStart || nearestGap([t], fastBeats) <= 0.5 + 1e-6), "all the outgoing beats are among the fast clip's");
+  // tempos that are not related are reported, and the clip still lines up at the start of the overlap
+  const odd = clip("odd", 30 * BAR + 1234, 40 * BAR, 133, 1, grid(133, 0, 600, 0), { channel: 1 });
+  const ro = E.beatAlignClip(doc([out, odd]), "odd", "bar");
+  assert.equal(ro.result.tempoMatched, false);
+  assert.match(ro.message, /Match all/);
+});
+
+test("beat-align: a clip or neighbour without a beat grid is not moved, and it says so", () => {
+  const out = clip("out", 0, 60 * BAR, 120, 1, grid(120, 0, 600, 0));
+  const bare = clip("bare", 30 * BAR + 99, 40 * BAR, 120, 1, null, { channel: 1 });
+  const none = E.beatAlignClip(doc([out, bare]), "bare", "bar");
+  assert.equal(none.moved, false);
+  assert.match(none.message, /no beat grid/);
+  assert.equal(none.doc.clips[1].start, bare.start);
+  const toBare = E.beatAlignClip(doc([clip("o", 0, 60 * BAR, 120, 1, null), clip("i", 30 * BAR, 40 * BAR, 120, 1, grid(120, 0, 400, 0), { channel: 1 })]), "i", "bar");
+  assert.equal(toBare.moved, false);
+  assert.match(toBare.message, /No other clip has a beat grid/);
+  assert.equal(E.beatAlignClip(doc([out]), "out", "bar").moved, false);
+  assert.equal(E.alignClipStart(doc([out, bare]), "bare", bare.start, "bar"), null);
+});
+
+test("snap on drag: overlapping or next to a clip lines the grids up, far away leaves it alone", () => {
+  const out = clip("out", 0, 20 * BAR, 120, 1, grid(120, 2000, 200, 0));
+  const inc = clip("in", 0, 20 * BAR, 120, 1, grid(120, 9000, 200, 0), { channel: 1 });
+  const d = doc([out, inc]);
+  const opts = { mode: "bar", threshold: 50 };
+  // overlapping: lined up (the downbeat of "in" is at +9000 of its start, so start = k * BAR - 7000)
+  const s = E.snapClipStartInfo(d, "in", 15 * BAR + 31337, opts);
+  assert.ok(s.aligned);
+  assert.equal(s.aligned.neighbourId, "out");
+  assert.equal((s.start + 9000 - 2000) % BAR, 0);
+  assert.ok(Math.abs(s.start - (15 * BAR + 31337)) <= BAR / 2);
+  // next to it (a gap under a bar after its end): lined up too
+  const next = E.snapClipStartInfo(d, "in", 20 * BAR + BAR / 4, opts);
+  assert.ok(next.aligned, "within a bar of the end");
+  // far away: the pixel threshold rule, unchanged
+  const far = E.snapClipStartInfo(d, "in", 30 * BAR + 31337, opts);
+  assert.equal(far.aligned, null);
+  assert.equal(far.start, 30 * BAR + 31337);
+  // off: free
+  assert.equal(E.snapClipStart(d, "in", 15 * BAR + 31337, { mode: "off", threshold: 50 }), 15 * BAR + 31337);
+  // the section mode keeps its own rule (no grid alignment)
+  assert.equal(E.snapClipStartInfo(d, "in", 15 * BAR + 31337, { mode: "section", threshold: 50 }).aligned, null);
+  // moveClip with the mode on lands on the same place
+  assert.equal(E.moveClip(d, "in", 15 * BAR + 31337, opts).clips[1].start, s.start);
+});
+
+test("beat-align on an overlap: the incoming clip of a crossfade is lined up with the outgoing one", () => {
+  const out = clip("out", 0, 40 * BAR, 120, 1, grid(120, 500, 400, 0));
+  const inc = clip("in", 30 * BAR + 4321, 40 * BAR, 120, 1, grid(120, 800, 400, 0), { channel: 1 });
+  let d = doc([out, inc]);
+  d = E.addTransition(d, E.newTransition("out", "in", inc.start, 10 * BAR - 4321, "t1"));
+  const f = E.effectiveFade(d, d.transitions[0]);
+  const r = E.beatAlignClip(d, f.to.id, "bar", f.from.id);
+  assert.equal(r.moved, true);
+  assert.equal(incomingOnOutgoingBar(r.doc, "out", "in"), 0);
+});
+
+test("snap settings: on by default, by bar; merge ignores junk; the mode follows", () => {
+  assert.deepEqual(SP.DEFAULT_SNAP_PREFS, { on: true, grain: "bar" });
+  assert.deepEqual(SP.mergeSnapPrefs(undefined), SP.DEFAULT_SNAP_PREFS);
+  assert.deepEqual(SP.mergeSnapPrefs({ on: false, grain: "phrase" }), { on: false, grain: "phrase" });
+  assert.deepEqual(SP.mergeSnapPrefs({ on: "no", grain: "eighth" }), SP.DEFAULT_SNAP_PREFS);
+  assert.equal(SP.snapModeOf({ on: true, grain: "beat" }), "beat");
+  assert.equal(SP.snapModeOf({ on: false, grain: "beat" }), "off");
+  assert.equal(SP.alignGrainOf({ on: true, grain: "section" }), "bar");
+  assert.equal(SP.alignGrainOf({ on: false, grain: "phrase" }), "phrase");
+});
+
+// ---- crossfades stay inside the overlap --------------------------------------------------------
+
+test("effectiveFade: never reaches past the outgoing clip's audible end (trim included) or before the incoming start", () => {
+  const out = clip("out", 0, 40 * BAR, 120, 1, null, { trimEnd: 10 * BAR }); // audible to bar 30
+  const inc = clip("in", 20 * BAR, 40 * BAR, 120, 1, null, { channel: 1 });
+  const d = doc([out, inc]);
+  // the owner's case: made long (or the clip trimmed afterwards), stored to bar 64 beyond the outgoing end
+  const f = E.effectiveFade(d, { start: 20 * BAR, length: 44 * BAR });
+  assert.equal(f.clamped, true);
+  assert.equal(f.start, 20 * BAR);
+  assert.equal(f.start + f.length, 30 * BAR);
+  assert.equal(f.from.id, "out");
+  assert.equal(f.to.id, "in");
+  // a stored fade that begins before the incoming clip begins at the incoming clip
+  const early = E.effectiveFade(d, { start: 10 * BAR, length: 15 * BAR });
+  assert.equal(early.start, 20 * BAR);
+  assert.equal(early.start + early.length, 25 * BAR);
+  // inside the overlap: untouched
+  const inside = E.effectiveFade(d, { start: 22 * BAR, length: 4 * BAR });
+  assert.equal(inside.clamped, false);
+  assert.equal(inside.start, 22 * BAR);
+  assert.equal(inside.length, 4 * BAR);
+  // never longer than the overlap, whatever is stored
+  for (const len of [BAR, 5 * BAR, 10 * BAR, 100 * BAR, 1e9]) {
+    const e = E.effectiveFade(d, { start: 20 * BAR, length: len });
+    assert.ok(e.start >= d.clips[1].visibleStart && e.start + e.length <= d.clips[0].visibleEnd, `len ${len}`);
+  }
+  // clips that are never heard together: nothing to draw, the mixer ignores it too
+  const apart = doc([clip("a", 0, 10 * BAR, 120, 1, null), clip("b", 30 * BAR, 10 * BAR, 120, 1, null)]);
+  assert.equal(E.effectiveFade(apart, { start: 5 * BAR, length: 30 * BAR }), null);
+  assert.equal(E.effectiveFade(d, { start: 20 * BAR, length: 0 }), null);
+});
+
+test("effectiveFade picks the clips the way the mixer does: the last to start is incoming, of the rest the last to end is outgoing", () => {
+  const a = clip("a", 0, 30 * BAR, 120, 1, null);
+  const b = clip("b", 0, 50 * BAR, 120, 1, null, { start: 5 * BAR, channel: 1 });
+  const c = clip("c", 0, 20 * BAR, 120, 1, null, { start: 20 * BAR });
+  const d = doc([a, b, c]);
+  const f = E.effectiveFade(d, { start: 20 * BAR, length: 10 * BAR });
+  assert.equal(f.to.id, "c");
+  assert.equal(f.from.id, "b", "b ends last of the others");
+  assert.equal(f.start + f.length, 30 * BAR, "ends where the fade's own range ends: b is still going");
+  assert.equal(f.clamped, false);
+});
+
+test("fitTransition stores the cut window; a fade that fits is left alone", () => {
+  const out = clip("out", 0, 30 * BAR, 120, 1, null);
+  const inc = clip("in", 20 * BAR, 40 * BAR, 120, 1, null, { channel: 1 });
+  let d = doc([out, inc]);
+  d = E.addTransition(d, E.newTransition("out", "in", 20 * BAR, 44 * BAR, "t1"));
+  const fitted = E.fitTransition(d, "t1");
+  assert.equal(fitted.transitions[0].start, 20 * BAR);
+  assert.equal(fitted.transitions[0].length, 10 * BAR);
+  assert.equal(E.fitTransition(fitted, "t1"), fitted, "already fits: same document");
+  assert.equal(E.fitTransition(d, "nope"), d);
+});
+
+test("saved fades are kept as they are: only the heard window is cut", () => {
+  const out = clip("out", 0, 30 * BAR, 120, 1, null);
+  const inc = clip("in", 20 * BAR, 40 * BAR, 120, 1, null, { channel: 1 });
+  const d = E.addTransition(doc([out, inc]), E.newTransition("out", "in", 20 * BAR, 44 * BAR, "t1"));
+  assert.equal(d.transitions[0].length, 44 * BAR, "the stored length is untouched by looking at it");
+  assert.equal(E.effectiveFade(d, d.transitions[0]).length, 10 * BAR);
+});
+
+// ---- the automatic crossfade: length and place ------------------------------------------------
+
+/** What the backend suggests for `in` after `out`: the window starts on the incoming clip's first beat and runs `bars`. */
+function suggestion(d, from, to, bars) {
+  const b = d.clips.find((c) => c.id === to);
+  const a = d.clips.find((c) => c.id === from);
+  const t0 = b.visibleStart;
+  const avail = Math.min(a.visibleEnd, b.visibleEnd) - t0;
+  const len = Math.min(bars * BAR, Math.floor(avail / BAR) * BAR);
+  return { transition: E.newTransition(from, to, t0, len, "auto"), tools: [], bars: len / BAR, beat: BEAT, barsAvailable: avail / BAR, notes: [] };
+}
+
+test("auto crossfade length: whole bars, at most what was asked and at most what is shared", () => {
+  assert.equal(CL.wholeLength(16 * BAR, BEAT), 16 * BAR);
+  assert.equal(CL.wholeLength(16 * BAR - 5000, BEAT), 15 * BAR);
+  assert.equal(CL.wholeLength(BAR / 2 + 100, BEAT), 2 * BEAT, "under a bar: whole beats");
+  assert.equal(CL.wholeLength(10, BEAT), BEAT, "at least a beat");
+  const grid = { bars: [], beats: [] };
+  const w = CL.crossfadeWindow(0, 100 * BAR, BEAT, 16, grid);
+  assert.equal(w.length, 16 * BAR);
+  assert.equal(w.start + w.length, 100 * BAR, "ends with the outgoing clip when there is no grid to snap to");
+  // asked for more than is shared: the shared audio, in whole bars
+  const short = CL.crossfadeWindow(10 * BAR, 10 * BAR + 6.5 * BAR, BEAT, 16, grid);
+  assert.equal(short.length, 6 * BAR);
+  assert.ok(short.start >= 10 * BAR);
+  assert.equal(CL.crossfadeWindow(0, BEAT / 4, BEAT, 16, grid), null, "less than half a beat shared");
+});
+
+test("auto crossfade placement: ends with the outgoing clip, never beyond the overlap, starts on the incoming clip's bar", () => {
+  const out = clip("out", 0, 105 * BAR, 120, 1, grid(120, 0, 450, 0));
+  const inc = clip("in", 62 * BAR + 5000, 100 * BAR, 120, 1, grid(120, 3000, 450, 0), { channel: 1 }); // overlap: bar 62 to 105
+  const d = doc([out, inc]);
+  for (const place of [["end", 16], ["end", 32], ["end", 64], ["end", 4]]) {
+    const base = suggestion(d, "out", "in", 64); // the old rule: starts at the incoming clip and may be as long as asked
+    const p = CL.placeTransition(d, base, place[1], place[0]);
+    const t = p.suggestion.transition;
+    assert.ok(t.start >= d.clips[1].visibleStart - 1, `${place}: not before the incoming clip`);
+    assert.ok(t.start + t.length <= d.clips[0].visibleEnd + 1, `${place}: not after the outgoing clip's end`);
+    assert.ok(t.length <= place[1] * BAR + 1, `${place}: not longer than asked`);
+    assert.equal(t.length % BAR, 0, `${place}: whole bars`);
+    // the stretch left before the end is less than a bar: it ends with the outgoing clip
+    assert.ok(d.clips[0].visibleEnd - (t.start + t.length) < BAR + 1, `${place}: ends with the outgoing clip`);
+    // starts on one of the incoming clip's bar lines
+    const bars = pointTimes(d.clips[1], ["bar", "phrase"]);
+    assert.ok(nearestGap([t.start], bars) <= 1, `${place}: on a bar line of the incoming clip`);
+    // and the mixer would not cut it
+    const f = E.effectiveFade(E.addTransition(d, t), t);
+    assert.equal(f.clamped, false, `${place}: inside the true overlap`);
+  }
+  // 64 bars asked, 42.x shared: it is the shared bars, not 64
+  const long = CL.placeTransition(d, suggestion(d, "out", "in", 64), 64, "end");
+  assert.ok(long.suggestion.transition.length / BAR <= 43);
+  assert.ok(long.suggestion.notes.some((n) => /overlap/.test(n)));
+  // the window it makes is what the tool geometry is built on: moved, so a recipe rebuilds its tools
+  assert.equal(long.moved, true);
+});
+
+test("auto crossfade placement: 'start' keeps the backend's window; an already-placed one is not moved", () => {
+  const out = clip("out", 0, 105 * BAR, 120, 1, grid(120, 0, 450, 0));
+  const inc = clip("in", 89 * BAR, 100 * BAR, 120, 1, grid(120, 0, 450, 0), { channel: 1 }); // overlap: 16 bars to the outgoing end
+  const d = doc([out, inc]);
+  const base = suggestion(d, "out", "in", 16);
+  assert.equal(CL.placeTransition(d, base, 16, "start").moved, false);
+  assert.equal(CL.placeTransition(d, base, 16, "start").suggestion, base);
+  const same = CL.placeTransition(d, base, 16, "end");
+  assert.equal(same.moved, false, "16 bars asked, 16 shared: the backend's window already ends with the outgoing clip");
+  assert.equal(same.suggestion, base);
+  // no grid: the window still ends with the outgoing clip
+  const bare = doc([clip("out", 0, 105 * BAR, 120, 1, null), clip("in", 62 * BAR + 17, 100 * BAR, 120, 1, null, { channel: 1 })]);
+  const p = CL.placeTransition(bare, suggestion(bare, "out", "in", 8), 8, "end");
+  assert.equal(p.suggestion.transition.start + p.suggestion.transition.length, 105 * BAR);
+  assert.equal(p.suggestion.transition.length, 8 * BAR);
+});
+
+test("recipe settings: Auto crossfade length defaults to 16 bars, placed at the end", () => {
+  assert.equal(R.DEFAULT_RECIPE_PREFS.bars, 16);
+  assert.equal(R.DEFAULT_RECIPE_PREFS.placeAt, "end");
+  assert.equal(R.mergeRecipePrefs({ placeAt: "start" }).placeAt, "start");
+  assert.equal(R.mergeRecipePrefs({ placeAt: "middle" }).placeAt, "end");
+  // a saved "each recipe's own" (null) stays the user's choice
+  assert.equal(R.mergeRecipePrefs({ bars: null }).bars, null);
+  assert.equal(R.requestedBars("bassSwap", R.DEFAULT_RECIPE_PREFS), 16);
+});
+
+// ---- overlap layout: no lanes -----------------------------------------------------------------
+
+test("clipSlices: overlapping clips lie over each other, full height, no lanes", () => {
+  const a = { id: "a", visibleStart: 0, visibleEnd: 10 * BAR };
+  const b = { id: "b", visibleStart: 8 * BAR, visibleEnd: 18 * BAR };
+  const list = [a, b];
+  const sa = L.clipSlices(list, "a");
+  assert.deepEqual(sa.map((s) => [s.overlapped, s.layer]), [[false, 0], [true, 0]]);
   assert.equal(sa[0].to, 8 * BAR);
   assert.equal(sa[1].to, 10 * BAR);
-  const sb = E.overlapSlices(d, d.clips[1]);
-  assert.deepEqual(sb.map((s) => [s.band, s.count]), [[1, 2], [0, 1]]);
-  assert.equal(sb[0].from, 8 * BAR);
-  // a clip alone is one slice, full height
-  const alone = doc([clip("x", 0, 4 * BAR, 120, 1, null)]);
-  assert.deepEqual(E.overlapSlices(alone, alone.clips[0]).map((s) => [s.band, s.count]), [[0, 1]]);
-  // slices of one clip tile its audible part exactly
-  for (const c of d.clips) {
-    const s = E.overlapSlices(d, c);
+  const sb = L.clipSlices(list, "b");
+  assert.deepEqual(sb.map((s) => [s.overlapped, s.layer]), [[true, 1], [false, 0]], "the incoming clip is on top in the overlap");
+  // nothing in a slice can place it in a lane: no band, no top, no height, no count
+  for (const s of [...sa, ...sb]) assert.deepEqual(Object.keys(s).sort(), ["from", "layer", "opacity", "overlapped", "to"]);
+  // see-through in the overlap, solid alone
+  assert.deepEqual(sa.map((s) => s.opacity), [1, L.OVERLAP_OPACITY]);
+  assert.ok(L.OVERLAP_OPACITY > 0.4 && L.OVERLAP_OPACITY < 1);
+  // a clip alone is one solid slice
+  assert.deepEqual(L.clipSlices([a], "a").map((s) => [s.overlapped, s.layer, s.opacity]), [[false, 0, 1]]);
+  // the slices tile the audible part exactly
+  for (const c of list) {
+    const s = L.clipSlices(list, c.id);
     assert.equal(s[0].from, c.visibleStart);
     assert.equal(s.at(-1).to, c.visibleEnd);
     for (let i = 1; i < s.length; i++) assert.equal(s[i].from, s[i - 1].to);
   }
+  // three at once: stacking order follows the audible start, ties by order
+  const c = { id: "c", visibleStart: 9 * BAR, visibleEnd: 12 * BAR };
+  const s3 = L.clipSlices([a, b, c], "c");
+  assert.deepEqual(s3.map((s) => [s.overlapped, s.layer]), [[true, 2], [true, 1]]);
+  assert.equal(L.clipSlices([a, { ...b, visibleStart: 0 }], "b")[0].layer, 1, "same start: the later one in the list is on top");
+  assert.deepEqual(L.clipSlices([a], "nope"), []);
+});
+
+test("the name of a clip that starts inside an overlap sits under the crossfade strip", () => {
+  const a = { id: "a", visibleStart: 0, visibleEnd: 10 * BAR };
+  const b = { id: "b", visibleStart: 8 * BAR, visibleEnd: 18 * BAR };
+  assert.equal(L.titleTop(L.clipSlices([a, b], "a"), 16), 3);
+  assert.equal(L.titleTop(L.clipSlices([a, b], "b"), 16), 19);
+  assert.equal(L.titleTop([], 16), 3);
 });
 
 test("clip colours: a stable palette of distinct colours, bands in the clip's own colour", () => {

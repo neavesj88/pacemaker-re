@@ -2,7 +2,7 @@
   // The auto-transition settings: which recipe the Auto buttons build, how long, where a hard cut
   // falls, and what happens to tools of yours that are in the way. Remembered between sessions.
   import { RECIPES, SECTION_REACH, lengthLabel, nearestLength, recipeDef, requestedBars, sectionEdgeWords, type RecipeId } from "$lib/state/transitionRecipes";
-  import type { CutAt, ConflictPolicy, SectionEdge } from "$lib/state/transitionRecipes";
+  import type { CutAt, ConflictPolicy, CrossfadePlace, SectionEdge } from "$lib/state/transitionRecipes";
   import { recipePrefs } from "./recipePrefs.svelte";
 
   const p = $derived(recipePrefs.value);
@@ -17,14 +17,24 @@
   </select>
 </div>
 <div class="field">
-  <label for="rs-bars">Length</label>
+  <label for="rs-bars">Auto crossfade length</label>
   <select id="rs-bars" value={p.bars == null ? "auto" : String(p.bars)} onchange={(e) => recipePrefs.set({ bars: e.currentTarget.value === "auto" ? null : Number(e.currentTarget.value) })}>
     <option value="auto">Each recipe's own</option>
     {#each [0.25, 0.5, 1, 2, 4, 8, 16, 32, 64] as n (n)}<option value={String(n)}>{lengthLabel(n)}</option>{/each}
   </select>
 </div>
 <div class="muted small">
-  {def.label} will be {lengthLabel(effective)}{p.bars != null && nearestLength(p.recipe, p.bars) !== p.bars ? ` (it offers ${def.lengths.map(lengthLabel).join(", ")}; the nearest is used)` : ""}. Shorter if the clips share less audio.
+  {def.label} will be {lengthLabel(effective)}{p.bars != null && nearestLength(p.recipe, p.bars) !== p.bars ? ` (it offers ${def.lengths.map(lengthLabel).join(", ")}; the nearest is used)` : ""}. Never longer than the audio both clips share, and in whole bars.
+</div>
+<div class="field">
+  <label for="rs-place">Crossfade sits</label>
+  <select id="rs-place" value={p.placeAt} onchange={(e) => recipePrefs.set({ placeAt: e.currentTarget.value as CrossfadePlace })}>
+    <option value="end">At the end of the outgoing clip (ends when it ends)</option>
+    <option value="start">From the start of the incoming clip</option>
+  </select>
+</div>
+<div class="muted small">
+  {p.placeAt === "end" ? "The crossfade finishes where the outgoing clip's audio ends, starting on a bar line of the incoming clip when it has a beat grid." : "The crossfade begins on the incoming clip's first beat and runs for the length above, as far as the clips overlap."}
 </div>
 <div class="field">
   <label for="rs-cut">Hard cut falls</label>

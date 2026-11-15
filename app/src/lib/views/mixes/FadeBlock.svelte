@@ -3,7 +3,10 @@
   // the outgoing clip's (the inverse) in its colour, nodes draggable right there. A click on
   // empty space adds a node, a right-click or double-click on a node removes it. The strip at the
   // top moves the crossfade, its edges resize it. The first press on a crossfade that is not
-  // selected only selects it.
+  // selected only selects it. It is drawn where it is heard (`effectiveFade`: inside the audio
+  // both clips share, the same window the mixer uses), so a stored range that reaches past the
+  // outgoing clip's end is not drawn past it. Only the strip takes the pointer until it is
+  // selected, so a click on the overlap itself reaches the clips under it.
   import type { EnvNode, TransitionDoc } from "$lib/api/mixes";
   import * as E from "$lib/state/mixedit";
   import { mixes } from "$lib/state/mixes.svelte";
@@ -29,8 +32,12 @@
 
   const EDGE = 7;
   const HEAD = 16;
-  const left = $derived(mv.x(t.start));
-  const width = $derived(Math.max(8, mv.x(t.length)));
+  /** Where it is heard; the stored range when the two clips do not overlap there (the mixer
+   * ignores it then). */
+  const heard = $derived(E.effectiveFade(mixes.doc!, t));
+  const at = $derived(heard ?? { start: t.start, length: t.length, clamped: false });
+  const left = $derived(mv.x(at.start));
+  const width = $derived(Math.max(8, mv.x(at.length)));
   const selected = $derived(mixes.selected.includes(t.id));
   const bodyH = $derived(Math.max(20, height - HEAD));
   const outgoing = $derived.by(() => {
@@ -71,7 +78,8 @@
     }
     mixes.select([t.id]);
     const startX = e.clientX;
-    const { start, length } = t;
+    // from what is drawn: dragging starts from the cut window, so nothing jumps
+    const { start, length } = at;
     let moved = false;
     const onmove = (ev: PointerEvent) => {
       if (!moved && Math.abs(ev.clientX - startX) < 3) return;
@@ -158,12 +166,14 @@
     role="button"
     tabindex="-1"
     aria-label="Move the crossfade"
-    title="Drag to move the crossfade; drag an edge to resize it. Click the curve to add a node, right-click or double-click a node to remove it."
+    title={at.clamped
+      ? "Part of this crossfade lay outside the audio both clips share, so it is cut to the overlap here and in playback and export (Fit to overlap in its panel saves that). Drag to move it; drag an edge to resize it."
+      : "Drag to move the crossfade; drag an edge to resize it. Click the curve to add a node, right-click or double-click a node to remove it."}
     style:height="{HEAD}px"
     onpointerdown={(e) => grab(e, edgeAt(e))}
     onpointermove={(e) => ((e.currentTarget as HTMLElement).style.cursor = edgeAt(e) === "move" ? "grab" : "ew-resize")}
   >
-    {#if width > 56}<span>X-fade{t.beatMatch ? " · beat-matched" : ""}</span>{/if}
+    {#if width > 56}<span>X-fade{t.beatMatch ? " · beat-matched" : ""}{at.clamped ? " · cut to overlap" : ""}</span>{/if}
   </div>
 </div>
 
@@ -174,14 +184,17 @@
     box-sizing: border-box;
     border: 1px dashed color-mix(in srgb, var(--text) 55%, transparent);
     border-radius: 4px;
-    background: rgba(0, 0, 0, 0.25);
+    background: rgba(0, 0, 0, 0.12);
     z-index: 4;
     overflow: hidden;
+    /* the clips under the overlap take the click; the strip and a selected fade take it back */
+    pointer-events: none;
   }
   .xf.selected {
     border: 1px solid #fff;
     box-shadow: 0 0 0 1px var(--in);
-    background: rgba(0, 0, 0, 0.38);
+    background: rgba(0, 0, 0, 0.22);
+    pointer-events: auto;
   }
   .xf.bypassed {
     opacity: 0.45;
@@ -195,6 +208,7 @@
     pointer-events: none;
   }
   .strip {
+    pointer-events: auto;
     position: absolute;
     left: 0;
     right: 0;

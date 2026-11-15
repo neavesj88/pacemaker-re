@@ -1,15 +1,17 @@
 <script lang="ts">
-  // One clip on the single mix bar, in its own colour. Where another clip overlaps it, the bar is
-  // split by height inside the overlap (the earlier clip on top, the later below), so both
-  // waveforms stay visible and each clip's boundary is clear. Drag to move (snapped), drag an edge
-  // to trim; Shift / Ctrl-click adds to the selection. Decks are automatic (state/mixes.svelte.ts).
+  // One clip on the single mix bar, in its own colour. Where another clip overlaps it, both are
+  // drawn over each other the full height of the bar, see-through, as in the original Editor (the
+  // layout is `clipSlices` in layout.ts: no lanes). A click in an overlap takes the clip that came
+  // in last; the earlier one is reached on its own stretch, by its edge handles or with Tab. Drag
+  // to move (snapped and lined up with the neighbour's beat grid), drag an edge to trim; Shift /
+  // Ctrl-click adds to the selection. Decks are automatic (state/mixes.svelte.ts).
   import type { Clip } from "$lib/api/mixes";
   import * as E from "$lib/state/mixedit";
-  import { effectiveBpm, overlapSlices } from "$lib/state/mixedit";
+  import { effectiveBpm } from "$lib/state/mixedit";
   import { mixes } from "$lib/state/mixes.svelte";
   import { sections } from "$lib/state/sections.svelte";
   import { exceeds, stretchText } from "$lib/state/tempoMatch";
-  import { HEADER_W, SR, clipBands } from "./layout";
+  import { HEADER_W, SR, clipBands, clipSlices, titleTop as placeTitle } from "./layout";
   import ClipSections from "./ClipSections.svelte";
   import ClipWave from "./ClipWave.svelte";
   import { tempoPrefs } from "./tempoPrefs.svelte";
@@ -29,6 +31,8 @@
   } = $props();
 
   const EDGE = 7;
+  /** Height of a crossfade's strip (FadeBlock's HEAD). */
+  const FADE_HEAD = 16;
   const left = $derived(mv.x(clip.visibleStart));
   const width = $derived(Math.max(2, mv.x(clip.visibleEnd - clip.visibleStart)));
   const selected = $derived(mixes.selected.includes(clip.id));
@@ -37,29 +41,24 @@
   const speed = $derived(clip.bpm > 0 ? effectiveBpm(clip, clip.trimStart) / clip.bpm : 1);
   const stretchBadge = $derived(exceeds(speed, tempoPrefs.value.warnPct) ? `${stretchText((speed - 1) * 100)} stretch` : "");
 
-  /** The audible part cut into slices by how many clips are heard together: each slice is drawn in
-   * its own band of the bar's height. In pixels from the clip's left edge. */
+  /** The audible part cut where another clip starts or ends: every stretch is the full height of
+   * the bar, an overlapped one see-through. In pixels from the clip's left edge. */
   const segs = $derived.by(() => {
     const doc = mixes.doc;
     if (!doc) return [];
-    const list = overlapSlices(doc, clip);
+    const list = clipSlices(doc.clips, clip.id);
     return list.map((sl, i) => {
       const x0 = mv.x(sl.from - clip.visibleStart);
       const x1 = mv.x(sl.to - clip.visibleStart);
-      const bh = height / sl.count;
-      return { ...sl, x0, x1: Math.max(x0 + 1, x1), top: sl.band * bh, bh, first: i === 0, last: i === list.length - 1 };
+      return { ...sl, x0, x1: Math.max(x0 + 1, x1), first: i === 0, last: i === list.length - 1 };
     });
   });
-  /** Where the title goes: the top of the band the clip starts in. When the clip starts inside a
-   *  crossfade, the first stretch heard alone is used instead, so the name is not drawn over the fade
-   *  curve (only if enough of that stretch is on screen to read it). */
-  const titlePlace = $derived.by(() => {
-    const first = segs[0];
-    const alone = segs.find((sg) => sg.count === 1);
-    if (first && first.count > 1 && alone && width - alone.x0 >= 90) return { left: alone.x0 + 7, top: alone.top + 3 };
-    return { left: 7, top: (first?.top ?? 0) + 3 };
-  });
-  const titleTop = $derived(titlePlace.top);
+  /** The name sits at the top of the clip's start, below the crossfade strip when the clip starts
+   * inside an overlap (the strip lies over that corner). */
+  const titleTop = $derived(placeTitle(segs, FADE_HEAD));
+  /** Edge handles sit above the clips lying over them, so an edge buried under the later clip can
+   * still be grabbed. */
+  const handles = $derived(width > EDGE * 3);
   let box = $state<HTMLDivElement | null>(null);
 
   // The canvas covers the viewport plus half a screen each side, in 256 px steps, so scrolling
@@ -92,10 +91,10 @@
     return "move";
   }
 
-  function down(e: PointerEvent) {
+  function down(e: PointerEvent, forced?: "left" | "right") {
     if (e.button !== 0) return;
     e.stopPropagation();
-    const z = zone(e);
+    const z = forced ?? zone(e);
     const additive = e.shiftKey || e.ctrlKey || e.metaKey;
     if (additive) {
       mixes.toggleSelected(clip.id);
@@ -118,9 +117,9 @@
         const delta = mv.samples(ev.clientX - startX);
         const snapOn = !ev.altKey && mixes.snap !== "off";
         const primary = orig.get(clip.id)! + delta;
-        const snapped = snapOn
-          ? E.snapClipStart(doc0, clip.id, primary, { mode: mixes.snap, threshold: mixes.threshold, exclude: ids, sections: mixes.sectionLookup })
-          : primary;
+        const info = snapOn ? E.snapClipStartInfo(doc0, clip.id, primary, { mode: mixes.snap, threshold: mixes.threshold, exclude: ids, sections: mixes.sectionLookup }) : null;
+        const snapped = info ? info.start : primary;
+        mixes.showAlignCue(info?.aligned?.at ?? null);
         const d = snapped - orig.get(clip.id)!;
         mixes.edit(
           "Move clips",
@@ -195,7 +194,7 @@
     <div
       class="seg"
       class:edge={hover !== "move"}
-      class:overlap={sg.count > 1}
+      class:overlap={sg.overlapped}
       class:first={sg.first}
       class:last={sg.last}
       role="button"
@@ -204,8 +203,7 @@
       aria-pressed={selected}
       style:left="{sg.x0}px"
       style:width="{sg.x1 - sg.x0}px"
-      style:top="{sg.top}px"
-      style:height="{sg.bh}px"
+      style:z-index={1 + Math.min(sg.layer, 1)}
       onpointerdown={down}
       onpointermove={(e) => (hover = zone(e))}
       onkeydown={key}
@@ -215,15 +213,20 @@
   {#each segs as sg (sg.from)}
     {@const wf = Math.max(sg.x0, win.from)}
     {@const wt = Math.min(sg.x1, win.to)}
-    {#if wt > wf}<ClipWave {clip} pps={mv.pps} from={wf} to={wt} height={sg.bh - 2} top={sg.top + 1} {bands} />{/if}
+    {#if wt > wf}<ClipWave {clip} pps={mv.pps} from={wf} to={wt} height={height - 2} top={1} {bands} opacity={sg.opacity} layer={1 + Math.min(sg.layer, 1)} />{/if}
   {/each}
+  {#if handles}
+    <!-- the edges stay grabbable where a later clip lies over them -->
+    <div class="handle l" role="presentation" style:height="{height}px" onpointerdown={(e) => down(e, "left")} oncontextmenu={ctx}></div>
+    <div class="handle r" role="presentation" style:height="{height}px" onpointerdown={(e) => down(e, "right")} oncontextmenu={ctx}></div>
+  {/if}
   {#if mv.sectionMarkers && sections.showMarkers}<ClipSections {clip} pps={mv.pps} />{/if}
-  <span class="title" style:top="{titleTop}px" style:left="{titlePlace.left}px" style:max-width="{Math.max(0, width - titlePlace.left - 1)}px">{title}<em>{tempoText}</em></span>
+  <span class="title" style:top="{titleTop}px" style:max-width="{Math.max(0, width - 8)}px">{title}<em>{tempoText}</em></span>
   {#if stretchBadge}
-    <span class="stretch" style:top="{titleTop + 16}px" style:left="{titlePlace.left}px" title="This track plays {Math.abs(speed * 100 - 100).toFixed(1)} % {speed > 1 ? 'faster' : 'slower'} than its own tempo, more than the stretch limit in the settings. The clip's panel offers to keep its own tempo.">{stretchBadge}</span>
+    <span class="stretch" style:top="{titleTop + 16}px" title="This track plays {Math.abs(speed * 100 - 100).toFixed(1)} % {speed > 1 ? 'faster' : 'slower'} than its own tempo, more than the stretch limit in the settings. The clip's panel offers to keep its own tempo.">{stretchBadge}</span>
   {/if}
   {#if broken}<span class="warn" title={clip.track?.problem ?? "track unavailable"}>{clip.track?.problem ?? "track unavailable"}</span>{/if}
-  {#if clip.trimStart > SR * 0.05}<span class="cue" style:top="{segs[0]?.top ?? 0}px" title="Cue point: audio before it is hidden"></span>{/if}
+  {#if clip.trimStart > SR * 0.05}<span class="cue" title="Cue point: audio before it is hidden"></span>{/if}
 </div>
 
 <style>
@@ -253,8 +256,23 @@
     border-top-right-radius: 4px;
     border-bottom-right-radius: 4px;
   }
+  /* overlapped: see-through, so the clip underneath shows and the crossfade lines read over both */
   .seg.overlap {
-    background: color-mix(in srgb, var(--c) 24%, var(--deep));
+    background: color-mix(in srgb, var(--c) 22%, transparent);
+  }
+  .handle {
+    position: absolute;
+    top: 0;
+    width: 7px;
+    z-index: 3;
+    pointer-events: auto;
+    cursor: ew-resize;
+  }
+  .handle.l {
+    left: 0;
+  }
+  .handle.r {
+    right: 0;
   }
   .seg:active {
     cursor: grabbing;

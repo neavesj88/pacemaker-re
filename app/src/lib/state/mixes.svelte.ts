@@ -32,6 +32,8 @@ import {
 } from "$lib/api/mixes";
 import { renderMixPreview, type PreviewGains } from "$lib/api/export";
 import { tempoPrefs } from "$lib/views/mixes/tempoPrefs.svelte";
+import { snapPrefs } from "$lib/views/mixes/snapPrefs.svelte";
+import { snapModeOf } from "./snapPrefs";
 import { sections } from "./sections.svelte";
 import { session } from "./session.svelte";
 import { toast } from "./toast.svelte";
@@ -77,9 +79,13 @@ class Mixes {
   /** Label of the edit undo would revert / redo would redo (for menu text). */
   undoLabel = $state("");
   redoLabel = $state("");
-  /** Snap mode and distance in samples; the timeline view sets `threshold` from its zoom. */
-  snap = $state<E.SnapMode>("bar");
+  /** Snap mode and distance in samples; the timeline view sets `threshold` from its zoom. The
+   * mode follows the remembered Snap setting (on, by bar, unless the user chose otherwise). */
+  snap = $state<E.SnapMode>(snapModeOf(snapPrefs.value));
   threshold = $state(E.SR / 20);
+  /** Timeline sample of the beat a dragged clip has just been lined up on, for a short cue line. */
+  alignCue = $state<number | null>(null);
+  #cueTimer: ReturnType<typeof setTimeout> | undefined;
   /** What `mixValidate` says would stop a save, refreshed after edits. */
   problems = $state.raw<string[]>([]);
   busy = $state(false);
@@ -363,6 +369,33 @@ class Mixes {
 
   #snapOpts(exclude: string[] = []): E.SnapOptions {
     return { mode: this.snap, threshold: this.threshold, exclude, sections: this.sectionLookup };
+  }
+
+  /** The Snap toolbar controls: changes the remembered setting and the mode in use. */
+  setSnap(patch: Parameters<typeof snapPrefs.set>[0]) {
+    snapPrefs.set(patch);
+    this.snap = snapModeOf(snapPrefs.value);
+  }
+
+  /** Shows the cue line at timeline sample `at` (null hides it); it fades by itself. */
+  showAlignCue(at: number | null) {
+    clearTimeout(this.#cueTimer);
+    this.alignCue = at;
+    if (at !== null) this.#cueTimer = setTimeout(() => (this.alignCue = null), 1600);
+  }
+
+  /** The Beat-align button: lines clip `id` up with its neighbour's beat grid at `grain` (the
+   * neighbour is `against`, else the clip it overlaps most, else the nearest one) as one undo step.
+   * Returns what happened in words; a clip without a beat grid is not moved. */
+  beatAlign(id: string, grain: E.Grain, against?: string): { moved: boolean; message: string } {
+    const doc = this.doc;
+    if (!doc) return { moved: false, message: "No mix is open." };
+    const r = E.beatAlignClip(doc, id, grain, against);
+    if (r.moved) {
+      this.edit("Beat-align", () => r.doc);
+      this.showAlignCue(r.result?.at ?? null);
+    }
+    return { moved: r.moved, message: r.message };
   }
 
   setName(name: string) {

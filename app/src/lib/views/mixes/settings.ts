@@ -3,6 +3,7 @@ import { tracklist } from "$lib/state/tracklist.svelte";
 import type { SettingsEntry } from "../settings/types";
 import MixExportSettings from "./MixExportSettings.svelte";
 import RecipeSettings from "./RecipeSettings.svelte";
+import SnapSettings from "./SnapSettings.svelte";
 import TempoSettings from "./TempoSettings.svelte";
 import TracklistFields from "./TracklistFields.svelte";
 
@@ -15,6 +16,15 @@ const entries: SettingsEntry[] = [
     keywords: "mix transition recipe crossfade cut bars auto sections",
     how: "inline",
     component: RecipeSettings,
+  },
+  {
+    id: "mix-snap",
+    area: "Mixes",
+    title: "Snap and beat-align",
+    help: "Whether a clip dragged over or next to another is lined up with its beat grid, and on what: beats, bars, phrases or sections. Alt while dragging moves freely.",
+    keywords: "mix snap beat bar phrase grid align beatmatch drag magnet",
+    how: "inline",
+    component: SnapSettings,
   },
   {
     id: "mix-tempo",
