@@ -264,7 +264,8 @@
     position: absolute;
     top: 0;
     width: 7px;
-    z-index: 3;
+    /* above a crossfade (z-index 4) that ends or starts at this edge: the edge stays grabbable */
+    z-index: 5;
     pointer-events: auto;
     cursor: ew-resize;
   }
@@ -305,7 +306,8 @@
     color: var(--text);
     text-shadow: 0 0 3px #000, 0 0 3px #000, 0 0 5px #000;
     pointer-events: none;
-    z-index: 2;
+    /* above the clips' tint and waveform (1-2), so a name running into an overlap is not painted over */
+    z-index: 3;
   }
   .title::before {
     content: "";

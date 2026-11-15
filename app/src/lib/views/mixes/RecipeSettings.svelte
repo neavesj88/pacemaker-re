@@ -29,12 +29,12 @@
 <div class="field">
   <label for="rs-place">Crossfade sits</label>
   <select id="rs-place" value={p.placeAt} onchange={(e) => recipePrefs.set({ placeAt: e.currentTarget.value as CrossfadePlace })}>
-    <option value="end">At the end of the outgoing clip (ends when it ends)</option>
+    <option value="end">Finishing at the end of the outgoing clip</option>
     <option value="start">From the start of the incoming clip</option>
   </select>
 </div>
 <div class="muted small">
-  {p.placeAt === "end" ? "The crossfade finishes where the outgoing clip's audio ends, starting on a bar line of the incoming clip when it has a beat grid." : "The crossfade begins on the incoming clip's first beat and runs for the length above, as far as the clips overlap."}
+  {p.placeAt === "end" ? "The crossfade finishes at or just before the end of the outgoing clip's audio (up to a bar early, because it starts on a bar line of the incoming clip when that has a beat grid)." : "The crossfade begins on the incoming clip's first beat and runs for the length above, as far as the clips overlap."}
 </div>
 <div class="field">
   <label for="rs-cut">Hard cut falls</label>

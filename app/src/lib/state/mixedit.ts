@@ -378,7 +378,7 @@ export type AlignResult = {
   /** Timeline sample where the lined-up beat now sits (for the visual cue). */
   at: number;
   /** The two clips play at the same tempo, or at half or double of one another (within 0.5 %), so
-   * their beats keep lining up beyond this point; false = they drift and need Match all first. */
+   * their beats keep lining up beyond this point (judged at the lined-up point only: a tempo change later in either clip is not checked); false = they drift and need Match all first. */
   tempoMatched: boolean;
 };
 
@@ -422,9 +422,10 @@ export function alignNeighbour(doc: MixDoc, c: Clip, start: number, reach: numbe
  * begins (the place the blend happens), so it is the beats of the overlap that agree.
  *
  * `against` picks the neighbour; without it the clip it overlaps most is used, else the nearest one
- * within `reach` samples (null = any distance). Returns null when the clip or the neighbour has no
- * grid at that grain (nothing is moved then). */
-export function alignClipStart(doc: MixDoc, id: string, want: number, grain: Grain, opts: { reach?: number | null; against?: string; exclude?: string[] } = {}): AlignResult | null {
+ * within `reach` samples (null = any distance). `minStart` is the earliest start allowed: an
+ * alignment before it gives way to the next one up. Returns null when the clip or the neighbour has
+ * no grid at that grain (nothing is moved then). */
+export function alignClipStart(doc: MixDoc, id: string, want: number, grain: Grain, opts: { reach?: number | null; against?: string; exclude?: string[]; minStart?: number } = {}): AlignResult | null {
   const c = clipOf(doc, id);
   if (!c || !hasGrid(c)) return null;
   const n = opts.against ? clipOf(doc, opts.against) : alignNeighbour(doc, c, want, opts.reach ?? null, opts.exclude ?? []);
@@ -437,7 +438,14 @@ export function alignClipStart(doc: MixDoc, id: string, want: number, grain: Gra
   const vs = c.visibleStart + (want - c.start);
   const ref = Math.max(vs, n.visibleStart);
   const anchor = own[nearestIndex(own, ref)];
-  const hit = targets[nearestIndex(targets, anchor)];
+  let hit = targets[nearestIndex(targets, anchor)];
+  if (opts.minStart !== undefined && Math.round(want + (hit - anchor)) < opts.minStart) {
+    // the nearest alignment would start before the clip may (the clamp would push it off the grid):
+    // take the next one up that fits, or none
+    const later = targets.find((t) => Math.round(want + (t - anchor)) >= opts.minStart!);
+    if (later === undefined) return null;
+    hit = later;
+  }
   const start = Math.round(want + (hit - anchor));
   return { start, neighbourId: n.id, grain, shift: start - want, at: hit, tempoMatched: tempoRelated(c, n, hit) };
 }
@@ -452,7 +460,7 @@ export function snapClipStartInfo(doc: MixDoc, clipId: string, newStart: number,
   const exclude = [clipId, ...(opts.exclude ?? [])];
   if (isGrain(opts.mode)) {
     const bar = (60 / Math.max(1, effectiveBpm(c, c.trimStart))) * BEATS_PER_BAR * SR;
-    const al = alignClipStart(doc, clipId, newStart, opts.mode, { reach: ADJACENT_BARS * bar, exclude });
+    const al = alignClipStart(doc, clipId, newStart, opts.mode, { reach: ADJACENT_BARS * bar, exclude, minStart: -c.trimStart });
     if (al) return { start: al.start, aligned: al };
   }
   const targets = snapTargets(doc, opts.mode, exclude, [newStart, newStart + c.length], opts.sections);
@@ -492,7 +500,7 @@ export function beatAlignClip(doc: MixDoc, id: string, grain: Grain, against?: s
   const r = alignClipStart(doc, id, c.start, grain, { against: n.id });
   if (!r) return none(`The two grids have no ${grain === "beat" ? "beats" : grain === "bar" ? "bars" : "phrases"} in the audible part to line up.`);
   const name = n.track?.title ? `"${n.track.title}"` : "the other clip";
-  const tail = r.tempoMatched ? "" : " The tempos differ, so the beats drift apart after this point: use Match all to play them at one tempo.";
+  const tail = r.tempoMatched ? "" : " The tempos differ here, so the beats drift apart after this point: use Match all to play them at one tempo.";
   if (r.shift === 0) return { doc, moved: false, result: r, message: `Already lined up with ${name} at the ${grain}.${tail}` };
   const moved = moveClip(doc, id, r.start);
   if (clipOf(moved, id)!.start !== r.start) return none("The clip cannot move that far (it would start before the beginning of the mix).");
@@ -864,7 +872,7 @@ export type EffectiveFade = {
 
 /** The window a crossfade is heard in, the same rule the mixer applies (`assign_fades` in
  * `crates/pm-mixer/src/engine.rs`) so the drawing, the playback and the export agree: of the clips
- * audible during the transition the one that starts last is incoming and, of the rest, the one that
+ * audible during the transition (muted and empty clips are not heard, as in the mixer) the one that starts last is incoming and, of the rest, the one that
  * ends last is outgoing; the fade starts no earlier than the incoming clip's audible start and ends
  * no later than the outgoing clip's audible end (trims included). The stored transition is not
  * changed. Null when the two clips are never heard together inside it (the mixer ignores it too). */
@@ -872,7 +880,7 @@ export function effectiveFade(doc: MixDoc, t: { start: number; length: number })
   const ts = t.start;
   const te = t.start + t.length;
   if (!(te > ts)) return null;
-  const cand = doc.clips.map((c, i) => ({ c, i })).filter(({ c }) => c.visibleStart < te && c.visibleEnd > ts);
+  const cand = doc.clips.map((c, i) => ({ c, i })).filter(({ c }) => !c.clipBypassed && c.visibleEnd > c.visibleStart && c.visibleEnd > 0 && c.visibleStart < te && c.visibleEnd > ts);
   if (cand.length < 2) return null;
   cand.sort((a, b) => a.c.visibleStart - b.c.visibleStart || a.i - b.i);
   const to = cand[cand.length - 1];

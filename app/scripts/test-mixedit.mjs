@@ -483,6 +483,14 @@ test("recipe lengths: labels, nearest, requested", () => {
   assert.throws(() => R.recipeDef("nope"));
 });
 
+test("recipe settings saved before the version stamp: the old default null becomes 16 bars, a stamped null is kept", () => {
+  assert.equal(R.loadRecipePrefs({ recipe: "echoOut", bars: null, cutAt: "start" }).bars, 16);
+  assert.equal(R.loadRecipePrefs({ recipe: "echoOut", bars: null, cutAt: "start" }).recipe, "echoOut", "other choices survive");
+  assert.equal(R.loadRecipePrefs(R.stampRecipePrefs({ ...R.DEFAULT_RECIPE_PREFS, bars: null })).bars, null);
+  assert.equal(R.loadRecipePrefs({ bars: 8 }).bars, 8);
+  assert.equal(R.loadRecipePrefs(undefined).bars, 16);
+});
+
 test("recipe settings: defaults, merge ignores junk", () => {
   assert.deepEqual(R.mergeRecipePrefs(undefined), R.DEFAULT_RECIPE_PREFS);
   assert.deepEqual(R.mergeRecipePrefs("x"), R.DEFAULT_RECIPE_PREFS);
@@ -1346,6 +1354,32 @@ test("beat-align on an overlap: the incoming clip of a crossfade is lined up wit
   const r = E.beatAlignClip(d, f.to.id, "bar", f.from.id);
   assert.equal(r.moved, true);
   assert.equal(incomingOnOutgoingBar(r.doc, "out", "in"), 0);
+});
+
+test("snap on drag near the start: an alignment before the start of the mix gives way to the next bar", () => {
+  const out = clip("out", 0, 20 * BAR, 120, 1, grid(120, 3000, 100, 0));
+  const inc = clip("in", 0, 20 * BAR, 120, 1, grid(120, 11111, 100, 0), { channel: 1 });
+  const d = doc([out, inc]);
+  const s = E.snapClipStartInfo(d, "in", 1000, { mode: "bar", threshold: 50 });
+  assert.ok(s.start >= 0, "never before the clip may start");
+  if (s.aligned) {
+    assert.equal(s.aligned.start, s.start);
+    assert.equal(E.moveClip(d, "in", 1000, { mode: "bar", threshold: 50 }).clips[1].start, s.start, "the clamp does not move it off the cue");
+  }
+  // the downbeat of "in" (+11111) lands on a downbeat of "out" (3000 + k * BAR)
+  assert.equal((s.start + 11111 - 3000) % BAR, 0);
+});
+
+test("effectiveFade ignores muted clips, as the mixer does", () => {
+  const a = clip("a", 0, 40 * BAR, 120, 1, null);
+  const b = clip("b", 0, 40 * BAR, 120, 1, null, { start: 30 * BAR, channel: 1 });
+  const m = clip("m", 0, 50 * BAR, 120, 1, null, { start: 35 * BAR, clipBypassed: true });
+  const d = doc([a, b, m]);
+  const f = E.effectiveFade(d, { start: 30 * BAR, length: 10 * BAR });
+  assert.equal(f.from.id, "a");
+  assert.equal(f.to.id, "b");
+  assert.equal(f.start, 30 * BAR);
+  assert.equal(f.clamped, false);
 });
 
 test("snap settings: on by default, by bar; merge ignores junk; the mode follows", () => {

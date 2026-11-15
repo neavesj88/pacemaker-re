@@ -1,7 +1,7 @@
 // The auto-transition settings (default recipe, length, hard-cut position, what to do about tools
 // in the way). A per-person preference of the app, so it lives in the browser storage like the
 // Tracks columns do (try/catch-guarded: the app works the same when storage is unavailable).
-import { DEFAULT_RECIPE_PREFS, mergeRecipePrefs, type RecipeId, type RecipePrefs } from "$lib/state/transitionRecipes";
+import { DEFAULT_RECIPE_PREFS, loadRecipePrefs, mergeRecipePrefs, stampRecipePrefs, type RecipeId, type RecipePrefs } from "$lib/state/transitionRecipes";
 import { loadPref, savePref } from "$lib/state/prefStore";
 
 const STORAGE_KEY = "pm.mixes.recipes.v1";
@@ -14,12 +14,12 @@ class RecipeSettings {
 
   constructor() {
     // nothing saved, unreadable or corrupt: the defaults stay
-    this.value = loadPref(STORAGE_KEY, (raw) => (raw === null ? this.value : mergeRecipePrefs(raw)), () => this.value);
+    this.value = loadPref(STORAGE_KEY, (raw) => (raw === null ? this.value : loadRecipePrefs(raw)), () => this.value);
   }
 
   set(patch: Partial<RecipePrefs>) {
     this.value = mergeRecipePrefs({ ...this.value, ...patch });
-    savePref(STORAGE_KEY, this.value);
+    savePref(STORAGE_KEY, stampRecipePrefs(this.value));
   }
 
   reset() {

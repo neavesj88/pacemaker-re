@@ -175,6 +175,23 @@ export function mergeRecipePrefs(saved: unknown): RecipePrefs {
   return out;
 }
 
+/** Version stamped on saved prefs. Saves from before it (no stamp) wrote the old default
+ * "each recipe's own length" (`bars: null`) whether it was chosen or not, so that value is read as
+ * "never chosen" and the current default (16 bars) applies; a stamped null is a real choice. */
+export const RECIPE_PREFS_VERSION = 2;
+
+/** What gets saved: the prefs and the version stamp. */
+export const stampRecipePrefs = (p: RecipePrefs): RecipePrefs & { v: number } => ({ ...p, v: RECIPE_PREFS_VERSION });
+
+/** Reads saved prefs (`mergeRecipePrefs`), dropping a `bars: null` that carries no version stamp. */
+export function loadRecipePrefs(saved: unknown): RecipePrefs {
+  if (saved && typeof saved === "object" && (saved as Record<string, unknown>).v !== RECIPE_PREFS_VERSION && (saved as Record<string, unknown>).bars === null) {
+    const { bars: _old, ...rest } = saved as Record<string, unknown>;
+    return mergeRecipePrefs(rest);
+  }
+  return mergeRecipePrefs(saved);
+}
+
 /** The length to ask the backend for when building `recipe` with `prefs`. */
 export function requestedBars(recipe: RecipeId, prefs: Pick<RecipePrefs, "bars">): number {
   return prefs.bars == null ? recipeDef(recipe).bars : nearestLength(recipe, prefs.bars);

@@ -1,8 +1,9 @@
 // Where an automatic crossfade sits and how long it is. The backend (`mixAutoTransition`) starts
 // the window on the incoming clip's first beat after its cue and runs it for the length asked. This
-// moves it the way a DJ blends: the fade ENDS with the outgoing clip (it is gone when the outgoing
-// track ends, with no stretch of two tracks playing on after the blend), is the "Auto crossfade
-// length" long, never longer than the audio both clips share, a whole number of bars, and starts on
+// moves it the way a DJ blends: the fade ENDS at or just before the end of the outgoing clip (up to
+// a bar early when it snaps to a bar line of the incoming clip; it is gone when the outgoing track
+// ends, with no stretch of two tracks playing on after the blend), is the "Auto crossfade length"
+// long, never longer than the audio both clips share, a whole number of bars, and starts on
 // a bar line of the incoming clip's grid when it has one. The result is a window inside the true
 // overlap: `effectiveFade` in mixedit.ts (and the mixer) would not cut it.
 //
@@ -67,7 +68,7 @@ export function placeTransition(doc: MixDoc, base: TransitionSuggestion, request
   const notes: string[] = [];
   const shared = (end - lo) / bar;
   if (w.length / bar < requestedBars - 1e-9) notes.push(`${shared.toFixed(1)} bars of the two clips overlap, so the crossfade is ${w.length / bar} bar${w.length / bar === 1 ? "" : "s"} long`);
-  notes.push("The crossfade ends with the outgoing clip");
+  notes.push("The crossfade ends at or just before the end of the outgoing clip");
   const suggestion: TransitionSuggestion = {
     ...base,
     transition: { ...t, start: w.start, length: w.length, startSec: w.start / SR, lengthSec: w.length / SR },
