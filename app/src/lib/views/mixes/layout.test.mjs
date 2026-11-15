@@ -57,6 +57,20 @@ test("ruler ticks: grid-aligned, labelled sparsely, beats only when roomy", () =
   assert.deepEqual(L.rulerTicks(0, 10, 50, 0).bars, []);
 });
 
+test("bar numbers never sit closer than their own width, even four-digit ones at the far zoom-out", () => {
+  // the walkthrough read "257 513 769 1025": labels 256 bars apart still touched at the smallest zoom
+  for (const pps of [0.05, 0.08, 0.2, 1, 5, 20]) {
+    for (const bpm of [90, 128, 174]) {
+      const to = 2000 * ((60 / bpm) * 4); // 2000 bars on screen
+      const labelled = L.rulerTicks(0, to, pps, bpm).bars.filter((b) => b.label);
+      for (let i = 1; i < labelled.length; i++) {
+        const gap = (labelled[i].sec - labelled[i - 1].sec) * pps;
+        assert.ok(gap >= L.barLabelPx(labelled[i].bar) - 1e-6, `pps ${pps}, ${bpm} BPM: ${labelled[i - 1].bar} -> ${labelled[i].bar} is ${gap.toFixed(1)} px`);
+      }
+    }
+  }
+});
+
 test("packRows puts overlapping ranges on different rows", () => {
   const items = [
     { start: 0, end: 10 },

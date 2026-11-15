@@ -1,27 +1,10 @@
 // Draws three-band peaks (low, mid, high; 0-255 each) on a canvas, coloured by frequency like the
-// approved mockup: bass in the accent colour, mids lighter, highs in the matrix green. Colours
-// come from the palette tokens, resolved once from the page's computed style.
+// approved mockup: three bands, darkest outside. The colours are the Waveform colours setting
+// (calm matrix green by default, or neon), read here so a picture redraws when it changes.
 import type { Peak } from "$lib/api/analysis";
+import { appearance } from "$lib/state/appearance.svelte";
 
-type Colours = { low: string; mid: string; high: string };
-let colours: Colours | null = null;
-
-function resolve(expr: string): string {
-  const probe = document.createElement("span");
-  probe.style.color = expr;
-  document.body.appendChild(probe);
-  const out = getComputedStyle(probe).color;
-  probe.remove();
-  return out;
-}
-
-function waveColours(): Colours {
-  if (!colours) {
-    const low = resolve("var(--accent)");
-    colours = { low, mid: resolve("color-mix(in srgb, var(--accent) 55%, white)") || low, high: resolve("var(--green)") };
-  }
-  return colours;
-}
+const waveColours = () => appearance.waveBands;
 
 /** Paints `peaks` over the whole canvas (CSS size cssW x cssH), replacing what was there. With
  *  more peaks than pixels the loudest in each pixel column is drawn. */

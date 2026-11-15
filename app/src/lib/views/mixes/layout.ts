@@ -49,7 +49,9 @@ export function barBeat(samples: number, bpm: number): { bar: number; beat: numb
 }
 
 const TIME_STEPS = [0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 1800];
-const BAR_STEPS = [1, 2, 4, 8, 16, 32, 64, 128, 256];
+const BAR_STEPS = [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192];
+/** Room a bar number needs on the ruler: its digits (about 7 px each) and a gap. */
+export const barLabelPx = (barNumber: number): number => String(Math.max(1, Math.floor(barNumber))).length * 7 + 26;
 
 export type RulerTicks = {
   /** Labelled time marks: seconds and text. */
@@ -76,7 +78,9 @@ export function rulerTicks(fromSec: number, toSecs: number, pps: number, bpm: nu
     const barPx = barSec * pps;
     // a bar line every `skip` bars once bars get too dense to draw
     const skip = barPx >= 7 ? 1 : (BAR_STEPS.find((n) => n * barPx >= 7) ?? BAR_STEPS[BAR_STEPS.length - 1]);
-    const labelEvery = BAR_STEPS.find((n) => n * barPx >= 46) ?? BAR_STEPS[BAR_STEPS.length - 1];
+    // the widest number on screen sets the spacing, so four-digit bar numbers at the far zoom-out do not touch
+    const labelPx = barLabelPx(toSecs / barSec + 1);
+    const labelEvery = BAR_STEPS.find((n) => n * barPx >= labelPx) ?? BAR_STEPS[BAR_STEPS.length - 1];
     const first = Math.max(0, Math.floor(fromSec / barSec));
     for (let b = first - (first % skip); b * barSec <= toSecs; b += skip) {
       if (b * barSec < fromSec - barSec) continue;
@@ -119,10 +123,6 @@ export function overlapRange(start: number, end: number, lo: number, hi: number)
 // ---------------------------------------------------------------------------------------------
 // Colours
 // ---------------------------------------------------------------------------------------------
-
-/** The three waveform bands (low, mid, high), as in the mockup. Drawn on canvas, so they are
- * constants here rather than CSS variables. */
-export const BAND_COLOURS = { low: "#ff48a8", mid: "#e070ff", high: "#00ff46" } as const;
 
 /** One colour per clip on the single mix bar, in the order the clips were added (so a colour does
  * not change when a clip is moved). Clearly different hues, bright enough for the dark theme.

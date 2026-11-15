@@ -21,6 +21,7 @@ import { SR, mmss, toolLabel } from "./layout";
 import { recipePrefs } from "./recipePrefs.svelte";
 import { vocalTools } from "./vocalTools.svelte";
 import { mv } from "./view.svelte";
+import { addKept, keptNote } from "./previewState";
 import { stretchText } from "$lib/state/tempoMatch";
 
 export const errText = (e: unknown) => (typeof e === "string" ? e : e instanceof Error ? e.message : String(e));
@@ -142,7 +143,17 @@ export async function addTracks(ids: number[], at?: number) {
   }
   if (added > 0) toast.show(added === 1 ? "Track added" : `${added} tracks added`, "ok");
   if (moved.length > 0) toast.show(`Both decks were busy where you asked, so it went later: ${moved.join("; ")}.`, "info", 8000);
-  if (kept.length > 0) toast.show(`Kept at its own tempo, since matching would stretch it too much: ${kept.join("; ")}. Use "Sync to mix tempo" in the clip's panel to match anyway.`, "info", 10000);
+  if (kept.length > 0) showKept(kept);
+}
+
+/** The card for tracks kept at their own tempo. Tracks added one at a time (a double-click each) add
+ * to the card that is still showing instead of stacking a new one over the clip panel. */
+let keptCard: { id: number; names: string[] } | null = null;
+function showKept(kept: string[]) {
+  const open = keptCard && toast.items.some((t) => t.id === keptCard!.id);
+  const names = addKept(open ? keptCard!.names : [], kept);
+  if (open) toast.dismiss(keptCard!.id);
+  keptCard = { id: toast.show(keptNote(names), "info", 10000), names };
 }
 
 /** Duplicates the selection: clips go right after themselves, a clip's processes after the

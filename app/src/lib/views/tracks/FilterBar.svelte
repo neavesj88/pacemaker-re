@@ -17,6 +17,8 @@
   import type { TableState } from "./tableState.svelte";
   import { tracksState } from "./tracksState.svelte";
 
+  const SHORT_WINDOW_H = 800;
+
   let {
     genres,
     focusKey,
@@ -27,6 +29,7 @@
     table = tracksState,
     ownSearch = false,
     withPresets = true,
+    collapsible = false,
   }: {
     /** This bar's table: its own filters, search and column choice. The Tracks view's by default. */
     table?: TableState;
@@ -34,6 +37,9 @@
     ownSearch?: boolean;
     /** The saved-filter presets and the search help belong to the Tracks view. */
     withPresets?: boolean;
+    /** On a short window (800 px high or less) the filters hide behind a Filters button, so a
+     *  small panel (the Mix tab's picker) keeps its height for table rows. */
+    collapsible?: boolean;
     /** Flagged tracks among the rows now shown: what "Review" opens the batch grid tools for. */
     suspectIds?: number[];
     genres: string[];
@@ -45,6 +51,10 @@
   } = $props();
 
   let chooser = $state(false);
+  let winH = $state(typeof window === "undefined" ? 1080 : window.innerHeight);
+  let filtersOpen = $state(false);
+  const collapsed = $derived(collapsible && winH <= SHORT_WINDOW_H && !filtersOpen);
+  const short = $derived(collapsible && winH <= SHORT_WINDOW_H);
   /** Where the column list sits: under its button, kept inside the window (see popoverPlace). */
   let place = $state<PopoverPlace | null>(null);
   function toggleChooser(e: MouseEvent) {
@@ -113,12 +123,18 @@
   );
 </script>
 
-<svelte:window onclick={() => (chooser = false)} onresize={() => (chooser = false)} onkeydown={(e) => e.key === "Escape" && (chooser = false)} />
+<svelte:window bind:innerHeight={winH} onclick={() => (chooser = false)} onresize={() => (chooser = false)} onkeydown={(e) => e.key === "Escape" && (chooser = false)} />
 
-<div class="bar">
+<div class="bar" class:short>
   {#if ownSearch}
     <input type="search" class="find" placeholder="Search title, artist, key, BPM…" aria-label="Search the library" bind:value={table.search.query} />
   {/if}
+  {#if short}
+    <Button small active={filtersOpen || anyFilter} aria-expanded={filtersOpen} onclick={() => (filtersOpen = !filtersOpen)} title={anyFilter ? "Filters are on: genre, BPM, key, case, tags, energy and the analysed / missing / suspect buttons" : "Genre, BPM, key, case, tags, energy and the analysed / missing / suspect buttons"}>
+      Filters{anyFilter ? " ●" : ""}
+    </Button>
+  {/if}
+  <div class="filters" class:collapsed>
   <select aria-label="Genre" bind:value={table.genre}>
     <option value="">All genres</option>
     {#each genres as g (g)}<option value={g}>{g}</option>{/each}
@@ -162,6 +178,7 @@
     <Button small variant="ghost" onclick={() => (suspects.editing = true)} title="The genre tempo windows and the confidence floor">Rules…</Button>
   {/if}
   {#if anyFilter}<Button small variant="link" onclick={clearAll}>Clear filters</Button>{/if}
+  </div>
 
   <span class="spacer"></span>
   <span class="muted count" aria-live="polite">
@@ -224,6 +241,16 @@
     width: 220px;
     max-width: 100%;
   }
+  /* the filter controls are flex items of the bar itself unless the bar is collapsed */
+  .filters {
+    display: contents;
+  }
+  .filters.collapsed {
+    display: none;
+  }
+  .short .legend {
+    display: none;
+  }
   .spacer {
     flex: 1;
   }
@@ -261,13 +288,13 @@
     border-radius: 2px;
   }
   .low {
-    background: var(--accent);
+    background: var(--wave-low);
   }
   .mid {
-    background: color-mix(in srgb, var(--accent) 55%, white);
+    background: var(--wave-mid);
   }
   .high {
-    background: var(--green);
+    background: var(--wave-high);
   }
   .chooser {
     position: relative;

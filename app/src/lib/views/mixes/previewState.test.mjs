@@ -2,7 +2,7 @@
 //
 //   node --experimental-strip-types src/lib/views/mixes/previewState.test.mjs      (from app/)
 import assert from "node:assert/strict";
-import { sameAudio, sameRender, volumeToDb } from "./previewState.ts";
+import { addKept, keptNote, sameAudio, sameRender, volumeToDb } from "./previewState.ts";
 
 let n = 0;
 const test = (name, fn) => {
@@ -40,6 +40,14 @@ test("the volume slider maps to a listening level in dB", () => {
   assert.ok(Math.abs(volumeToDb(0.5) + 6.0206) < 1e-3);
   assert.equal(volumeToDb(0.0001), -60);
   assert.equal(volumeToDb(2), 0);
+});
+
+test("tracks kept at their own tempo collect in one note", () => {
+  const a = addKept([], ["A (+9 % to reach 128.0 BPM)"]);
+  const b = addKept(a, ["B (-8 %)", "A (+9 % to reach 128.0 BPM)"]);
+  assert.deepEqual(b, ["A (+9 % to reach 128.0 BPM)", "B (-8 %)"]);
+  assert.match(keptNote(b), /A \(\+9 % to reach 128\.0 BPM\); B \(-8 %\)\./);
+  assert.deepEqual(a, ["A (+9 % to reach 128.0 BPM)"], "the earlier list is not changed");
 });
 
 console.log(`${n} passed`);

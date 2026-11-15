@@ -38,3 +38,16 @@ export const ADD_TRACK_NOTICE = "Add a track before playing.";
 
 /** What Play says when every clip is muted or has no length (the engine would only say it could not build). */
 export const NO_AUDIBLE_NOTICE = "No clip in this mix can be heard: every clip is muted or has no length.";
+
+/** The one card that lists the tracks kept at their own tempo. Adding tracks one by one used to
+ * show a full-width card per track, which stacked over the clip panel and the Add bar. */
+export function keptNote(kept: readonly string[]): string {
+  return `Kept at their own tempo, since matching would stretch them too much: ${kept.join("; ")}. Use "Sync to mix tempo" in the clip's panel to match anyway.`;
+}
+
+/** Adds `more` to the tracks already listed, leaving out one that is listed (the same line twice adds nothing). */
+export function addKept(listed: readonly string[], more: readonly string[]): string[] {
+  const out = [...listed];
+  for (const k of more) if (!out.includes(k)) out.push(k);
+  return out;
+}

@@ -496,11 +496,20 @@
   .dq {
     margin: 0 0 8px;
   }
+  /* Previous, Next, Cancel and Save stay at the bottom of the window while the fields scroll: on a
+     short window the buttons used to sit below the fold. The negative margins stretch the bar over
+     the dialog's padding so nothing shows around it. */
   .actions {
+    position: sticky;
+    bottom: -18px; /* sticky offsets the margin box, which the -18px margin below shrinks by the padding */
+    z-index: 1;
     display: flex;
     gap: 8px;
     align-items: center;
-    margin-top: 16px;
+    margin: 16px -20px -18px;
+    padding: 10px 20px 18px;
+    background: var(--panel);
+    border-top: 1px solid var(--line);
   }
   .spacer {
     flex: 1;

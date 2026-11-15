@@ -49,6 +49,23 @@ export function normaliseGridMin(raw: unknown): number {
   return finite(raw) && (GRID_MIN_CHOICES as readonly number[]).includes(raw) ? raw : GRID_MIN_DEFAULT;
 }
 
+/** The colours of the three-band waveforms (low, mid, high: player bar, track pictures, mix clips,
+ *  grid editor). Matrix green, calm (the app's own green in three quiet steps, darkest outside) is
+ *  the default; Neon is the original pink, lilac and bright green. */
+export const WAVE_THEME_KEY = "pacemaker-revival.waveColours";
+export const WAVE_THEMES = ["matrix", "neon"] as const;
+export type WaveTheme = (typeof WAVE_THEMES)[number];
+export const WAVE_THEME_DEFAULT: WaveTheme = "matrix";
+export const WAVE_COLOURS: Record<WaveTheme, { low: string; mid: string; high: string }> = {
+  matrix: { low: "#1f8f4c", mid: "#47c279", high: "#9bf0ba" },
+  neon: { low: "#ff48a8", mid: "#e070ff", high: "#00ff46" },
+};
+export const WAVE_THEME_NAMES: Record<WaveTheme, string> = { matrix: "Matrix green, calm", neon: "Neon" };
+
+export function normaliseWaveTheme(raw: unknown): WaveTheme {
+  return (WAVE_THEMES as readonly unknown[]).includes(raw) ? (raw as WaveTheme) : WAVE_THEME_DEFAULT;
+}
+
 /** How long an error message stays, in seconds; 0 = until it is closed. The choices the Settings offer. */
 export const ERROR_SECS_CHOICES = [10, 20, 60, 0] as const;
 export const ERROR_SECS_DEFAULT = 20;

@@ -1,5 +1,5 @@
 <script lang="ts">
-  // The player's colour waveform: three-band peaks (low = pink, mid = lilac, high = green),
+  // The player's colour waveform: three-band peaks (colours from Settings: calm matrix green or neon),
   // beat ticks with the bar starts brighter, the cue flag, the beat loop and the playhead.
   // Click or drag to seek. Copied from ui/Waveform (single colour, integration-owned) rather
   // than extended, as ARCHITECTURE.md rule 7 asks.
@@ -48,15 +48,15 @@
   let frame = 0;
   $effect(() => {
     if (!canvas || width === 0 || height === 0) return;
-    const args = { canvas, width, height, peaks, beats, firstDownbeat, duration, cue, loop, gridMin: appearance.gridMinBarPx };
+    const args = { canvas, width, height, peaks, beats, firstDownbeat, duration, cue, loop, gridMin: appearance.gridMinBarPx, bands: appearance.waveBands };
     cancelAnimationFrame(frame);
     frame = requestAnimationFrame(() => draw(args));
     return () => cancelAnimationFrame(frame);
   });
 
-  function draw({ canvas, width, height, peaks, beats, firstDownbeat, duration, cue, loop, gridMin }: {
+  function draw({ canvas, width, height, peaks, beats, firstDownbeat, duration, cue, loop, gridMin, bands }: {
     canvas: HTMLCanvasElement; width: number; height: number; peaks: Peak[] | null; beats: number[];
-    firstDownbeat: number | null; duration: number; cue: number | null; loop: { start: number; end: number } | null; gridMin: number;
+    firstDownbeat: number | null; duration: number; cue: number | null; loop: { start: number; end: number } | null; gridMin: number; bands: { low: string; mid: string; high: string };
   }) {
     const HEIGHT = height;
     const dpr = window.devicePixelRatio || 1;
@@ -70,9 +70,7 @@
     const half = mid - 2;
 
     if (peaks && peaks.length > 0) {
-      const lo = css("--w-lo");
-      const md = css("--w-mid");
-      const hi = css("--w-hi");
+      const { low: lo, mid: md, high: hi } = bands;
       const step = peaks.length / width;
       for (let x = 0; x < width; x++) {
         const from = Math.floor(x * step);
@@ -196,10 +194,7 @@
 
 <style>
   .wave {
-    /* the mockup's waveform colours: low pink, mid lilac, high green, cue yellow */
-    --w-lo: #ff48a8;
-    --w-mid: #e070ff;
-    --w-hi: var(--green);
+    /* the band colours come from the Waveform colours setting (drawn in script); the cue is yellow */
     --w-cue: #ffd23b;
     position: relative;
     align-self: stretch;

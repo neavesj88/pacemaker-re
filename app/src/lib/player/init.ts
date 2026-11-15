@@ -8,7 +8,8 @@ import { nav } from "$lib/state/nav.svelte";
 import { selection } from "$lib/state/selection.svelte";
 import { session } from "$lib/state/session.svelte";
 import { engine } from "./engine.svelte";
-import { playerOwnsSpace } from "./spaceClaim";
+import { preview } from "$lib/views/mixes/preview.svelte";
+import { playerOwnsSpace, spaceStopsMix } from "./spaceClaim";
 
 /** True when the key press belongs to something being typed into. */
 function typing(t: EventTarget | null): boolean {
@@ -48,6 +49,11 @@ export default function init(): Unlisten {
       if (!playerOwnsSpace(e.defaultPrevented)) return;
       e.preventDefault(); // the page must not scroll
       if (e.repeat) return;
+      // a mix left playing on another tab: Space is its pause (the player bar says it is playing)
+      if (spaceStopsMix(preview.playing, nav.view)) {
+        preview.pause();
+        return;
+      }
       if (playback.trackId === null && playback.mixPreview === null) {
         const id = selection.trackIds[0];
         // an empty queue makes next / previous follow the Tracks table as it is at that moment

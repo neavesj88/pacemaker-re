@@ -1,4 +1,5 @@
 import type { SettingsEntry } from "../settings/types";
+import { session } from "$lib/state/session.svelte";
 import SettingsPanel from "./SettingsPanel.svelte";
 import { space } from "./space.svelte";
 
@@ -12,6 +13,7 @@ const entries: SettingsEntry[] = [
     load: () => space.loadSettings(),
     how: "inline",
     component: SettingsPanel,
+    visible: () => !session.isComputer,
   },
 ];
 

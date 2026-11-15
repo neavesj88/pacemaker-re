@@ -40,7 +40,7 @@ export function meterPercent(energy: number): number {
 export const energyLabel = (energy: number) => energy.toFixed(1);
 
 export function cellTitle(e: EnergyEntry): string {
-  return `Energy ${energyLabel(e.energy)} of 10, estimated from the audio (score ${e.score.toFixed(2)}). Kept by this app only: it is not written to the device.`;
+  return `Energy ${energyLabel(e.energy)} of 10, estimated from the audio (score ${e.score.toFixed(2)}). Kept by this app only: it is not written to the library files.`;
 }
 
 /** Tracks a default run would analyse: never analysed, or the file has changed since. */
@@ -72,4 +72,4 @@ export function runTitle(count: number, root: string, recompute: boolean): strin
 }
 
 export const RUN_DESCRIPTION =
-  "Each track is decoded and measured for loudness, attack density and low-end weight. Nothing is written to the device or to the audio files: the results are kept by this app, per library, and the numbers do not appear on the device. Estimates from audio are a good guide to relative intensity, not a measurement of how a track feels.";
+  "Each track is decoded and measured for loudness, attack density and low-end weight. Nothing is written to the library files or to the audio files: the results are kept by this app, per library, and the numbers do not appear on the Pacemaker. Estimates from audio are a good guide to relative intensity, not a measurement of how a track feels.";

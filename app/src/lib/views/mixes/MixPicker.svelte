@@ -101,7 +101,7 @@
     <i></i>
   </div>
   <div class="bar">
-    <FilterBar {table} ownSearch withPresets={false} {genres} focusKey={focus ? parseKey(focus.key) : null} shown={rows.length} total={all.length} selected={chosen.length} />
+    <FilterBar {table} ownSearch collapsible withPresets={false} {genres} focusKey={focus ? parseKey(focus.key) : null} shown={rows.length} total={all.length} selected={chosen.length} />
   </div>
   <div class="tbl">
     {#if library}
@@ -114,7 +114,7 @@
   <div class="foot">
     <button class="primary" disabled={chosen.length === 0} onclick={() => addSelected(mv.playhead)}>Add at playhead</button>
     <button disabled={chosen.length === 0} onclick={() => addSelected()}>Add to end</button>
-    <span class="muted">{chosen.length > 0 ? `${chosen.length} selected` : "Select tracks, then add them"} · drag rows onto the bar · double-click or Enter adds at the playhead</span>
+    <span class="muted">{chosen.length > 0 ? `${chosen.length} selected` : "Select tracks, then add them"}<span class="hint"> · drag rows onto the bar · double-click or Enter adds at the playhead</span></span>
   </div>
 </section>
 
@@ -184,5 +184,14 @@
   .muted {
     color: var(--muted);
     font-size: 12px;
+  }
+  /* a short window: one footer row, without the how-to hint */
+  @media (max-height: 800px) {
+    .hint {
+      display: none;
+    }
+    .foot {
+      padding: 4px 12px;
+    }
   }
 </style>

@@ -1,7 +1,7 @@
 //! Musical key detection (owner: analysis area).
 //!
 //! Method (all published, nothing copied): a windowed FFT every ~0.2 s; spectral peaks between
-//! 80 Hz and 4 kHz are refined by parabolic interpolation and folded into a 12-bin chromagram.
+//! 100 Hz and 4 kHz are refined by parabolic interpolation and folded into a 12-bin chromagram.
 //! Tuning is estimated first from where the peaks sit relative to the semitone grid (a circular
 //! mean of their offsets), so a track mastered at 432 Hz or pitched by a turntable still lands on
 //! the right pitch classes. The accumulated chromagram is matched against the 24 rotations of two
@@ -92,12 +92,19 @@ const KK_MINOR: [f32; 12] = [6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.9
 const TP_MAJOR: [f32; 12] = [5.0, 2.0, 3.5, 2.0, 4.5, 4.0, 2.0, 4.5, 2.0, 3.5, 1.5, 4.0];
 const TP_MINOR: [f32; 12] = [5.0, 2.0, 3.5, 4.5, 2.0, 4.0, 2.0, 4.5, 3.5, 2.0, 1.5, 4.0];
 
-const LOW_HZ: f32 = 80.0;
+/// Below ~100 Hz sits the kick's body and sub-bass, not harmony: a kick tuned near G1 puts its
+/// second harmonic in the pass band for every beat and made drum-only tracks read F#m.
+const LOW_HZ: f32 = 100.0;
 const HIGH_HZ: f32 = 4000.0;
 /// Frames analysed per track at most; longer audio is sampled at a wider hop.
 const MAX_FRAMES: usize = 2500;
 /// At least this share of the audible frames must hold a tonal peak for the track to have a key.
 const MIN_TONAL_SHARE: f32 = 0.25;
+/// A key needs at least two pitch classes in use. The perplexity (exp of the entropy) of the
+/// normalised chromagram is the effective number of pitch classes: measured on the walkthrough
+/// files (MP3, 48 Hz sub kicks) the drum-only tracks sit at 1.05 to 1.11 and every triad pad or
+/// chord track at 3.0, so 2.0 sits in the middle of that gap and keeps a two-note riff.
+const MIN_EFFECTIVE_PITCH_CLASSES: f32 = 2.0;
 /// Shorter audio has no stable key.
 const MIN_SECS: f32 = 5.0;
 /// Below this length of the mean tuning vector the peaks show no tuning (percussive or noisy
@@ -216,7 +223,22 @@ fn chromagram(mono: &[f32], sample_rate: u32) -> Option<([f32; 12], f32)> {
         let closeness = 0.5 + 0.5 * (2.0 * PI * (m - r)).cos();
         chroma[(r as i32).rem_euclid(12) as usize] += p.weight * closeness * closeness;
     }
-    (chroma.iter().sum::<f32>() > 0.0).then_some((chroma, tuning))
+    let total: f32 = chroma.iter().sum();
+    if total <= 0.0 || effective_pitch_classes(&chroma) < MIN_EFFECTIVE_PITCH_CLASSES {
+        return None;
+    }
+    Some((chroma, tuning))
+}
+
+/// exp(entropy) of the normalised chromagram: 1 when one pitch class holds everything, 12 when
+/// all hold the same.
+fn effective_pitch_classes(chroma: &[f32; 12]) -> f32 {
+    let total: f32 = chroma.iter().sum();
+    if total <= 0.0 {
+        return 0.0;
+    }
+    let h: f32 = chroma.iter().map(|c| c / total).filter(|p| *p > 0.0).map(|p| -p * p.ln()).sum();
+    h.exp()
 }
 
 fn pearson(a: &[f32; 12], b: &[f32; 12]) -> f32 {
@@ -434,5 +456,76 @@ mod tests {
             }
             assert!(detect(&m, SR).is_none(), "{bpm} BPM drums got a key");
         }
+    }
+
+    /// The walkthrough's drum-only tracks: a 48 Hz sub kick that sweeps up a little, a snare
+    /// (noise plus 190 Hz) and hats, at the tempos of the Roller, Halftime and long-set files. On
+    /// the real MP3s the chromagram of these held one or two pitch classes (perplexity 1.05 to
+    /// 1.11) while a triad pad measured 3.0; this render has the same shape without the encoder.
+    fn drum_track(bpm: f32, snares: &[f32], kicks: &[f32], secs: usize) -> Vec<f32> {
+        let sr = SR as f32;
+        let beat = 60.0 / bpm;
+        let mut m = vec![0f32; SR as usize * secs];
+        let mut seed: u32 = 12345;
+        let mut rnd = move || {
+            seed = seed.wrapping_mul(1103515245).wrapping_add(12345) & 0x7fff_ffff;
+            seed as f32 / 0x3fff_ffff as f32 - 1.0
+        };
+        for (i, v) in m.iter_mut().enumerate() {
+            let t = i as f32 / sr;
+            let pos = (t / beat) % 4.0;
+            let mut s = 0.0;
+            for k in kicks {
+                let x = (pos - k) * beat;
+                if (0.0..0.4).contains(&x) {
+                    s += (2.0 * PI * (48.0 * x + 10.0 * (1.0 - (-x * 50.0).exp()))).sin() * (-x * 11.0).exp() * 0.9;
+                }
+            }
+            for k in snares {
+                let x = (pos - k) * beat;
+                if (0.0..0.3).contains(&x) {
+                    s += (rnd() * 0.5 + (2.0 * PI * 190.0 * x).sin() * 0.5) * (-x * 17.0).exp() * 0.6;
+                }
+            }
+            let hp = (pos * 2.0) % 1.0;
+            let x = hp * beat / 2.0;
+            if x < 0.05 {
+                s += rnd() * (-x * 90.0).exp() * 0.25;
+            }
+            *v = (s * 0.8).clamp(-1.0, 1.0);
+        }
+        m
+    }
+
+    #[test]
+    fn drum_only_tracks_with_a_sub_kick_and_a_lone_bass_note_have_no_key() {
+        let dnb = drum_track(174.0, &[1.0, 3.0], &[0.0, 2.5], 60);
+        assert!(detect(&dnb, SR).is_none(), "174 BPM drum & bass got a key");
+        let half = drum_track(140.0, &[1.0, 3.0], &[0.0, 2.0], 60);
+        assert!(detect(&half, SR).is_none(), "140 BPM halftime got a key");
+        let bass: Vec<f32> = (0..SR as usize * 30).map(|i| 0.5 * (2.0 * PI * 110.0 * i as f32 / SR as f32).sin()).collect();
+        assert!(detect(&bass, SR).is_none(), "one held note got a key");
+    }
+
+    /// The same drums under a chord keep the chord's key: the gate is on the notes, not the kick.
+    #[test]
+    fn a_chord_under_the_same_drums_keeps_its_key() {
+        let mut m = drum_track(174.0, &[1.0, 3.0], &[0.0, 2.5], 40);
+        for (i, v) in m.iter_mut().enumerate() {
+            let t = i as f32 / SR as f32;
+            for f in [220.0f32, 261.63, 329.63] {
+                *v += (2.0 * PI * f * t).sin() * 0.12;
+            }
+        }
+        let r = detect(&m, SR).expect("a key");
+        assert_eq!(r.key.camelot(), "8A", "A minor chord");
+    }
+
+    #[test]
+    fn effective_pitch_classes_counts_the_notes_in_use() {
+        let mut one = [0f32; 12];
+        one[6] = 1.0;
+        assert!((effective_pitch_classes(&one) - 1.0).abs() < 1e-4);
+        assert!((effective_pitch_classes(&[1.0; 12]) - 12.0).abs() < 1e-3);
     }
 }

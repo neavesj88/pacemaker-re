@@ -5,7 +5,8 @@
   import type { Clip } from "$lib/api/mixes";
   import { untrack } from "svelte";
   import { TempoMap, clipBeatPoints } from "$lib/state/mixedit";
-  import { BAND_COLOURS, SR } from "./layout";
+  import { appearance } from "$lib/state/appearance.svelte";
+  import { SR } from "./layout";
   import { peakCache } from "./peaks.svelte";
 
   let {
@@ -15,8 +16,11 @@
     to,
     height,
     top = 0,
-    bands = BAND_COLOURS,
+    bands,
   }: { clip: Clip; pps: number; from: number; to: number; height: number; top?: number; bands?: { low: string; mid: string; high: string } } = $props();
+
+  // the colours of Settings > Waveform colours, unless a caller passes its own
+  const colours = $derived(bands ?? appearance.waveBands);
 
   let canvas = $state<HTMLCanvasElement | null>(null);
   const width = $derived(Math.max(1, Math.ceil(to - from)));
@@ -28,7 +32,7 @@
   $effect(() => {
     const cv = canvas;
     if (!cv) return;
-    const key = [cv, clip.tempo, clip.trimStart, clip.trimEnd, clip.length, clip.track?.grid, pps, from, to, height, peaks, bands.low];
+    const key = [cv, clip.tempo, clip.trimStart, clip.trimEnd, clip.length, clip.track?.grid, pps, from, to, height, peaks, colours.low, colours.mid, colours.high];
     if (last && key.every((v, i) => v === last![i])) return;
     last = key;
     untrack(() => draw(cv));
@@ -70,13 +74,13 @@
         }
         prev = next;
         const amp = height - 4;
-        g.fillStyle = bands.low;
+        g.fillStyle = colours.low;
         let h = Math.max(1, (lo / 255) * amp);
         g.fillRect(x, mid - h / 2, 1, h);
-        g.fillStyle = bands.mid;
+        g.fillStyle = colours.mid;
         h = Math.max(0, (md / 255) * amp);
         g.fillRect(x, mid - h / 2, 1, h);
-        g.fillStyle = bands.high;
+        g.fillStyle = colours.high;
         h = Math.max(0, (hi / 255) * amp);
         g.fillRect(x, mid - h / 2, 1, h);
       }

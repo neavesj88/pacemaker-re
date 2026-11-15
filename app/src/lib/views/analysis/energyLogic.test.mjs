@@ -46,7 +46,7 @@ test("lookup by track id and the meter", () => {
 test("the cell tooltip says it is an estimate kept only by the app", () => {
   const t = cellTitle({ track_id: 1, energy: 7.4, level: 7, score: 0.612 });
   assert.match(t, /7\.4 of 10/);
-  assert.match(t, /not written to the device/);
+  assert.match(t, /not written to the library files/);
 });
 
 test("coverage wording covers each state and the singular forms", () => {

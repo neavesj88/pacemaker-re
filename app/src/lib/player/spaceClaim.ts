@@ -23,3 +23,10 @@ export function spaceClaimed(): boolean {
 export function playerOwnsSpace(eventHandled: boolean): boolean {
   return !eventHandled && !spaceClaimed();
 }
+
+/** A mix that keeps playing after its tab was left has no transport on screen, so Space pauses it
+ *  first (the player bar says so). `view` is the open view's id; on the Mixes view the editor's own
+ *  claim handles Space. */
+export function spaceStopsMix(mixPlaying: boolean, view: string): boolean {
+  return mixPlaying && view !== "mixes";
+}

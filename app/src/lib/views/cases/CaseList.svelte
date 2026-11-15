@@ -209,7 +209,7 @@
     Merge{picked.size > 1 ? ` ${picked.size}` : ""}…
   </Button>
   <Button disabled={!jobs.canWrite || picked.size === 0} onclick={() => (deleting = pickedCases)}>Delete{picked.size > 0 ? ` ${picked.size}` : ""}…</Button>
-  <Button disabled={pickedShown.length === 0} onclick={() => thingEditor.edit("case", pickedShown.map((c) => c.id))} title="Tags and a colour label for the ticked cases. Kept by this app only; nothing is written to the device.">Tags and colour{pickedShown.length > 0 ? ` (${pickedShown.length})` : ""}…</Button>
+  <Button disabled={pickedShown.length === 0} onclick={() => thingEditor.edit("case", pickedShown.map((c) => c.id))} title="Tags and a colour label for the ticked cases. Kept by this app only; nothing is written to the library files.">Tags and colour{pickedShown.length > 0 ? ` (${pickedShown.length})` : ""}…</Button>
   {#if cases.smart.some((s) => s.on_device)}
     <Button
       disabled={!jobs.canWrite || smartRefresh.checking || smartRefresh.applying}
@@ -223,7 +223,7 @@
     title="Save several cases as playlist files in a folder, one file per case, with the audio copied alongside if you like"
   >Export{picked.size > 0 ? ` ${picked.size} ticked` : " all"}…</Button>
   <Button onclick={() => (settingsOpen = true)} title="Whether the {session.isComputer ? '★ cases' : 'Pacemaker copies'} of smart cases refresh by themselves, and how smart cases are exported">Smart case settings…</Button>
-  <span class="muted">Cases are {session.isComputer ? 'playlists that can be sent to a Pacemaker' : "the Pacemaker's own playlists"}; the order here is the order {session.isComputer ? 'in the library' : 'on the device'}.</span>
+  <span class="muted">Cases are {session.isComputer ? 'playlists kept in your library' : "the Pacemaker's own playlists"}; the order here is the order {session.isComputer ? 'in the library' : 'on the device'}.</span>
 </div>
 {#if cases.infos.length > 0}
   <div class="pickbar filterbar">

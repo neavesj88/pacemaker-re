@@ -507,7 +507,7 @@
     <div class="muted">case · {all.length} track{all.length === 1 ? "" : "s"} · {mmss(totalSecs)}</div>
     <div class="labelrow">
       {#if caseLabels.get(open.id)}<ThingChips labels={caseLabels.get(open.id)} max={8} />{:else}<span class="muted">No tags or colour</span>{/if}
-      <Button small variant="link" onclick={() => thingEditor.edit("case", [open.id])} title="Tags and a colour label. Kept by this app only; nothing is written to the device.">Tags and colour…</Button>
+      <Button small variant="link" onclick={() => thingEditor.edit("case", [open.id])} title="Tags and a colour label. Kept by this app only; nothing is written to the library files.">Tags and colour…</Button>
     </div>
     {#if info}
       <div class="field"><label for="c-name">Name</label><input id="c-name" bind:value={draft.name} maxlength="255" disabled={!canEdit} title={smartCopy ? `The smart case “${smartCopy.name}” sets this name` : undefined} /></div>
@@ -534,7 +534,7 @@
       <Button onclick={() => (merging = true)} disabled={!jobs.canWrite || cases.infos.length < 2} title="Merge this case with others, without repeats">Merge…</Button>
       <Button onclick={() => (deleting = true)} disabled={!jobs.canWrite}>Delete case…</Button>
     </div>
-    <div class="note muted">Cases are {session.isComputer ? 'playlists that can be sent to a Pacemaker' : "the Pacemaker's own playlists"}. Order here is the order {session.isComputer ? 'in the library' : 'on the device'}.</div>
+    <div class="note muted">Cases are {session.isComputer ? 'playlists kept in your library' : "the Pacemaker's own playlists"}. Order here is the order {session.isComputer ? 'in the library' : 'on the device'}.</div>
   </aside>
 </div>
 

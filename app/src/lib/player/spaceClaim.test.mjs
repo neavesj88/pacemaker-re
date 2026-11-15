@@ -32,3 +32,10 @@ test("two claims: either one is enough, and removing one keeps the other", () =>
   b();
   assert.equal(spaceClaimed(), false);
 });
+
+test("a mix left playing on another tab is paused by Space; on the Mixes tab the editor owns the key", async () => {
+  const { spaceStopsMix } = await import("./spaceClaim.ts");
+  assert.equal(spaceStopsMix(true, "tracks"), true);
+  assert.equal(spaceStopsMix(true, "mixes"), false);
+  assert.equal(spaceStopsMix(false, "tracks"), false);
+});

@@ -6,9 +6,15 @@ import {
   maxHeight, clampHeight, normaliseHeight, scaleFor, dragHeight, keyHeight,
 } from "./playerSize.ts";
 
-test("max height is 45% of the window, never below the minimum", () => {
+test("max height is 45% of a tall window, 25% under 800 px and 35% under 1000 px, never below the minimum", () => {
   assert.equal(maxHeight(2160), 972);
   assert.equal(maxHeight(1080), 486);
+  assert.equal(maxHeight(1000), 450);
+  assert.equal(maxHeight(999), 349);
+  assert.equal(maxHeight(800), 280);
+  assert.equal(maxHeight(799), 199);
+  assert.equal(maxHeight(714), 178);
+  assert.equal(maxHeight(678), 169);
   assert.equal(maxHeight(100), MIN_HEIGHT);
   assert.equal(maxHeight(0), MIN_HEIGHT);
   assert.equal(maxHeight(NaN), MIN_HEIGHT);
@@ -28,6 +34,11 @@ test("a size remembered on a big screen is shown clamped on a small one without 
   assert.equal(stored, 900);
   assert.equal(clampHeight(stored, 1080), 486);
   assert.equal(clampHeight(stored, 2160), 900); // back on the big screen it is intact
+});
+
+test("a tall player chosen earlier is held to 25% on a 714 px window and comes back on a big one", () => {
+  assert.equal(clampHeight(486, 714), 178);
+  assert.equal(clampHeight(486, 1080), 486);
 });
 
 test("stored values: missing, junk and out of range", () => {

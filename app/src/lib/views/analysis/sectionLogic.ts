@@ -222,7 +222,7 @@ export function runTitle(count: number, root: string, recompute: boolean): strin
 }
 
 export const RUN_DESCRIPTION =
-  "Each track is decoded and measured bar by bar, using the bars of its beat grid, for level in three bands and how busy it is. Nothing is written to the device or to the audio files: the results are kept by this app, per library, and the sections do not appear on the device. Section detection is an estimate from the audio: it works best on dance music with a steady grid and clear changes, and it can be wrong, most often on builds. Check markers by ear.";
+  "Each track is decoded and measured bar by bar, using the bars of its beat grid, for level in three bands and how busy it is. Nothing is written to the library files or to the audio files: the results are kept by this app, per library, and the sections do not appear on the Pacemaker. Section detection is an estimate from the audio: it works best on dance music with a steady grid and clear changes, and it can be wrong, most often on builds. Check markers by ear.";
 
 export const LIMITATIONS =
   "How it works: bars come from the beat grid (a wrong grid or first downbeat gives wrong sections); the level and busyness of each bar are compared with the rest of the track; boundaries are placed where bars before and after a point differ most, and moved onto the 8, 16 or 32 bar phrase grid when one is close. Labels come from loudness relative to the rest of the track. It is a heuristic, checked on synthetic audio, not on a labelled set of real tracks. Expect it to struggle with tracks that change little, tempo changes and half-time sections; builds are the least reliable label. Confidence is relative to the track, not a probability.";

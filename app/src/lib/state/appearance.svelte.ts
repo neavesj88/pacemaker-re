@@ -10,6 +10,11 @@ import {
   GRID_MIN_DEFAULT,
   GRID_MIN_KEY,
   normaliseGridMin,
+  normaliseWaveTheme,
+  WAVE_COLOURS,
+  WAVE_THEME_DEFAULT,
+  WAVE_THEME_KEY,
+  type WaveTheme,
   SCALE_DEFAULT,
   SCALE_KEY,
   clampScale,
@@ -29,11 +34,34 @@ class Appearance {
   doneSecs = $state(loadPref(DONE_SECS_KEY, normaliseDoneSecs, () => DONE_SECS_DEFAULT));
   /** Least width of one bar (px) that still gets a bar line on the player waveform; 0 = no grid. */
   gridMinBarPx = $state(loadPref(GRID_MIN_KEY, normaliseGridMin, () => GRID_MIN_DEFAULT));
+  /** Colours of the waveforms: "matrix" (calm green, default) or "neon". */
+  waveTheme = $state<WaveTheme>(loadPref(WAVE_THEME_KEY, normaliseWaveTheme, () => WAVE_THEME_DEFAULT));
+  /** The three band colours of the chosen theme; canvases read this so they redraw when it changes. */
+  get waveBands() {
+    return WAVE_COLOURS[this.waveTheme];
+  }
   /** The webview could not be zoomed (the browser preview, or the permission is missing). */
   zoomProblem = $state("");
 
   constructor() {
     void this.apply();
+    this.#paintWave();
+  }
+
+  /** Canvases that read CSS variables (grid editor, overview) get the same colours. */
+  #paintWave() {
+    if (typeof document === "undefined") return;
+    const b = this.waveBands;
+    const st = document.documentElement.style;
+    st.setProperty("--wave-low", b.low);
+    st.setProperty("--wave-mid", b.mid);
+    st.setProperty("--wave-high", b.high);
+  }
+
+  setWaveTheme(t: WaveTheme) {
+    this.waveTheme = normaliseWaveTheme(t);
+    savePref(WAVE_THEME_KEY, this.waveTheme);
+    this.#paintWave();
   }
 
   /** Makes the webview show the saved size. */

@@ -13,8 +13,18 @@ export const PLAYER_HEIGHT_KEY = "pacemaker-revival.playerHeight";
 export const DEFAULT_HEIGHT = 63;
 /** Never shorter than the default. */
 export const MIN_HEIGHT = DEFAULT_HEIGHT;
-/** The bar may take this share of the window height, so the view above it stays usable. */
+/** The bar may take this share of a tall window's height, so the view above it stays usable. */
 export const MAX_WINDOW_SHARE = 0.45;
+/**
+ * Short windows (a 1080p laptop at 125-150 % scaling is 700-860 px high) get a smaller share: at
+ * 45 % the Tracks, Cases and Mix pages were left almost no room, and the height is remembered, so
+ * the owner stayed stuck with it. Below SMALL_WINDOW_H the bar takes at most 25 %, below
+ * MEDIUM_WINDOW_H at most 35 %.
+ */
+export const SMALL_WINDOW_H = 800;
+export const MEDIUM_WINDOW_H = 1000;
+export const SMALL_WINDOW_SHARE = 0.25;
+export const MEDIUM_WINDOW_SHARE = 0.35;
 /** Sanity ceiling for a stored value (a corrupt number cannot ask for a screen-high bar). */
 export const HARD_MAX_HEIGHT = 1200;
 
@@ -33,10 +43,11 @@ const SIDE_SHARE = 0.55;
 
 const finite = (n: unknown): n is number => typeof n === "number" && Number.isFinite(n);
 
-/** Tallest the bar may be in a window `winH` px high (never below the minimum). */
+/** Tallest the bar may be in a window `winH` px high (never below the minimum): 25 % under 800 px, 35 % under 1000 px, else 45 %. */
 export function maxHeight(winH: number): number {
   const w = finite(winH) && winH > 0 ? winH : 0;
-  return Math.max(MIN_HEIGHT, Math.floor(w * MAX_WINDOW_SHARE));
+  const share = w < SMALL_WINDOW_H ? SMALL_WINDOW_SHARE : w < MEDIUM_WINDOW_H ? MEDIUM_WINDOW_SHARE : MAX_WINDOW_SHARE;
+  return Math.max(MIN_HEIGHT, Math.floor(w * share));
 }
 
 /** `h` held between the minimum and what a `winH` px window allows. */

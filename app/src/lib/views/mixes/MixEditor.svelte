@@ -232,18 +232,6 @@
     <Button disabled={mixes.undoDepth === 0} onclick={() => mixes.undo()} title={mixes.undoLabel ? `Undo ${mixes.undoLabel} (Ctrl+Z)` : "Nothing to undo"} aria-label="Undo">↶</Button>
     <Button disabled={mixes.redoDepth === 0} onclick={() => mixes.redo()} title={mixes.redoLabel ? `Redo ${mixes.redoLabel} (Ctrl+Y)` : "Nothing to redo"} aria-label="Redo">↷</Button>
     <span class="sep"></span>
-    <label class="ctl">Snap
-      <select bind:value={mixes.snap} title="Section snaps to where detected sections begin (intro, build, drop, breakdown, outro; Tracks, Sections panel). A clip whose track has none snaps to its phrase lines instead.">
-        <option value="beat">Beat</option>
-        <option value="bar">Bar</option>
-        <option value="phrase">Phrase (8 bars)</option>
-        <option value="section">Section</option>
-        <option value="off">Off</option>
-      </select>
-    </label>
-    <label class="ctl follow" title={sections.showMarkers ? "Draw the detected sections (intro, build, drop, breakdown, outro) on the clips. Clips of tracks without sections show nothing." : "Turned off in the Sections panel's settings (show markers on waveforms)"}>
-      <input type="checkbox" checked={mv.sectionMarkers && sections.showMarkers} disabled={!sections.showMarkers} onchange={(e) => mv.setSectionMarkers(e.currentTarget.checked)} /> sections
-    </label>
     <label class="ctl">Zoom
       <input
         type="range"
@@ -258,11 +246,24 @@
     </label>
     <Button small onclick={() => mv.fit(doc.length)} title="Show the whole mix">Fit</Button>
     <span class="sep"></span>
-    <span class="ctl" title="The tempo the mix is matched to: new tracks and the Match buttons play at this, or at double or half of it, whichever stretches the track least. Not stored in the mix file.">
+    <span class="ctl" title="The tempo the mix is matched to: new tracks and the Match buttons play at this, or at double or half of it, whichever stretches the track least. Not stored in the mix file: when a mix is opened again it starts at its first track's tempo.">
       Mix tempo
       <BpmField value={mixTempo} onset={setMixTempo} label="Mix tempo" disabled={doc.clips.length === 0} />
     </span>
     <Button small disabled={!mixTempo} onclick={matchAll} title="Play every track at the mix tempo (or double or half of it); a track that would need more stretch than the setting allows keeps its own tempo">Match all</Button>
+    <span class="sep"></span>
+    <label class="ctl">Snap
+      <select bind:value={mixes.snap} title="Section snaps to where detected sections begin (intro, build, drop, breakdown, outro; Tracks, Sections panel). A clip whose track has none snaps to its phrase lines instead.">
+        <option value="beat">Beat</option>
+        <option value="bar">Bar</option>
+        <option value="phrase">Phrase (8 bars)</option>
+        <option value="section">Section</option>
+        <option value="off">Off</option>
+      </select>
+    </label>
+    <label class="ctl follow" title={sections.showMarkers ? "Draw the detected sections (intro, build, drop, breakdown, outro) on the clips. Clips of tracks without sections show nothing." : "Turned off in the Sections panel's settings (show markers on waveforms)"}>
+      <input type="checkbox" checked={mv.sectionMarkers && sections.showMarkers} disabled={!sections.showMarkers} onchange={(e) => mv.setSectionMarkers(e.currentTarget.checked)} /> sections
+    </label>
     <span class="ctl">Curves
       <span class="segs">
         {#each OVERLAYS as o (o.id)}
@@ -490,24 +491,39 @@
     color: var(--muted);
     font-size: 12px;
   }
-  /* a short window: the timeline gives way before the track picker does, so the table under the
-     filter bar always shows a few rows (the timeline scrolls inside its own pane) */
+  /* a short window (a 1080p laptop with scaling): the toolbar keeps to two rows (its length is
+     in the transport, so the chip goes and the name is shorter), the transport to one, and the
+     picker has room for about five rows (its Add bar always inside the window) before the timeline gets more height (the timeline scrolls
+     inside its own pane) */
   @media (max-height: 800px) {
+    .chip,
+    .legend {
+      display: none;
+    }
+    h2 {
+      max-width: 110px;
+    }
+    .bar {
+      gap: 6px;
+    }
+    .bar > .sep {
+      display: none;
+    }
+    .bar .ctl input[type="range"] {
+      width: 80px;
+    }
     .tl {
-      min-height: 150px;
+      min-height: 140px;
     }
     .left :global(.picker) {
-      min-height: 210px;
+      min-height: 250px;
     }
   }
   /* a short window: a tighter toolbar and no hint line, so more of the timeline shows without scrolling */
   @media (max-height: 700px) {
     .bar {
       padding: 4px 12px;
-      gap: 4px 8px;
-    }
-    .legend {
-      display: none;
+      gap: 4px 6px;
     }
     .transport {
       padding: 4px 12px;

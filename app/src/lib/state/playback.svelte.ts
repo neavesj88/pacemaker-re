@@ -3,7 +3,9 @@
 // editor and the grid editor included, only calls the methods and reads the fields. This is
 // the one place the "now playing" state lives, so views never talk to the engine directly.
 import { tableRows } from "$lib/views/tracks/tableRows.svelte";
+import { loadPref, savePref } from "./prefStore";
 import { session } from "./session.svelte";
+import { DEFAULT_VOLUME, VOLUME_KEY, normaliseVolume } from "./volumePref";
 
 /** A rendered mix being previewed instead of a single track. `path` is the rendered audio file
  * (from export.renderMixPreview); `fromSecs` is where that file starts on the mix timeline. */
@@ -22,8 +24,8 @@ class Playback {
   /** Set while a mix is being previewed through the transitions instead of a single track. */
   mixPreview = $state<MixPreview | null>(null);
 
-  /** Player volume, 0 to 1. */
-  volume = $state(0.8);
+  /** Player and mix preview volume, 0 to 1; remembered between runs. */
+  volume = $state(loadPref(VOLUME_KEY, normaliseVolume, () => DEFAULT_VOLUME));
   /** The device-style cue point of the loaded track, seconds. Starts at the first downbeat of
    * the .str; the grid editor may set it with `setCue`. Not read from `tracks.cue_point`: that
    * column's unit is unverified (notes/FINDINGS.md section 4c). */
@@ -101,6 +103,7 @@ class Playback {
 
   setVolume(v: number) {
     this.volume = Math.min(1, Math.max(0, v));
+    savePref(VOLUME_KEY, this.volume);
   }
 
   /** Preview a rendered mix (the file `export.renderMixPreview` returned) from its start.

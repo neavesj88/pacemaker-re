@@ -1,6 +1,6 @@
 <script lang="ts">
   import { appearance } from "$lib/state/appearance.svelte";
-  import { DONE_SECS_CHOICES, ERROR_SECS_CHOICES, GRID_MIN_CHOICES, SCALE_DEFAULT, SCALE_MAX, SCALE_MIN, SCALE_STEP } from "$lib/state/appearanceLogic";
+  import { DONE_SECS_CHOICES, ERROR_SECS_CHOICES, GRID_MIN_CHOICES, SCALE_DEFAULT, SCALE_MAX, SCALE_MIN, SCALE_STEP, WAVE_COLOURS, WAVE_THEMES, WAVE_THEME_NAMES, normaliseWaveTheme } from "$lib/state/appearanceLogic";
   import { windowRememberGet, windowRememberSet } from "$lib/api/library";
   import { toast } from "$lib/state/toast.svelte";
   import Button from "$lib/ui/Button.svelte";
@@ -86,6 +86,16 @@
     Bar lines on the player's waveform stop being drawn when a bar gets narrower than this, so a long track on a narrow window
     is not covered in lines. A lower number keeps the grid on longer tracks.
   </p>
+  <div class="row">
+    <label for="wave-colours" class="k">Waveform colours</label>
+    <select id="wave-colours" value={appearance.waveTheme} onchange={(e) => appearance.setWaveTheme(normaliseWaveTheme(e.currentTarget.value))}>
+      {#each WAVE_THEMES as t (t)}<option value={t}>{WAVE_THEME_NAMES[t]}</option>{/each}
+    </select>
+    <span class="swatch" aria-hidden="true">
+      {#each [WAVE_COLOURS[appearance.waveTheme].low, WAVE_COLOURS[appearance.waveTheme].mid, WAVE_COLOURS[appearance.waveTheme].high] as c (c)}<i style:background={c}></i>{/each}
+    </span>
+  </div>
+  <p class="muted note">The player, the track pictures, the clips of a mix and the grid editor. Calm keeps the waveforms in the app's own green; Neon is the pink, lilac and bright green of the original mockup.</p>
   <p class="muted note">Other messages (saved, copied) disappear by themselves after a few seconds. Any message has a × to close it.</p>
 </div>
 
@@ -104,6 +114,16 @@
   .k {
     color: var(--muted);
     min-width: 130px;
+  }
+  .swatch {
+    display: inline-flex;
+    gap: 2px;
+  }
+  .swatch i {
+    width: 14px;
+    height: 14px;
+    border-radius: 3px;
+    border: 1px solid var(--line);
   }
   .pct {
     min-width: 48px;

@@ -26,6 +26,8 @@ type Base = {
   help: string;
   /** Extra words the search box matches, beyond the title and help. */
   keywords?: string;
+  /** Listed only while this is true (the free-space planner is for a card, not a library on this computer). */
+  visible?: () => boolean;
   /** Reads the saved values (the feature's own loader); run before the controls are shown. */
   load?: () => unknown;
 };

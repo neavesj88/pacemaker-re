@@ -16,9 +16,11 @@
 
   /** The Device group holds the library health, safety and space tools; on a library on this computer it is not about a device. */
   const areaName = (area: string) => (area === "Device" && session.isComputer ? "Library tools" : area);
-  const groups = $derived(group(settingsEntries, query));
+  /** Entries that apply to the open library (some are about a card only). */
+  const entries = $derived(settingsEntries.filter((e) => !e.visible || e.visible()));
+  const groups = $derived(group(entries, query));
   const total = $derived(groups.reduce((n, g) => n + g.entries.length, 0));
-  const dialog = $derived(settingsEntries.find((e) => e.id === dialogId && e.how === "dialog") ?? null);
+  const dialog = $derived(entries.find((e) => e.id === dialogId && e.how === "dialog") ?? null);
 
   /** Runs the entry's loader (its saved values); false if it failed, with the reason shown. */
   async function ready(e: SettingsEntry): Promise<boolean> {

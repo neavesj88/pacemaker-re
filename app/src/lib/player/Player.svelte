@@ -2,6 +2,8 @@
   // The bottom player bar. Owned by the playback area; the shell only mounts it. It shows the
   // transport (state/playback.svelte.ts) and sends clicks back to it or to the engine.
   import { playback } from "$lib/state/playback.svelte";
+  import { nav } from "$lib/state/nav.svelte";
+  import { preview } from "$lib/views/mixes/preview.svelte";
   import { session } from "$lib/state/session.svelte";
   import { loadPref, savePref } from "$lib/state/prefStore";
   import Button from "$lib/ui/Button.svelte";
@@ -51,6 +53,7 @@
   /** The one status line under the title, worst first. */
   const status = $derived.by((): { text: string; bad: boolean; hint?: string } | null => {
     if (playback.error) return { text: playback.error, bad: true, hint: "Press Space or Try again to retry." };
+    if (preview.playing && nav.view !== "mixes") return { text: "A mix is playing. Space pauses it.", bad: false };
     if (track && engine.peaksProblem) return { text: `No waveform: ${engine.peaksProblem}`, bad: false };
     if (track && engine.beatsProblem) return { text: `No beat ticks: ${engine.beatsProblem}`, bad: false };
     if (loaded && engine.silent) return { text: "Browser preview: no audio, silent clock", bad: false };
@@ -58,7 +61,7 @@
   });
 
   // Bar height. `chosen` is what the owner set and what is remembered; `barH` is that held to the
-  // current window (45 % of its height at most), so a size chosen on a big screen fits a small one
+  // current window (25 to 45 % of its height at most, see maxHeight), so a size chosen on a big screen fits a small one
   // and comes back intact. Read here, in the component's setup, so the first paint already has it.
   let chosen = $state(loadPref(PLAYER_HEIGHT_KEY, normaliseHeight, () => DEFAULT_HEIGHT));
   let winW = $state(typeof window === "undefined" ? 1920 : window.innerWidth);

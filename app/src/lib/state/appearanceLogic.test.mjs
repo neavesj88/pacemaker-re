@@ -1,6 +1,7 @@
 // Run: node --experimental-strip-types src/lib/state/appearanceLogic.test.mjs
 import assert from "node:assert/strict";
-import { addToast, DONE_SECS_DEFAULT, normaliseDoneSecs, ERROR_SECS_DEFAULT, GRID_MIN_DEFAULT, MAX_TOASTS, normaliseGridMin, clampScale, normaliseErrorSecs, normaliseScale, scaleKey, stepScale, toastMs, zoomFactor } from "./appearanceLogic.ts";
+import { readFileSync } from "node:fs";
+import { WAVE_COLOURS, WAVE_THEME_DEFAULT, normaliseWaveTheme, addToast, DONE_SECS_DEFAULT, normaliseDoneSecs, ERROR_SECS_DEFAULT, GRID_MIN_DEFAULT, MAX_TOASTS, normaliseGridMin, clampScale, normaliseErrorSecs, normaliseScale, scaleKey, stepScale, toastMs, zoomFactor } from "./appearanceLogic.ts";
 
 // size: 80 to 200 %, default 100, junk gives the default
 assert.equal(clampScale(100), 100);
@@ -69,3 +70,22 @@ assert.equal(normaliseGridMin(0), 0);
 assert.equal(normaliseGridMin(4), 4);
 assert.equal(normaliseGridMin(3), GRID_MIN_DEFAULT);
 assert.equal(normaliseGridMin(null), GRID_MIN_DEFAULT);
+
+// waveform colours: calm matrix green is the default, neon stays as the other choice, junk gives the default
+assert.equal(WAVE_THEME_DEFAULT, "matrix");
+assert.equal(normaliseWaveTheme(undefined), "matrix");
+assert.equal(normaliseWaveTheme("neon"), "neon");
+assert.equal(normaliseWaveTheme("matrix"), "matrix");
+for (const junk of [null, "Neon", 1, {}, "purple"]) assert.equal(normaliseWaveTheme(junk), "matrix", String(junk));
+assert.deepEqual(WAVE_COLOURS.neon, { low: "#ff48a8", mid: "#e070ff", high: "#00ff46" }, "neon is the original colours");
+// calm: all three bands are greens (green is the strongest channel), darkest on the outside
+const ch = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
+for (const k of ["low", "mid", "high"]) {
+  const [r, g, b] = ch(WAVE_COLOURS.matrix[k]);
+  assert.ok(g > r && g > b, `matrix ${k} is green`);
+}
+const lum = (h) => ch(h).reduce((a, c) => a + c, 0);
+assert.ok(lum(WAVE_COLOURS.matrix.low) < lum(WAVE_COLOURS.matrix.mid) && lum(WAVE_COLOURS.matrix.mid) < lum(WAVE_COLOURS.matrix.high));
+// the stylesheet's own values (what shows before the app sets them) are the default theme
+const css = readFileSync(new URL("../styles/tokens.css", import.meta.url), "utf8");
+for (const k of ["low", "mid", "high"]) assert.match(css, new RegExp(`--wave-${k}: ${WAVE_COLOURS.matrix[k]};`), `tokens.css --wave-${k}`);
