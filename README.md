@@ -45,6 +45,13 @@ Rust core with a Tauri 2 + Svelte desktop app. Mobile is planned.
     cargo run --release -p pm-cli -- ls <volume>
     cd app && npm install && npm run tauri dev
 
+### Help and guides
+
+The app has a built-in, searchable help (press F1). Its articles are the plain Markdown files in
+**[docs/kb](docs/kb/README.md)**, readable here on GitHub: getting started, the Tracks, Mixes and
+Device pages, upgrading the Pacemaker's storage to a microSD card, installing firmware, replacing the
+battery, and a player's guide to the Pacemaker itself.
+
 ## Reverse-engineering tools
 
 | Script | Purpose |
