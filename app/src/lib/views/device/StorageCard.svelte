@@ -5,6 +5,7 @@
   import Card from "./Card.svelte";
   import { device } from "./device.svelte";
   import { bytes } from "./format";
+  import HelpLink from "../help/HelpLink.svelte";
 
   let s = $derived(device.overview?.storage);
   let lib = $derived(session.library);
@@ -23,6 +24,7 @@
 </script>
 
 <Card title="Storage">
+  {#snippet aside()}<HelpLink id="storage-upgrade" />{/snippet}
   {#if !s}
     <p class="muted">Reading the drive…</p>
   {:else}

@@ -14,6 +14,7 @@
   import Card from "./Card.svelte";
   import { device } from "./device.svelte";
   import JobProgress from "./JobProgress.svelte";
+  import HelpLink from "../help/HelpLink.svelte";
   import { bytes } from "./format";
 
   let fw = $derived(device.overview?.firmware);
@@ -53,6 +54,7 @@
 </script>
 
 <Card title="Firmware">
+  {#snippet aside()}<HelpLink id="install-firmware" />{/snippet}
   {#if !fw}
     <p class="muted">Reading the drive…</p>
   {:else}

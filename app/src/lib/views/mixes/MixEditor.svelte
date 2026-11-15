@@ -21,6 +21,7 @@
   import { stretchText } from "$lib/state/tempoMatch";
   import { mv, type EnvOverlay } from "./view.svelte";
   import { setlist } from "../setlist/setlist.svelte";
+  import HelpLink from "../help/HelpLink.svelte";
 
   const doc = $derived(mixes.doc!);
   // Space plays the mix here; the player bar's own Space shortcut stands aside while a mix is open
@@ -225,6 +226,7 @@
   <div class="bar">
     <Button variant="ghost" onclick={closeMix} title="Back to the list of mixes">← Mixes</Button>
     <h2 title={doc.name}>{doc.name}{#if mixes.dirty}<span class="dirty" title="Unsaved changes"> ●</span>{/if}</h2>
+    <HelpLink id="mixes-building" />
     <span class="chip">mix · {doc.clips.length} track{doc.clips.length === 1 ? "" : "s"} · {clock(doc.lengthSec)}</span>
     <Button onclick={newMix}>New</Button>
     <Button variant="primary" disabled={!mixes.dirty || saving || mixes.busy} onclick={save} title={mixes.problems.length ? `Cannot save yet: ${mixes.problems[0]}` : "Save (Ctrl+S)"}>Save</Button>

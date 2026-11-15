@@ -2,6 +2,10 @@
   import { session } from "$lib/state/session.svelte";
   import { toast } from "$lib/state/toast.svelte";
   import Button from "$lib/ui/Button.svelte";
+  import { helpIndex } from "../help/articles";
+  import HelpLink from "../help/HelpLink.svelte";
+  import { openHelp } from "../help/help.svelte";
+  import { search as searchHelp } from "../help/helpLogic";
   import { settingsEntries } from "./registry";
   import { group } from "./settingsLogic";
   import type { SettingsEntry } from "./types";
@@ -20,6 +24,8 @@
   const entries = $derived(settingsEntries.filter((e) => !e.visible || e.visible()));
   const groups = $derived(group(entries, query));
   const total = $derived(groups.reduce((n, g) => n + g.entries.length, 0));
+  /** Help articles that match the same words (a few; the Help view has them all). Empty while nothing is typed. */
+  const helpHits = $derived(query.trim() ? searchHelp(helpIndex(), query, 5) : []);
   const dialog = $derived(entries.find((e) => e.id === dialogId && e.how === "dialog") ?? null);
 
   /** Runs the entry's loader (its saved values); false if it failed, with the reason shown. */
@@ -55,6 +61,7 @@
 
 <div class="bar">
   <h2>Settings</h2>
+  <HelpLink id="settings-page" />
   <input type="search" class="find" placeholder="Search the settings" aria-label="Search the settings" bind:value={query} />
   <span class="muted">{total} {total === 1 ? "section" : "sections"}</span>
 </div>
@@ -101,6 +108,22 @@
   {:else}
     <p class="empty">No setting matches “{query}”.</p>
   {/each}
+
+  {#if helpHits.length > 0}
+    <section class="area helpgroup" aria-labelledby="area-Help">
+      <h3 id="area-Help">Help</h3>
+      {#each helpHits as h (h.article.id)}
+        <article class="entry">
+          <button type="button" class="hit" onclick={() => openHelp(h.article.id)}>
+            <span class="name">{#each h.title as s, si (si)}{#if s.hit}<mark>{s.text}</mark>{:else}{s.text}{/if}{/each}</span>
+            <span class="help muted">
+              {#if h.snippet}{#each h.snippet as s, si (si)}{#if s.hit}<mark>{s.text}</mark>{:else}{s.text}{/if}{/each}{:else}{h.article.summary}{/if}
+            </span>
+          </button>
+        </article>
+      {/each}
+    </section>
+  {/if}
 </div>
 
 {#if dialog && dialog.how === "dialog"}
@@ -192,5 +215,30 @@
   }
   .empty {
     color: var(--muted);
+  }
+  .hit {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    width: 100%;
+    padding: 8px 10px;
+    border: none;
+    background: none;
+    color: var(--text);
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+  }
+  .hit:hover {
+    background: var(--hover);
+  }
+  .hit .name {
+    cursor: pointer;
+  }
+  mark {
+    background: color-mix(in srgb, var(--green) 28%, transparent);
+    color: var(--text);
+    border-radius: 2px;
+    padding: 0 1px;
   }
 </style>

@@ -17,6 +17,8 @@ export default defineConfig(() => ({
     port: 1420,
     strictPort: true,
     host: host || "127.0.0.1",
+    // the Help articles are docs/kb/*.md at the repository root, one folder above this one
+    fs: { allow: ["../docs"] },
     hmr: host
       ? {
           protocol: "ws",
