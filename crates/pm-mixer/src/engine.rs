@@ -331,6 +331,13 @@ impl Fade {
 /// notes/mix-format.md), so the rule is geometric: of the clips audible during the transition,
 /// the one that starts last is the incoming clip and, of the rest, the one that ends last is the
 /// outgoing clip.
+///
+/// The fade only runs where both clips are audible: it starts no earlier than the incoming clip
+/// and ends no later than the outgoing clip's audible end (trims included). A stored transition
+/// that reaches further (a clip was trimmed or moved after it was made) is cut to that overlap,
+/// with its curve spread over what is left, so the incoming clip is at full level when the
+/// outgoing one ends instead of staying held down for the rest of a window nobody hears. The
+/// editor draws the same window (`effectiveFade` in `state/mixedit.ts`).
 pub(crate) fn assign_fades(slots: &mut [Slot], mix: &Mix, warnings: &mut Vec<String>) {
     for (ti, tr) in mix.transitions.iter().enumerate() {
         if tr.bypassed {
@@ -348,6 +355,12 @@ pub(crate) fn assign_fades(slots: &mut [Slot], mix: &Mix, warnings: &mut Vec<Str
         cand.sort_by_key(|&i| (slots[i].vs, i));
         let later = *cand.last().unwrap();
         let earlier = cand[..cand.len() - 1].iter().copied().max_by_key(|&i| (slots[i].ve, i)).unwrap();
+        let (ts, te) = (ts.max(slots[later].vs), te.min(slots[earlier].ve));
+        if te <= ts {
+            // the two clips are never heard together inside this transition: nothing to fade
+            warnings.push(format!("Crossfade {} lies outside the overlap of its two clips and was ignored.", ti + 1));
+            continue;
+        }
         let curve = curve_of(tr);
         slots[earlier].fades.push(Fade { ts, te, later: false, curve: curve.clone() });
         slots[later].fades.push(Fade { ts, te, later: true, curve });

@@ -308,6 +308,64 @@ fn crossfade_keeps_the_energy_continuous() {
 }
 
 #[test]
+fn a_crossfade_longer_than_the_overlap_ends_with_the_outgoing_clip() {
+    // A plays 0-10 s, B 6-16 s, but the stored crossfade runs 6-20 s (a clip was trimmed after it
+    // was made). The fade is cut to the 6-10 s overlap: B is at full level right after A ends.
+    let d = dir("xfade-long");
+    let a = sine(300.0, 10.0, 0.5);
+    let b = sine(471.0, 10.0, 0.5);
+    let fa = put(&d, "a.wav", &a);
+    let fb = put(&d, "b.wav", &b);
+    let ta = track(&fa, a.len(), 120.0, 1.0, 0.0);
+    let tb = track(&fb, b.len(), 120.0, 1.0, 6.0 * SR as f64);
+    let mut m = mix_of(vec![ta, tb]);
+    m.transitions.push(Transition::new(tpos(6.0 * SR as f64, 14.0 * SR as f64)));
+    let (l, _) = render(&d, &m, &Options::default());
+    let solo_b = rms(&b[SR..2 * SR]);
+    let just_after = rms(&l[10 * SR + SR / 10..11 * SR]);
+    assert!((db(just_after) - db(solo_b)).abs() < 0.5, "B right after A ends: {:.2} dB vs {:.2} dB solo", db(just_after), db(solo_b));
+    // the middle of the clamped fade (8 s) keeps the energy, as a fade of exactly the overlap does
+    let win = SR / 5;
+    let mid = rms(&l[8 * SR..8 * SR + win]);
+    assert!((db(mid) - db(solo_b)).abs() < 1.0, "{:.2} dB vs {:.2} dB", db(mid), db(solo_b));
+}
+
+#[test]
+fn a_crossfade_that_starts_before_the_incoming_clip_starts_with_it() {
+    // stored 2-10 s, A 0-10 s, B 6-16 s: A is untouched until 6 s instead of fading from 2 s
+    let d = dir("xfade-early");
+    let a = sine(300.0, 10.0, 0.5);
+    let b = sine(471.0, 10.0, 0.5);
+    let fa = put(&d, "a.wav", &a);
+    let fb = put(&d, "b.wav", &b);
+    let ta = track(&fa, a.len(), 120.0, 1.0, 0.0);
+    let tb = track(&fb, b.len(), 120.0, 1.0, 6.0 * SR as f64);
+    let mut m = mix_of(vec![ta, tb]);
+    m.transitions.push(Transition::new(tpos(2.0 * SR as f64, 8.0 * SR as f64)));
+    let (l, _) = render(&d, &m, &Options::default());
+    let solo_a = rms(&a[SR..2 * SR]);
+    let before = rms(&l[3 * SR..5 * SR]);
+    assert!((db(before) - db(solo_a)).abs() < 0.3, "A before B starts: {:.2} dB vs {:.2} dB solo", db(before), db(solo_a));
+}
+
+#[test]
+fn a_crossfade_between_clips_that_never_overlap_is_ignored() {
+    let d = dir("xfade-none");
+    let a = sine(300.0, 4.0, 0.5);
+    let b = sine(471.0, 4.0, 0.5);
+    let fa = put(&d, "a.wav", &a);
+    let fb = put(&d, "b.wav", &b);
+    let ta = track(&fa, a.len(), 120.0, 1.0, 0.0);
+    let tb = track(&fb, b.len(), 120.0, 1.0, 6.0 * SR as f64);
+    let mut m = mix_of(vec![ta, tb]);
+    m.transitions.push(Transition::new(tpos(2.0 * SR as f64, 6.0 * SR as f64)));
+    let (l, _) = render(&d, &m, &Options::default());
+    let solo_a = rms(&a[SR..2 * SR]);
+    let end_a = rms(&l[3 * SR..4 * SR - 100]);
+    assert!((db(end_a) - db(solo_a)).abs() < 0.3, "{:.2} dB vs {:.2} dB", db(end_a), db(solo_a));
+}
+
+#[test]
 fn master_never_clips_and_output_is_finite() {
     let d = dir("loud");
     let a = sine(100.0, 6.0, 0.95);
