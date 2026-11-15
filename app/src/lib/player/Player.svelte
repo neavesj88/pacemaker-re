@@ -248,7 +248,7 @@
       aria-label="Volume"
       title="Volume"
       value={playback.volume}
-      oninput={(e) => playback.setVolume(+e.currentTarget.value)}
+      oninput={(e) => (preview.volume = +e.currentTarget.value)}
     />
   </div>
 </footer>
