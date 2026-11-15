@@ -247,7 +247,8 @@
       // tap tempo from the keyboard; the tempo tools show the result
       if (!e.repeat) vtempo.tap();
       e.preventDefault();
-    } else if (e.key === " " && editor.trackId !== null) {
+    } else if (e.key === " " && editor.trackId !== null && !e.defaultPrevented) {
+      // (a press already handled elsewhere, e.g. the hover cue over the player wave, is not ours)
       // also when a toolbar button has focus: keydown is consumed here and keyup is cancelled
       // below, so the focused button does not fire a second time
       e.preventDefault();

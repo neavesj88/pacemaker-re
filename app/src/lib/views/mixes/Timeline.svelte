@@ -9,7 +9,7 @@
   //
   // Only what is near the viewport is rendered (clips, blocks, ruler marks, waveform canvases),
   // so a long mix with many clips stays as cheap as a short one.
-  import { onDestroy, untrack } from "svelte";
+  import { onDestroy, onMount, untrack } from "svelte";
   import type { Clip, EnvNode, ProcessDoc, TransitionDoc } from "$lib/api/mixes";
   import * as E from "$lib/state/mixedit";
   import { mixes } from "$lib/state/mixes.svelte";
@@ -228,6 +228,11 @@
     hoverCue.exact = e.altKey;
   };
   const hoverLeave = () => (pointerX = null);
+  // the window losing focus (Alt+Tab) can leave no pointer-leave behind: forget the hover
+  onMount(() => {
+    window.addEventListener("blur", hoverLeave);
+    return () => window.removeEventListener("blur", hoverLeave);
+  });
   onDestroy(() => hoverCue.clear("mix"));
 
   // ---- ruler ----------------------------------------------------------------------------------

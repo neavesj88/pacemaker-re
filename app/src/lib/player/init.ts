@@ -52,7 +52,8 @@ export default function init(): Unlisten {
     if (e.altKey && !(e.code === "Space" && hoverCue.surface !== null)) return;
     if (e.code === "Space") {
       if (!spaceFree(e.target)) return;
-      const hover = decideSpace({
+      // a row or view that already handled the press keeps it: one key, one action
+      const hover = e.defaultPrevented ? "default" : decideSpace({
         surface: hoverCue.surface,
         typing: false,
         ownedByControl: false,
@@ -69,6 +70,8 @@ export default function init(): Unlisten {
         }
         return;
       }
+      // Alt+Space only ever means the hover cue; with nothing to move it is not ours
+      if (e.altKey) return;
       // a table row, the mix editor or the grid editor already acted on this press: one key, one
       // action (two toggles in a row left the player paused)
       if (!playerOwnsSpace(e.defaultPrevented)) return;
