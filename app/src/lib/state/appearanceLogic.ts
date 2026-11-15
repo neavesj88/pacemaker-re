@@ -57,7 +57,7 @@ export const WAVE_THEMES = ["matrix", "neon"] as const;
 export type WaveTheme = (typeof WAVE_THEMES)[number];
 export const WAVE_THEME_DEFAULT: WaveTheme = "matrix";
 export const WAVE_COLOURS: Record<WaveTheme, { low: string; mid: string; high: string }> = {
-  matrix: { low: "#1f8f4c", mid: "#47c279", high: "#9bf0ba" },
+  matrix: { low: "#1d6b3f", mid: "#3fae66", high: "#bfeccd" },
   neon: { low: "#ff48a8", mid: "#e070ff", high: "#00ff46" },
 };
 export const WAVE_THEME_NAMES: Record<WaveTheme, string> = { matrix: "Matrix green, calm", neon: "Neon" };

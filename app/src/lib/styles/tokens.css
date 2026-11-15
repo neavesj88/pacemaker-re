@@ -19,9 +19,9 @@
   /* waveform bands and editor markers (grid editor, mix editor, tracks) */
   /* Matrix green, calm: the default. appearance.svelte.ts sets these three from appearanceLogic's
      WAVE_COLOURS (where "Neon" lives) on the root; the values here are what shows before that runs. */
-  --wave-low: #1f8f4c;
-  --wave-mid: #47c279;
-  --wave-high: #9bf0ba;
+  --wave-low: #1d6b3f;
+  --wave-mid: #3fae66;
+  --wave-high: #bfeccd;
   --beat: #3a5a42;
   --cue: #ffd23b;
   /* colour labels on tracks (state/labels.ts LABEL_COLOURS; app-side, not stored on the device) */
