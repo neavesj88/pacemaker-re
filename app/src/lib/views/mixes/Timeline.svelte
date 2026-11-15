@@ -387,6 +387,9 @@
         <div class="hd">
           <b>Mix</b>
           <span class="muted">{doc.clips.length} track{doc.clips.length === 1 ? "" : "s"}, {doc.transitions.length} crossfade{doc.transitions.length === 1 ? "" : "s"}</span>
+          {#if gaps.length > 0}
+            <span class="gaphint" title="Clips that overlap do not crossfade by themselves: press + crossfade (or Auto) on the overlap to add one.">{gaps.length} overlap{gaps.length === 1 ? "" : "s"} not crossfaded: + adds one</span>
+          {/if}
           <ul class="legend" aria-label="Clip colours">
             {#each doc.clips.slice(0, 8) as c (c.id)}
               <li style:--c={colourOf(c.id)} title={clipTitle(c)}>{clipTitle(c)}</li>
@@ -579,6 +582,11 @@
     justify-content: space-between;
     gap: 6px;
   }
+  .gaphint {
+    color: var(--warn);
+    font-size: 11px;
+    line-height: 1.25;
+  }
   .hd b {
     color: var(--text);
     font-weight: 600;
@@ -590,7 +598,12 @@
     display: flex;
     flex-direction: column;
     gap: 2px;
-    overflow: hidden;
+    /* on a short bar the list scrolls instead of showing its last name as a sliver */
+    flex: 1 1 0;
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    scrollbar-width: thin;
   }
   .legend li {
     font-size: 11px;

@@ -322,7 +322,12 @@ pub fn auto_transition(doc: &MixDoc, from_id: &str, to_id: &str, bars: Option<f6
     let t0 = match b_times.iter().copied().find(|&t| t >= b.visible_start - 1.0) {
         Some(t) if t - b.visible_start <= beat => t,
         _ => {
-            notes.push("no beat grid for the incoming clip: the transition starts at its cue".into());
+            // a grid that does not reach the cue (it starts later, or ends earlier) is not "no grid"
+            notes.push(if b_times.is_empty() {
+                "no beat grid for the incoming clip: the transition starts at its cue".into()
+            } else {
+                "no beat of the incoming clip's grid is within a beat of its cue: the transition starts at the cue".into()
+            });
             b.visible_start
         }
     };
@@ -561,6 +566,22 @@ mod tests {
         }
         d2.refresh();
         assert_eq!(d2.validate(None), Vec::<String>::new());
+    }
+
+    #[test]
+    fn auto_transition_note_tells_a_missing_grid_from_one_that_misses_the_cue() {
+        let a = clip("a", 0.0, 20_000_000.0, 0.0, 128.0, 1.0, grid(128.0, 0, 800, Some(0)));
+        // the grid starts 3 s after the cue (a beat is 0.47 s): it exists, it just does not reach the cue
+        let late = clip("b", 8_000_000.0, 20_000_000.0, 0.0, 128.0, 1.0, grid(128.0, 3 * 44100, 800, Some(0)));
+        let d = doc_of(vec![a.clone(), late], Some(128.0));
+        let notes = auto_transition(&d, "a", "b", None).unwrap().notes;
+        assert!(notes.iter().any(|n| n.contains("within a beat of its cue")), "{notes:?}");
+        assert!(!notes.iter().any(|n| n.contains("no beat grid")), "{notes:?}");
+        let mut bare = clip("b", 8_000_000.0, 20_000_000.0, 0.0, 128.0, 1.0, grid(128.0, 0, 800, Some(0)));
+        bare.track.as_mut().unwrap().grid = None;
+        let d = doc_of(vec![a, bare], Some(128.0));
+        let notes = auto_transition(&d, "a", "b", None).unwrap().notes;
+        assert!(notes.iter().any(|n| n.contains("no beat grid for the incoming clip")), "{notes:?}");
     }
 
     #[test]

@@ -161,7 +161,7 @@
     </optgroup>
   </select>
 
-  <select aria-label="Case" title={session.isComputer ? "Only the tracks of one case (a playlist kept in your library), in the case's own order when the column Case # is the sort. The count is the case's size, the table can show fewer when some tracks are not in this library." : "Only the tracks of one case (crate) that exists on the device, in the case's own order when the column Case # is the sort. A smart case is listed here once it is on the device; the count is the case's size, the table can show fewer when some tracks are not in this library."} value={table.caseId ?? ""} onchange={(e) => { const v = e.currentTarget.value; table.setCase(v === "" ? null : Number(v)); if (v !== "") void caseMembers.ensure(); }}>
+  <select aria-label="Case" title={session.isComputer ? "Only the tracks of one case (a playlist kept in your library), in the case's own order when the column Case # is the sort. The count is the case's size, the table can show fewer when some tracks are not in this library. Smart cases are not listed here: they have no fixed tracks, so open one from Cases to see what it matches." : "Only the tracks of one case (crate) that exists on the device, in the case's own order when the column Case # is the sort. A smart case is listed here once it is on the device; the count is the case's size, the table can show fewer when some tracks are not in this library."} value={table.caseId ?? ""} onchange={(e) => { const v = e.currentTarget.value; table.setCase(v === "" ? null : Number(v)); if (v !== "") void caseMembers.ensure(); }}>
     <option value="">All cases</option>
     {#each caseOptions as c (c.id)}<option value={c.id}>{caseLabel(c)}</option>{/each}
   </select>

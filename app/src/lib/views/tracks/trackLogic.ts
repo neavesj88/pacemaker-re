@@ -49,6 +49,16 @@ export function keyName(c: Camelot): string {
   return c.code;
 }
 
+/** A stored key as both notations, "8A · Am", for places that show one line of text, so the same
+ *  track reads alike there and in the Tracks table (which shows the Camelot code). A key that is
+ *  not recognised is shown as stored. */
+export function keyBoth(raw: string): string {
+  const c = parseKey(raw);
+  if (!c) return raw;
+  const text = raw.trim();
+  return `${c.code} · ${text.toUpperCase() === c.code ? keyName(c) : text}`;
+}
+
 /** Same key, one step round the wheel, or the relative major / minor. */
 export function keysCompatible(a: Camelot, b: Camelot): boolean {
   if (a.num === b.num) return true;

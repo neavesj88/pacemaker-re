@@ -8,3 +8,10 @@ export function analysisLabel(noun: string, action: string, ready: number, total
   if (left === 0) return `${noun}: all ${total} done…`;
   return `${action} for ${left} track${left === 1 ? "" : "s"}…`;
 }
+
+/** Tracks the background worker still has to try (never analysed, or the file changed since). Flat and
+ *  skipped ones were tried and gave nothing: waiting for playback does not change that, so they must
+ *  not keep the sidebar's "Analysis waiting" note up. */
+export function untried(s: { none: number; stale: number }): number {
+  return Math.max(0, s.none + s.stale);
+}

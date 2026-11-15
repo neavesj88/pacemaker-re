@@ -14,12 +14,13 @@
   import { sections } from "$lib/state/sections.svelte";
   import { session } from "$lib/state/session.svelte";
   import Button from "$lib/ui/Button.svelte";
-  import { analysisLabel } from "./needsLabel";
+  import { analysisLabel, untried } from "./needsLabel";
 
-  // Energy and sections the panels count as missing, for the kinds the worker makes by itself.
+  // Energy and sections the worker has not tried yet (never analysed or changed), for the kinds it makes by
+  // itself. Tracks it tried and got nothing from (flat, too short, no grid) are not work left.
   const pending = $derived(
-    (bg.settings.enabled && bg.settings.energy && energy.state ? Math.max(0, energy.state.total - energy.state.ready) : 0) +
-      (bg.settings.enabled && bg.settings.sections && sections.state ? Math.max(0, sections.state.total - sections.state.ready) : 0),
+    (bg.settings.enabled && bg.settings.energy && energy.state ? untried(energy.state) : 0) +
+      (bg.settings.enabled && bg.settings.sections && sections.state ? untried(sections.state) : 0),
   );
   const waiting = $derived(waitingNote(bg.status, pending));
 

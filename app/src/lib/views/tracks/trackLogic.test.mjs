@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { LABEL_COLOURS } from "../../state/labels.ts";
 import { inspectorTrackId, bpmText,
-  COLOUR_SORT_ORDER, filterTracks, formatDate, formatSize, keyName, keysCompatible, matchingTracks, NO_FILTER, parseBpm, parseKey, sortClick, sortTracks, sortTracksBy, uniqueGenres,
+  COLOUR_SORT_ORDER, filterTracks, formatDate, formatSize, keyBoth, keyName, keysCompatible, matchingTracks, NO_FILTER, parseBpm, parseKey, sortClick, sortTracks, sortTracksBy, uniqueGenres,
 } from "./trackLogic.ts";
 
 const code = (k) => parseKey(k)?.code ?? null;
@@ -233,4 +233,12 @@ test("the inspector follows the highlighted row when the last click is no longer
   assert.equal(inspectorTrackId(5, [3, 5, 9]), 5, "still highlighted: the last click wins");
   assert.equal(inspectorTrackId(5, [7]), 7, "a case or History highlighted another row");
   assert.equal(inspectorTrackId(null, [7, 8]), 8);
+});
+
+test("keyBoth shows the Camelot code and the musical name, whichever one is stored", () => {
+  assert.equal(keyBoth("Dm"), "7A · Dm");
+  assert.equal(keyBoth("8A"), "8A · A minor");
+  assert.equal(keyBoth("f#m"), "11A · f#m");
+  assert.equal(keyBoth(""), "");
+  assert.equal(keyBoth("not a key"), "not a key");
 });

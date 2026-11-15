@@ -254,7 +254,6 @@
     <span class="ctl" title="The tempo the mix is matched to: new tracks and the Match buttons play at this, or at double or half of it, whichever stretches the track least. Not stored in the mix file: when a mix is opened again it starts at its first track's tempo.">
       Mix tempo
       <BpmField value={mixTempo} onset={setMixTempo} label="Mix tempo" disabled={doc.clips.length === 0} />
-      {#if tempoUnsaved}<span class="tempo-note">Not saved with the mix</span>{/if}
     </span>
     <Button small disabled={!mixTempo} onclick={matchAll} title="Play every track at the mix tempo (or double or half of it); a track that would need more stretch than the setting allows keeps its own tempo">Match all</Button>
     <span class="sep"></span>
@@ -325,6 +324,7 @@
         <span class="muted">/ {clock(doc.lengthSec)}</span>
         {#if busyLabel}<span class="muted">{busyLabel}</span>{/if}
         {#if preview.notice}<span class="notice" role="status">{preview.notice}</span>{/if}
+        {#if tempoUnsaved}<span class="tempo-note" title="The mix tempo is not stored in the mix file: when the mix is opened again it starts at its first track's tempo.">Mix tempo is not saved with the mix</span>{/if}
         {#if mixExport.previewGains()}
           <span class="level" title="The preview plays at the level your last loudness analysis found for the export settings.">export level</span>
         {:else if mixExport.previewBehind}
@@ -523,11 +523,13 @@
     .bar .ctl input[type="range"] {
       width: 80px;
     }
+    /* the timeline keeps room for its ruler, the clips and the Tools lane (about 235 px); the
+       picker gives way to it (its filters float, its Add bar stays) */
     .tl {
-      min-height: 140px;
+      min-height: 240px;
     }
     .left :global(.picker) {
-      min-height: 250px;
+      min-height: 170px;
     }
   }
   /* a short window: a tighter toolbar and no hint line, so more of the timeline shows without scrolling */

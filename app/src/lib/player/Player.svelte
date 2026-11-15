@@ -7,6 +7,7 @@
   import { session } from "$lib/state/session.svelte";
   import { loadPref, savePref } from "$lib/state/prefStore";
   import Button from "$lib/ui/Button.svelte";
+  import { keyBoth } from "$lib/views/tracks/trackLogic";
   import { engine } from "./engine.svelte";
   import PlayerWave from "./PlayerWave.svelte";
   import {
@@ -43,7 +44,7 @@
       ? [
           track.artist,
           track.bpm && track.analysed ? `${track.bpm.toFixed(2)} BPM` : "",
-          track.key,
+          track.key ? keyBoth(track.key) : "",
         ]
           .filter(Boolean)
           .join(" · ")

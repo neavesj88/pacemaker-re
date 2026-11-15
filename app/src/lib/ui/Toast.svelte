@@ -7,6 +7,10 @@
   // bar (when there is one) and keeps following it, so a message never covers the player controls.
   const GAP = 8;
   let lift = $state(0);
+  // In the mix editor the messages dock just above the transport row, so they cover neither the clip
+  // panel nor the picker's rows, scrollbar and helper text (only the foot of the timeline, for the few
+  // seconds they stay); null = not there, use the player-bar position.
+  let dock = $state<{ bottom: number; left: number } | null>(null);
 
   $effect(() => {
     void toast.items.length;
@@ -23,10 +27,30 @@
     ro.observe(bar);
     return () => ro.disconnect();
   });
+
+  $effect(() => {
+    void toast.items.length;
+    dock = null;
+    if (nav.view !== "mixes") return;
+    const row = document.querySelector<HTMLElement>(".transport");
+    if (!row) return;
+    const measure = () => {
+      const r = row.getBoundingClientRect();
+      dock = r.width > 0 ? { bottom: Math.max(GAP, Math.round(innerHeight - r.top + 4)), left: Math.round(r.left + r.width / 2) } : null;
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(row);
+    addEventListener("resize", measure);
+    return () => {
+      ro.disconnect();
+      removeEventListener("resize", measure);
+    };
+  });
 </script>
 
-<!-- In the mix editor the clip panel fills the lower right, so the messages sit in the middle there -->
-<div class="toasts" class:centre={nav.view === "mixes"} aria-live="polite" style="bottom: {lift + GAP}px">
+<!-- In the mix editor the clip panel fills the lower right and the picker the bottom, so the messages sit above the transport row there -->
+<div class="toasts" class:centre={nav.view === "mixes"} aria-live="polite" style="bottom: {dock && nav.view === 'mixes' ? dock.bottom : lift + GAP}px; {dock && nav.view === 'mixes' ? `left: ${dock.left}px; max-width: min(560px, calc(100vw - 28px))` : ''}">
   {#each toast.items as t (t.id)}
     <div class="toast {t.kind}" role={t.kind === "bad" ? "alert" : "status"}>
       <span class="text">{t.text}{#if t.count > 1} <span class="times">×{t.count}</span>{/if}</span>

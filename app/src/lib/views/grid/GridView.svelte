@@ -17,6 +17,7 @@
   import TempoPanel from "./TempoPanel.svelte";
   import TempoStrip from "./TempoStrip.svelte";
   import WaveCanvas from "./WaveCanvas.svelte";
+  import { keyBoth } from "$lib/views/tracks/trackLogic";
   import { vtempo } from "./vtempo.svelte";
   import { dragLimits, sectionLines } from "./vtempoLogic";
 
@@ -313,7 +314,7 @@
         </span>
         {#if editor.doc}
           <span class="muted num">
-            {editor.bpm.toFixed(2)} BPM{meta?.key ? ` · ${meta.key}` : ""} · first downbeat {downbeatSecs === null ? "not set" : fmtTime(downbeatSecs)}
+            {editor.bpm.toFixed(2)} BPM{meta?.key ? ` · ${keyBoth(meta.key)}` : ""} · first downbeat {downbeatSecs === null ? "not set" : fmtTime(downbeatSecs)}
           </span>
         {/if}
       {/if}
