@@ -1,9 +1,19 @@
 <script lang="ts">
   // The tempo-matching settings: when matching a track to the mix tempo is applied silently and
   // what happens to a track that would need a big stretch.
+  import { onMount } from "svelte";
+  import { mixLiveAutoMemory } from "$lib/api/mixLive";
   import { tempoPrefs } from "./tempoPrefs.svelte";
 
   const p = $derived(tempoPrefs.value);
+  /** What "decide by the computer" gives here, in MB (null until the app answers). */
+  let autoMb = $state<number | null>(null);
+  onMount(() => {
+    mixLiveAutoMemory().then(
+      (mb) => (autoMb = mb),
+      () => {},
+    );
+  });
 </script>
 
 <div class="field">
@@ -31,12 +41,13 @@
 <div class="field">
   <label for="ts-mem">Playback memory</label>
   <span class="inline">
-    <input id="ts-mem" type="number" min="256" max="65536" step="256" value={p.decodeMb} onchange={(e) => tempoPrefs.set({ decodeMb: e.currentTarget.valueAsNumber })} />
+    <input id="ts-mem" type="number" min="256" max="65536" step="256" disabled={p.decodeAuto} value={p.decodeAuto ? (autoMb ?? "") : p.decodeMb} onchange={(e) => tempoPrefs.set({ decodeMb: e.currentTarget.valueAsNumber })} />
     <span class="muted">MB</span>
+    <label class="check"><input type="checkbox" checked={p.decodeAuto} onchange={(e) => tempoPrefs.set({ decodeAuto: e.currentTarget.checked })} /> decide by the computer</label>
   </span>
 </div>
 <div class="muted small">
-  Decoded audio the live player keeps in memory (a 6-minute track takes about 140 MB). A longer mix reads the tracks nearest the playhead first. Applies the next time a mix is opened.
+  Decoded audio the live player keeps in memory (a 6-minute track takes about 140 MB). A longer mix reads the tracks nearest the playhead first. "Decide by the computer" uses an eighth of its memory, from 256 to 1024 MB. Applies the next time a mix is opened.
 </div>
 
 <style>

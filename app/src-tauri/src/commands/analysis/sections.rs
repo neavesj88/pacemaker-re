@@ -90,7 +90,7 @@ pub struct Settings {
 
 impl Default for Settings {
     fn default() -> Self {
-        Settings { sensitivity: 3, min_section_bars: 8, phrase_bars: 0, origin: Origin::FirstDownbeat, snap_tolerance_bars: 2, min_bars: 32, threads: 2, show_markers: true }
+        Settings { sensitivity: 3, min_section_bars: 8, phrase_bars: 0, origin: Origin::FirstDownbeat, snap_tolerance_bars: 2, min_bars: 32, threads: 0, show_markers: true }
     }
 }
 
@@ -111,8 +111,8 @@ impl Settings {
         if !(16..=512).contains(&self.min_bars) {
             return Err("The shortest track must be between 16 and 512 bars.".into());
         }
-        if !(1..=8).contains(&self.threads) {
-            return Err("Tracks analysed at once must be between 1 and 8.".into());
+        if self.threads > 8 {
+            return Err("Tracks analysed at once must be 0 (decide by the computer) or between 1 and 8.".into());
         }
         Ok(())
     }
@@ -528,7 +528,7 @@ fn run_analysis(dir: &Path, root: &str, targets: &[TrackRef], settings: &Setting
         }
     }
     let mut save_failed = false;
-    let workers = settings.threads.clamp(1, 8).min(total.max(1));
+    let workers = crate::machine::workers_for(settings.threads).clamp(1, 8).min(total.max(1));
     let next = AtomicUsize::new(0);
     let (tx, rx) = mpsc::channel::<(usize, Result<Measure, String>)>();
     let root_path = Path::new(root);
@@ -537,13 +537,16 @@ fn run_analysis(dir: &Path, root: &str, targets: &[TrackRef], settings: &Setting
         for _ in 0..workers {
             let tx = tx.clone();
             let next = &next;
-            s.spawn(move || loop {
-                let i = next.fetch_add(1, Ordering::SeqCst);
-                if i >= total {
-                    break;
-                }
-                if tx.send((i, measure(root_path, &targets[i]))).is_err() {
-                    break;
+            s.spawn(move || {
+                crate::machine::job_thread_start();
+                loop {
+                    let i = next.fetch_add(1, Ordering::SeqCst);
+                    if i >= total {
+                        break;
+                    }
+                    if tx.send((i, measure(root_path, &targets[i]))).is_err() {
+                        break;
+                    }
                 }
             });
         }
@@ -968,7 +971,6 @@ mod tests {
             Settings { snap_tolerance_bars: 9, ..s },
             Settings { min_bars: 15, ..s },
             Settings { min_bars: 513, ..s },
-            Settings { threads: 0, ..s },
             Settings { threads: 9, ..s },
         ] {
             assert!(save_settings(&dir, &bad).is_err(), "{bad:?}");

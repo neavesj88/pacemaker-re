@@ -83,12 +83,7 @@ fn analyse_many(files: &[PathBuf], range: BpmRange, mut sink: impl FnMut(usize, 
     if files.is_empty() {
         return;
     }
-    let workers = std::thread::available_parallelism()
-        .map(|n| n.get())
-        .unwrap_or(2)
-        .saturating_sub(1)
-        .clamp(1, 4)
-        .min(files.len());
+    let workers = crate::workers::analysis_workers().min(files.len());
     let next = AtomicUsize::new(0);
     let (tx, rx) = mpsc::channel();
     std::thread::scope(|s| {
@@ -96,6 +91,7 @@ fn analyse_many(files: &[PathBuf], range: BpmRange, mut sink: impl FnMut(usize, 
             let tx = tx.clone();
             let next = &next;
             s.spawn(move || {
+                crate::workers::thread_start();
                 loop {
                     let i = next.fetch_add(1, Ordering::SeqCst);
                     if i >= files.len() {

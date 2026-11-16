@@ -49,6 +49,7 @@ function tick() {
 }
 
 export const handlers: Handlers = {
+  mix_live_auto_memory: () => 1024,
   mix_live_load: ({ doc: d }) => {
     stopClock();
     if (loader) clearInterval(loader);

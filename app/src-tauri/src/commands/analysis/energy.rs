@@ -66,13 +66,14 @@ pub struct Settings {
     pub fit_high_pct: f32,
     /// Tracks shorter than this (seconds) get no energy shown.
     pub min_secs: f32,
-    /// Tracks decoded at once by the job. Each holds one decoded track in memory.
+    /// Tracks decoded at once by the job. Each holds one decoded track in memory. 0 = decide by
+    /// the computer (its processors and free memory, see `machine::analysis_workers`).
     pub threads: usize,
 }
 
 impl Default for Settings {
     fn default() -> Self {
-        Settings { scale: Scale::Fit, fit_low_pct: 5.0, fit_high_pct: 95.0, min_secs: 20.0, threads: 2 }
+        Settings { scale: Scale::Fit, fit_low_pct: 5.0, fit_high_pct: 95.0, min_secs: 20.0, threads: 0 }
     }
 }
 
@@ -87,8 +88,8 @@ impl Settings {
         if !(self.min_secs.is_finite() && (energy::MIN_SECS as f32..=600.0).contains(&self.min_secs)) {
             return Err(format!("The shortest track must be between {} and 600 seconds.", energy::MIN_SECS));
         }
-        if !(1..=8).contains(&self.threads) {
-            return Err("Tracks analysed at once must be between 1 and 8.".into());
+        if self.threads > 8 {
+            return Err("Tracks analysed at once must be 0 (decide by the computer) or between 1 and 8.".into());
         }
         Ok(())
     }
@@ -411,7 +412,7 @@ fn run_analysis(dir: &Path, root: &str, targets: &[TrackRef], settings: &Setting
         }
     }
     let mut save_failed = false;
-    let workers = settings.threads.clamp(1, 8).min(total.max(1));
+    let workers = crate::machine::workers_for(settings.threads).clamp(1, 8).min(total.max(1));
     let next = AtomicUsize::new(0);
     let (tx, rx) = mpsc::channel::<(usize, Result<Measure, String>)>();
     let root_path = Path::new(root);
@@ -420,13 +421,16 @@ fn run_analysis(dir: &Path, root: &str, targets: &[TrackRef], settings: &Setting
         for _ in 0..workers {
             let tx = tx.clone();
             let next = &next;
-            s.spawn(move || loop {
-                let i = next.fetch_add(1, Ordering::SeqCst);
-                if i >= total {
-                    break;
-                }
-                if tx.send((i, measure(root_path, &targets[i]))).is_err() {
-                    break;
+            s.spawn(move || {
+                crate::machine::job_thread_start();
+                loop {
+                    let i = next.fetch_add(1, Ordering::SeqCst);
+                    if i >= total {
+                        break;
+                    }
+                    if tx.send((i, measure(root_path, &targets[i]))).is_err() {
+                        break;
+                    }
                 }
             });
         }
@@ -874,7 +878,6 @@ mod tests {
             Settings { fit_high_pct: 101.0, ..s },
             Settings { min_secs: 1.0, ..s },
             Settings { min_secs: f32::NAN, ..s },
-            Settings { threads: 0, ..s },
             Settings { threads: 9, ..s },
         ] {
             assert!(save_settings(&dir, &bad).is_err(), "{bad:?}");
@@ -932,6 +935,37 @@ mod tests {
         assert_eq!(ids(pick_targets(&tracks, &c, Some(&[1, 3]), false, 20.0)), vec![3]);
         assert_eq!(ids(pick_targets(&tracks, &c, Some(&[1, 3, 99]), true, 20.0)), vec![1, 3]);
         assert!(pick_targets(&tracks, &c, Some(&[1]), false, 20.0).is_empty());
+    }
+
+    /// Measurement harness, not part of the normal run: the energy job over the audio files in
+    /// `PM_AUDIT_AUDIO` with `PM_AUDIT_THREADS` workers (0 = automatic); prints the time and a sum
+    /// of the saved results so runs with different worker counts can be compared. Run it with
+    /// `--release -- --ignored --nocapture`.
+    #[test]
+    #[ignore]
+    fn audit_energy_job_threads() {
+        let (Ok(audio), Ok(threads)) = (std::env::var("PM_AUDIT_AUDIO"), std::env::var("PM_AUDIT_THREADS")) else { return };
+        let base = temp_dir("audit");
+        let vol = base.join("vol");
+        std::fs::create_dir_all(&vol).unwrap();
+        let analysis = strfile::Analysis { normalize_factor: 1.0, beat_start_offset: 0, beats: vec![], first_downbeat: Some(0) };
+        let mut lib = Library::create(&vol).unwrap();
+        let mut files: Vec<PathBuf> = std::fs::read_dir(&audio).unwrap().map(|e| e.unwrap().path()).filter(|p| p.extension().is_some_and(|e| e == "mp3")).collect();
+        files.sort();
+        for p in &files {
+            let meta = TrackMeta { title: p.file_stem().unwrap().to_string_lossy().into_owned(), format: "MP3".into(), ..Default::default() };
+            lib.add_track(p, &meta, &analysis).unwrap();
+        }
+        let root = lib.root().to_string_lossy().to_string();
+        let tracks = refs_of(&lib).unwrap();
+        let settings = Settings { threads: threads.parse().unwrap(), ..Settings::default() };
+        let t = std::time::Instant::now();
+        let out = run_analysis(&base.join("config"), &root, &tracks, &settings, |_| {}).unwrap();
+        let secs = t.elapsed().as_secs_f64();
+        let (cache, _) = load_cache(&base.join("config"), &root);
+        let sum: f64 = cache.tracks.values().filter_map(|e| e.measured).map(|m| f64::from(m.loudness_db) + f64::from(m.onsets_per_sec) + f64::from(m.low_end)).sum();
+        println!("AUDIT energy threads={} workers={} {} tracks {:.3} s  ok={} sum={:.6}", threads, crate::machine::workers_for(settings.threads), tracks.len(), secs, out.ok, sum);
+        let _ = std::fs::remove_dir_all(&base);
     }
 
     #[test]

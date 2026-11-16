@@ -149,7 +149,7 @@ class Preview {
       this.#sentVocal = vocalIds.join("|");
       try {
         await this.#send(async () => {
-          await mixLiveLoad(root, doc, { gains: mixExport.previewGains(), vocalToolIds: vocalIds, decodeBudgetMb: tempoPrefs.value.decodeMb });
+          await mixLiveLoad(root, doc, { gains: mixExport.previewGains(), vocalToolIds: vocalIds, decodeBudgetMb: tempoPrefs.value.decodeAuto ? null : tempoPrefs.value.decodeMb });
           if (playback.volume < 1) await mixLiveSetMaster(volumeToDb(playback.volume));
         });
       } catch (e) {

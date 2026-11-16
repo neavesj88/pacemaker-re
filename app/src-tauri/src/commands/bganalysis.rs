@@ -46,6 +46,7 @@ use self::queue::{Backend, Control, Engine, Event, Failure, Failures, Gate, Item
 use super::analysis::{self, audio_path, energy, sections, PeaksState};
 use super::library::kind::{library_kind, PACEMAKER};
 use crate::error::{AppError, AppResult};
+use crate::machine::{set_jobs_low_priority, set_thread_low_priority};
 use crate::state::{JobLock, WriteTicket};
 use crate::store::config_dir;
 
@@ -991,21 +992,6 @@ impl Worker {
     }
 }
 
-/// Puts the calling thread below normal priority (or back to normal). Windows only for now; the
-/// other systems keep the thread as it is.
-#[cfg(windows)]
-fn set_thread_low_priority(low: bool) {
-    use windows::Win32::System::Threading::{GetCurrentThread, SetThreadPriority, THREAD_PRIORITY_BELOW_NORMAL, THREAD_PRIORITY_NORMAL};
-    // SAFETY: the pseudo handle of the calling thread is always valid.
-    let r = unsafe { SetThreadPriority(GetCurrentThread(), if low { THREAD_PRIORITY_BELOW_NORMAL } else { THREAD_PRIORITY_NORMAL }) };
-    if let Err(e) = r {
-        eprintln!("bganalysis: could not change the thread priority: {e}");
-    }
-}
-
-#[cfg(not(windows))]
-fn set_thread_low_priority(_low: bool) {}
-
 fn tick_now(shared: &Shared) -> u64 {
     shared.lock().tick
 }
@@ -1016,7 +1002,9 @@ pub fn setup(app: &mut tauri::App) {
         eprintln!("bganalysis: the app folders are not available, so background analysis is off this session");
         return;
     };
-    let shared = Arc::new(Shared::new(load_settings(&cfg_dir)));
+    let settings = load_settings(&cfg_dir);
+    set_jobs_low_priority(settings.low_priority);
+    let shared = Arc::new(Shared::new(settings));
     app.manage(shared.clone());
     let peaks = app.state::<Arc<PeaksState>>().inner().clone();
     let worker = Worker::new(Arc::new(AppEnv(handle)), shared, cfg_dir, cache.join("peaks"), peaks);
@@ -1043,6 +1031,7 @@ pub fn bganalysis_get(shared: State<'_, Arc<Shared>>) -> View {
 #[tauri::command]
 pub fn bganalysis_save_settings(app: AppHandle, shared: State<'_, Arc<Shared>>, settings: Settings) -> AppResult<Settings> {
     save_settings(&config_dir(&app)?, &settings)?;
+    set_jobs_low_priority(settings.low_priority);
     shared.change(true, |g| g.settings = settings);
     Ok(settings)
 }

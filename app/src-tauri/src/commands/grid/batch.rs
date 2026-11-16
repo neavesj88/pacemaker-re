@@ -469,23 +469,26 @@ fn analyse_files(files: &[PathBuf], range: BpmRange, cancel: &AtomicBool, mut si
     if files.is_empty() {
         return;
     }
-    let workers = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(2).saturating_sub(1).clamp(1, 4).min(files.len());
+    let workers = crate::machine::analysis_workers().min(files.len());
     let next = AtomicUsize::new(0);
     let (tx, rx) = mpsc::channel();
     std::thread::scope(|s| {
         for _ in 0..workers {
             let tx = tx.clone();
             let next = &next;
-            s.spawn(move || loop {
-                if cancel.load(Ordering::SeqCst) {
-                    break;
-                }
-                let i = next.fetch_add(1, Ordering::SeqCst);
-                if i >= files.len() {
-                    break;
-                }
-                if tx.send((i, analyse_one(&files[i], range))).is_err() {
-                    break;
+            s.spawn(move || {
+                crate::machine::job_thread_start();
+                loop {
+                    if cancel.load(Ordering::SeqCst) {
+                        break;
+                    }
+                    let i = next.fetch_add(1, Ordering::SeqCst);
+                    if i >= files.len() {
+                        break;
+                    }
+                    if tx.send((i, analyse_one(&files[i], range))).is_err() {
+                        break;
+                    }
                 }
             });
         }

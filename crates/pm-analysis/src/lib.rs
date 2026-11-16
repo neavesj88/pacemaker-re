@@ -18,6 +18,7 @@ pub mod peaks;
 pub mod sections;
 pub mod probe;
 pub mod tempo;
+pub mod workers;
 
 use std::path::Path;
 

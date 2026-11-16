@@ -11,7 +11,8 @@ const state = (over = {}) => ({
 
 test("settings are clamped to the backend's ranges, whole numbers, NaN to the default", () => {
   assert.equal(clampSetting("threads", 99), LIMITS.threads.max);
-  assert.equal(clampSetting("threads", 0), 1);
+  assert.equal(clampSetting("threads", 0), 0, "0 is the automatic choice");
+  assert.equal(clampSetting("threads", -3), 0);
   assert.equal(clampSetting("threads", 2.6), 3);
   assert.equal(clampSetting("fit_low_pct", -5), 0);
   assert.equal(clampSetting("fit_low_pct", 41), 40);

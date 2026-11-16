@@ -26,7 +26,8 @@ test("settings are clamped to the backend's ranges, whole numbers, NaN to the de
   assert.equal(clampSetting("snap_tolerance_bars", 12), 8);
   assert.equal(clampSetting("min_bars", 4), 16);
   assert.equal(clampSetting("min_bars", 4000), 512);
-  assert.equal(clampSetting("threads", 0), 1);
+  assert.equal(clampSetting("threads", 0), 0, "0 is the automatic choice");
+  assert.equal(clampSetting("threads", -3), 0);
   assert.equal(clampSetting("threads", 99), 8);
   assert.equal(clampSetting("threads", NaN), DEFAULT_SETTINGS.threads);
   assert.equal(clampSetting("min_bars", Infinity), DEFAULT_SETTINGS.min_bars);

@@ -35,9 +35,12 @@ export type MixLiveExtras = {
    * device file has no Vocal tool, so only the app knows; the live player renders those as the
    * vocal filter and every other Wah tool as Wah. Omitted on an update = unchanged. */
   vocalToolIds?: string[];
-  /** Load only: memory for decoded audio, in MB (Settings, Tempo matching); omitted = the app default. */
-  decodeBudgetMb?: number;
+  /** Load only: memory for decoded audio, in MB (Settings, Tempo matching); omitted or null = decided by the computer. */
+  decodeBudgetMb?: number | null;
 };
+
+/** The player's memory, in MB, when the setting is left on "decide by the computer" (an eighth of the computer's memory, 256 to 1024). */
+export const mixLiveAutoMemory = () => invoke<number>("mix_live_auto_memory");
 
 /** Starts decoding the clips of `doc` in the background; resolves once the mix is accepted (the
  * player is stopped at 0 and `mix-live-status` reports the decoding). Replaces a mix loaded before. */

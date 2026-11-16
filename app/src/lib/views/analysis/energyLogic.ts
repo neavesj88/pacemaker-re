@@ -3,14 +3,15 @@
 // `node --experimental-strip-types src/lib/views/analysis/energyLogic.test.mjs`.
 import type { EnergyEntry, EnergySettings, EnergyState } from "../../api/analysis";
 
-export const DEFAULT_SETTINGS: EnergySettings = { scale: "fit", fit_low_pct: 5, fit_high_pct: 95, min_secs: 20, threads: 2 };
+export const DEFAULT_SETTINGS: EnergySettings = { scale: "fit", fit_low_pct: 5, fit_high_pct: 95, min_secs: 20, threads: 0 };
 
 /** The ranges the backend enforces (`Settings::validate` in commands/analysis/energy.rs). */
 export const LIMITS = {
   fit_low_pct: { min: 0, max: 40 },
   fit_high_pct: { min: 60, max: 100 },
   min_secs: { min: 5, max: 600 },
-  threads: { min: 1, max: 8 },
+  /** 0 = decide by the computer (its processors and free memory). */
+  threads: { min: 0, max: 8 },
 } as const;
 
 export type NumericSetting = keyof typeof LIMITS;

@@ -8,6 +8,7 @@ mod commands;
 mod error;
 mod events;
 mod jobs;
+mod machine;
 mod state;
 mod store;
 
@@ -16,6 +17,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
+            machine::register();
             state::setup(app);
             commands::setup(app);
             Ok(())

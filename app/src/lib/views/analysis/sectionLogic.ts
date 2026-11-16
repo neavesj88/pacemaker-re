@@ -11,7 +11,7 @@ export const DEFAULT_SETTINGS: SectionsSettings = {
   origin: "first_downbeat",
   snap_tolerance_bars: 2,
   min_bars: 32,
-  threads: 2,
+  threads: 0,
   show_markers: true,
 };
 
@@ -21,7 +21,8 @@ export const LIMITS = {
   min_section_bars: { min: 4, max: 32 },
   snap_tolerance_bars: { min: 0, max: 8 },
   min_bars: { min: 16, max: 512 },
-  threads: { min: 1, max: 8 },
+  /** 0 = decide by the computer (its processors and free memory). */
+  threads: { min: 0, max: 8 },
 } as const;
 
 export type NumericSetting = keyof typeof LIMITS;

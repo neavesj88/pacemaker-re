@@ -43,14 +43,19 @@ use loader::{Loader, Wanted};
 pub const MIX_LIVE_POSITION: &str = "mix-live-position";
 pub const MIX_LIVE_STATUS: &str = "mix-live-status";
 
-/// Default for the decoded audio kept in memory (see [`loader`]): 1 GiB holds about seven 6-minute
-/// tracks at the loader's 9 bytes a frame; the rest is decoded as the playhead nears it. The user
-/// sets it in Settings (Mixes, Tempo matching); the page sends it with the load.
-const DEFAULT_DECODE_BUDGET_MB: u64 = 1024;
+/// The decoded audio kept in memory (see [`loader`]): 1 GiB holds about seven 6-minute tracks at
+/// the loader's 9 bytes a frame; the rest is decoded as the playhead nears it. The user can set it
+/// in Settings (Mixes, Tempo matching) and the page sends it with the load; without a choice it
+/// follows the computer's memory (`machine::auto_decode_budget_mb`).
+fn decode_budget_bytes(mb: Option<u64>, total_ram_mb: Option<u64>) -> u64 {
+    mb.unwrap_or_else(|| crate::machine::auto_decode_budget_mb(total_ram_mb)).clamp(256, 65_536) * 1024 * 1024
+}
 
-/// The decode budget in bytes from the setting in MB, kept within 256 MB to 64 GB.
-fn decode_budget_bytes(mb: Option<u64>) -> u64 {
-    mb.unwrap_or(DEFAULT_DECODE_BUDGET_MB).clamp(256, 65_536) * 1024 * 1024
+/// What the player's memory is when the setting is left on "decide by the computer", in MB (shown
+/// next to that choice in Settings).
+#[tauri::command]
+pub fn mix_live_auto_memory() -> u64 {
+    crate::machine::auto_decode_budget_mb(crate::machine::total_ram_mb())
 }
 /// Frames the ring holds (about 0.74 s; the player keeps 250 ms of it filled).
 const RING_FRAMES: usize = 32_768;
@@ -247,7 +252,7 @@ pub async fn mix_live_load(app: AppHandle, state: State<'_, MixLive>, root: Stri
         tauri::async_runtime::spawn_blocking(move || s.shutdown()).await.ok();
     }
     let app2 = app.clone();
-    let budget = decode_budget_bytes(decode_budget_mb);
+    let budget = decode_budget_bytes(decode_budget_mb, crate::machine::total_ram_mb());
     let session = tauri::async_runtime::spawn_blocking(move || -> AppResult<Session> {
         let root = PathBuf::from(root);
         let mix = doc.to_mix()?;
@@ -470,6 +475,7 @@ macro_rules! mixlive_commands {
             [
                 $($acc)*
                 $crate::commands::mixlive::mix_live_load,
+                $crate::commands::mixlive::mix_live_auto_memory,
                 $crate::commands::mixlive::mix_live_update,
                 $crate::commands::mixlive::mix_live_play,
                 $crate::commands::mixlive::mix_live_pause,
@@ -505,10 +511,14 @@ mod budget_tests {
 
     #[test]
     fn decode_budget_comes_from_the_setting_within_limits() {
-        assert_eq!(decode_budget_bytes(None), 1024 * 1024 * 1024);
-        assert_eq!(decode_budget_bytes(Some(2048)), 2048 * 1024 * 1024);
-        assert_eq!(decode_budget_bytes(Some(1)), 256 * 1024 * 1024);
-        assert_eq!(decode_budget_bytes(Some(u64::MAX)), 65_536 * 1024 * 1024);
+        // no choice: follows the memory of the computer
+        assert_eq!(decode_budget_bytes(None, Some(16 * 1024)), 1024 * 1024 * 1024);
+        assert_eq!(decode_budget_bytes(None, Some(4 * 1024)), 512 * 1024 * 1024);
+        assert_eq!(decode_budget_bytes(None, None), 1024 * 1024 * 1024);
+        // a choice wins on any computer
+        assert_eq!(decode_budget_bytes(Some(2048), Some(4 * 1024)), 2048 * 1024 * 1024);
+        assert_eq!(decode_budget_bytes(Some(1), None), 256 * 1024 * 1024);
+        assert_eq!(decode_budget_bytes(Some(u64::MAX), None), 65_536 * 1024 * 1024);
     }
 }
 

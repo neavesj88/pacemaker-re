@@ -179,7 +179,7 @@
         <label>
           Tracks analysed at once
           <input type="number" min={LIMITS.threads.min} max={LIMITS.threads.max} step="1" value={s.settings.threads} onchange={(e) => saveNumber(e, "threads")} />
-          <span class="muted">more is faster and uses more memory</span>
+          <span class="muted">(0 = decide by the computer; more is faster and uses more memory)</span>
         </label>
         <p class="muted small">Changing a setting re-scales the saved measurements at once; nothing is decoded again.</p>
       </div>

@@ -12,7 +12,7 @@ type SectionKind = "intro" | "build" | "drop" | "breakdown" | "outro" | "section
 type MockEntry = { size: number; duration: number; bars: number; outcome: "ok" | "flat" | "skip"; skip: string | null };
 
 let settings = {
-  sensitivity: 3, min_section_bars: 8, phrase_bars: 0, origin: "first_downbeat", snap_tolerance_bars: 2, min_bars: 32, threads: 2, show_markers: true,
+  sensitivity: 3, min_section_bars: 8, phrase_bars: 0, origin: "first_downbeat", snap_tolerance_bars: 2, min_bars: 32, threads: 0, show_markers: true,
 };
 const cache = new Map<string, MockEntry>();
 
@@ -117,7 +117,7 @@ export const handlers: Handlers = {
     if (!["first_downbeat", "best_fit"].includes(s.origin)) throw "Unknown phrase origin.";
     if (!inRange(s.snap_tolerance_bars, 0, 8)) throw "The snap distance must be between 0 and 8 bars.";
     if (!inRange(s.min_bars, 16, 512)) throw "The shortest track must be between 16 and 512 bars.";
-    if (!inRange(s.threads, 1, 8)) throw "Tracks analysed at once must be between 1 and 8.";
+    if (!inRange(s.threads, 0, 8)) throw "Tracks analysed at once must be 0 (decide by the computer) or between 1 and 8.";
     settings = { ...s };
     return { ...settings };
   },

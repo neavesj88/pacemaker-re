@@ -319,6 +319,7 @@ fn fingerprint_run(items: Vec<FpItem>, store: &mut Store, store_path: &Path, thr
             let tx = tx.clone();
             let (items, next) = (&items, &next);
             scope.spawn(move || {
+                crate::machine::job_thread_start();
                 loop {
                     if cancel.load(Ordering::SeqCst) {
                         break;
@@ -382,8 +383,7 @@ fn thread_count(s: &DupSettings) -> usize {
     if s.fingerprint_threads > 0 {
         return s.fingerprint_threads as usize;
     }
-    let cores = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(2);
-    (cores / 2).clamp(1, 4)
+    crate::machine::analysis_workers()
 }
 
 /// Starts the fingerprint job for the tracks the sound check still lacks and returns how many.

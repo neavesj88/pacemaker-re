@@ -23,7 +23,7 @@ const KEYS = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
 type MockEnergy = { size: number; duration: number; score: number | null; skip: string | null };
 const FIXED = { lo: 0.18, hi: 0.78 };
 const energyCache = new Map<string, MockEnergy>();
-let energySettings = { scale: "fit", fit_low_pct: 5, fit_high_pct: 95, min_secs: 20, threads: 2 };
+let energySettings = { scale: "fit", fit_low_pct: 5, fit_high_pct: 95, min_secs: 20, threads: 0 };
 for (const t of tracks) {
   if (t.track_id % 3 === 0) continue;
   energyCache.set(t.location, { size: t.file_size, duration: t.play_time_secs, score: 0.2 + 0.6 * seeded(`e${t.location}`)(), skip: null });
@@ -128,7 +128,7 @@ export const handlers: Handlers = {
     if (!inRange(s.fit_low_pct, 0, 40)) throw "The low percentile must be between 0 and 40.";
     if (!inRange(s.fit_high_pct, 60, 100)) throw "The high percentile must be between 60 and 100.";
     if (!inRange(s.min_secs, 5, 600)) throw "The shortest track must be between 5 and 600 seconds.";
-    if (!inRange(s.threads, 1, 8)) throw "Tracks analysed at once must be between 1 and 8.";
+    if (!inRange(s.threads, 0, 8)) throw "Tracks analysed at once must be 0 (decide by the computer) or between 1 and 8.";
     energySettings = { ...s };
     return { ...energySettings };
   },
