@@ -1813,6 +1813,61 @@ mod tests {
         }
     }
 
+    /// What the app's Loop cut and Loop out write: several root loops one right after the other, each half
+    /// the length of the one before, and a loop whose region ends part way through its last repeat.
+    #[test]
+    fn consecutive_root_loops_of_halving_lengths_round_trip() {
+        let mut m = synthetic();
+        m.tracks[1].processes.retain(|p| !matches!(p, Process::Loop(_)));
+        let mut at = 2_000_000.0;
+        let mut want = Vec::new();
+        for (i, slice) in [88_200.0, 44_100.0, 22_050.0, 11_025.0, 5_512.0].into_iter().enumerate() {
+            let region = slice * 2.0;
+            let id = format!("{:032x}", 0xc000 + i);
+            m.tracks[1].processes.push(Process::Loop(LoopProc {
+                name: "LOOP".into(),
+                bypassed: false,
+                position: pos(at, region, &id),
+                length: slice,
+                iterations: 2,
+                re_loop: false,
+                mode: false,
+                parent: None,
+                offsets: vec![],
+            }));
+            want.push((at, region, slice));
+            at += region;
+        }
+        // a loop out: 3 repeats of a slice but cut at 2.4 of them
+        m.tracks[1].processes.push(Process::Loop(LoopProc {
+            name: "LOOP".into(),
+            bypassed: false,
+            position: pos(3_000_000.0, 100_000.0 * 2.4, &format!("{:032x}", 0xc100)),
+            length: 100_000.0,
+            iterations: 3,
+            re_loop: false,
+            mode: false,
+            parent: None,
+            offsets: vec![],
+        }));
+        let xml = m.to_xml().unwrap();
+        let back = Mix::parse_exact(&xml).unwrap();
+        assert_eq!(back, m);
+        assert_eq!(back.to_xml().unwrap(), xml);
+        let loops: Vec<&LoopProc> = back.tracks[1].processes.iter().filter_map(|p| if let Process::Loop(l) = p { Some(l) } else { None }).collect();
+        assert_eq!(loops.len(), 6);
+        for (l, (start, region, slice)) in loops.iter().zip(&want) {
+            assert_eq!((l.position.start, l.position.length, l.length, l.iterations, l.parent), (*start, *region, *slice, 2, None));
+        }
+        // each begins where the one before ended
+        for w in loops[..5].windows(2) {
+            assert_eq!(w[1].position.start, w[0].position.start + w[0].position.length);
+        }
+        assert_eq!((loops[5].position.length, loops[5].length, loops[5].iterations), (240_000.0, 100_000.0, 3));
+        assert_eq!(Mix::from_blob(&m.to_blob().unwrap()).unwrap(), m);
+        assert_eq!(Mix::from_pmk(&m.to_pmk().unwrap()).unwrap(), m);
+    }
+
     #[test]
     fn empty_and_edited_documents() {
         let m = Mix::new("");

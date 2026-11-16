@@ -632,6 +632,22 @@ export function newTool(type: string, start: number, length: number, id: string 
   } as ToolDoc;
 }
 
+/** A loop over clip-local `[start, start + length)` that repeats a slice of `slice` samples `reps`
+ * times. `length` defaults to `slice * reps`; a shorter one cuts the last repeat short (the
+ * engine plays the shorter of the two). The slice is the audio at `start`. */
+export function newLoop(start: number, slice: number, reps: number, length: number = slice * reps, id: string = newId()): LoopDoc {
+  return { ...(newRegion("loop", start, length, id) as LoopDoc), iterationLength: slice, iterations: reps };
+}
+
+/** Other loops, reverses and ignores that overlap `p` (they edit the same audio, so two on one
+ * stretch are not what anyone means). */
+export function regionConflicts(clip: Clip, p: ProcessDoc): string[] {
+  return clip.processes
+    .filter((q) => q.kind !== "tool" && q.id !== p.id)
+    .filter((q) => q.start < p.start + p.length - 1 && p.start < q.start + q.length - 1)
+    .map((q) => q.id);
+}
+
 /** A loop, ignore or reverse region over clip-local `[start, start + length)`. */
 export function newRegion(kind: "loop" | "ignore" | "reverse", start: number, length: number, id: string = newId()): ProcessDoc {
   const base = { id, start, length, trimStart: 0, trimEnd: 0, limitSize: false, startSec: secOf(start), lengthSec: secOf(length), bypassed: false };
@@ -1124,7 +1140,7 @@ export function applyTransition(doc: MixDoc, s: TransitionSuggestion, replaceCon
 }
 
 /** What `buildRecipe` (state/transitionRecipes.ts) needs from this file. */
-export const recipeKit: Kit = { newTool, conflicts: toolConflicts };
+export const recipeKit: Kit = { newTool, conflicts: toolConflicts, newLoop: (s, sl, r, l) => newLoop(s, sl, r, l), regionConflicts, beatsOf: clipBeats };
 
 // ---------------------------------------------------------------------------------------------
 // Clipboard

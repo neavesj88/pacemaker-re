@@ -1362,6 +1362,55 @@ pub mod tests {
         assert!(bad.to_mix().is_err());
     }
 
+    /// The loops Loop cut and Loop out make: root loops one after another and a region cut part way
+    /// through its last repeat. They survive document -> mix -> file -> document with the numbers intact.
+    #[test]
+    fn a_loop_cut_and_a_loop_out_survive_the_file() {
+        let mut mix = synthetic_mix();
+        mix.tracks[1].processes.retain(|p| !matches!(p, m::Process::Loop(_)));
+        let mut at = 2_000_000.0;
+        for (i, slice) in [88_200.0, 44_100.0, 22_050.0, 11_025.0, 5_512.0].into_iter().enumerate() {
+            mix.tracks[1].processes.push(m::Process::Loop(m::LoopProc {
+                name: "LOOP".into(),
+                bypassed: false,
+                position: m::Position { start: at, length: slice * 2.0, session_event_id: format!("{:032x}", 0xc000 + i), ..m::Position::default() },
+                length: slice,
+                iterations: 2,
+                re_loop: false,
+                mode: false,
+                parent: None,
+                offsets: vec![],
+            }));
+            at += slice * 2.0;
+        }
+        mix.tracks[1].processes.push(m::Process::Loop(m::LoopProc {
+            name: "LOOP".into(),
+            bypassed: false,
+            position: m::Position { start: 3_000_000.0, length: 240_000.0, session_event_id: format!("{:032x}", 0xc100), ..m::Position::default() },
+            length: 100_000.0,
+            iterations: 3,
+            re_loop: false,
+            mode: false,
+            parent: None,
+            offsets: vec![],
+        }));
+        let doc = MixDoc::from_mix(1, &mix);
+        let loops: Vec<&LoopDoc> = doc.clips[1].processes.iter().filter_map(|p| if let ProcessDoc::Loop(l) = p { Some(l) } else { None }).collect();
+        assert_eq!(loops.len(), 6);
+        assert!(loops.iter().all(|l| l.parent.is_none() && !l.re_loop));
+        assert_eq!((loops[0].span.start, loops[0].span.length, loops[0].iteration_length, loops[0].iterations), (2_000_000.0, 176_400.0, 88_200.0, 2));
+        assert_eq!((loops[5].span.length, loops[5].iteration_length, loops[5].iterations), (240_000.0, 100_000.0, 3));
+        assert!(doc.validate(None).is_empty(), "{:?}", doc.validate(None));
+        // through the file and back
+        let back = MixDoc::from_mix(1, &m::Mix::from_blob(&doc.to_mix().unwrap().to_blob().unwrap()).unwrap());
+        assert_eq!(back.to_mix().unwrap(), mix);
+        let again: Vec<&LoopDoc> = back.clips[1].processes.iter().filter_map(|p| if let ProcessDoc::Loop(l) = p { Some(l) } else { None }).collect();
+        assert_eq!(again.len(), 6);
+        for (a, b) in loops.iter().zip(&again) {
+            assert_eq!((a.span.start, a.span.length, a.iteration_length, a.iterations), (b.span.start, b.span.length, b.iteration_length, b.iterations));
+        }
+    }
+
     #[test]
     fn duplicate_and_empty_session_ids_still_round_trip() {
         let mut mix = synthetic_mix();

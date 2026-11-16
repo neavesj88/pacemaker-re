@@ -415,6 +415,16 @@ function checkBuilt(d, s, label) {
   for (const ts of s.tools) {
     const c = d.clips.find((x) => x.id === ts.clipId);
     const p = ts.tool;
+    if (p.kind === "loop") {
+      // a loop: whole samples, inside the clip and the window, a slice that repeats at least once
+      assert.ok(Number.isInteger(p.start) && Number.isInteger(p.length) && Number.isInteger(p.iterationLength), `${label}: loop whole samples`);
+      assert.ok(p.start >= 0 && p.start + p.length <= c.length + 1e-6, `${label}: loop inside the clip`);
+      assert.ok(c.start + p.start >= t.start - 1e-6 && c.start + p.start + p.length <= t.start + t.length + 1e-6, `${label}: loop inside the window`);
+      assert.ok(p.iterationLength >= 1 && p.iterations >= 1 && p.length <= p.iterationLength * p.iterations && p.length > p.iterationLength * (p.iterations - 1), `${label}: loop repeats cover its length`);
+      assert.equal(p.parent, null, `${label}: a root loop`);
+      assert.equal(p.reLoop, false);
+      continue;
+    }
     assert.equal(p.kind, "tool");
     // inside its clip and inside the transition window, on the clip's local axis
     assert.ok(p.start >= 0 && p.start + p.length <= c.length + 1e-6, `${label}: ${p.toolType} inside the clip`);
@@ -442,10 +452,15 @@ function checkBuilt(d, s, label) {
   const applied = E.applyTransition(d, s);
   assert.equal(applied.transitions.length, 1);
   assert.equal(applied.clips.flatMap((c) => c.processes).length, s.tools.length, `${label}: all tools applied`);
+  // loops do not overlap one another on a clip
+  for (const c of applied.clips) {
+    const ls = c.processes.filter((p) => p.kind === "loop").sort((x, y) => x.start - y.start);
+    for (let i = 1; i < ls.length; i++) assert.ok(ls[i].start >= ls[i - 1].start + ls[i - 1].length, `${label}: loops overlap`);
+  }
 }
 
 test("recipe table: ids, lengths and defaults are consistent", () => {
-  assert.deepEqual(R.RECIPE_IDS, ["bassSwap", "longBlend", "echoOut", "filterSweep", "dropSwap", "hardCut"]);
+  assert.deepEqual(R.RECIPE_IDS, ["bassSwap", "longBlend", "echoOut", "filterSweep", "dropSwap", "hardCut", "loopOut", "loopCut"]);
   assert.equal(new Set(R.RECIPE_IDS).size, R.RECIPES.length);
   for (const r of R.RECIPES) {
     assert.ok(r.lengths.includes(r.bars), `${r.id} default length is offered`);
@@ -459,11 +474,11 @@ test("recipe table: ids, lengths and defaults are consistent", () => {
   for (const r of R.RECIPES) {
     const d = recipeDoc();
     for (const l of r.lengths) {
-      for (const ts of R.buildRecipe(d, baseSuggestion(d, l), r.id, { cutAt: "end" }, E.recipeKit).tools) used.add(ts.tool.toolType);
+      for (const ts of R.buildRecipe(d, baseSuggestion(d, l), r.id, { cutAt: "end", loops: { loopCutRising: true } }, E.recipeKit).tools) used.add(ts.tool.kind === "tool" ? ts.tool.toolType : ts.tool.kind);
     }
   }
-  for (const u of used) assert.ok(cat.has(u), `${u} is a device tool`);
-  assert.deepEqual([...used].sort(), ["EQ", "Echo", "FILTER", "Roll"]);
+  for (const u of used) assert.ok(cat.has(u) || u === "loop", `${u} is a device tool or the loop process`);
+  assert.deepEqual([...used].sort(), ["EQ", "Echo", "FILTER", "Roll", "loop"]);
 });
 
 test("recipe lengths: labels, nearest, requested", () => {
@@ -495,7 +510,7 @@ test("recipe settings saved before the version stamp: the old default null becom
 test("recipe settings: defaults, merge ignores junk", () => {
   assert.deepEqual(R.mergeRecipePrefs(undefined), R.DEFAULT_RECIPE_PREFS);
   assert.deepEqual(R.mergeRecipePrefs("x"), R.DEFAULT_RECIPE_PREFS);
-  assert.deepEqual(R.DEFAULT_RECIPE_PREFS, { recipe: "bassSwap", bars: 16, placeAt: "end", cutAt: "end", onConflict: "ask", sectionEdge: "off", sectionReachBars: 8, onMove: "follow" });
+  assert.deepEqual(R.DEFAULT_RECIPE_PREFS, { recipe: "bassSwap", bars: 16, placeAt: "end", cutAt: "end", onConflict: "ask", sectionEdge: "off", sectionReachBars: 8, onMove: "follow", loopOutBeats: 8, loopOutStart: "start", loopCutBeats: 4, loopCutShortest: 0.25, loopCutRepeats: 2, loopCutRising: false });
   assert.deepEqual(R.mergeRecipePrefs({ recipe: "echoOut", bars: 4, cutAt: "start", onConflict: "replace" }), { ...R.DEFAULT_RECIPE_PREFS, recipe: "echoOut", bars: 4, cutAt: "start", onConflict: "replace" });
   assert.deepEqual(R.mergeRecipePrefs({ recipe: "nope", bars: -3, cutAt: "middle", onConflict: 7, sectionEdge: "middle", sectionReachBars: "8" }), R.DEFAULT_RECIPE_PREFS);
   assert.equal(R.mergeRecipePrefs({ bars: 1000 }).bars, 16);
@@ -1776,6 +1791,200 @@ test("clips that sit near each other on the bar never share a colour", () => {
 });
 
 
+// ---- loop out and loop cut ---------------------------------------------------------------------
+
+/** A grid whose beats drift (a live drummer), so a loop placed by a fixed beat length would miss them. */
+function driftGrid(count = 800) {
+  const frames = [];
+  let t = 0;
+  for (let i = 0; i < count; i++) {
+    frames.push(Math.round(t));
+    t += BEAT * (1 + 0.012 * Math.sin(i / 5));
+  }
+  return { sourceRate: E.SR, beatStartOffset: 0, beatFrames: frames, beatBpm: frames.map(() => 120), firstDownbeat: 0 };
+}
+
+function loopDoc(g = driftGrid()) {
+  const a = clip("a", 0, 80 * BAR, 120, 1, g);
+  const b = clip("b", 16 * BAR, 80 * BAR, 120, 1, grid(120, 0, 800, 0), { channel: 1 });
+  return doc([a, b]);
+}
+
+const withClip = (d, id, fn) => E.refresh({ ...d, clips: d.clips.map((c) => (c.id === id ? fn(c) : c)) });
+const loopsOf = (s) => s.tools.filter((t) => t.tool.kind === "loop").map((t) => t.tool);
+const beatsA = (d) => E.clipBeats(d.clips.find((c) => c.id === "a"));
+const onBeat = (beats, x, tol = 1) => beats.some((b) => Math.abs(b - x) <= tol);
+
+test("loop out: one loop on the outgoing clip, beat to beat, to the end of the window", () => {
+  const d = loopDoc();
+  const beats = beatsA(d);
+  for (const bars of [8, 16]) {
+    const s = R.buildRecipe(d, baseSuggestion(d, bars), "loopOut", { cutAt: "end" }, E.recipeKit);
+    checkBuilt(d, s, `loopOut/${bars}`);
+    const [lp, ...more] = loopsOf(s);
+    assert.equal(more.length, 0, "one loop");
+    assert.equal(s.tools.find((t) => t.tool.kind === "loop").clipId, "a", "on the outgoing clip");
+    const abs = lp.start; // clip a starts at 0
+    const end = s.transition.start + s.transition.length;
+    assert.ok(onBeat(beats, abs), "starts on one of the outgoing clip's own beats");
+    assert.ok(abs >= s.transition.start - 1 && abs < s.transition.start + 1.2 * BEAT, "first beat of the overlap");
+    // the slice is the real distance between beat n and beat n + 8 of the drifting grid, not 8 * BEAT
+    const i0 = beats.findIndex((b) => Math.abs(b - abs) <= 1);
+    assert.equal(lp.iterationLength, Math.round(beats[i0 + 8] - beats[i0]), "8 beats long by the real grid");
+    assert.equal(abs + lp.length, end, "runs to the end of the window");
+    assert.equal(lp.iterations, Math.ceil(lp.length / lp.iterationLength));
+    assert.deepEqual(s.notes, [], "nothing to say");
+    // bass trade as in a bass swap
+    assert.equal(s.tools.filter((t) => t.tool.kind === "tool" && t.tool.toolType === "EQ").length, 2);
+  }
+  // two bars hold only 8 beats: the loop is halved to fit twice, and the lane says so
+  const two = R.buildRecipe(d, baseSuggestion(d, 2), "loopOut", { cutAt: "end" }, E.recipeKit);
+  checkBuilt(d, two, "loopOut/2");
+  assert.equal(loopsOf(two)[0].iterations >= 2, true);
+  assert.match(two.notes.join(), /^loop shortened to \d+ (beats?|bars?) to fit$/);
+  // the grid really drifts: a loop of a constant tempo's length would miss the beats
+  const s = R.buildRecipe(d, baseSuggestion(d, 8), "loopOut", { cutAt: "end" }, E.recipeKit);
+  assert.notEqual(loopsOf(s)[0].iterationLength, 8 * BEAT);
+});
+
+test("loop out: where it starts, how long it is, and a loop that does not fit twice is shortened", () => {
+  const d = loopDoc();
+  const beats = beatsA(d);
+  const mid = R.buildRecipe(d, baseSuggestion(d, 8), "loopOut", { cutAt: "end", loops: { loopOutStart: "middle", loopOutBeats: 4 } }, E.recipeKit);
+  const [lp] = loopsOf(mid);
+  assert.ok(onBeat(beats, lp.start));
+  assert.ok(Math.abs(lp.start - (16 * BAR + 4 * BAR)) < 1.2 * BEAT + BAR * 0.05, "about the middle of the overlap");
+  const i0 = beats.findIndex((b) => Math.abs(b - lp.start) <= 1);
+  assert.equal(lp.iterationLength, Math.round(beats[i0 + 4] - beats[i0]));
+  // 32 beats cannot repeat twice in 2 bars (8 beats): the longest that does is used, and the note is short
+  const tight = R.buildRecipe(d, baseSuggestion(d, 2), "loopOut", { cutAt: "end", loops: { loopOutBeats: 32 } }, E.recipeKit);
+  assert.match(tight.notes.join(), /^loop shortened to \d+ (beats?|bars?) to fit$/);
+  assert.ok(loopsOf(tight)[0].iterations >= 2);
+  assert.ok(loopsOf(tight)[0].iterationLength <= 4 * BEAT * 1.2);
+});
+
+test("loop cut: loops one after another, each half the one before, down to the shortest, ending at the window end", () => {
+  const d = loopDoc();
+  const beats = beatsA(d);
+  const s = R.buildRecipe(d, baseSuggestion(d, 8), "loopCut", { cutAt: "end", loops: { loopCutBeats: 8, loopCutShortest: 0.25, loopCutRepeats: 2 } }, E.recipeKit);
+  checkBuilt(d, s, "loopCut");
+  const ls = loopsOf(s);
+  assert.equal(ls.length, 6, "8, 4, 2, 1, 1/2 and 1/4 beat");
+  assert.ok(s.tools.filter((t) => t.tool.kind === "loop").every((t) => t.clipId === "a"));
+  assert.ok(onBeat(beats, ls[0].start), "the first loop starts on a beat of the outgoing clip");
+  const winEnd = s.transition.start + s.transition.length;
+  // contiguous: each starts where the one before ended, to the sample
+  for (let i = 1; i < ls.length; i++) assert.equal(ls[i].start, ls[i - 1].start + ls[i - 1].length, `loop ${i} follows loop ${i - 1}`);
+  // halving: each slice is half the one before it, within the grid's drift and a rounded-down sample
+  for (let i = 1; i < ls.length; i++) assert.ok(Math.abs(ls[i].iterationLength - ls[i - 1].iterationLength / 2) <= 3 + ls[i - 1].iterationLength * 0.05, `loop ${i} halves`);
+  const i0 = beats.findIndex((b) => Math.abs(b - ls[0].start) <= 1);
+  assert.equal(ls[0].iterationLength, Math.round(beats[i0 + 8] - beats[i0]), "the first is 8 beats of the real grid");
+  assert.ok(ls.at(-1).iterationLength < ls[0].iterationLength / 20, "down to a short stab");
+  assert.ok(ls.at(-1).iterationLength >= 1000, "never below the shortest");
+  // never past the window, and ends within the shortest loop of it
+  const end = ls.at(-1).start + ls.at(-1).length;
+  assert.ok(end <= winEnd, "inside the window");
+  assert.ok(winEnd - end < ls.at(-1).iterationLength + 5, "the run ends at the window end");
+  for (const l of ls) assert.equal(l.length, l.iterationLength * l.iterations, "whole repeats");
+  assert.ok(ls.slice(0, -1).every((l) => l.iterations === 2), "twice each, the last takes the left-over");
+  // the crossfade holds the incoming back and steps at the end
+  assert.deepEqual(s.transition.curve.map((n) => n.value), [0, 0, 1]);
+  assert.deepEqual(s.notes, []);
+  // no rising filter unless asked
+  assert.equal(s.tools.filter((t) => t.tool.kind === "tool").length, 0);
+});
+
+test("loop cut: the default run (1 bar down to a quarter beat, twice each) and the owner's 4 bars down", () => {
+  const d = loopDoc();
+  const ls = loopsOf(R.buildRecipe(d, baseSuggestion(d, 4), "loopCut", { cutAt: "end" }, E.recipeKit));
+  assert.equal(ls.length, 5, "4, 2, 1, 1/2, 1/4 beat");
+  const big = R.buildRecipe(d, baseSuggestion(d, 16), "loopCut", { cutAt: "end", loops: { loopCutBeats: 16 } }, E.recipeKit);
+  assert.equal(loopsOf(big).length, 7, "4 bars, 2 bars, 1 bar, 2, 1, 1/2, 1/4 beat");
+  assert.ok(loopsOf(big)[0].iterationLength > 14 * BEAT * 0.9);
+  // one repeat of each
+  const once = R.buildRecipe(d, baseSuggestion(d, 4), "loopCut", { cutAt: "end", loops: { loopCutRepeats: 1, loopCutBeats: 4, loopCutShortest: 1 } }, E.recipeKit);
+  assert.equal(loopsOf(once).length, 3, "4, 2, 1 beats");
+  assert.ok(loopsOf(once).every((l) => l.iterations >= 1));
+  // the shortest loop is a choice
+  assert.equal(loopsOf(R.buildRecipe(d, baseSuggestion(d, 4), "loopCut", { cutAt: "end", loops: { loopCutShortest: 1 } }, E.recipeKit)).length, 3);
+});
+
+test("loop cut: runs that do not fit leave out the longest and say so; the rising filter is one tool across the run", () => {
+  const d = loopDoc();
+  const s = R.buildRecipe(d, baseSuggestion(d, 2), "loopCut", { cutAt: "end", loops: { loopCutBeats: 16, loopCutRising: true } }, E.recipeKit);
+  checkBuilt(d, s, "loopCut fit");
+  const ls = loopsOf(s);
+  assert.ok(ls.length >= 1 && ls.length < 7);
+  assert.ok(ls[0].iterationLength * ls[0].iterations <= 2 * BAR * 1.1);
+  assert.match(s.notes.join(" "), /longest loops? left out/);
+  const f = s.tools.find((t) => t.tool.kind === "tool");
+  assert.equal(f.tool.toolType, "FILTER");
+  assert.equal(f.clipId, "a");
+  assert.equal(d.clips[0].start + f.tool.start, ls[0].start, "from the first loop");
+  assert.equal(f.tool.params["FILTER-CutOff"].at(-1).value, 80);
+  assert.throws(() => R.buildRecipe(d, baseSuggestion(d, 1), "loopCut", { cutAt: "end" }, E.recipeKit), /needs at least 2 bars/);
+});
+
+test("loops without a beat grid are placed by the tempo and say so", () => {
+  const d = loopDoc(null);
+  const s = R.buildRecipe(d, baseSuggestion(d, 4), "loopCut", { cutAt: "end" }, E.recipeKit);
+  checkBuilt(d, s, "no grid");
+  assert.deepEqual(s.notes, ["no beat grid on the outgoing clip, loops placed by tempo"]);
+  assert.equal(loopsOf(s).length, 5);
+  assert.equal(loopsOf(s)[0].iterationLength, 4 * BEAT);
+});
+
+test("loops: a loop of the user's in the way is a conflict, and a rebuild takes the old run with it", () => {
+  const d0 = loopDoc();
+  const mine = E.newLoop(17 * BAR, BEAT, 2, undefined, "mine");
+  const d = withClip(d0, "a", (c) => ({ ...c, processes: [...c.processes, mine] }));
+  const s = R.buildRecipe(d, baseSuggestion(d, 4, 16 * BAR), "loopOut", { cutAt: "end" }, E.recipeKit);
+  const lp = s.tools.find((t) => t.tool.kind === "loop");
+  assert.deepEqual(lp.conflicts, ["mine"]);
+  const way = R.toolsInTheWay(d, s, null);
+  assert.deepEqual(way.map((w) => [w.id, w.toolType, w.why]), [["mine", "loop", "overlaps"]]);
+  // skipped without replacing, replaced with
+  assert.equal(E.applyTransition(d, s, false).clips[0].processes.filter((p) => p.kind === "loop").length, 1);
+  const swapped = E.applyTransition(d, s, true);
+  assert.equal(swapped.clips[0].processes.some((p) => p.id === "mine"), false);
+  assert.equal(swapped.clips[0].processes.filter((p) => p.kind === "loop").length, 1);
+  // a built loop cut, rebuilt: its loops are "inside" the transition being replaced; a loop of the user's elsewhere is not
+  const far = E.newLoop(40 * BAR, BEAT, 2, undefined, "far");
+  const d2 = withClip(loopDoc(), "a", (c) => ({ ...c, processes: [far] }));
+  const cut = R.buildRecipe(d2, baseSuggestion(d2, 4, 16 * BAR), "loopCut", { cutAt: "end" }, E.recipeKit);
+  const built = E.applyTransition(d2, cut);
+  const again = R.buildRecipe(built, baseSuggestion(built, 4, 16 * BAR), "bassSwap", { cutAt: "end", moved: true }, E.recipeKit);
+  const old = R.toolsInTheWay(built, again, { start: cut.transition.start, length: cut.transition.length, between: { from: "a", to: "b" } });
+  assert.equal(old.length, loopsOf(cut).length, "every loop of the old run, nothing else");
+  assert.ok(old.every((w) => w.why === "inside" && w.toolType === "loop" && w.id !== "far"));
+  const rebuilt = E.applyTransition(E.deleteProcesses(built, old.map((w) => w.id)), again);
+  assert.equal(rebuilt.clips[0].processes.filter((p) => p.kind === "loop").length, 1, "only the user's far loop is left");
+});
+
+test("loop recipes: the settings are kept, junk is ignored", () => {
+  const p = R.mergeRecipePrefs({ loopOutBeats: 4, loopOutStart: "middle", loopCutBeats: 16, loopCutShortest: 0.5, loopCutRepeats: 3, loopCutRising: true });
+  assert.deepEqual([p.loopOutBeats, p.loopOutStart, p.loopCutBeats, p.loopCutShortest, p.loopCutRepeats, p.loopCutRising], [4, "middle", 16, 0.5, 3, true]);
+  const junk = R.mergeRecipePrefs({ loopOutBeats: 3, loopOutStart: "end", loopCutBeats: "8", loopCutShortest: 0.3, loopCutRepeats: 9, loopCutRising: "yes" });
+  assert.deepEqual(junk, R.DEFAULT_RECIPE_PREFS);
+  assert.equal(R.mergeRecipePrefs({ loopCutRepeats: 1.5 }).loopCutRepeats, 2);
+  // saved before the loop settings existed: the defaults fill in, the rest survives
+  assert.deepEqual(R.loadRecipePrefs({ recipe: "echoOut", v: 2, bars: 8 }), { ...R.DEFAULT_RECIPE_PREFS, recipe: "echoOut", bars: 8 });
+  assert.equal(R.loopLengthLabel(0.25), "1/4 beat");
+  assert.equal(R.loopLengthLabel(1), "1 beat");
+  assert.equal(R.loopLengthLabel(2), "2 beats");
+  assert.equal(R.loopLengthLabel(4), "1 bar");
+  assert.equal(R.loopLengthLabel(16), "4 bars");
+});
+
+test("newLoop: whole repeats by default, a shorter region cuts the last one", () => {
+  const l = E.newLoop(1000, 5000, 3);
+  assert.equal(l.length, 15000);
+  assert.deepEqual([l.iterationLength, l.iterations, l.parent, l.reLoop, l.mode, l.offsets.length], [5000, 3, null, false, false, 0]);
+  const cut = E.newLoop(1000, 5000, 3, 12000);
+  assert.equal(cut.length, 12000);
+  assert.equal(cut.iterations, 3);
+});
+
 // ---- a crossfade and its tools follow a moved clip (state/transitionFollow.ts) -----------------
 
 /** a (0..64 bars) and b (starting `bAt` bars in, 64 bars long) with a built `recipe` of `bars` bars ending with a. */
@@ -1972,6 +2181,92 @@ test("follow: a reopened mix with no recipe memory follows too, and the default 
   assert.equal(R.mergeRecipePrefs({ onMove: "stay" }).onMove, "stay");
   assert.equal(R.mergeRecipePrefs({ onMove: "sideways" }).onMove, "follow");
   assert.equal(R.mergeRecipePrefs({ onMove: 3 }).onMove, "follow");
+});
+
+// ---- loops follow too ---------------------------------------------------------------------------
+
+const loopsAbs = (d) => d.clips.find((c) => c.id === "a").processes.filter((p) => p.kind === "loop").map((p) => ({ start: p.start + d.clips.find((c) => c.id === "a").start, length: p.length, slice: p.iterationLength, reps: p.iterations }));
+
+test("follow: a loop cut stays whole and keeps ending with the fade when the incoming clip is dragged", () => {
+  const d = followDoc(48, "loopCut", 8);
+  const before = loopsAbs(d);
+  assert.equal(before.length, 5);
+  const end = before.at(-1).start + before.at(-1).length;
+  assert.ok(Math.abs(end - 64 * BAR) <= BEAT, "the run ends with the window");
+  for (const bAt of [40, 52, 56]) {
+    const after = TF.followTransitions(d, E.moveClip(d, "b", bAt * BAR), "follow");
+    assert.deepEqual(loopsAbs(after), before, `incoming at bar ${bAt}: the outgoing clip's loops stay put (the window still ends with it)`);
+    const t = tr(after);
+    assert.ok(Math.abs(t.start + t.length - 64 * BAR) <= BAR + 1);
+  }
+});
+
+test("follow: the outgoing clip moved takes its loops and the window with it, and dragging back restores them", () => {
+  const d = followDoc(48, "loopCut", 8);
+  const before = loopsAbs(d);
+  const moved = E.moveClip(d, "a", 2 * BAR);
+  const after = TF.followTransitions(d, moved, "follow");
+  const shifted = loopsAbs(after);
+  assert.equal(shifted.length, before.length);
+  shifted.forEach((l, i) => {
+    assert.equal(l.length, before[i].length, "same lengths");
+    assert.equal(l.slice, before[i].slice, "same slices");
+    close(l.start, before[i].start + 2 * BAR, 1, `loop ${i} moves with the clip`);
+  });
+  // the window still ends with the outgoing clip, and the run still ends with it
+  const t = tr(after);
+  const e = shifted.at(-1).start + shifted.at(-1).length;
+  assert.ok(Math.abs(e - (t.start + t.length)) <= BEAT + 1);
+  // back to where it was: nothing accumulated
+  const back = TF.followTransitions(d, E.moveClip(moved, "a", 0), "follow", after);
+  assert.deepEqual(loopsAbs(back), before);
+});
+
+test("follow: loop out follows too, and a loop of the user's in the window is left alone", () => {
+  const mineAt = 50 * BAR;
+  const d = followDoc(48, "loopOut", 16, (x) => withClip(x, "a", (c) => ({ ...c, processes: [...c.processes, E.newLoop(mineAt, BEAT, 2, undefined, "mine")] })));
+  const after = TF.followTransitions(d, E.moveClip(d, "a", 3 * BAR), "follow");
+  const lp = after.clips[0].processes.filter((p) => p.kind === "loop");
+  assert.equal(lp.length, 2);
+  const run = lp.find((p) => p.id !== "mine");
+  const t = tr(after);
+  close(after.clips[0].start + run.start + run.length, t.start + t.length, 2, "the loop out still ends with the fade");
+  assert.equal(lp.find((p) => p.id === "mine").start, mineAt);
+});
+
+test("follow: loops stay where they were when the setting is off", () => {
+  const d = followDoc(48, "loopCut", 8);
+  const moved = E.moveClip(d, "a", 2 * BAR);
+  assert.equal(TF.followTransitions(d, moved, "stay"), moved);
+});
+
+test("follow: when the end of the window moves by whole beats the loops move with it and still start on beats of the outgoing clip", () => {
+  // the incoming clip's bar lines are 0.6 of a beat off the outgoing clip's end, so its window ends mid-beat of the outgoing clip
+  const a = clip("a", 0, 64 * BAR, 120, 1, driftGrid());
+  const b = clip("b", 48 * BAR + Math.round(0.6 * BEAT), 64 * BAR, 120, 1, grid(120, 0, 800, 0), { channel: 1 });
+  let d = doc([a, b]);
+  const s = R.buildRecipe(d, baseSuggestion(d, 16, 48 * BAR - 2 * BEAT), "loopCut", { cutAt: "end" }, E.recipeKit);
+  d = E.applyTransition(d, s);
+  const beats = E.clipBeats(d.clips[0]);
+  const before = loopsAbs(d);
+  let shifted = 0;
+  for (const bAt of [40, 44.5, 52]) {
+    const moved = E.moveClip(d, "b", Math.round(bAt * BAR + 0.6 * BEAT));
+    const after = TF.followTransitions(d, moved, "follow");
+    const ls = loopsAbs(after);
+    assert.equal(ls.length, before.length);
+    ls.forEach((l, i) => {
+      assert.equal(l.length, before[i].length);
+      assert.equal(l.slice, before[i].slice);
+      if (i) assert.equal(l.start, ls[i - 1].start + ls[i - 1].length, "still one after the other");
+    });
+    assert.ok(onBeat(beats, ls[0].start, 1), `bar ${bAt}: the first loop starts on a beat of the outgoing clip`);
+    if (ls[0].start !== before[0].start) shifted++;
+    const t = tr(after);
+    const end = ls.at(-1).start + ls.at(-1).length;
+    assert.ok(Math.abs(end - (t.start + t.length)) <= 1.6 * BEAT, `bar ${bAt}: the run still ends about where the window does (${(end - t.start - t.length) / BEAT} beats)`);
+  }
+  assert.ok(shifted >= 1, "at least one of the drags moved the window end by a beat or more, so the loops had to follow");
 });
 
 console.log(`\n${n} tests passed`);

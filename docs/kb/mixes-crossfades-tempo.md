@@ -3,8 +3,8 @@ id: mixes-crossfades-tempo
 title: Crossfades, tempo and Match all
 topic: Mixes
 order: 2
-keywords: crossfade, transition, fade, curve, bass swap, long blend, echo out, filter sweep, drop swap, hard cut, recipe, auto transition, beat-match, mix tempo, match all, sync, half time, double time, fine bpm, pitch, stretch, tempo ramp, plays at
-summary: How crossfades work, the six transition recipes, beat-matching, matching every track to the mix tempo (half and double time aware), and fine BPM steps.
+keywords: crossfade, transition, fade, curve, bass swap, long blend, echo out, filter sweep, drop swap, hard cut, loop out, loop cut, loop, halving, stutter, recipe, auto transition, beat-match, mix tempo, match all, sync, half time, double time, fine bpm, pitch, stretch, tempo ramp, plays at
+summary: How crossfades work, the eight transition recipes, beat-matching, matching every track to the mix tempo (half and double time aware), and fine BPM steps.
 ---
 
 # Crossfades, tempo and Match all
@@ -31,6 +31,29 @@ A recipe builds the crossfade and the tools around it in one go. Choose it in th
 | Filter sweep | The outgoing track is thinned out with a rising high-pass while the incoming track opens up from a low-pass | 2 to 32 (8 default) |
 | Drop swap | The outgoing track builds (bass out, rising high-pass, a beat-repeat on the last bar) and the incoming track hits at full on the last beat | 2 to 16 (8 default) |
 | Hard cut | A straight cut with no blend. The cut falls at the end of the length (a phrase is 8 bars), or at the start | one beat to 8 (8 default) |
+| Loop out | The outgoing track loops a short slice on its beat grid while the incoming track comes in over it; the basses trade places in the middle | 2 to 16 (8 default) |
+| Loop cut | The outgoing track loops a bar, then half a bar, then half again, down to a quarter of a beat, and the incoming track drops in at the end | 2 to 16 (4 default) |
+
+### Loop out and Loop cut
+
+Both make ordinary Loop regions on the outgoing clip (the same Loop tool as in the tools strip, one block in the lane for a loop cut's run), so you can drag, resize or delete them like any loop you made. Every loop starts on a beat of the outgoing track's own grid, so a track with a drifting live tempo still loops on its beats. A track with no beat grid is looped by its tempo and the toast says so.
+
+**Loop out** loops one slice from the start (or middle) of the overlap until the crossfade has finished with the outgoing track, with a bass swap at the middle. Settings, Mixes, Auto transitions:
+
+- **Loop out: loop length** (1 beat to 8 bars, 2 bars by default). A loop that cannot repeat twice in the overlap is made shorter, and the toast says so.
+- **Loop out: starts** at the start of the overlap (default) or in the middle of it.
+
+**Loop cut** is the classic build into a drop. The loops follow one another, each half as long as the one before, and the last one ends where the incoming track comes in at full volume. The incoming track is silent until then. Settings:
+
+- **Loop cut: first loop** (1 beat to 8 bars, 1 bar by default) and **shortest loop** (1/8 to 1 beat, 1/4 beat by default). Choose 4 bars for the long version: 4 bars, 2 bars, 1 bar, then beats.
+- **Loop cut: times each length** (1 to 4, default 2) is how often each length plays.
+- **Loop cut: rising filter** (off by default) adds a high-pass that rises over the loops.
+
+If the loops do not all fit in the overlap the longest are left out (a 4-bar overlap fits the default run of 15.5 beats only if the track's beats line up; use 8 bars or more for the full run). Each loop repeats the audio at its own start, so a loop cut steps forward through the track on each halving rather than looping the same bar smaller and smaller: the file format keeps one loop point per loop, and a re-loop chain always keeps the first slice.
+
+The loops are written to the mix file as plain Loop regions, so the Pacemaker plays whatever its Loop does. **Not yet heard on a Pacemaker:** nobody has played a mix with several consecutive loops on the device. The preview and the audio export soften each loop's join over about a millisecond and a half so it does not click; the device may not.
+
+When the incoming clip moves, the loops stay on the outgoing clip's beats and move, in whole beats, to keep ending with the crossfade; when the outgoing clip moves they go with it. Rebuilding a loop recipe removes the old run first.
 
 **Auto crossfade length** (Settings, Mixes, Auto transitions; 16 bars by default) is how long an automatic crossfade is. It is never longer than the audio both clips share and is a whole number of bars. **Crossfade sits** says where it goes: by default it ends with the outgoing clip, starting on a bar line of the incoming clip when it has a beat grid; the other choice starts it on the incoming clip's first beat.
 
@@ -45,7 +68,7 @@ By default a crossfade and the tools its transition placed follow the clips they
 - **It began where the incoming clip begins**: it keeps beginning there, with the same length.
 - **You placed it by hand** somewhere inside the overlap: it stays where it is. Its tools are still pinned under it.
 
-The tools that follow are the ones on the two clips that lie inside the crossfade and touch its start or its end, which is what every recipe makes. A tool you added in the middle of a fade, or outside it, simply moves with its clip. When the crossfade gets longer or shorter the tools are stretched in proportion, so a bass swap keeps its place relative to the fade; **Rebuild as ...** snaps it back onto a beat.
+The tools that follow are the ones on the two clips that lie inside the crossfade and touch its start or its end, which is what every recipe makes (the run of loops of a Loop out or Loop cut is moved whole, never stretched, because a loop's length is whole beats). A tool you added in the middle of a fade, or outside it, simply moves with its clip. When the crossfade gets longer or shorter the tools are stretched in proportion, so a bass swap keeps its place relative to the fade; **Rebuild as ...** snaps it back onto a beat.
 
 If a move leaves the clips with no overlap the crossfade is kept as it was and does nothing, and it comes back if you drag the clip back or press Undo. Dropping a clip onto another does not create a crossfade. A drag is one Undo step.
 

@@ -31,7 +31,7 @@ Articles about hardware and the Pacemaker itself say how sure each statement is:
 ## Mixes
 
 - [Building a mix](mixes-building.md): Make a mix from the track table under the timeline, move and trim clips, play it live, and save it.
-- [Crossfades, tempo and Match all](mixes-crossfades-tempo.md): How crossfades work, the six transition recipes, beat-matching, matching every track to the mix tempo (half and double time aware), and fine BPM steps.
+- [Crossfades, tempo and Match all](mixes-crossfades-tempo.md): How crossfades work, the eight transition recipes, beat-matching, matching every track to the mix tempo (half and double time aware), and fine BPM steps.
 - [Mix tools and audio export](mixes-tools-export.md): Add effects, loops and reverse regions to a clip (including the Vocal tool), then render the mix to an audio file with loudness, format and tags.
 
 ## Library tools

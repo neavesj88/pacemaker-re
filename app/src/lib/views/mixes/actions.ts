@@ -10,7 +10,6 @@ import { toast } from "$lib/state/toast.svelte";
 import { vocal } from "$lib/state/vocal.svelte";
 import {
   buildRecipe,
-  describeTools,
   lengthLabel,
   recipeDef,
   requestedBars,
@@ -285,12 +284,16 @@ export async function autoTransition(fromId: string, toId: string, opts: AutoOpt
     // boundaries (the backend knows nothing of either); a window nothing moved is the backend's own
     const placed = placeTransition(doc, base, bars, prefs.placeAt);
     const aligned = alignSuggestion(doc, placed.suggestion, prefs, mixes.sectionLookup, def.lengths[0] * 4 * base.beat);
-    const built = buildRecipe(doc, aligned.suggestion, recipe, { cutAt: prefs.cutAt, moved: placed.moved || aligned.moved }, E.recipeKit);
+    const built = buildRecipe(doc, aligned.suggestion, recipe, { cutAt: prefs.cutAt, moved: placed.moved || aligned.moved, loops: prefs }, E.recipeKit);
     const old = opts.replacing ? E.find(doc, opts.replacing) : null;
     const replacing = old?.kind === "transition" ? old.transition : null;
     const way = toolsInTheWay(doc, built, replacing);
     const label = `${def.label} (${lengthLabel(built.bars)})`;
-    const noteText = built.notes.length ? " " + built.notes.join("; ") + "." : "";
+    // the toast is one short line: what the recipe itself had to say (a loop shortened to fit, ...), not the
+    // backend's and the placement's explanations (the label already says how long it came out)
+    const known = new Set([...base.notes, ...placed.suggestion.notes]);
+    const own = built.notes.filter((n) => !known.has(n));
+    const noteText = own.length ? " " + own.map((n) => n.charAt(0).toUpperCase() + n.slice(1)).join(". ") + "." : "";
 
     const finish = (replace: boolean) => {
       recipePrefs.built.set(built.transition.id, { recipe, bars: built.bars });
@@ -299,17 +302,15 @@ export async function autoTransition(fromId: string, toId: string, opts: AutoOpt
         replacing: replacing?.id,
         remove: replace ? way.map((w) => w.id) : [],
       });
-      const added = describeTools(built, (id) => clipTitle(E.clipOf(doc, id)), (t) => toolLabel(t, vocal.mode));
       // new tools left out because one of the user's is in the way (one old tool can block several)
       const skipped = !replace ? built.tools.filter((t) => t.conflicts.length > 0).length : 0;
       // the rebuilt transition's old tools stay when the user chose to keep theirs
-      const kept = !replace ? way.filter((w) => w.why === "inside") : [];
+      const kept = !replace ? way.filter((w) => w.why === "inside").length : 0;
       const bits = [`${label} added.`];
-      if (added.length) bits.push(`Tools: ${added.join(", ")}.`);
-      if (skipped) bits.push(`${skipped} new tool(s) skipped because yours are in the way.`);
-      if (kept.length) bits.push(`Kept (setting "Keep mine"): ${kept.map((w) => wayText(doc, w)).join("; ")}.`);
-      if (replace && way.length) bits.push(`Replaced: ${way.map((w) => wayText(doc, w)).join("; ")}.`);
-      toast.show(bits.join(" ") + noteText, "ok", 9000);
+      if (skipped) bits.push(`${skipped} new left out, yours are in the way.`);
+      if (kept) bits.push(`${kept} old kept.`);
+      if (replace && way.length) bits.push(`Replaced ${way.length}.`);
+      toast.show(bits.join(" ") + noteText, "ok", 5000);
     };
 
     if (way.length === 0) return finish(false);

@@ -21,10 +21,15 @@
 // The tools that belong to a transition are the ones on its two clips that lie inside its window
 // and touch its start or its end (every tool a recipe makes does); they are re-pinned to the new
 // window in proportion. Anything else rides with its clip as before.
+// The loops of a Loop out or Loop cut (state/transitionRecipes.ts) are not stretched, a loop's
+// slice is whole beats of the outgoing clip: the run of loops that ends at the window's end moves
+// with that end, whole and in whole beats of the outgoing clip's grid, so its lengths stay exact
+// and every loop still starts on a beat. (A retime of the outgoing clip already carries
+// its loops with the audio, see `retempoClip`, so those are left as they are.)
 import type { Clip, MixDoc, ProcessDoc, ToolDoc, TransitionDoc } from "../api/mixes";
 import { autoWindow } from "./crossfadeLength.ts";
-import { BEATS_PER_BAR, MIN_LENGTH, SR, clipOf, effectiveBpm, effectiveFade, refresh, rescaleProcess } from "./mixedit.ts";
-import type { OnMove } from "./transitionRecipes.ts";
+import { BEATS_PER_BAR, MIN_LENGTH, SR, clipBeats, clipOf, effectiveBpm, effectiveFade, refresh, rescaleProcess } from "./mixedit.ts";
+import { beatMap, loopRun, type OnMove } from "./transitionRecipes.ts";
 
 type Win = { start: number; length: number };
 
@@ -75,6 +80,10 @@ export function followTransitions(base: MixDoc, after: MixDoc, mode: OnMove, bef
       }
     }
 
+    // the loops of a loop recipe (outgoing clip only; not when its tempo changed, see the header)
+    const loopMembers = JSON.stringify(f.from.tempo) === JSON.stringify(from1.tempo) ? loopRun(f.from, w0, beat0).filter((p) => !claimed.has(p.id)) : [];
+    for (const p of loopMembers) claimed.add(p.id);
+
     // nothing moved since the gesture began: only a drag that came back needs the fade and tools
     // put back as they were (`before` is then a followed frame of the same gesture)
     if (!moved(f.from, from1) && !moved(f.to, to1) && before === base) continue;
@@ -108,6 +117,7 @@ export function followTransitions(base: MixDoc, after: MixDoc, mode: OnMove, bef
         const c1 = clipOf(after, clip.id);
         if (c1 && JSON.stringify(c1.tempo) === JSON.stringify(clip.tempo)) put(clip.id, p);
       }
+      for (const p of loopMembers) put(f.from.id, p);
       continue;
     }
 
@@ -123,6 +133,25 @@ export function followTransitions(base: MixDoc, after: MixDoc, mode: OnMove, bef
       const length = Math.min(c1.length, Math.max(MIN_LENGTH, Math.round(ratio === 1 ? p.length : p.length * ratio)));
       const start = Math.min(Math.max(0, Math.round(abs) - c1.start), c1.length - length);
       put(clip.id, rescaleProcess({ ...p, start, length }, p.length));
+    }
+    // the run of loops keeps its shape and its place on the outgoing clip's beat grid; it moves, in
+    // whole beats, when the end of the window has moved by more than the clip itself did
+    if (loopMembers.length > 0) {
+      const wanted = same ? 0 : w1.start + w1.length - (f.start + f.length);
+      const k = Math.round((wanted - (from1.start - f.from.start)) / beatOf(from1, w1.start + w1.length));
+      let delta = 0;
+      if (k !== 0) {
+        const at = from1.start + loopMembers[0].start;
+        const beats = clipBeats(from1);
+        if (beats.length >= 2) {
+          const map = beatMap(beats);
+          delta = Math.round(map.time(map.pos(at) + k)) - at;
+        } else delta = Math.round(k * beatOf(from1, w1.start + w1.length));
+      }
+      for (const p of loopMembers) {
+        const start = Math.min(Math.max(0, p.start + delta), Math.max(0, from1.length - p.length));
+        put(f.from.id, rescaleProcess({ ...p, start }, p.length));
+      }
     }
   }
 

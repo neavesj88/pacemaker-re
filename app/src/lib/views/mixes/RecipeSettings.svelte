@@ -1,13 +1,19 @@
 <script lang="ts">
   // The auto-transition settings: which recipe the Auto buttons build, how long, where a hard cut
   // falls, and what happens to tools of yours that are in the way. Remembered between sessions.
-  import { RECIPES, SECTION_REACH, lengthLabel, nearestLength, recipeDef, requestedBars, sectionEdgeWords, type RecipeId } from "$lib/state/transitionRecipes";
-  import type { CutAt, ConflictPolicy, CrossfadePlace, OnMove, SectionEdge } from "$lib/state/transitionRecipes";
+  import { LOOP_BEATS, LOOP_REPEATS, LOOP_SHORTEST, RECIPES, SECTION_REACH, lengthLabel, loopLengthLabel, nearestLength, recipeDef, requestedBars, sectionEdgeWords, type RecipeId } from "$lib/state/transitionRecipes";
+  import type { CutAt, ConflictPolicy, CrossfadePlace, LoopOutStart, OnMove, SectionEdge } from "$lib/state/transitionRecipes";
   import { recipePrefs } from "./recipePrefs.svelte";
 
   const p = $derived(recipePrefs.value);
   const def = $derived(recipeDef(p.recipe));
   const effective = $derived(requestedBars(p.recipe, p));
+  /** The loop lengths of a loop cut, longest first, as the settings will play them. */
+  const cutSteps = $derived.by(() => {
+    const out: number[] = [];
+    for (let l = p.loopCutBeats; l >= p.loopCutShortest - 1e-9; l /= 2) out.push(l);
+    return out;
+  });
 </script>
 
 <div class="field">
@@ -42,6 +48,59 @@
     <option value="end">At the end (incoming held back until the last beat)</option>
     <option value="start">At the start (incoming plays from the first beat)</option>
   </select>
+</div>
+<div class="field">
+  <label for="rs-lo-len">Loop out: loop length</label>
+  <select id="rs-lo-len" value={String(p.loopOutBeats)} onchange={(e) => recipePrefs.set({ loopOutBeats: Number(e.currentTarget.value) })}>
+    {#each LOOP_BEATS as n (n)}<option value={String(n)}>{loopLengthLabel(n)}</option>{/each}
+  </select>
+</div>
+<div class="field">
+  <label for="rs-lo-at">Loop out: starts</label>
+  <select id="rs-lo-at" value={p.loopOutStart} onchange={(e) => recipePrefs.set({ loopOutStart: e.currentTarget.value as LoopOutStart })}>
+    <option value="start">At the start of the overlap</option>
+    <option value="middle">In the middle of the overlap</option>
+  </select>
+</div>
+<div class="muted small">
+  Loop out repeats {loopLengthLabel(p.loopOutBeats)} of the outgoing track on its beat grid, from {p.loopOutStart === "start" ? "the start" : "the middle"} of the overlap until the crossfade has finished with it. A loop that does not fit twice is made shorter.
+</div>
+<div class="field">
+  <label for="rs-lc-len">Loop cut: first loop</label>
+  <select id="rs-lc-len" value={String(p.loopCutBeats)} onchange={(e) => recipePrefs.set({ loopCutBeats: Number(e.currentTarget.value) })}>
+    {#each LOOP_BEATS as n (n)}<option value={String(n)}>{loopLengthLabel(n)}</option>{/each}
+  </select>
+</div>
+<div class="field">
+  <label for="rs-lc-min">Loop cut: shortest loop</label>
+  <select id="rs-lc-min" value={String(p.loopCutShortest)} onchange={(e) => recipePrefs.set({ loopCutShortest: Number(e.currentTarget.value) })}>
+    {#each LOOP_SHORTEST as n (n)}<option value={String(n)}>{loopLengthLabel(n)}</option>{/each}
+  </select>
+</div>
+<div class="field">
+  <label for="rs-lc-rep">Loop cut: times each length</label>
+  <input
+    id="rs-lc-rep"
+    type="number"
+    min={LOOP_REPEATS.min}
+    max={LOOP_REPEATS.max}
+    step="1"
+    value={p.loopCutRepeats}
+    onchange={(e) => {
+      recipePrefs.set({ loopCutRepeats: e.currentTarget.valueAsNumber });
+      e.currentTarget.value = String(recipePrefs.value.loopCutRepeats);
+    }}
+  />
+</div>
+<div class="field">
+  <label for="rs-lc-rise">Loop cut: rising filter</label>
+  <select id="rs-lc-rise" value={p.loopCutRising ? "on" : "off"} onchange={(e) => recipePrefs.set({ loopCutRising: e.currentTarget.value === "on" })}>
+    <option value="off">Off</option>
+    <option value="on">On: a high-pass rises over the loops</option>
+  </select>
+</div>
+<div class="muted small">
+  Loop cut plays {cutSteps.map(loopLengthLabel).join(", then ")}, {p.loopCutRepeats === 1 ? "once" : `${p.loopCutRepeats} times`} each, one straight after the other, so the last one ends where the incoming track drops in. Each loop starts on the outgoing track's beat grid. If they do not all fit in the overlap, the longest are left out.
 </div>
 <div class="field">
   <label for="rs-way">Tools in the way</label>

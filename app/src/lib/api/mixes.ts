@@ -347,8 +347,10 @@ export type BeatmatchSuggestion = {
 /** A tool to add to a clip as part of a suggestion. */
 export type ToolSuggestion = {
   clipId: string;
-  tool: ToolDoc;
-  /** Existing EQ tools of that clip overlapping it; the user decides (replace / skip). */
+  /** A tool; a recipe's loops (Loop out, Loop cut) are loops. */
+  tool: ProcessDoc;
+  /** Existing EQ tools of that clip overlapping it (for a loop: loops, reverses and ignores
+   * overlapping it); the user decides (replace / skip). */
   conflicts: string[];
 };
 

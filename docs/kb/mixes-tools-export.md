@@ -24,13 +24,13 @@ A **tool** is an effect, loop or region applied to part of one clip. Select a cl
 | Filter | A high-pass or low-pass sweep. Control: Cut-off from -100 to +100 |
 | EQ | High, Mid and Low |
 | Trans | Chops the clip on and off in eighth notes from the start of the block, at a gate tempo you set (0 follows the clip's tempo). It has no curves. Not offered until you tick "Offer the Trans tool when adding a tool" in the mix panel, because its file layout has **not been checked on a real Pacemaker** |
-| Loop | Repeats a piece of the clip. You set Repeats, and "repeat again" |
+| Loop | Repeats a piece of the clip. You set Repeats, and "repeat again". The Loop out and Loop cut transition recipes make loops like this for you (Crossfades, tempo and Match all) |
 | Reverse | Plays the region backwards |
 | Ignore | Marks a region to be skipped |
 
 Every effect parameter has a curve. Click the curve to add a node, drag to move it, right-click a node (or select it and press Delete) to remove it. The first and last node stay at the ends of the block. **Reset** returns a curve to its neutral value, and the **muted/on** box switches the tool off without deleting it.
 
-Two tools of the same kind cannot overlap on one clip (saving is refused until you fix it).
+Two tools of the same kind cannot overlap on one clip (saving is refused until you fix it). In the preview and the audio export a loop's joins are softened over about a millisecond and a half so a repeat does not click; the saved file is not changed by that.
 
 ### The Vocal tool
 

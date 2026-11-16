@@ -15,9 +15,9 @@
 // low-pass, positive = high-pass, |v| < 0.5 = off; Echo/Roll `Wet/Dry` in percent; Roll/Echo
 // `Time ` = 2^d beats. They were measured against our own mixer, not the Editor, so they stay
 // hypotheses until a mix is heard on the device.
-import type { Clip, CurveNode, EnvNode, MixDoc, ToolDoc, ToolSuggestion, TransitionSuggestion } from "../api/mixes";
+import type { Clip, CurveNode, EnvNode, LoopDoc, MixDoc, ProcessDoc, ToolDoc, ToolSuggestion, TransitionSuggestion } from "../api/mixes";
 
-export type RecipeId = "bassSwap" | "longBlend" | "echoOut" | "filterSweep" | "dropSwap" | "hardCut";
+export type RecipeId = "bassSwap" | "longBlend" | "echoOut" | "filterSweep" | "dropSwap" | "hardCut" | "loopOut" | "loopCut";
 /** Where a hard cut falls inside its window. */
 export type CutAt = "start" | "end";
 /** Where an automatic crossfade sits: "end" = it ends with the outgoing clip, "start" = at the
@@ -94,6 +94,22 @@ export const RECIPES: RecipeDef[] = [
     lengths: [0.25, 0.5, 1, 2, 4, 8],
     bars: 8,
   },
+  {
+    id: "loopOut",
+    label: "Loop out",
+    summary: "The outgoing track loops a short slice on the beat while the incoming track comes in over it; the basses trade places in the middle.",
+    makes: ["Linear crossfade", "Loop on the outgoing clip, from its start or middle of the overlap to the end", "EQ on the outgoing clip: bass cut at the middle", "EQ on the incoming clip: bass in at the middle"],
+    lengths: [2, 4, 8, 16],
+    bars: 8,
+  },
+  {
+    id: "loopCut",
+    label: "Loop cut",
+    summary: "The outgoing track loops a bar, then half of it, then half again, down to a quarter of a beat, and the incoming track drops in at the end.",
+    makes: ["Crossfade held, then a hard step at the end", "Loops on the outgoing clip, one after another, each half as long as the one before", "Optional: rising high-pass on the outgoing clip"],
+    lengths: [2, 4, 8, 16],
+    bars: 4,
+  },
 ];
 
 export const RECIPE_IDS: RecipeId[] = RECIPES.map((r) => r.id);
@@ -110,8 +126,9 @@ export function lengthLabel(bars: number): string {
     const beats = Math.round(bars * 4);
     return `${beats} beat${beats === 1 ? "" : "s"}`;
   }
-  const t = Number.isInteger(bars) ? String(bars) : bars.toFixed(1);
-  return `${t} bar${bars === 1 ? "" : "s"}`;
+  // a length worked out from samples is rarely exact: 14.98 bars reads as 15 bars
+  const r = Math.round(bars * 10) / 10;
+  return `${Number.isInteger(r) ? r : r.toFixed(1)} bar${r === 1 ? "" : "s"}`;
 }
 
 /** The offered length of `recipe` nearest to `bars` (by ratio). */
@@ -151,7 +168,35 @@ export type RecipePrefs = {
   sectionReachBars: number;
   /** What a crossfade and the tools a transition placed do when a clip moves. */
   onMove: OnMove;
+  /** Loop out: how long the looped slice is, in beats. */
+  loopOutBeats: number;
+  /** Loop out: where the loop begins inside the overlap. */
+  loopOutStart: LoopOutStart;
+  /** Loop cut: the first (longest) loop, in beats; each next one is half as long. */
+  loopCutBeats: number;
+  /** Loop cut: the shortest loop, in beats. */
+  loopCutShortest: number;
+  /** Loop cut: how many times each length plays. */
+  loopCutRepeats: number;
+  /** Loop cut: a high-pass rises over the loops. */
+  loopCutRising: boolean;
 };
+
+/** Where the loop of a loop out begins: with the overlap, or halfway into it. */
+export type LoopOutStart = "start" | "middle";
+export const LOOP_OUT_STARTS: LoopOutStart[] = ["start", "middle"];
+/** The loop lengths offered, in beats (4 beats = 1 bar). */
+export const LOOP_BEATS = [1, 2, 4, 8, 16, 32];
+/** The shortest loop of a loop cut that can be asked for, in beats (a thirty-second note is 0.125). */
+export const LOOP_SHORTEST = [0.125, 0.25, 0.5, 1];
+export const LOOP_REPEATS = { min: 1, max: 4 } as const;
+/** "1/4 beat", "1 beat", "2 beats", "1 bar", "4 bars". */
+export function loopLengthLabel(beats: number): string {
+  if (beats < 1) return `1/${Math.round(1 / beats)} beat`;
+  if (beats < 4) return `${beats} beat${beats === 1 ? "" : "s"}`;
+  const bars = beats / 4;
+  return `${bars} bar${bars === 1 ? "" : "s"}`;
+}
 
 /** The setting's words: "starts on a section boundary" (empty when off). */
 export function sectionEdgeWords(edge: SectionEdge): string {
@@ -161,7 +206,22 @@ export function sectionEdgeWords(edge: SectionEdge): string {
 /** The range of `sectionReachBars`. */
 export const SECTION_REACH = { min: 1, max: 32 } as const;
 
-export const DEFAULT_RECIPE_PREFS: RecipePrefs = { recipe: "bassSwap", bars: 16, placeAt: "end", cutAt: "end", onConflict: "ask", sectionEdge: "off", sectionReachBars: 8, onMove: "follow" };
+export const DEFAULT_RECIPE_PREFS: RecipePrefs = {
+  recipe: "bassSwap",
+  bars: 16,
+  placeAt: "end",
+  cutAt: "end",
+  onConflict: "ask",
+  sectionEdge: "off",
+  sectionReachBars: 8,
+  onMove: "follow",
+  loopOutBeats: 8,
+  loopOutStart: "start",
+  loopCutBeats: 4,
+  loopCutShortest: 0.25,
+  loopCutRepeats: 2,
+  loopCutRising: false,
+};
 
 /** Saved prefs merged over the defaults, ignoring anything unknown or malformed. */
 export function mergeRecipePrefs(saved: unknown): RecipePrefs {
@@ -180,6 +240,12 @@ export function mergeRecipePrefs(saved: unknown): RecipePrefs {
     out.sectionReachBars = Math.round(s.sectionReachBars);
   }
   if (typeof s.onMove === "string" && (ON_MOVES as string[]).includes(s.onMove)) out.onMove = s.onMove as OnMove;
+  if (typeof s.loopOutBeats === "number" && LOOP_BEATS.includes(s.loopOutBeats)) out.loopOutBeats = s.loopOutBeats;
+  if (typeof s.loopOutStart === "string" && (LOOP_OUT_STARTS as string[]).includes(s.loopOutStart)) out.loopOutStart = s.loopOutStart as LoopOutStart;
+  if (typeof s.loopCutBeats === "number" && LOOP_BEATS.includes(s.loopCutBeats)) out.loopCutBeats = s.loopCutBeats;
+  if (typeof s.loopCutShortest === "number" && LOOP_SHORTEST.includes(s.loopCutShortest)) out.loopCutShortest = s.loopCutShortest;
+  if (typeof s.loopCutRepeats === "number" && Number.isInteger(s.loopCutRepeats) && s.loopCutRepeats >= LOOP_REPEATS.min && s.loopCutRepeats <= LOOP_REPEATS.max) out.loopCutRepeats = s.loopCutRepeats;
+  if (typeof s.loopCutRising === "boolean") out.loopCutRising = s.loopCutRising;
   return out;
 }
 
@@ -214,10 +280,30 @@ export type Kit = {
   newTool: (type: string, start: number, length: number) => ToolDoc;
   /** Ids of the clip's tools of the same kind that overlap `tool`. */
   conflicts: (clip: Clip, tool: ToolDoc) => string[];
+  /** A loop over clip-local `[start, start + length)` repeating a slice of `slice` samples `reps`
+   * times (`length` defaults to `slice * reps`; a shorter one cuts the last repeat). */
+  newLoop: (start: number, slice: number, reps: number, length?: number) => LoopDoc;
+  /** Ids of the clip's loops, reverses and ignores that overlap `p` (a loop). */
+  regionConflicts: (clip: Clip, p: ProcessDoc) => string[];
+  /** Every beat of the clip's grid on the timeline, ascending (empty without a grid). */
+  beatsOf: (clip: Clip) => number[];
+};
+
+export type LoopSettings = Pick<RecipePrefs, "loopOutBeats" | "loopOutStart" | "loopCutBeats" | "loopCutShortest" | "loopCutRepeats" | "loopCutRising">;
+
+export const DEFAULT_LOOP_SETTINGS: LoopSettings = {
+  loopOutBeats: DEFAULT_RECIPE_PREFS.loopOutBeats,
+  loopOutStart: DEFAULT_RECIPE_PREFS.loopOutStart,
+  loopCutBeats: DEFAULT_RECIPE_PREFS.loopCutBeats,
+  loopCutShortest: DEFAULT_RECIPE_PREFS.loopCutShortest,
+  loopCutRepeats: DEFAULT_RECIPE_PREFS.loopCutRepeats,
+  loopCutRising: DEFAULT_RECIPE_PREFS.loopCutRising,
 };
 
 export type RecipeOptions = {
   cutAt: CutAt;
+  /** The loop recipes' settings (the defaults when left out). */
+  loops?: Partial<LoopSettings>;
   /** The window was moved off the backend's (onto section boundaries): its stock bass-swap tools
    * no longer fit it, so the bass swap is built here like the other recipes. */
   moved?: boolean;
@@ -270,6 +356,93 @@ function stepCurve(length: number, at: CutAt): CurveNode[] {
   return at === "start" ? curveOf([[0, 0], [r, 1], [1, 1]]) : curveOf([[0, 0], [1 - r, 0], [1, 1]]);
 }
 
+// ---------------------------------------------------------------------------------------------
+// Loops on the beat grid
+// ---------------------------------------------------------------------------------------------
+
+/** A clip's beats as a number line: `pos(time)` is the beat index with the fraction of the way to
+ * the next beat, `time(pos)` the way back. Uses the real beat times, so a grid that drifts still
+ * gives loops that start and end on its beats; past either end it carries on at the end beat's
+ * length. Needs at least two beats. */
+export type BeatMap = { pos: (time: number) => number; time: (pos: number) => number };
+
+export function beatMap(beats: number[]): BeatMap {
+  const n = beats.length;
+  const seg = (i: number) => clamp(i, 0, n - 2);
+  return {
+    time: (p) => {
+      const i = seg(Math.floor(p));
+      return beats[i] + (p - i) * (beats[i + 1] - beats[i]);
+    },
+    pos: (t) => {
+      let lo = 0;
+      let hi = n - 2;
+      while (lo < hi) {
+        const mid = (lo + hi + 1) >> 1;
+        if (beats[mid] <= t) lo = mid;
+        else hi = mid - 1;
+      }
+      return lo + (t - beats[lo]) / (beats[lo + 1] - beats[lo]);
+    },
+  };
+}
+
+/** One loop of a plan, on the timeline: from `start`, `reps` repeats of `slice` samples. */
+export type LoopStage = { start: number; slice: number; reps: number };
+
+/** Loop out: one loop from a beat of the outgoing clip to the end `end` of the window. The slice
+ * is `beats` beats long (halved until two of them fit), the last repeat is cut at the end of the
+ * window, where the crossfade has silenced the outgoing clip anyway. `null` when the window holds
+ * less than two beats from the loop's start. */
+export function planLoopOut(map: BeatMap, start: number, end: number, beats: number, at: LoopOutStart): (LoopStage & { length: number; beats: number }) | null {
+  for (const from of at === "middle" ? [(start + end) / 2, start] : [start]) {
+    const first = Math.ceil(map.pos(from) - 1e-6);
+    const room = map.pos(end) - first;
+    if (room < 2) continue;
+    let nb = beats;
+    while (nb > 1 && nb * 2 > room + 1e-6) nb /= 2;
+    const t0 = Math.round(map.time(first));
+    const slice = Math.round(map.time(first + nb)) - t0;
+    const length = Math.round(end) - t0;
+    if (slice < 1 || length < 2 * slice - 1) continue;
+    return { start: t0, slice, reps: Math.ceil(length / slice), length, beats: nb };
+  }
+  return null;
+}
+
+/** Loop cut: loops one after another on the beat grid, from `beats` beats down to `shortest`, each
+ * half as long as the one before and played `repeats` times, so the last one ends where the window
+ * does (within the shortest loop, which the shortest loop is repeated to fill). The first starts on
+ * a beat. When they do not all fit between `start` and `end` the longest are left out. Each
+ * stage starts where the one before ended, to the sample. `null` when not even one fits. */
+export function planLoopCut(map: BeatMap, start: number, end: number, beats: number, shortest: number, repeats: number): { stages: LoopStage[]; lengths: number[]; left: number } | null {
+  let lengths: number[] = [];
+  for (let l = beats; l >= shortest - 1e-9; l /= 2) lengths.push(l);
+  if (lengths.length === 0) lengths = [shortest];
+  const first = Math.ceil(map.pos(start) - 1e-6);
+  const room = map.pos(end) - first;
+  const total = (ls: number[]) => ls.reduce((a, b) => a + b, 0) * repeats;
+  const all = lengths.length;
+  while (lengths.length > 0 && total(lengths) > room + 1e-6) lengths = lengths.slice(1);
+  if (lengths.length === 0) return null;
+  const run = total(lengths);
+  const begin = Math.max(first, Math.floor(map.pos(end) - run + 1e-6));
+  // the beats left over before the end go to the last (shortest) loop as extra repeats
+  const extra = Math.max(0, Math.floor((map.pos(end) - begin - run) / lengths[lengths.length - 1] + 1e-6));
+  const stages: LoopStage[] = [];
+  let pos = begin;
+  let at = Math.round(map.time(begin));
+  lengths.forEach((l, i) => {
+    const reps = repeats + (i === lengths.length - 1 ? extra : 0);
+    // rounded down: the run then never reaches past the window it was fitted to
+    const slice = Math.max(1, Math.floor(map.time(pos + l) - map.time(pos) + 1e-6));
+    stages.push({ start: at, slice, reps });
+    at += slice * reps;
+    pos += l * reps;
+  });
+  return { stages, lengths, left: all - lengths.length };
+}
+
 /** Builds `recipe` on the geometry of `base` (a `mixAutoTransition` suggestion for the length
  * wanted). Returns a suggestion in the same shape, ready for `applyTransition`. Throws a sentence
  * for the user when the clips share less audio than the recipe can use. `doc` is the document
@@ -303,6 +476,21 @@ export function buildRecipe(doc: MixDoc, base: TransitionSuggestion, recipe: Rec
   };
   /** EQ with only Lo moving. */
   const eqLo = (clipId: string, pts: [number, number][]) => add(clipId, "EQ", 0, L, { "EQ-Lo": envelope(L, pts) });
+
+  const lp: LoopSettings = { ...DEFAULT_LOOP_SETTINGS, ...opts.loops };
+  const fromClip = doc.clips.find((c) => c.id === from);
+  if (!fromClip) throw new Error(`no clip ${from}`);
+  const addLoop = (st: LoopStage, length = st.slice * st.reps) => {
+    const loop = kit.newLoop(st.start - fromClip.start, st.slice, st.reps, length);
+    tools.push({ clipId: from, tool: loop, conflicts: kit.regionConflicts(fromClip, loop) });
+  };
+  /** The outgoing clip's beats as a number line; without a grid, even beats of the transition's own length. */
+  const beatLine = (): BeatMap => {
+    const own = kit.beatsOf(fromClip).filter((b) => Number.isFinite(b));
+    if (own.length >= 2 && own[own.length - 1] > t.start + L) return beatMap(own);
+    notes.push("no beat grid on the outgoing clip, loops placed by tempo");
+    return beatMap(Array.from({ length: Math.ceil(L / B) + 8 }, (_, i) => t.start + (i - 4) * B));
+  };
 
   let curve: CurveNode[];
   // the backend's "under a bar" note is about the bass swap's tools, which no other recipe makes
@@ -360,6 +548,30 @@ export function buildRecipe(doc: MixDoc, base: TransitionSuggestion, recipe: Rec
       curve = stepCurve(L, opts.cutAt);
       break;
     }
+    case "loopOut": {
+      curve = curveOf([[0, 0], [1, 1]]);
+      const plan = planLoopOut(beatLine(), t.start, t.start + L, lp.loopOutBeats, lp.loopOutStart);
+      if (!plan) throw new Error("There is no room to loop here: the overlap holds fewer than two beats.");
+      if (plan.beats !== lp.loopOutBeats) notes.push(`loop shortened to ${loopLengthLabel(plan.beats)} to fit`);
+      addLoop(plan, plan.length);
+      const swap = at(0.5);
+      eqLo(from, [[0, 0], [Math.max(0, swap - B), 0], [swap, LO_KILL], [last, LO_KILL]]);
+      eqLo(to, [[0, LO_KILL], [swap, LO_KILL], [Math.min(last, swap + B), 0], [last, 0]]);
+      break;
+    }
+    case "loopCut": {
+      curve = stepCurve(L, "end");
+      const plan = planLoopCut(beatLine(), t.start, t.start + L, lp.loopCutBeats, lp.loopCutShortest, lp.loopCutRepeats);
+      if (!plan) throw new Error("There is no room for a loop cut here: the overlap is shorter than one loop.");
+      if (plan.left > 0) notes.push(`longest loop${plan.left === 1 ? "" : "s"} left out to fit`);
+      for (const st of plan.stages) addLoop(st);
+      if (lp.loopCutRising) {
+        const first = plan.stages[0].start;
+        const end = t.start + L;
+        add(from, "FILTER", first - t.start, end - first, { "FILTER-CutOff": envelope(end - first, [[0, 0], [end - first, 80]]) });
+      }
+      break;
+    }
     default:
       throw new Error(`no recipe ${recipe}`);
   }
@@ -367,10 +579,26 @@ export function buildRecipe(doc: MixDoc, base: TransitionSuggestion, recipe: Rec
   return { ...base, transition: { ...t, curve }, tools, notes };
 }
 
+/** The loops of `c` that make up a loop recipe on the window `w`: the last one ends at the window's
+ * end (within `tol` samples) and each earlier one ends where the next begins, to the sample. Empty
+ * when none does. */
+export function loopRun(c: Clip, w: { start: number; end: number }, tol: number): LoopDoc[] {
+  const endOf = (p: LoopDoc) => c.start + p.start + p.length;
+  const all = c.processes.filter((p): p is LoopDoc => p.kind === "loop" && !p.bypassed && c.start + p.start >= w.start - tol && endOf(p) <= w.end + tol);
+  let cur: LoopDoc | undefined = all.filter((p) => Math.abs(endOf(p) - w.end) <= tol).sort((a, b) => endOf(b) - endOf(a))[0];
+  const run: LoopDoc[] = [];
+  while (cur && !run.includes(cur)) {
+    run.unshift(cur);
+    const first: LoopDoc = cur;
+    cur = all.find((p) => p !== first && Math.abs(endOf(p) - (c.start + first.start)) <= 2);
+  }
+  return run;
+}
+
 export type InTheWay = {
   id: string;
   clipId: string;
-  /** Effect name of the tool ("EQ", "FILTER", ...). */
+  /** Effect name of the tool ("EQ", "FILTER", ...), or "loop" / "reverse" / "ignore". */
   toolType: string;
   /** "overlaps": a tool of the same kind as one the recipe adds, in the same place. "inside": a
    * tool of the transition being rebuilt, lying within its window. */
@@ -385,9 +613,10 @@ export function toolsInTheWay(doc: MixDoc, s: TransitionSuggestion, replacing: {
   const seen = new Set<string>();
   const out: InTheWay[] = [];
   const push = (clip: Clip, p: Clip["processes"][number], why: InTheWay["why"]) => {
-    if (p.kind !== "tool" || seen.has(p.id)) return;
+    if (seen.has(p.id)) return;
     seen.add(p.id);
-    out.push({ id: p.id, clipId: clip.id, toolType: p.effects[0]?.name ?? p.toolType, why });
+    // a loop, reverse or ignore has no effect to name: its kind is the name
+    out.push({ id: p.id, clipId: clip.id, toolType: p.kind === "tool" ? (p.effects[0]?.name ?? p.toolType) : p.kind, why });
   };
   for (const ts of s.tools) {
     const clip = doc.clips.find((c) => c.id === ts.clipId);
@@ -405,6 +634,11 @@ export function toolsInTheWay(doc: MixDoc, s: TransitionSuggestion, replacing: {
       if (!clip) continue;
       for (const p of clip.processes) {
         if (p.kind === "tool" && clip.start + p.start >= lo && clip.start + p.start + p.length <= hi) push(clip, p, "inside");
+      }
+      // the loops of a loop out or loop cut (only the run that ends with the window: a loop of the
+      // user's somewhere in it is theirs)
+      if (id === replacing.between.from) {
+        for (const p of loopRun(clip, { start: replacing.start, end: replacing.start + replacing.length }, replacing.length / 8)) push(clip, p, "inside");
       }
     }
   }

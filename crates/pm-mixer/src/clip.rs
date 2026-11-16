@@ -30,6 +30,10 @@ const TOOL_RAMP: i64 = 128;
 /// Fade length at the edges of the audible window, and around ignore regions.
 const EDGE: i64 = 32;
 const IGNORE_FADE: i64 = 64;
+/// Cross-fade at a loop seam and at the end of a loop region, in samples (about 1.5 ms). At a seam
+/// the end of the slice is blended into the audio that precedes the slice start, so the first
+/// sample of the next iteration (the downbeat) is left untouched and the waveform stays continuous.
+const LOOP_FADE: i64 = 64;
 /// Table spacing of the pitch warp.
 const WARP_STEP: i64 = 256;
 
@@ -201,11 +205,18 @@ struct LoopRt {
     end: i64,
     /// Index of the root loop (whose slice is repeated).
     root: usize,
+    /// Blend the last samples into the source audio at the region end. Not when another loop of the
+    /// same slice carries on from here (a re-loop chain): that one continues the loop, so there is
+    /// nothing to hand back to.
+    fade_out: bool,
 }
 
 struct RootSlice {
     start: i64,
     len: i64,
+    /// Samples of source before `start` held in `data` (the pre-roll the seam blends in).
+    pre: i64,
+    /// `[start - pre, start + len)` of the clip's audio after tempo and key.
     data: Option<(Vec<f32>, Vec<f32>)>,
 }
 
@@ -283,7 +294,7 @@ impl ClipStream {
                 continue;
             }
             let ridx = *root_of[ri].get_or_insert_with(|| {
-                roots.push(RootSlice { start: round(root.position.start), len, data: None });
+                roots.push(RootSlice { start: round(root.position.start), len, pre: 0, data: None });
                 roots.len() - 1
             });
             let a = round(lp.position.start);
@@ -295,7 +306,14 @@ impl ClipStream {
                 _ => by_pos,
             };
             if span > 0 {
-                loops.push(LoopRt { a, end: a + span, root: ridx });
+                loops.push(LoopRt { a, end: a + span, root: ridx, fade_out: true });
+            }
+        }
+        // a loop that another loop of the same slice picks up right at its end hands over to that one
+        let starts: Vec<(i64, usize)> = loops.iter().map(|l| (l.a, l.root)).collect();
+        for l in &mut loops {
+            if starts.iter().any(|&(a, r)| r == l.root && (a - l.end).abs() <= 1) {
+                l.fade_out = false;
             }
         }
         let reverses: Vec<ReverseRt> = track
@@ -321,7 +339,7 @@ impl ClipStream {
         let mut s0 = start_local.max(0);
         for l in &loops {
             if l.end > start_local {
-                s0 = s0.min(roots[l.root].start.max(0));
+                s0 = s0.min((roots[l.root].start - LOOP_FADE).max(0));
             }
         }
         for r in &reverses {
@@ -433,14 +451,18 @@ impl ClipStream {
         self.apply_window(t0, l, r);
 
         self.cursor = t1;
-        self.base.trim(t1 - 1);
+        // keep a little behind the cursor: a loop slice about to be captured needs its pre-roll
+        self.base.trim(t1 - 1 - 2 * LOOP_FADE);
     }
 
     fn capture(&mut self, t1: i64) {
         for s in &mut self.roots {
             if s.data.is_none() && t1 > s.start && s.start >= self.base.origin {
                 self.base.ensure(s.start + s.len);
-                let (a, b) = self.base.slice(s.start, s.start + s.len);
+                // pre-roll: none at the very start of the clip's audio, and never more than a
+                // quarter of the slice, so a short slice keeps most of itself
+                s.pre = LOOP_FADE.min(s.len / 4).min(s.start - self.base.origin).max(0);
+                let (a, b) = self.base.slice(s.start - s.pre, s.start + s.len);
                 s.data = Some((a.to_vec(), b.to_vec()));
             }
         }
@@ -456,13 +478,30 @@ impl ClipStream {
     fn apply_edits(&mut self, t0: i64, l: &mut [f32], r: &mut [f32]) {
         let t1 = t0 + l.len() as i64;
         for lp in &self.loops {
-            let Some((sl, sr)) = &self.roots[lp.root].data else { continue };
-            let slen = self.roots[lp.root].len;
-            let root_start = self.roots[lp.root].start;
+            let root = &self.roots[lp.root];
+            let Some((sl, sr)) = &root.data else { continue };
+            let (slen, root_start, pre) = (root.len, root.start, root.pre);
+            let end_fade = if lp.fade_out { LOOP_FADE.min((lp.end - lp.a) / 2) } else { 0 };
             for t in lp.a.max(t0)..lp.end.min(t1) {
-                let k = (t - root_start).rem_euclid(slen) as usize;
-                l[(t - t0) as usize] = sl[k];
-                r[(t - t0) as usize] = sr[k];
+                let k = (t - root_start).rem_euclid(slen);
+                let i = (t - t0) as usize;
+                let (mut vl, mut vr) = (sl[(pre + k) as usize], sr[(pre + k) as usize]);
+                // the seam: the last `pre` samples of an iteration give way to the audio before the
+                // slice, which is what the first sample of the next iteration follows on from
+                if pre > 0 && k >= slen - pre {
+                    let j = (k - (slen - pre)) as usize;
+                    let w = (j + 1) as f32 / pre as f32;
+                    vl += (sl[j] - vl) * w;
+                    vr += (sr[j] - vr) * w;
+                }
+                // the end of the region: back to the clip's own audio, which is what follows it
+                if t >= lp.end - end_fade {
+                    let w = (t - (lp.end - end_fade) + 1) as f32 / end_fade as f32;
+                    vl += (l[i] - vl) * w;
+                    vr += (r[i] - vr) * w;
+                }
+                l[i] = vl;
+                r[i] = vr;
             }
         }
         for rv in &self.reverses {

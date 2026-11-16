@@ -75,7 +75,7 @@ const kitFor = (rp: RecipePrefs): BuildKit => ({
   effectiveBpm: E.effectiveBpm,
   recipe: (doc, base, recipe, cutAt) => {
     const aligned = alignSuggestion(doc, base, rp, (id) => sections.of(id), recipeDef(recipe).lengths[0] * 4 * base.beat);
-    return buildRecipe(doc, aligned.suggestion, recipe, { cutAt, moved: aligned.moved }, E.recipeKit);
+    return buildRecipe(doc, aligned.suggestion, recipe, { cutAt, moved: aligned.moved, loops: rp }, E.recipeKit);
   },
 });
 

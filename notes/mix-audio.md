@@ -87,6 +87,17 @@ alone and together with a 1.1x tempo change.
   of a clip is bounded by its file, `LimitSize`); `Mode`, `Offsets` and per-iteration offsets are not
   interpreted. The slice is captured when playback passes its start, so a preview that starts in the
   middle of a loop begins early enough to see it.
+  **Seams are declicked (Nov 2026, our engine only, **[H]** for the device).** The slice is captured
+  with up to 64 samples of the audio BEFORE it (`LOOP_FADE`, never more than a quarter of the slice, none
+  at the very start of the clip). In the last 64 samples of every iteration the slice tail is
+  blended linearly into that pre-roll, so the first sample of the next iteration (the downbeat) is
+  left exactly as the source and follows on continuously; at the end of a loop region the last 64
+  samples are blended back to the clip's own audio, which is what follows. A re-loop child that
+  continues a loop does not blend at the hand-over. Not a dip to zero: that would eat the kick at each restart. The
+  saved file is unchanged. What the device does at a seam is unknown. The app's Loop out / Loop cut
+  recipes (`transitionRecipes.ts`) make plain root loops (`Parent` none) one after another, each half
+  the length of the one before; several consecutive roots with different lengths have not been
+  heard on a Pacemaker (item 3 of section 10).
 - **Reverse** `[Start, Start + Length)`: the same region played backwards (sample `a + b - 1 - t`).
 - **Ignore**: muted, with 64-sample fades. **[H]** `StartPos` is not used.
 

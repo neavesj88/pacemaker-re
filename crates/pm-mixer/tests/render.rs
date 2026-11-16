@@ -637,6 +637,179 @@ fn reverse_ignore_and_loop_edit_the_clip_audio() {
     assert!((l[at(4.5) + 1000] - src[at(4.5) + 1000]).abs() < 1e-6, "audio resumes after the loop");
 }
 
+/// A root loop (not chained): `reps` repeats of `len` samples of the clip's audio, from `start`.
+fn root_loop(start: usize, len: usize, reps: u32) -> Process {
+    Process::Loop(LoopProc {
+        name: "LOOP".into(),
+        bypassed: false,
+        position: tpos(start as f64, (len * reps as usize) as f64),
+        length: len as f64,
+        iterations: reps,
+        re_loop: false,
+        mode: false,
+        parent: None,
+        offsets: vec![],
+    })
+}
+
+/// The largest step between neighbouring samples of `v[a..b]`.
+fn max_step(v: &[f32], a: usize, b: usize) -> f32 {
+    (a + 1..b).map(|i| (v[i] - v[i - 1]).abs()).fold(0.0, f32::max)
+}
+
+#[test]
+fn loop_seams_have_no_click() {
+    let d = dir("loop-seams");
+    // 1000.37 Hz is not a whole number of cycles in a 0.5 s slice, so a hard repeat jumps
+    let src = sine(1000.37, 6.0, 0.5);
+    let f = put(&d, "a.wav", &src);
+    let (start, len) = (SR, SR / 2);
+    let own = max_step(&src, 0, src.len());
+    // the same test would fail on a plain copy: that seam is a real step
+    let hard = (src[start + len - 1] - src[start]).abs();
+    assert!(hard > 3.0 * own, "the test signal must make a hard seam audible (step {hard}, own {own})");
+
+    let mut t = track(&f, src.len(), 120.0, 1.0, 0.0);
+    t.processes.push(root_loop(start, len, 3));
+    let (l, _) = render(&d, &mix_of(vec![t]), &Options::default());
+    let end = start + 3 * len;
+    assert!(max_step(&l, start - 200, end + 200) < 2.0 * own, "a seam or the region end clicks");
+    for rep in 1..3 {
+        // the fade is only the last 64 samples: the rest of every repeat is the slice, untouched
+        for k in [0usize, 1, 100, 5000, len - 100] {
+            assert!((l[start + rep * len + k] - src[start + k]).abs() < 1e-6, "repeat {rep} at {k}");
+        }
+    }
+    assert!((l[end + 500] - src[end + 500]).abs() < 1e-6, "audio resumes after the loop");
+}
+
+#[test]
+fn a_loop_that_starts_at_the_clip_start_repeats_its_slice() {
+    let d = dir("loop-at-zero");
+    let src = sine(1000.37, 3.0, 0.5);
+    let f = put(&d, "a.wav", &src);
+    let len = SR / 4;
+    let mut t = track(&f, src.len(), 120.0, 1.0, 0.0);
+    t.processes.push(root_loop(0, len, 3));
+    let (l, _) = render(&d, &mix_of(vec![t]), &Options::default());
+    // there is no audio before the clip to blend a seam with, so these seams are plain repeats
+    for rep in 1..3 {
+        for k in [0usize, 5, 3000, len - 70] {
+            assert!((l[rep * len + k] - src[k]).abs() < 1e-6, "repeat {rep} at {k}");
+        }
+    }
+    assert!((l[3 * len + 400] - src[3 * len + 400]).abs() < 1e-6);
+}
+
+#[test]
+fn loop_restart_keeps_the_transient() {
+    let d = dir("loop-transient");
+    let src = clicks(120.0, 12.0);
+    let f = put(&d, "a.wav", &src);
+    let beat = SR / 2;
+    let start = 4 * beat;
+    let mut t = track(&f, src.len(), 120.0, 1.0, 0.0);
+    t.processes.push(root_loop(start, beat, 4));
+    let (l, _) = render(&d, &mix_of(vec![t]), &Options::default());
+    // the kick at every restart is the source's kick, sample for sample: no dip fade eats it
+    for rep in 1..4 {
+        for i in 0..400 {
+            let (a, b) = (l[start + rep * beat + i], src[start + i]);
+            assert!((a - b).abs() < 1e-5, "restart {rep} sample {i}: {a} vs {b}");
+        }
+    }
+}
+
+#[test]
+fn loop_cut_stages_halve_exactly_and_stay_on_their_own_lengths() {
+    let d = dir("loop-cut");
+    let src = clicks(120.0, 30.0);
+    let f = put(&d, "a.wav", &src);
+    let beat = SR / 2;
+    // two bars down to a quarter beat, twice each, one stage right after the other
+    let lens = [4 * beat, 2 * beat, beat, beat / 2, beat / 4];
+    let run = 8 * beat;
+    let mut t = track(&f, src.len(), 120.0, 1.0, 0.0);
+    let mut at = run;
+    let mut starts = vec![];
+    for &len in &lens {
+        starts.push(at);
+        t.processes.push(root_loop(at, len, 2));
+        at += 2 * len;
+    }
+    let end = at;
+    assert_eq!(end - run, 2 * (4 + 2 + 1) * beat + 2 * (beat / 2 + beat / 4));
+    let (l, _) = render(&d, &mix_of(vec![t]), &Options::default());
+    let plain = render(&d, &mix_of(vec![track(&f, src.len(), 120.0, 1.0, 0.0)]), &Options::default()).0;
+    // nothing outside the run is touched
+    for i in (0..run - 1).chain(end..end + 2 * beat) {
+        assert!((l[i] - plain[i]).abs() < 1e-6, "sample {i} outside the run changed");
+    }
+    for (k, &len) in lens.iter().enumerate() {
+        // each stage's start is the previous stage's start plus its two repeats
+        if k > 0 {
+            assert_eq!(starts[k], starts[k - 1] + 2 * lens[k - 1]);
+        }
+        // the second repeat is the first one again, away from its fades
+        for i in 100..len.saturating_sub(100) {
+            let (a, b) = (l[starts[k] + len + i], l[starts[k] + i]);
+            assert!((a - b).abs() < 1e-5, "stage {k} (len {len}) sample {i}");
+        }
+        // and the stage plays the source from its own start
+        assert!((l[starts[k] + 5] - src[starts[k] + 5]).abs() < 1e-6);
+    }
+}
+
+#[test]
+fn a_re_loop_chain_still_follows_the_first_slice() {
+    let d = dir("loop-chain");
+    let src = sine(1000.37, 8.0, 0.5);
+    let f = put(&d, "a.wav", &src);
+    let (start, len) = (3 * SR, SR / 2);
+    let mut t = track(&f, src.len(), 120.0, 1.0, 0.0);
+    t.processes.push(root_loop(start, len, 2));
+    // the second picks up where the first ends and keeps repeating the FIRST slice
+    t.processes.push(Process::Loop(LoopProc {
+        name: "LOOP".into(),
+        bypassed: false,
+        position: tpos((start + 2 * len) as f64, (2 * len) as f64),
+        length: len as f64,
+        iterations: 2,
+        re_loop: true,
+        mode: false,
+        parent: Some(0),
+        offsets: vec![],
+    }));
+    let (l, _) = render(&d, &mix_of(vec![t]), &Options::default());
+    let own = max_step(&src, 0, src.len());
+    for k in [300usize, 4000, 20000] {
+        assert!((l[start + 2 * len + k] - src[start + k]).abs() < 1e-6, "chained loop at {k}");
+        assert!((l[start + 3 * len + k] - src[start + k]).abs() < 1e-6, "chained loop, second repeat, at {k}");
+    }
+    assert!(max_step(&l, start + 2 * len - 200, start + 2 * len + 200) < 2.0 * own, "the hand-over clicks");
+}
+
+#[test]
+fn a_window_that_starts_inside_a_loop_matches_the_full_render() {
+    let d = dir("loop-window");
+    let src = sine(1000.37, 8.0, 0.5);
+    let f = put(&d, "a.wav", &src);
+    let len = SR / 2;
+    let mut t = track(&f, src.len(), 120.0, 1.0, 0.0);
+    t.processes.push(root_loop(2 * SR, len, 4));
+    t.processes.push(root_loop(4 * SR, len / 2, 4));
+    let m = mix_of(vec![t]);
+    let (full, _) = render(&d, &m, &Options::default());
+    // starts on the pre-roll of the first loop, in the middle of it, and right at a seam
+    for from in [2.0 - 0.001, 2.75, 3.0, 4.0 + 0.5 / 4.0] {
+        let (win, _) = render(&d, &m, &Options::window_secs(from, from + 1.0));
+        let off = (from * SR as f64).round() as usize;
+        for i in 0..win.len() {
+            assert!((win[i] - full[off + i]).abs() < 1e-5, "window from {from} s differs at {i}");
+        }
+    }
+}
+
 #[test]
 fn gain_envelope_is_applied_in_db() {
     let d = dir("gain");
