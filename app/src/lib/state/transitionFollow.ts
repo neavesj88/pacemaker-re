@@ -84,9 +84,13 @@ export function followTransitions(base: MixDoc, after: MixDoc, mode: OnMove, bef
     const loopMembers = JSON.stringify(f.from.tempo) === JSON.stringify(from1.tempo) ? loopRun(f.from, w0, beat0).filter((p) => !claimed.has(p.id)) : [];
     for (const p of loopMembers) claimed.add(p.id);
 
-    // nothing moved since the gesture began: only a drag that came back needs the fade and tools
-    // put back as they were (`before` is then a followed frame of the same gesture)
-    if (!moved(f.from, from1) && !moved(f.to, to1) && before === base) continue;
+    // only an edit that moved, trimmed or retimed one of its clips re-fits it. Compared with the
+    // previous frame, not with `base`: a merged step that edits a tool, an envelope or the fade
+    // itself would otherwise be rebuilt from `base` and snap back on every frame after the first.
+    // A drag that came back still moved a clip relative to `before`, so it is restored from `base`.
+    const fromB = clipOf(before, f.from.id);
+    const toB = clipOf(before, f.to.id);
+    if (!fromB || !toB || (!moved(fromB, from1) && !moved(toB, to1))) continue;
 
     const lo0 = Math.max(f.from.visibleStart, f.to.visibleStart);
     const end0 = Math.min(f.from.visibleEnd, f.to.visibleEnd);

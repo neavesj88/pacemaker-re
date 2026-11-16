@@ -108,7 +108,8 @@ export const RECIPES: RecipeDef[] = [
     summary: "The outgoing track loops a bar, then half of it, then half again, down to a quarter of a beat, and the incoming track drops in at the end.",
     makes: ["Crossfade held, then a hard step at the end", "Loops on the outgoing clip, one after another, each half as long as the one before", "Optional: rising high-pass on the outgoing clip"],
     lengths: [2, 4, 8, 16],
-    bars: 4,
+    // the default run (1 bar down to a quarter beat, twice each) is 15.5 beats: 4 bars cannot hold it
+    bars: 8,
   },
 ];
 

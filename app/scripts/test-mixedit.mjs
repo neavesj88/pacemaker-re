@@ -2118,6 +2118,22 @@ test("follow: no overlap keeps everything, dragging back restores it exactly, th
   assert.deepEqual(eqOf(viaEarly, "b").map((p) => [p.start, p.length]), eqOf(direct, "b").map((p) => [p.start, p.length]));
 });
 
+test("follow: later frames of a merged step that edit a tool or the fade itself are kept, not rebuilt from the step's start", () => {
+  const d = followDoc(48);
+  const [eq] = eqOf(d, "b");
+  const start0 = eq.start;
+  // dragging the incoming EQ: frame one starts the step, frame two is merged into it
+  const f1 = TF.followTransitions(d, E.moveProcess(d, "b", eq.id, start0 + 2 * BAR), "follow");
+  assert.equal(eqOf(f1, "b")[0].start, start0 + 2 * BAR);
+  const f2 = TF.followTransitions(d, E.moveProcess(f1, "b", eq.id, start0 + 3 * BAR), "follow", f1);
+  assert.equal(eqOf(f2, "b")[0].start, start0 + 3 * BAR, "the second frame's move stays");
+  // dragging the fade: two frames with the same value must not jump back to the original window
+  const g1 = E.moveTransition(d, tr(d).id, 45 * BAR, 19 * BAR);
+  const g2 = TF.followTransitions(d, E.moveTransition(g1, tr(d).id, 45 * BAR, 19 * BAR), "follow", g1);
+  assert.equal(tr(g2).start, 45 * BAR);
+  assert.equal(tr(g2).length, 19 * BAR);
+});
+
 test("follow: your own tools ride with their clip, only the edge-touching ones follow", () => {
   const d = followDoc(48, "longBlend", 16, (x) => {
     const y = E.addProcess(x, "b", E.newTool("Reverb", 6 * BAR, BAR, "mine")); // floating mid-fade

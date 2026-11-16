@@ -29,7 +29,8 @@ class Toasts {
     if (import.meta.env?.DEV && wordCount(text) > TOAST_HARD) console.warn(`[toast] ${wordCount(text)} words, over the ${TOAST_HARD} limit: ${text}`);
     // text built at run time (a Rust summary) that is still too long: the first sentence, the rest in Details
     const c = condense(text);
-    const details = opts.details ?? c.details;
+    // a caller's own details must not drop the part of the text that was cut
+    const details = [c.details, opts.details].filter(Boolean).join("\n") || undefined;
     const id = this.#next++;
     this.items = addToast(this.items, { id, text: c.text, kind, details, action: opts.action, key: opts.key });
     const stay = toastMs(kind, autoMs(c.text), appearance.errorSecs);

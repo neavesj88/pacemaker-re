@@ -32,7 +32,7 @@ A recipe builds the crossfade and the tools around it in one go. Choose it in th
 | Drop swap | The outgoing track builds (bass out, rising high-pass, a beat-repeat on the last bar) and the incoming track hits at full on the last beat | 2 to 16 (8 default) |
 | Hard cut | A straight cut with no blend. The cut falls at the end of the length (a phrase is 8 bars), or at the start | one beat to 8 (8 default) |
 | Loop out | The outgoing track loops a short slice on its beat grid while the incoming track comes in over it; the basses trade places in the middle | 2 to 16 (8 default) |
-| Loop cut | The outgoing track loops a bar, then half a bar, then half again, down to a quarter of a beat, and the incoming track drops in at the end | 2 to 16 (4 default) |
+| Loop cut | The outgoing track loops a bar, then half a bar, then half again, down to a quarter of a beat, and the incoming track drops in at the end | 2 to 16 (8 default) |
 
 ### Loop out and Loop cut
 
