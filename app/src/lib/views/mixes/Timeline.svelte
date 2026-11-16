@@ -23,7 +23,7 @@
   import { toolPrefs } from "./listPrefs.svelte";
   import { followScroll } from "./followLogic";
   import { followPrefs } from "./followPrefs.svelte";
-  import { HEADER_W, PPS_MAX, PPS_MIN, SR, clamp, clipColour, envToKey, keyToEnv, laneContentW, maxScroll, packRows, rulerTicks, mmss } from "./layout";
+  import { END_ROOM, HEADER_W, PPS_MAX, PPS_MIN, SR, clamp, clipColour, envToKey, keyToEnv, laneContentW, maxScroll, packRows, rulerTicks, mmss } from "./layout";
   import { preview } from "./preview.svelte";
   import ToolBlock from "./ToolBlock.svelte";
   import { mv } from "./view.svelte";
@@ -58,7 +58,7 @@
 
   const bpm = $derived(doc.tempoBpm ?? (doc.clips[0] ? E.effectiveBpm(doc.clips[0], doc.clips[0].trimStart) : 120));
   /** Where the content ends: the mix or the playhead, whichever is later, and 45 s of room after it. */
-  const endSamples = $derived(Math.max(doc.length, mv.playhead) + 45 * SR);
+  const endSamples = $derived(Math.max(doc.length, mv.playhead) + END_ROOM);
   const contentW = $derived(laneContentW(endSamples, mv.pps, mv.viewW));
   // zooming needs it to know how far the lanes can scroll
   $effect(() => {
@@ -216,7 +216,9 @@
   // "Follow again"; the tick in the toolbar turns it off.
   $effect(() => {
     const playhead = mv.x(mv.playhead);
-    if (!preview.playing || !mv.follow || mv.followPaused) return;
+    // the ruler is held: the view stays under the pointer until it is let go (the release reads the
+    // pointer against the ruler, so a view that moved meanwhile put the playhead somewhere else)
+    if (!preview.playing || !mv.follow || mv.followPaused || mv.scrubbing) return;
     const prefs = followPrefs.value;
     untrack(() => {
       const lane = mv.viewW - HEADER_W;
@@ -241,11 +243,13 @@
     const at = (ev: PointerEvent) => Math.max(0, Math.round(mv.samples(ev.clientX - el.getBoundingClientRect().left)));
     el.setPointerCapture(e.pointerId);
     if (e.shiftKey) return markRange(e, el, at);
+    mv.scrubbing = true;
     void preview.seek(at(e));
     const move = (ev: PointerEvent) => {
       mv.playhead = at(ev);
     };
     const up = (ev: PointerEvent) => {
+      mv.scrubbing = false;
       el.removeEventListener("pointermove", move);
       el.removeEventListener("pointerup", up);
       el.removeEventListener("pointercancel", up);

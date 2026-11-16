@@ -30,3 +30,19 @@ export function playerOwnsSpace(eventHandled: boolean): boolean {
 export function spaceStopsMix(mixPlaying: boolean, view: string): boolean {
   return mixPlaying && view !== "mixes";
 }
+
+/** The button the last mouse press landed on. `:focus-visible` cannot tell mouse focus from keyboard
+ *  focus here: the browser turns it on at the first key press, which is this very Space. */
+let pressed: Element | null = null;
+if (typeof window !== "undefined") {
+  window.addEventListener("pointerdown", (e) => void (pressed = e.target instanceof Element ? e.target.closest("button, [role=button]") : null), true);
+  // Tab (either way) is the keyboard taking over the focus
+  window.addEventListener("keydown", (e) => void (e.key === "Tab" && (pressed = null)), true);
+}
+
+/** A button the mouse left focused (a toolbar button clicked a moment ago) does not want Space: the
+ *  user is playing the mix, not pressing it again. A button reached with the keyboard keeps Space
+ *  for itself. */
+export function mouseFocusedButton(el: Element | null): boolean {
+  return el !== null && el === pressed && el === document.activeElement;
+}

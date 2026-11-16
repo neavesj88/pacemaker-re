@@ -9,7 +9,7 @@ import { selection } from "$lib/state/selection.svelte";
 import { session } from "$lib/state/session.svelte";
 import { engine } from "./engine.svelte";
 import { preview } from "$lib/views/mixes/preview.svelte";
-import { playerOwnsSpace, spaceStopsMix } from "./spaceClaim";
+import { mouseFocusedButton, playerOwnsSpace, spaceStopsMix } from "./spaceClaim";
 
 /** True when the key press belongs to something being typed into. */
 function typing(t: EventTarget | null): boolean {
@@ -34,7 +34,9 @@ function overlayOpen(): boolean {
 /** Space should drive the player here: not on a control, not under an open dialog. */
 function spaceFree(t: EventTarget | null): boolean {
   if (overlayOpen()) return false;
-  return !(t instanceof Element && t.closest(OWN_SPACE));
+  if (!(t instanceof Element)) return true;
+  const own = t.closest(OWN_SPACE);
+  return !own || mouseFocusedButton(own);
 }
 
 export default function init(): Unlisten {

@@ -38,10 +38,29 @@ test("smooth: stops where the end of the content meets the right edge, then the 
   assert.equal(followScroll({ view: 1000, maxScroll: 0, stop: 0, playhead: 900, scroll: 0, prefs: smooth }), null);
 });
 
-test("smooth: a playhead off screen (a seek) is brought to the anchor in one step, either way", () => {
-  assert.equal(followScroll({ ...base, playhead: 3400, scroll: 0, prefs: smooth }), 3000);
-  assert.equal(followScroll({ ...base, playhead: 200, scroll: 3000, prefs: smooth }), 0);
-  assert.equal(followScroll({ ...base, playhead: 4900, scroll: 0, prefs: smooth }), 4500);
+test("smooth: a playhead off screen (a seek) is eased to the anchor, not jumped, and arrives", () => {
+  for (const [playhead, from, goal] of [[3400, 0, 3000], [200, 3000, 0], [4900, 0, 4000]]) {
+    let scroll = from;
+    let first = null;
+    let steps = 0;
+    for (; steps < 40; steps++) {
+      const to = followScroll({ ...base, playhead, scroll, prefs: smooth });
+      if (to === null) break;
+      if (first === null) first = Math.abs(to - scroll);
+      scroll = to;
+    }
+    assert.ok(first <= 1200, `first step is a quarter of the gap at most: ${first}`);
+    assert.ok(steps <= 20, `arrives within about 0.7 s at 30 steps a second: ${steps}`);
+    // going back stops as soon as the playhead is on screen again (it never scrolls back for a visible one)
+    if (playhead > from) assert.ok(Math.abs(scroll - goal) <= 30, `ends at the anchor: ${scroll} vs ${goal}`);
+    else assert.ok(playhead >= scroll && playhead <= scroll + 1000, `playhead back on screen: ${scroll}`);
+  }
+});
+
+test("smooth: a seek on screen to the right of the anchor does not throw the view across the screen", () => {
+  // a click at 85% of the lane (playhead 850, scroll 0): the first step is a small share of the 450 px gap
+  const to = followScroll({ ...base, playhead: 850, scroll: 0, prefs: smooth });
+  assert.ok(to > 0 && to <= 150, `eased: ${to}`);
 });
 
 test("page: the view jumps only when the playhead reaches the right edge, with no window it is lost in", () => {

@@ -1,7 +1,7 @@
 <script lang="ts">
   // The open mix: toolbar, library picker, timeline, inspector and transport, plus the keyboard.
   import { onMount, tick, untrack } from "svelte";
-  import { claimSpace } from "$lib/player/spaceClaim";
+  import { claimSpace, mouseFocusedButton } from "$lib/player/spaceClaim";
   import * as E from "$lib/state/mixedit";
   import { mixExport } from "$lib/state/mixexport.svelte";
   import { mixes } from "$lib/state/mixes.svelte";
@@ -125,7 +125,10 @@
     if ((e.target as Element | null)?.closest?.(".picker") && !(mod && (k === "z" || k === "y"))) return;
     // a dialog is open, or a button / menu item has the focus and wants Space and Enter itself
     if (document.querySelector('[role="dialog"]')) return;
-    if (k === " " && (e.target as HTMLElement | null)?.closest?.("button, a, summary, [role=menuitem]")) return;
+    if (k === " ") {
+      const own = (e.target as HTMLElement | null)?.closest?.("button, a, summary, [role=menuitem]") ?? null;
+      if (own && !mouseFocusedButton(own)) return;
+    }
     if (mod && k === "z") {
       e.preventDefault();
       if (e.shiftKey) mixes.redo();

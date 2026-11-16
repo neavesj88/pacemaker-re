@@ -19,7 +19,7 @@ import {
   type RecipeId,
 } from "$lib/state/transitionRecipes";
 import { confirm } from "./confirm.svelte";
-import { SR, mmss, toolLabel } from "./layout";
+import { END_ROOM, SR, mmss, toolLabel } from "./layout";
 import { recipePrefs } from "./recipePrefs.svelte";
 import { snapPrefs } from "./snapPrefs.svelte";
 import { vocalTools } from "./vocalTools.svelte";
@@ -135,6 +135,8 @@ export async function addTracks(ids: number[], at?: number) {
           if (Math.abs(last.visibleStart - pos) > SR) {
             moved.push(`${clipTitle(last)} at ${mmss(last.visibleStart / SR)}`);
             // show where it went: the clip is not under the playhead
+            // the timeline learns the new end only after this tick: scroll within the end it will have
+            mv.endSamples = Math.max(mv.endSamples, mixes.doc.length + END_ROOM);
             mv.scrollTo(mv.x(last.visibleStart) - mv.viewW * 0.2);
           }
           pos = last.visibleEnd;

@@ -26,7 +26,7 @@
   </select>
 </div>
 <div class="muted small">
-  Smoothly: the view stays put until the playhead has reached that spot, then scrolls a little at a time so the playhead stays there, and stops at the end of the mix. Jump a page: the view stays put until the playhead reaches the right edge, then jumps. Scrolling, zooming or dragging the timeline yourself pauses following until you press Play, click the ruler or use Follow again. The "follow playhead" tick in the mix editor (and Follow in the beat grid editor) turns following off altogether.
+  Smoothly: the view stays put until the playhead has reached that spot, then scrolls a little at a time so the playhead stays there, and stops at the end of the mix. Jump a page: the view stays put until the playhead reaches the right edge, then jumps. Scrolling or zooming the timeline yourself pauses following until you press Play, click the ruler or use Follow again. The "follow playhead" tick in the mix editor (and Follow in the beat grid editor) turns following off altogether.
 </div>
 
 <style>

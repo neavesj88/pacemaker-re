@@ -5,6 +5,8 @@ import type { CurveNode, EnvNode, KeyNode } from "$lib/api/mixes";
 
 /** Engine sample rate (same as SR in state/mixedit.ts; duplicated so this file imports no value). */
 export const SR = 44100;
+/** The empty room the timeline keeps after the end of the mix (or the playhead), samples. */
+export const END_ROOM = 45 * SR;
 
 export const PPS_MIN = 0.05;
 export const PPS_MAX = 400;

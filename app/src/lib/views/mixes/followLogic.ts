@@ -15,6 +15,10 @@ export type FollowPrefs = {
 
 export const ANCHOR_MIN = 20;
 export const ANCHOR_MAX = 80;
+/** A gap wider than this share of the view is eased (see followScroll); a smaller one is closed at once. */
+const CATCH_UP_PCT = 0.03;
+/** The share of the gap closed per step when easing; the engine reports about 30 times a second. */
+const CATCH_UP_EASE = 0.25;
 export const DEFAULT_FOLLOW_PREFS: FollowPrefs = { mode: "smooth", anchorPct: 40 };
 
 /** Saved prefs merged over the defaults, ignoring anything unknown or malformed. */
@@ -48,7 +52,7 @@ export type FollowInput = {
  * Smooth: nothing happens until the playhead reaches the anchor; from then on the view moves with
  * it, forwards only (it never scrolls back while the playhead is still on screen), and stops
  * where the end of the content meets the right edge, after which the playhead runs on to the edge.
- * A playhead off screen (a seek, or the view scrolled away) is brought to the anchor in one step.
+ * A playhead off screen (a seek, or the view scrolled away) is brought to the anchor, eased when it is far.
  * Page: the view jumps when the playhead reaches the right edge, putting it near the left edge. */
 export function followScroll(i: FollowInput): number | null {
   const { playhead, scroll, view, maxScroll, stop, prefs } = i;
@@ -64,6 +68,11 @@ export function followScroll(i: FollowInput): number | null {
     if (off) target = Math.min(want, maxScroll);
     else if (want <= scroll) return null;
     else target = Math.min(want, Math.max(stop, scroll));
+    // far from where it should be (a seek, "Follow again", a click right of the anchor): ease
+    // towards it over about half a second instead of one jump. Normal tracking is a few pixels a
+    // step and lands exactly.
+    const gap = target - scroll;
+    if (Math.abs(gap) > Math.max(view * CATCH_UP_PCT, 24 * unit)) target = scroll + gap * CATCH_UP_EASE;
   }
   // whole pixels: the browser snaps the scroll position to them anyway, and a canvas redraw is not worth less
   target = Math.round(Math.max(0, target) / unit) * unit;

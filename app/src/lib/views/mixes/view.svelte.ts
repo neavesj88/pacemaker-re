@@ -48,6 +48,8 @@ class MixView {
   /** Following is paused because the user scrolled or zoomed the timeline themselves; Play, a seek
    * or "Follow again" brings it back. */
   followPaused = $state(false);
+  /** The ruler is being pressed or dragged: following waits, so the view does not move under the pointer. */
+  scrubbing = $state(false);
   pickerOpen = $state(true);
   /** Height of the track table under the mix, px (dragged by its top edge, remembered). */
   pickerH = $state(loadPickerHeight() ?? 380);
@@ -133,6 +135,7 @@ class MixView {
   reset() {
     this.scrollLeft = 0;
     this.playhead = 0;
+    this.scrubbing = false;
     this.marked = null;
   }
 }

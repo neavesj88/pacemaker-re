@@ -21,7 +21,7 @@ Choose a track from the list at the top, or press **Edit grid** in the Inspector
 
 The big waveform shows beat lines, with bar lines (downbeats) stronger. Under it a strip shows tempo changes along the track, and an overview shows where you are. The grid card shows the BPM, the offset of the first beat, the number of beats and the tempo map.
 
-- Space plays or pauses. The wheel zooms; Shift and wheel (or dragging) scrolls. **Fit** shows the whole track and **Follow** scrolls with the playhead, smoothly by default (or a page at a time: Settings > Mixes > Following the playhead). Scrolling or zooming yourself pauses it until you play or click the waveform.
+- Space plays or pauses. The wheel zooms; Shift and wheel (or dragging) scrolls. **Fit** shows the whole track and **Follow** scrolls with the playhead, smoothly by default (or a page at a time: Settings > Mixes > Following the playhead). Scrolling or zooming yourself switches Follow off (tick it again, or stop and play, to bring it back).
 - **Metronome** clicks on every beat while you play, with a higher click on bar lines. There is a nudge control for the click if your output is late or early.
 
 ## Correcting the grid
