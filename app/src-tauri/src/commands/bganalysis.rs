@@ -14,6 +14,9 @@
 //!   presses "Run now" for it. The run reads audio from the device, makes the waveform, energy and
 //!   section results in the app's own cache, and writes the keys it finds to the device library
 //!   (the only thing written there).
+//! * A track still missing several results is read once, not once per lane: whichever of keys or
+//!   energy reaches it first makes the later results from the same decode (see
+//!   [`Real::process_fused`]). Waveforms are never folded in, so they still come first.
 //! * One worker thread, one track at a time. A job the user started (add, re-analyse, sync,
 //!   backup) holds the job lock; the worker checks it before every track and waits while it is held.
 //!   It also waits while a preview plays (setting) and while the user has paused it.
@@ -29,7 +32,7 @@
 
 pub mod queue;
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
@@ -350,6 +353,10 @@ struct Real {
     /// Set when a save was skipped because a user job holds the library: the run's results were
     /// dropped with this struct, so the caller replans and they are made again afterwards.
     deferred: bool,
+    /// Results made ahead of their lane from one read of the file (see [`Real::process_fused`]),
+    /// by kind and location with the file size they are for. The result itself is already in the
+    /// save queue of its lane; this is the outcome the lane reports when the queue reaches it.
+    made: HashMap<(Kind, String), (i64, Outcome)>,
 }
 
 impl Real {
@@ -369,6 +376,7 @@ impl Real {
             save_failed: None,
             present: None,
             deferred: false,
+            made: HashMap::new(),
         }
     }
 
@@ -479,6 +487,49 @@ impl Real {
             self.save_failed = err;
         }
     }
+
+    /// What has to be settled before any track is worked on: an earlier save that failed is tried
+    /// again (and the run stops while it fails), and a file that is not there is listed as missing.
+    fn guard(&mut self, item: &Item) -> Option<Outcome> {
+        if self.save_failed.is_some() {
+            match self.save_all() {
+                Ok(()) => self.save_failed = None,
+                Err(e) => {
+                    self.save_failed = Some(e.clone());
+                    return Some(Outcome::Later(e));
+                }
+            }
+        }
+        // a file that is not there (a drive unplugged, a file moved) is listed, but remembered as
+        // missing: the track is tried again as soon as the file is back
+        if audio_path(&self.root_path, &item.location).is_ok_and(|a| !a.is_file()) {
+            return Some(Outcome::Missing("its audio file is not there".into()));
+        }
+        None
+    }
+
+    /// The outcome of a key found (or not) in the track's audio; a key that is kept goes to the save queue.
+    fn key_outcome(&mut self, item: &Item, found: Option<key::KeyResult>) -> Outcome {
+        match found {
+            None => Outcome::NoResult("no clear key (too short, silent or atonal)".into()),
+            Some(r) if r.confidence < self.key_min_confidence => {
+                // a key was found and the floor held it back: not a failure, and not asked again until the floor changes
+                Outcome::HeldBack(format!("low confidence: {} ({:.0}%)", r.key.name(), r.confidence * 100.0))
+            }
+            Some(r) => {
+                self.pending_keys.push((item.id, r.key.name()));
+                Outcome::Done { detail: Some(format!("{} ({:.0}%)", r.key.name(), r.confidence * 100.0)) }
+            }
+        }
+    }
+
+    /// The outcome of an energy or sections measurement (`Ok` carries the words for the status line).
+    fn lane_outcome(r: Result<String, String>) -> Outcome {
+        match r {
+            Ok(m) => Outcome::Done { detail: (m != "measured").then_some(m) },
+            Err(e) => Outcome::Failed(e),
+        }
+    }
 }
 
 impl Backend for Real {
@@ -520,19 +571,14 @@ impl Backend for Real {
     }
 
     fn process(&mut self, kind: Kind, item: &Item, _settings: &Settings) -> Outcome {
-        if self.save_failed.is_some() {
-            match self.save_all() {
-                Ok(()) => self.save_failed = None,
-                Err(e) => {
-                    self.save_failed = Some(e.clone());
-                    return Outcome::Later(e);
-                }
-            }
+        if let Some(early) = self.guard(item) {
+            return early;
         }
-        // a file that is not there (a drive unplugged, a file moved) is listed, but remembered as
-        // missing: the track is tried again as soon as the file is back
-        if audio_path(&self.root_path, &item.location).is_ok_and(|a| !a.is_file()) {
-            return Outcome::Missing("its audio file is not there".into());
+        // made already, from the read of this file that served another lane
+        if let Some((size, outcome)) = self.made.remove(&(kind, item.location.clone())) {
+            if size == item.size {
+                return outcome;
+            }
         }
         let out = match kind {
             Kind::Peaks => match analysis::peaks_blocking(&self.peaks, &self.cache_dir, &self.root, &item.location, 64) {
@@ -551,28 +597,62 @@ impl Backend for Real {
                 match detected {
                     Err(_) => Outcome::Failed("the decoder crashed on this file".into()),
                     Ok(Err(e)) => Outcome::Failed(e.to_string()),
-                    Ok(Ok(None)) => Outcome::NoResult("no clear key (too short, silent or atonal)".into()),
-                    Ok(Ok(Some(r))) if r.confidence < self.key_min_confidence => {
-                        // a key was found and the floor held it back: not a failure, and not asked again until the floor changes
-                        Outcome::HeldBack(format!("low confidence: {} ({:.0}%)", r.key.name(), r.confidence * 100.0))
-                    }
-                    Ok(Ok(Some(r))) => {
-                        self.pending_keys.push((item.id, r.key.name()));
-                        Outcome::Done { detail: Some(format!("{} ({:.0}%)", r.key.name(), r.confidence * 100.0)) }
-                    }
+                    Ok(Ok(found)) => self.key_outcome(item, found),
                 }
             }
-            Kind::Energy => match self.energy.measure_one(item) {
-                Ok(m) => Outcome::Done { detail: (m != "measured").then_some(m) },
-                Err(e) => Outcome::Failed(e),
-            },
-            Kind::Sections => match self.sections.measure_one(item) {
-                Ok(m) => Outcome::Done { detail: (m != "measured").then_some(m) },
-                Err(e) => Outcome::Failed(e),
-            },
+            Kind::Energy => Self::lane_outcome(self.energy.measure_one(item)),
+            Kind::Sections => Self::lane_outcome(self.sections.measure_one(item)),
         };
         self.save_due();
         out
+    }
+
+    /// Reads the track once for every lane it is waiting in. The keys lane (or, with keys off or
+    /// done, the energy lane) is the first to reach a track that still lacks the later results,
+    /// so it decodes the file a single time and makes those too: each goes into the save queue
+    /// of its own lane, exactly as that lane would have put it, and the outcome it will report
+    /// is kept until the queue gets there. The waveform lane is left alone, so the waveforms of
+    /// the whole library still come first.
+    ///
+    /// Anything that stops the shared read (a decode error, a track over the analysis length
+    /// limit, a crash) falls back to the lane's own path, which makes the same result or the same
+    /// failure it always did.
+    fn process_fused(&mut self, kind: Kind, item: &Item, settings: &Settings, also: &[Kind]) -> Outcome {
+        let later: Vec<Kind> = also.iter().copied().filter(|k| matches!(k, Kind::Energy | Kind::Sections) && *k > kind).collect();
+        if !matches!(kind, Kind::Keys | Kind::Energy) || later.is_empty() || self.made.contains_key(&(kind, item.location.clone())) {
+            return self.process(kind, item, settings);
+        }
+        if let Some(early) = self.guard(item) {
+            return early;
+        }
+        let Ok(audio) = audio_path(&self.root_path, &item.location) else { return self.process(kind, item, settings) };
+        let decoded = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| decode::decode_limited(&audio, decode::ANALYSIS_MAX_MINUTES)));
+        let Ok(Ok(d)) = decoded else { return self.process(kind, item, settings) };
+        let crashed = || Outcome::Failed("the decoder crashed on this file".into());
+        let mut own = None;
+        for k in std::iter::once(kind).chain(later) {
+            let out = match k {
+                Kind::Keys => match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| key::detect(&d.mono, d.sample_rate))) {
+                    Ok(found) => self.key_outcome(item, found),
+                    Err(_) => crashed(),
+                },
+                Kind::Energy => match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| self.energy.measure_decoded(item, &d))) {
+                    Ok(r) => Self::lane_outcome(r),
+                    Err(_) => crashed(),
+                },
+                _ => match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| self.sections.measure_decoded(item, &d))) {
+                    Ok(r) => Self::lane_outcome(r),
+                    Err(_) => crashed(),
+                },
+            };
+            if k == kind {
+                own = Some(out);
+            } else {
+                self.made.insert((k, item.location.clone()), (item.size, out));
+            }
+        }
+        self.save_due();
+        own.unwrap_or_else(crashed)
     }
 
     fn flush(&mut self) {
@@ -690,6 +770,9 @@ pub struct Worker {
     cache_dir: PathBuf,
     peaks: Arc<PeaksState>,
     engine: Engine,
+    /// Results made ahead of their lane that are safely saved, kept between runs so a pause does
+    /// not make the lanes read those files again. Dropped whenever the plan is.
+    made: HashMap<(Kind, String), (i64, Outcome)>,
     engine_root: Option<String>,
     epoch: u64,
     /// After a key save failed: keys are left out of the plan until this time, and each failure in
@@ -702,7 +785,7 @@ pub struct Worker {
 
 impl Worker {
     pub fn new(env: Arc<dyn Env>, shared: Arc<Shared>, cfg_dir: PathBuf, cache_dir: PathBuf, peaks: Arc<PeaksState>) -> Self {
-        Worker { env, shared, cfg_dir, cache_dir, peaks, engine: Engine::default(), engine_root: None, epoch: u64::MAX, keys_hold: None, floor_seen: None, keys_fails: 0 }
+        Worker { env, shared, cfg_dir, cache_dir, peaks, engine: Engine::default(), made: HashMap::new(), engine_root: None, epoch: u64::MAX, keys_hold: None, floor_seen: None, keys_fails: 0 }
     }
 
     fn set_state(&self, stop: &Stop) {
@@ -747,6 +830,7 @@ impl Worker {
 
         if self.engine_root.as_deref() != Some(root.as_str()) {
             self.engine = Engine::new(load_failures(&self.cfg_dir, &root));
+            self.made.clear();
             self.engine_root = Some(root.clone());
             self.epoch = u64::MAX;
             let mut g = self.shared.lock();
@@ -772,7 +856,7 @@ impl Worker {
             }
         }
         if self.epoch != epoch {
-            self.engine.replan();
+            self.replan();
             self.epoch = epoch;
         }
 
@@ -790,9 +874,15 @@ impl Worker {
                 // the wait is over: the keys left out of the plan are looked for again
                 self.keys_hold = None;
                 self.engine.replan();
+                self.made.clear();
             }
         }
+        real.made = std::mem::take(&mut self.made);
         let end = self.engine.run(&run_settings, &mut real, &mut ctl);
+        // what is still held in memory dies with `real`, and so do the early results that went with it
+        if !(real.deferred || real.save_failed.is_some() || real.has_held()) {
+            self.made = std::mem::take(&mut real.made);
+        }
         if real.keys_failed {
             self.keys_fails = self.keys_fails.saturating_add(1);
             let wait = RETRY_SAVE.saturating_mul(1u32 << self.keys_fails.min(5)).min(KEY_HOLD_MAX);
@@ -803,7 +893,7 @@ impl Worker {
         if real.deferred || real.save_failed.is_some() || real.has_held() {
             // results held back (a user job, a blocked save, a stop) die with `real` while the
             // engine has already popped their tracks: find those tracks missing again
-            self.engine.replan();
+            self.replan();
         }
 
         // what the engine now holds is the truth; the list the frontend reads is rebuilt from it
@@ -822,7 +912,7 @@ impl Worker {
         if end == RunEnd::Idle {
             if let Some(e) = real.save_failed.take() {
                 // the last results could not be saved: look again, they are still missing
-                self.engine.replan();
+                self.replan();
                 end = RunEnd::Stopped(Stop::Blocked(e));
             }
         }
@@ -859,6 +949,12 @@ impl Worker {
         }
     }
 
+    /// Looks at what is missing again at the next run.
+    fn replan(&mut self) {
+        self.engine.replan();
+        self.made.clear();
+    }
+
     fn wait(&self, w: Wait) {
         let mut g = self.shared.lock();
         match w {
@@ -887,7 +983,7 @@ impl Worker {
             }
             let w = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| self.step())).unwrap_or_else(|_| {
                 // a bug must not end the queue for the rest of the session; look again shortly
-                self.engine.replan();
+                self.replan();
                 Wait::Timeout(RETRY_SAVE, tick_now(&self.shared))
             });
             self.wait(w);
@@ -1415,6 +1511,107 @@ mod tests {
         std::fs::remove_dir_all(&base).unwrap();
     }
 
+    /// The queue as it was before one read served several lanes: only `process` is forwarded.
+    struct OneLaneAtATime<'a>(&'a mut Real);
+
+    impl Backend for OneLaneAtATime<'_> {
+        fn missing(&mut self, kind: Kind) -> Result<Vec<Item>, String> {
+            self.0.missing(kind)
+        }
+        fn process(&mut self, kind: Kind, item: &Item, settings: &Settings) -> Outcome {
+            self.0.process(kind, item, settings)
+        }
+        fn flush(&mut self) {
+            self.0.flush()
+        }
+        fn file_present(&self, item: &Item) -> bool {
+            self.0.file_present(item)
+        }
+    }
+
+    struct Quiet(Vec<(Kind, i64, String)>);
+
+    impl Control for Quiet {
+        fn gate(&mut self) -> Gate {
+            Gate::Go
+        }
+        fn event(&mut self, e: Event<'_>) {
+            if let Event::Result { kind, item, outcome, .. } = e {
+                self.0.push((kind, item.id, format!("{outcome:?}")));
+            }
+        }
+    }
+
+    /// The energy or sections cache of a run with the grid stamp (the sidecar's modified time,
+    /// different in every library) left out, as text.
+    fn cache_text(base: &Path, prefix: &str) -> String {
+        fn strip(v: &mut serde_json::Value) {
+            match v {
+                serde_json::Value::Object(m) => {
+                    m.remove("grid");
+                    m.values_mut().for_each(strip);
+                }
+                serde_json::Value::Array(a) => a.iter_mut().for_each(strip),
+                _ => {}
+            }
+        }
+        let is_cache = |p: &PathBuf| p.file_name().unwrap().to_string_lossy().starts_with(prefix) && p.extension().is_some_and(|e| e == "json");
+        let file = std::fs::read_dir(base.join("cfg")).unwrap().map(|e| e.unwrap().path()).find(is_cache).expect("a cache file");
+        let mut v: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(file).unwrap()).unwrap();
+        strip(&mut v);
+        v.to_string()
+    }
+
+    #[test]
+    fn one_read_for_keys_energy_and_sections_gives_exactly_the_results_of_three_reads() {
+        // the same library twice: once the way the queue always worked, once with one read per track
+        let (base_a, vol_a, _) = library("fuse-a");
+        let (base_b, vol_b, ids) = library("fuse-b");
+        let env = TestEnv::new();
+        let settings = Settings { waveforms: false, ..Settings::default() };
+        let (mut a, mut b) = (real_for(&env, &base_a, &vol_a), real_for(&env, &base_b, &vol_b));
+        let (mut ca, mut cb) = (Quiet(Vec::new()), Quiet(Vec::new()));
+        assert_eq!(Engine::default().run(&settings, &mut OneLaneAtATime(&mut a), &mut ca), RunEnd::Idle);
+        assert_eq!(Engine::default().run(&settings, &mut b, &mut cb), RunEnd::Idle);
+        assert!(b.made.is_empty(), "every early result was handed to its lane");
+        let (mut ra, mut rb) = (ca.0.clone(), cb.0.clone());
+        ra.sort();
+        rb.sort();
+        assert_eq!(ra.len(), 12);
+        assert_eq!(ra, rb, "the same outcome for every track and lane, including the one that is not audio");
+        assert_eq!(keys_of(&vol_a), keys_of(&vol_b));
+        assert_eq!(cache_text(&base_a, "energy-"), cache_text(&base_b, "energy-"));
+        assert_eq!(cache_text(&base_a, "sections-"), cache_text(&base_b, "sections-"));
+        // the broken file still fails in each lane on its own
+        let broken: Vec<&(Kind, i64, String)> = cb.0.iter().filter(|r| r.1 == ids[2]).collect();
+        assert_eq!(broken.len(), 3);
+        assert!(broken.iter().all(|r| r.2.starts_with("Failed")), "{broken:?}");
+        std::fs::remove_dir_all(&base_a).unwrap();
+        std::fs::remove_dir_all(&base_b).unwrap();
+    }
+
+    #[test]
+    fn the_keys_lane_makes_the_later_results_from_its_own_read() {
+        let (base, vol, ids) = library("fuse-made");
+        let env = TestEnv::new();
+        let mut real = real_for(&env, &base, &vol);
+        let items = real.missing(Kind::Keys).unwrap();
+        let a = items.iter().find(|i| i.id == ids[0]).unwrap().clone();
+        let out = real.process_fused(Kind::Keys, &a, &Settings::default(), &[Kind::Energy, Kind::Sections]);
+        assert!(matches!(out, Outcome::Done { .. }), "{out:?}");
+        assert_eq!(real.made.len(), 2, "energy and sections are ready for when their lanes get here");
+        assert!(real.energy.has_pending() && real.sections.has_pending(), "and already queued to be saved");
+        // the lanes take them instead of reading the file again
+        assert!(matches!(real.process(Kind::Energy, &a, &Settings::default()), Outcome::Done { .. }));
+        assert!(matches!(real.process(Kind::Sections, &a, &Settings::default()), Outcome::Done { .. }));
+        assert!(real.made.is_empty());
+        // a track the later lanes do not hold is just a keys read
+        let b = items.iter().find(|i| i.id == ids[1]).unwrap().clone();
+        assert!(matches!(real.process_fused(Kind::Keys, &b, &Settings::default(), &[]), Outcome::Done { .. }));
+        assert!(real.made.is_empty());
+        std::fs::remove_dir_all(&base).unwrap();
+    }
+
     #[test]
     fn nothing_is_written_while_a_user_job_holds_the_library_and_the_tracks_are_redone() {
         let (base, vol, _) = library("job-flush");
@@ -1564,6 +1761,84 @@ mod tests {
         })
         .join()
         .unwrap();
+    }
+
+    /// Measurement and equality harness, not part of the normal run: makes a library from the
+    /// audio files in `PM_AUDIT_AUDIO`, runs one whole background pass, prints the time and writes
+    /// every result (keys, waveform columns, energy and section caches) to `PM_AUDIT_OUT` so two
+    /// builds can be compared with a plain diff. Run it with `--release -- --ignored --nocapture`.
+    #[test]
+    #[ignore]
+    fn audit_pass_on_real_audio() {
+        let (Ok(audio), Ok(out)) = (std::env::var("PM_AUDIT_AUDIO"), std::env::var("PM_AUDIT_OUT")) else { return };
+        let base = temp_dir("audit");
+        let vol = base.join("vol");
+        std::fs::create_dir_all(&vol).unwrap();
+        let analysis = strfile::Analysis {
+            normalize_factor: 1.0,
+            beat_start_offset: 0,
+            beats: (0..64).map(|i| strfile::Beat { pos: i * 40000, bpm: 130.0 }).collect(),
+            first_downbeat: Some(0),
+        };
+        let mut lib = Library::create(&vol).unwrap();
+        let mut files: Vec<PathBuf> = std::fs::read_dir(&audio).unwrap().map(|e| e.unwrap().path()).filter(|p| p.extension().is_some_and(|e| e == "mp3")).collect();
+        files.sort();
+        for p in &files {
+            let meta = TrackMeta { title: p.file_stem().unwrap().to_string_lossy().into_owned(), format: "MP3".into(), ..Default::default() };
+            lib.add_track(p, &meta, &analysis).unwrap();
+        }
+        drop(lib);
+        let env = TestEnv::new();
+        let (mut w, _shared) = worker(&env, &base, &vol, Settings::default());
+        let t = Instant::now();
+        let mut steps = 0;
+        loop {
+            steps += 1;
+            w.step();
+            if env.last_state() == "idle" || steps > 5 {
+                break;
+            }
+        }
+        println!("AUDIT pass: {} tracks, {:.3} s wall, state {}", files.len(), t.elapsed().as_secs_f64(), env.last_state());
+        let out = PathBuf::from(out);
+        std::fs::create_dir_all(&out).unwrap();
+        let tracks = Library::open_read_only(&vol).unwrap().tracks().unwrap();
+        let mut keys = String::new();
+        let mut waves = String::new();
+        for t in &tracks {
+            keys.push_str(&format!("{}	{}
+", t.title, t.key));
+            let audio = audio_path(&vol, &t.location).unwrap();
+            let id = format!("{}|{}", vol.display(), t.location);
+            let cols = peaks::load(&base.join("cache"), &id, peaks::stamp_of(&audio).unwrap());
+            let sum: u64 = cols.as_ref().map_or(0, |c| c.iter().flatten().fold(1469598103934665603u64, |h, &b| (h ^ b as u64).wrapping_mul(1099511628211)));
+            waves.push_str(&format!("{}	{}	{:016x}
+", t.title, cols.map_or(0, |c| c.len()), sum));
+        }
+        std::fs::write(out.join("keys.txt"), keys).unwrap();
+        std::fs::write(out.join("waves.txt"), waves).unwrap();
+        fn strip_grid(v: &mut serde_json::Value) {
+            match v {
+                serde_json::Value::Object(m) => {
+                    m.remove("grid");
+                    m.values_mut().for_each(strip_grid);
+                }
+                serde_json::Value::Array(a) => a.iter_mut().for_each(strip_grid),
+                _ => {}
+            }
+        }
+        for prefix in ["energy-", "sections-"] {
+            for e in std::fs::read_dir(base.join("cfg")).unwrap() {
+                let e = e.unwrap();
+                let name = e.file_name().to_string_lossy().into_owned();
+                if name.starts_with(prefix) && name.ends_with(".json") {
+                    let mut v: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(e.path()).unwrap()).unwrap();
+                    strip_grid(&mut v);
+                    std::fs::write(out.join(format!("{prefix}cache.json")), serde_json::to_string_pretty(&v).unwrap()).unwrap();
+                }
+            }
+        }
+        let _ = std::fs::remove_dir_all(&base);
     }
 
     #[test]

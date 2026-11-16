@@ -9,7 +9,7 @@
 //! until its file changes or the user asks for another try; that is what stops a bad file from
 //! being retried for ever, after a restart too, because the failures are kept in a file.
 
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::{BTreeMap, HashSet, VecDeque};
 use std::panic::{catch_unwind, AssertUnwindSafe};
 
 use serde::{Deserialize, Serialize};
@@ -246,6 +246,13 @@ pub trait Backend {
     fn missing(&mut self, kind: Kind) -> Result<Vec<Item>, String>;
     /// Makes the result for one track.
     fn process(&mut self, kind: Kind, item: &Item, settings: &Settings) -> Outcome;
+    /// [`Backend::process`] for a track that is also waiting in the lanes `also` (every other
+    /// lane that is switched on and still holds it). A backend that can make those results from
+    /// the same read of the file does so now, keeps them, and hands them over when the engine
+    /// gets to those lanes; one that cannot ignores `also`.
+    fn process_fused(&mut self, kind: Kind, item: &Item, settings: &Settings, _also: &[Kind]) -> Outcome {
+        self.process(kind, item, settings)
+    }
     /// Saves anything held back (called whenever a run ends, for any reason).
     fn flush(&mut self);
     /// Whether the audio file of `item` is there now. Only asked about a track that was given up
@@ -312,6 +319,8 @@ pub enum RunEnd {
 struct Lane {
     kind: Kind,
     items: VecDeque<Item>,
+    /// The locations in `items`, so "is this track also waiting in that lane" is one lookup.
+    members: HashSet<String>,
     total: usize,
     done: usize,
 }
@@ -349,7 +358,8 @@ impl Engine {
             }
             let found = b.missing(kind)?;
             let items: VecDeque<Item> = found.into_iter().filter(|i| !self.failures.skips(kind, i, || b.file_present(i))).collect();
-            self.lanes.push(Lane { kind, total: items.len(), items, done: 0 });
+            let members = items.iter().map(|i| i.location.clone()).collect();
+            self.lanes.push(Lane { kind, total: items.len(), items, members, done: 0 });
         }
         self.planned = true;
         let counts: Vec<(Kind, usize)> = self.lanes.iter().map(|l| (l.kind, l.total)).collect();
@@ -380,18 +390,21 @@ impl Engine {
             }
             // a lane whose kind has since been switched off is passed over; the caller replans
             // on a settings change anyway, this keeps a stale plan from doing unwanted work
-            let Some(lane) = self.lanes.iter_mut().find(|l| !l.items.is_empty() && settings.wants(l.kind)) else {
+            let Some(at) = self.lanes.iter().position(|l| !l.items.is_empty() && settings.wants(l.kind)) else {
                 return RunEnd::Idle;
             };
-            let kind = lane.kind;
-            let item = lane.items.front().cloned().expect("lane is not empty");
+            let kind = self.lanes[at].kind;
+            let item = self.lanes[at].items.front().cloned().expect("lane is not empty");
+            let also: Vec<Kind> = self.lanes.iter().filter(|l| l.kind != kind && settings.wants(l.kind) && l.members.contains(&item.location)).map(|l| l.kind).collect();
+            let lane = &mut self.lanes[at];
             c.event(Event::Starting { kind, done: lane.done, total: lane.total, label: &item.label });
-            let outcome = catch_unwind(AssertUnwindSafe(|| b.process(kind, &item, settings)))
+            let outcome = catch_unwind(AssertUnwindSafe(|| b.process_fused(kind, &item, settings, &also)))
                 .unwrap_or_else(|_| Outcome::Failed("the decoder crashed on this file".into()));
             if let Outcome::Later(why) = &outcome {
                 return RunEnd::Stopped(Stop::Blocked(why.clone()));
             }
             lane.items.pop_front();
+            lane.members.remove(&item.location);
             lane.done += 1;
             let (done, total) = (lane.done, lane.total);
             match &outcome {
@@ -439,11 +452,13 @@ mod tests {
         sizes: HashMap<i64, i64>,
         /// Whether every audio file is there "now" (asked only about tracks given up on as missing).
         present: bool,
+        /// What `process_fused` was told: the kind, the track and the other lanes holding it.
+        fused: Vec<(Kind, i64, Vec<Kind>)>,
     }
 
     impl Fake {
         fn new(n: i64) -> Self {
-            Fake { n, have: HashSet::new(), script: HashMap::new(), calls: Vec::new(), scans: Vec::new(), flushes: 0, sizes: HashMap::new(), present: false }
+            Fake { n, have: HashSet::new(), script: HashMap::new(), calls: Vec::new(), scans: Vec::new(), flushes: 0, sizes: HashMap::new(), present: false, fused: Vec::new() }
         }
     }
 
@@ -468,6 +483,10 @@ mod tests {
                 self.have.insert((kind, it.id));
             }
             out
+        }
+        fn process_fused(&mut self, kind: Kind, it: &Item, settings: &Settings, also: &[Kind]) -> Outcome {
+            self.fused.push((kind, it.id, also.to_vec()));
+            self.process(kind, it, settings)
         }
         fn flush(&mut self) {
             self.flushes += 1;
@@ -531,6 +550,25 @@ mod tests {
         assert_eq!(c.planned, vec![vec![(Kind::Peaks, 3), (Kind::Keys, 3), (Kind::Energy, 3), (Kind::Sections, 3)]]);
         assert_eq!(c.results[0], (Kind::Peaks, 1, 1, 3), "the strip shows 1 of 3 - waveforms");
         assert_eq!(f.flushes, 1);
+    }
+
+    #[test]
+    fn a_track_is_told_which_other_lanes_still_hold_it() {
+        // track 1 has a waveform and a key already, track 2 has nothing, track 3 was given up on for energy and sections
+        let mut f = Fake::new(3);
+        f.have.insert((Kind::Peaks, 1));
+        f.have.insert((Kind::Keys, 1));
+        let mut e = Engine::default();
+        e.failures.record(Kind::Energy, &item(3), "bad".into());
+        e.failures.record(Kind::Sections, &item(3), "bad".into());
+        assert_eq!(e.run(&all_on(), &mut f, &mut Script::unlimited()), RunEnd::Idle);
+        let told = |kind: Kind, id: i64| f.fused.iter().find(|x| x.0 == kind && x.1 == id).map(|x| x.2.clone());
+        assert_eq!(told(Kind::Peaks, 2), Some(vec![Kind::Keys, Kind::Energy, Kind::Sections]));
+        assert_eq!(told(Kind::Peaks, 3), Some(vec![Kind::Keys]), "lanes that skip the track are not named");
+        // by the time the keys lane reaches track 2, only the lanes after it still hold it
+        assert_eq!(told(Kind::Keys, 2), Some(vec![Kind::Energy, Kind::Sections]));
+        assert_eq!(told(Kind::Energy, 1), Some(vec![Kind::Sections]));
+        assert_eq!(told(Kind::Sections, 1), Some(vec![]));
     }
 
     #[test]

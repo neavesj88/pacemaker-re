@@ -455,6 +455,27 @@ fn read_grid(sidecar: &Path) -> Result<strfile::Analysis, Skip> {
 }
 
 fn measure(root: &Path, t: &TrackRef) -> Result<Measure, String> {
+    let (audio, stamp, grid) = match prepare(root, t)? {
+        Prepared::Ready { audio, stamp, grid } => (audio, stamp, grid),
+        Prepared::Settled(m) => return Ok(m),
+    };
+    let decoded = match catch_unwind(AssertUnwindSafe(|| decode::decode_limited(&audio, decode::ANALYSIS_MAX_MINUTES))) {
+        Err(_) => return Err("the decoder crashed on this file".into()),
+        Ok(Err(e)) => return Err(e.to_string()),
+        Ok(Ok(d)) => d,
+    };
+    Ok(measure_samples(&decoded, stamp, &grid))
+}
+
+/// What is known about a track before its audio is read.
+enum Prepared {
+    /// The result is already settled without decoding (no usable grid, no first downbeat).
+    Settled(Measure),
+    Ready { audio: PathBuf, stamp: Option<GridStamp>, grid: strfile::Analysis },
+}
+
+/// The checks that come before the decode: the file is there, and the beat grid is usable.
+fn prepare(root: &Path, t: &TrackRef) -> Result<Prepared, String> {
     // the same validated resolution the waveform uses: plain names below /pmdb_tracks/ only
     let (audio, sidecar) = sidecar_of(root, &t.location)?;
     if !audio.is_file() {
@@ -464,26 +485,26 @@ fn measure(root: &Path, t: &TrackRef) -> Result<Measure, String> {
     let stamp = stamp_of(&sidecar);
     let grid = match read_grid(&sidecar) {
         Ok(g) => g,
-        Err(skip) => return Ok(Measure::Skip(skip, stamp)),
+        Err(skip) => return Ok(Prepared::Settled(Measure::Skip(skip, stamp))),
     };
     if grid.first_downbeat.is_none() {
-        return Ok(Measure::Skip(Skip::NoDownbeat, stamp));
+        return Ok(Prepared::Settled(Measure::Skip(Skip::NoDownbeat, stamp)));
     }
-    let decoded = match catch_unwind(AssertUnwindSafe(|| decode::decode_limited(&audio, decode::ANALYSIS_MAX_MINUTES))) {
-        Err(_) => return Err("the decoder crashed on this file".into()),
-        Ok(Err(e)) => return Err(e.to_string()),
-        Ok(Ok(d)) => d,
-    };
+    Ok(Prepared::Ready { audio, stamp, grid })
+}
+
+/// The measurement of a decoded track against its grid.
+fn measure_samples(decoded: &decode::Decoded, stamp: Option<GridStamp>, grid: &strfile::Analysis) -> Measure {
     let sr = decoded.sample_rate.max(1) as f64;
     let duration = decoded.mono.len() as f64 / sr;
     let beat_secs: Vec<f64> = grid.beats.iter().map(|b| b.pos as f64 / sr).collect();
     let edges = match core::bar_edges(&beat_secs, grid.first_downbeat, duration) {
         Ok(e) => e,
-        Err(skip) => return Ok(Measure::Skip(skip, stamp)),
+        Err(skip) => return Measure::Skip(skip, stamp),
     };
     match core::measure(&decoded.mono, decoded.sample_rate, &edges) {
-        Ok(rows) => Ok(Measure::Done(Measured { grid: stamp, duration_secs: (duration * 1000.0).round() / 1000.0, edges: edges.iter().map(|&x| ms(x)).collect(), rows })),
-        Err(skip) => Ok(Measure::Skip(skip, stamp)),
+        Ok(rows) => Measure::Done(Measured { grid: stamp, duration_secs: (duration * 1000.0).round() / 1000.0, edges: edges.iter().map(|&x| ms(x)).collect(), rows }),
+        Err(skip) => Measure::Skip(skip, stamp),
     }
 }
 
@@ -623,14 +644,31 @@ impl Bg {
     /// is a result too (nothing to measure, not measured again until its grid changes).
     pub(crate) fn measure_one(&mut self, item: &crate::commands::bganalysis::queue::Item) -> Result<String, String> {
         let t = TrackRef { id: item.id, location: item.location.clone(), size: item.size, label: item.label.clone(), grid: GridCheck::Unchecked };
-        match measure(Path::new(&self.root), &t)? {
+        let m = measure(Path::new(&self.root), &t)?;
+        Ok(self.keep(t, m))
+    }
+
+    /// [`Bg::measure_one`] for a track the caller has already decoded (within the analysis length
+    /// limit), so one read of the file can serve several kinds of result. A track whose grid
+    /// settles the answer without any audio is answered the same way.
+    pub(crate) fn measure_decoded(&mut self, item: &crate::commands::bganalysis::queue::Item, d: &decode::Decoded) -> Result<String, String> {
+        let t = TrackRef { id: item.id, location: item.location.clone(), size: item.size, label: item.label.clone(), grid: GridCheck::Unchecked };
+        let m = match prepare(Path::new(&self.root), &t)? {
+            Prepared::Settled(m) => m,
+            Prepared::Ready { stamp, grid, .. } => measure_samples(d, stamp, &grid),
+        };
+        Ok(self.keep(t, m))
+    }
+
+    fn keep(&mut self, t: TrackRef, m: Measure) -> String {
+        match m {
             Measure::Done(m) => {
                 self.fresh.insert(t.location, Entry { size: t.size, grid: m.grid, duration_secs: m.duration_secs, edges: m.edges, rows: m.rows, skip: None });
-                Ok("measured".into())
+                "measured".into()
             }
             Measure::Skip(why, grid) => {
                 self.fresh.insert(t.location, Entry { size: t.size, grid, duration_secs: 0.0, edges: Vec::new(), rows: Vec::new(), skip: Some(why.reason().into()) });
-                Ok(why.reason().into())
+                why.reason().into()
             }
         }
     }

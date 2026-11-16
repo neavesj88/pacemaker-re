@@ -373,11 +373,21 @@ fn measure(root: &Path, t: &TrackRef) -> Result<Measure, String> {
     if !audio.is_file() {
         return Err("the audio file is missing from the library".into());
     }
-    match catch_unwind(AssertUnwindSafe(|| energy::analyze_file(&audio))) {
+    // decoded and measured as `energy::analyze_file` does, in two steps so `measure_samples` is the one place the numbers are made
+    let decoded = match catch_unwind(AssertUnwindSafe(|| pm_analysis::decode::decode_limited(&audio, pm_analysis::decode::ANALYSIS_MAX_MINUTES))) {
+        Err(_) => return Err("the decoder crashed on this file".into()),
+        Ok(Err(e)) => return Err(e.to_string()),
+        Ok(Ok(d)) => d,
+    };
+    measure_samples(&decoded)
+}
+
+/// The measurement of an already decoded track.
+fn measure_samples(d: &pm_analysis::decode::Decoded) -> Result<Measure, String> {
+    match catch_unwind(AssertUnwindSafe(|| energy::analyze(&d.mono, d.sample_rate))) {
         Err(_) => Err("the decoder crashed on this file".into()),
-        Ok(Err(e)) => Err(e.to_string()),
-        Ok(Ok(Err(skip))) => Ok(Measure::Skip(skip)),
-        Ok(Ok(Ok(f))) => Ok(Measure::Done(f.into())),
+        Ok(Err(skip)) => Ok(Measure::Skip(skip)),
+        Ok(Ok(f)) => Ok(Measure::Done(f.into())),
     }
 }
 
@@ -511,17 +521,31 @@ impl Bg {
     /// is a result too: it has no estimate and is not measured again).
     pub(crate) fn measure_one(&mut self, item: &crate::commands::bganalysis::queue::Item) -> Result<String, String> {
         let t = TrackRef { id: item.id, location: item.location.clone(), size: item.size, bpm: 0.0, analysed: false, label: item.label.clone() };
-        match measure(Path::new(&self.root), &t)? {
+        let m = measure(Path::new(&self.root), &t)?;
+        Ok(self.keep(t, m))
+    }
+
+    /// [`Bg::measure_one`] for a track the caller has already decoded (within the analysis length
+    /// limit), so one read of the file can serve several kinds of result.
+    pub(crate) fn measure_decoded(&mut self, item: &crate::commands::bganalysis::queue::Item, d: &pm_analysis::decode::Decoded) -> Result<String, String> {
+        let t = TrackRef { id: item.id, location: item.location.clone(), size: item.size, bpm: 0.0, analysed: false, label: item.label.clone() };
+        let m = measure_samples(d)?;
+        Ok(self.keep(t, m))
+    }
+
+    fn keep(&mut self, t: TrackRef, m: Measure) -> String {
+        match m {
             Measure::Done(m) => {
                 self.fresh.insert(t.location, Entry { size: t.size, measured: Some(m), skip: None });
-                Ok("measured".into())
+                "measured".into()
             }
             Measure::Skip(why) => {
                 self.fresh.insert(t.location, Entry { size: t.size, measured: None, skip: Some(why.reason().into()) });
-                Ok(why.reason().into())
+                why.reason().into()
             }
         }
     }
+
 
     /// True when results are waiting and enough of them (or enough time) has gathered to save.
     pub(crate) fn has_pending(&self) -> bool {
