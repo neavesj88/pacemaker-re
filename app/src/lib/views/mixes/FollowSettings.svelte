@@ -3,6 +3,7 @@
   // mix editor turns it on and off; this is how it behaves). The beat grid editor's Follow uses the
   // same choice. Remembered between sessions.
   import { followPrefs } from "./followPrefs.svelte";
+  import { viewPrefs } from "./viewPrefs.svelte";
   import type { FollowMode } from "./followLogic";
 
   const p = $derived(followPrefs.value);
@@ -13,6 +14,10 @@
   ];
 </script>
 
+<div class="field">
+  <span class="lbl">Following</span>
+  <label class="check"><input type="checkbox" checked={viewPrefs.value.follow} onchange={(e) => viewPrefs.set({ follow: e.currentTarget.checked })} /> scroll the timeline with the playhead while a mix plays</label>
+</div>
 <div class="field" role="radiogroup" aria-label="While a mix plays, the view">
   <span class="lbl">While playing, the view</span>
   {#each MODES as m (m.id)}
@@ -26,7 +31,7 @@
   </select>
 </div>
 <div class="muted small">
-  Smoothly: the view stays put until the playhead has reached that spot, then scrolls a little at a time so the playhead stays there, and stops at the end of the mix. Jump a page: the view stays put until the playhead reaches the right edge, then jumps. Scrolling or zooming the timeline yourself pauses following until you press Play, click the ruler or use Follow again. The "follow playhead" tick in the mix editor (and Follow in the beat grid editor) turns following off altogether.
+  Smoothly: the view stays put until the playhead has reached that spot, then scrolls a little at a time so the playhead stays there, and stops at the end of the mix. Jump a page: the view stays put until the playhead reaches the right edge, then jumps. Scrolling or zooming the timeline yourself pauses following until you press Play, click the ruler or use Follow again. The "follow playhead" tick in the mix editor (the same as the first choice here, and in the View menu) turns following off altogether; Follow in the beat grid editor has its own tick.
 </div>
 
 <style>

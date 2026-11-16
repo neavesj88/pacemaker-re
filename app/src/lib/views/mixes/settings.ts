@@ -7,6 +7,7 @@ import RecipeSettings from "./RecipeSettings.svelte";
 import SnapSettings from "./SnapSettings.svelte";
 import TempoSettings from "./TempoSettings.svelte";
 import TracklistFields from "./TracklistFields.svelte";
+import ViewSettings from "./ViewSettings.svelte";
 
 const entries: SettingsEntry[] = [
   {
@@ -28,10 +29,19 @@ const entries: SettingsEntry[] = [
     component: SnapSettings,
   },
   {
+    id: "mix-view",
+    area: "Mixes",
+    title: "Mix editor view",
+    help: "How the mix editor looks: clips that shrink as you zoom out (or stay full height), the whole-mix strip above the ruler, and the section markers on the clips. The editor's View menu has the same choices.",
+    keywords: "mix view clip height lane shrink zoom out full height whole mix strip overview minimap sections markers timeline lane size",
+    how: "inline",
+    component: ViewSettings,
+  },
+  {
     id: "mix-follow",
     area: "Mixes",
     title: "Following the playhead",
-    help: "How the timeline scrolls while a mix plays: smoothly with the playhead (the default) or a page at a time when it reaches the edge, and where the playhead sits. The beat grid editor's Follow uses it too.",
+    help: "Whether the timeline scrolls while a mix plays and how: smoothly with the playhead (the default) or a page at a time when it reaches the edge, and where the playhead sits. The beat grid editor's Follow uses it too.",
     keywords: "mix follow playhead scroll smooth page jump timeline playing auto scroll grid editor",
     how: "inline",
     component: FollowSettings,

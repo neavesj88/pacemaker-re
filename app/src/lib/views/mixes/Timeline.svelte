@@ -23,10 +23,13 @@
   import { toolPrefs } from "./listPrefs.svelte";
   import { followScroll } from "./followLogic";
   import { followPrefs } from "./followPrefs.svelte";
-  import { END_ROOM, HEADER_W, PPS_MAX, PPS_MIN, SR, clamp, clipColour, envToKey, keyToEnv, laneContentW, maxScroll, packRows, rulerTicks, mmss } from "./layout";
+  import { END_ROOM, HEADER_W, PPS_MAX, PPS_MIN, SR, clamp, clipBarHeight, clipColour, envToKey, keyToEnv, laneContentW, maxScroll, packRows, rulerTicks, mmss } from "./layout";
+  import OverviewStrip from "./OverviewStrip.svelte";
+  import { OVERVIEW_H } from "./overview";
   import { preview } from "./preview.svelte";
   import ToolBlock from "./ToolBlock.svelte";
   import { mv } from "./view.svelte";
+  import { viewPrefs } from "./viewPrefs.svelte";
 
   let { ondelete }: { ondelete: () => void } = $props();
 
@@ -85,9 +88,18 @@
   });
   const fxH = $derived(fx.count * (FX_ROW + 2) + 8);
   let viewH = $state(0);
-  const fxLaneH = $derived(Math.max(FX_MIN, fxH));
-  const BAR_H = $derived(Math.min(BAR_MAX, Math.max(BAR_MIN, viewH - RULER_H - fxLaneH - 2)));
+  /** What the tool strip needs; it also takes the pane's room that a shortened bar leaves (below). */
+  const fxNeed = $derived(Math.max(FX_MIN, fxH));
+  /** The height the bar has zoomed in: what the pane has left. */
+  const BAR_FULL = $derived(Math.min(BAR_MAX, Math.max(BAR_MIN, viewH - RULER_H - fxNeed - 2)));
+  /** Zoomed out the bar gets shorter (View > Clip height), so everything on and in it follows this one number. */
+  const BAR_H = $derived(clipBarHeight(mv.pps, BAR_FULL, viewPrefs.value.clipHeight));
   const LANE_H = $derived(BAR_H - PAD * 2);
+  /** The room a shortened bar frees goes to the tool strip (more rows of tools show without scrolling). */
+  const fxLaneH = $derived(Math.max(fxNeed, viewH - RULER_H - BAR_H - 2));
+  const ovH = $derived(viewPrefs.value.overview ? OVERVIEW_H : 0);
+  /** The width the vertical scrollbar takes from the lanes (the strip above ends where they end). */
+  let sbW = $state(0);
   const conflicts = $derived.by(() => {
     const out = new Set<string>();
     for (const c of doc.clips) {
@@ -167,6 +179,7 @@
     const size = () => {
       mv.viewW = s.clientWidth;
       viewH = s.clientHeight;
+      sbW = s.offsetWidth - s.clientWidth;
     };
     const ro = new ResizeObserver(size);
     ro.observe(s);
@@ -418,8 +431,9 @@
 </script>
 
 <div class="timeline" bind:this={root}>
+  {#if ovH > 0}<OverviewStrip height={ovH} inset={sbW} />{/if}
   <!-- svelte-ignore a11y_no_static_element_interactions -->
-  <div class="scroller" bind:this={scroller} {onscroll}>
+  <div class="scroller" bind:this={scroller} {onscroll} style:top="{ovH}px">
     <div class="inner" style:width="{HEADER_W + contentW}px">
       <!-- ruler -->
       <div class="row ruler" style:height="{RULER_H}px">
@@ -476,7 +490,7 @@
               {#if inView(g.start, g.end)}
                 {@const gw = Math.max(30, mv.x(g.end - g.start))}
                 <div class="ghost" style:left="{mv.x(g.start)}px" style:width="{Math.max(30, mv.x(g.end - g.start))}px" style:height="{LANE_H}px">
-                  <div class="ghostbtns" class:compact={gw < 110}>
+                  <div class="ghostbtns" class:compact={gw < 110} class:short={LANE_H < 80 && gw >= 110}>
                     <button
                       title="Add a crossfade over the overlap of “{clipTitle(g.from)}” and “{clipTitle(g.to)}”"
                       onclick={() => mixes.addTransition(g.from.id, g.to.id, g.start, g.end - g.start)}>{gw < 110 ? "+" : "+ crossfade"}</button
@@ -826,6 +840,10 @@
     max-width: 100%;
   }
   /* a narrow overlap (zoomed far out) shows a symbol, so the words cannot spill over the clip names */
+  .ghostbtns.short {
+    flex-direction: row;
+    gap: 4px;
+  }
   .ghostbtns.compact button {
     padding: 2px 5px;
   }

@@ -3,7 +3,7 @@ id: mixes-building
 title: Building a mix
 topic: Mixes
 order: 1
-keywords: mix, mixes, mix editor, timeline, clip, track table, add tracks, drag, playhead, snap, zoom, follow, scroll, double-click, cue, play, preview, live play, save, save as, undo, pmk, import, setlist, track list, cue sheet, mix tempo, unsaved
+keywords: view menu, clip height, whole mix strip, overview, shrink, mix, mixes, mix editor, timeline, clip, track table, add tracks, drag, playhead, snap, zoom, follow, scroll, double-click, cue, play, preview, live play, save, save as, undo, pmk, import, setlist, track list, cue sheet, mix tempo, unsaved
 summary: Make a mix from the track table under the timeline, move and trim clips, play it live, and save it.
 ---
 
@@ -37,7 +37,12 @@ Tracks are matched to the mix tempo as they are added if that setting is on: see
 - **Snap** (tick box, on by default) lines a clip up with its neighbour's beat grid when you drag it over, or up against, another clip: downbeat on downbeat for Bar, phrase start on phrase start for Phrase, any beat for Beat. The box next to it chooses Beat, Bar (the default), Phrase (8 bars) or Section (where detected sections begin). Hold **Alt** while dragging to move freely. Both choices are remembered. A green line shows the beat it lined up on.
 - **Beat-align** (toolbar, the clip panel, and the right-click menu) does the same in one step for the selected clip, or for the incoming clip of a selected crossfade, and Undo puts it back. It moves the clip to the nearest place where the grids agree and does not change its tempo, so use **Match all** first when the tempos differ. A clip whose track has no beat grid is not moved; the message says so.
 - **Zoom** and **Fit** change the scale. Ctrl and the wheel zooms at the pointer; zooming never leaves a clip without its waveform. Shift and the wheel scrolls sideways.
-- The **sections** tick draws the detected sections on the clips.
+- **View** (toolbar) holds how the timeline looks. Each choice is changed live and remembered, and is also in **Settings > Mixes > Mix editor view**:
+  - **Clip height**: *Shrinks as you zoom out* (the default) makes the clips as tall as the window allows when zoomed in and shorter as you zoom out, down to a height where the name, the section labels and the crossfades can still be read; the room it frees goes to the tools strip. The waveform is drawn the same way, just shorter. *Always full height* keeps the zoomed-in height at every zoom.
+  - **Whole-mix strip** (on by default): a thin strip above the ruler that always shows the whole mix, with every clip in its colour, the overlaps and the playhead, and a box over the part shown below. Click in the strip to centre the view there; drag the box to scroll; the box gets narrower as you zoom in. Using it counts as scrolling yourself, so it pauses following (see below). Turn it off to give its height back to the clips.
+  - **Sections on the clips**: draws the detected sections on the clips.
+  - **Follow the playhead while playing**, and whether it follows *Smoothly* or *A page at a time* (the same as the tick in the transport and Settings > Mixes > Following the playhead).
+  Snap, Curves and Beat-align stay in the toolbar, because they change the mix rather than the view.
 - **Curves** (Gain, Tempo, Key) draw one kind of envelope over the bar so you can edit it: click on the selected clip to add a node, drag to move it, right-click to remove it.
 - Click a clip, a crossfade or a tool block to see its panel on the right. With nothing selected, the panel is the mix itself: name, mix tempo, genre and comments.
 

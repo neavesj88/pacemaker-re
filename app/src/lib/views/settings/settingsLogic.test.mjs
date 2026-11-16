@@ -107,6 +107,8 @@ const PREF_ENTRIES = {
   "pm.mixes.tempo.v1": "mix-tempo",
   "pm.mixes.snap.v1": "mix-snap",
   "pm.mixes.follow.v1": "mix-follow",
+  "pm.mixes.view.v1": "mix-view",
+  "pm.mixes.sectionMarkers.v1": "mix-view",
   "pm.setbuilder.prefs.v1": "set-builder",
   "pacemaker-revival.setlist.v1": "setlist-print",
   "pacemaker-revival.vdj.v1": "virtualdj-export",
@@ -125,7 +127,6 @@ const VIEW_STATE = {
   "pm.cases.view.v1": "the case table's columns and sort, and the last choice in the merge dialog",
   "pm.mixes.list.v1": "how the mix list is sorted and filtered",
   "pm.mixes.tools.v1": "whether transitions are shown in the mix editor",
-  "pm.mixes.sectionMarkers.v1": "whether section markers are drawn on clips",
   "pm.mixes.picker.v1": "the Mix tab's track table: its columns, their widths and its sort",
   "pm.cases.picker.v1": "the case Add tracks table: its columns, their widths and its sort",
   "pm.mixes.pickerHeight.v1": "how tall the Mix tab's track table is",
@@ -228,4 +229,13 @@ test("Settings search finds the playhead-following setting by what a person woul
   const field = (name) => new RegExp(`${name}: "([^"]*)"`).exec(block)?.[1] ?? "";
   const entry = e("mix-follow", field("area"), field("title"), field("help"), field("keywords"));
   for (const q of ["follow", "follow playhead", "scroll", "smooth", "jump", "mixes playhead", "page"]) assert.equal(matches(entry, q), true, q);
+});
+
+test("Settings search finds the mix editor view options by what a person would type", () => {
+  const src = readFileSync(join(views, "mixes", "settings.ts"), "utf8");
+  const block = /id: "mix-view",[\s\S]*?\n  \},/.exec(src)?.[0];
+  assert.ok(block, "the mix-view entry exists");
+  const field = (name) => new RegExp(`${name}: "([^"]*)"`).exec(block)?.[1] ?? "";
+  const entry = e("mix-view", field("area"), field("title"), field("help"), field("keywords"));
+  for (const q of ["clip height", "shrink", "zoom out", "whole mix", "strip", "overview", "full height", "sections", "mixes view"]) assert.equal(matches(entry, q), true, q);
 });

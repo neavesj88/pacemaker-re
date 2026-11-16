@@ -5,8 +5,7 @@
   import * as E from "$lib/state/mixedit";
   import { mixExport } from "$lib/state/mixexport.svelte";
   import { mixes } from "$lib/state/mixes.svelte";
-  import { sections } from "$lib/state/sections.svelte";
-  import { tracklist } from "$lib/state/tracklist.svelte";
+    import { tracklist } from "$lib/state/tracklist.svelte";
   import { toast } from "$lib/state/toast.svelte";
   import Button from "$lib/ui/Button.svelte";
   import { beatAlign, describe, clipTitle, duplicateSelection, errText, pasteAtPlayhead } from "./actions";
@@ -20,6 +19,9 @@
   import { preview } from "./preview.svelte";
   import MixPicker from "./MixPicker.svelte";
   import Timeline from "./Timeline.svelte";
+  import { OVERVIEW_H } from "./overview";
+  import ViewMenu from "./ViewMenu.svelte";
+  import { viewPrefs } from "./viewPrefs.svelte";
   import { stretchText } from "$lib/state/tempoMatch";
   import { mv, type EnvOverlay } from "./view.svelte";
   import { setlist } from "../setlist/setlist.svelte";
@@ -276,9 +278,6 @@
       </select>
     </span>
     <Button small disabled={doc.clips.length < 2} onclick={() => beatAlign()} title="Move the selected clip (or, with a crossfade selected, its incoming clip) to the nearest place where its beat grid lines up with the audible part of its neighbour's, at the grain chosen here (a phrase after the neighbour ends does not count). Its tempo does not change. A clip without a beat grid is not moved. Undo puts it back.">Beat-align</Button>
-    <label class="ctl follow" title={sections.showMarkers ? "Draw the detected sections (intro, build, drop, breakdown, outro) on the clips. Clips of tracks without sections show nothing." : "Turned off in the Sections panel's settings (show markers on waveforms)"}>
-      <input type="checkbox" checked={mv.sectionMarkers && sections.showMarkers} disabled={!sections.showMarkers} onchange={(e) => mv.setSectionMarkers(e.currentTarget.checked)} /> sections
-    </label>
     <span class="ctl">Curves
       <span class="segs">
         {#each OVERLAYS as o (o.id)}
@@ -286,6 +285,7 @@
         {/each}
       </span>
     </span>
+    <ViewMenu />
     <Button small active={mv.pickerOpen} onclick={() => (mv.pickerOpen = !mv.pickerOpen)} title="Show or hide the track table under the mix">Tracks</Button>
     <div class="acts">
       {#if mixes.problems.length > 0}
@@ -322,7 +322,7 @@
 
   <div class="body">
     <div class="left">
-      <div class="tl" bind:this={tlEl}><Timeline ondelete={requestDelete} /></div>
+      <div class="tl" bind:this={tlEl} style:--ov="{viewPrefs.value.overview ? OVERVIEW_H : 0}px"><Timeline ondelete={requestDelete} /></div>
 
       <div class="transport">
         <Button aria-label="Back to start" onclick={() => { void preview.seek(0); mv.scrollLeft = 0; }}>⏮</Button>
@@ -469,7 +469,8 @@
   .tl {
     flex: 1 1 0;
     min-width: 0;
-    min-height: 250px;
+    /* the whole-mix strip (--ov) is above the timeline's scrolling lanes: it adds to what they need */
+    min-height: calc(250px + var(--ov, 0px));
   }
   .transport {
     display: flex;
@@ -549,7 +550,7 @@
     /* the timeline keeps room for its ruler, the clips and the Tools lane (about 235 px); the
        picker gives way to it (its filters float, its Add bar stays) */
     .tl {
-      min-height: 240px;
+      min-height: calc(240px + var(--ov, 0px));
     }
     .left :global(.picker) {
       min-height: 170px;

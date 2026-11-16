@@ -2,6 +2,7 @@
 // panels and lanes are open, tracks waiting to be added. The document and its undo history are in
 // state/mixes.svelte.ts; this file never edits a document.
 import { session } from "$lib/state/session.svelte";
+import { viewPrefs } from "./viewPrefs.svelte";
 import { HEADER_W, PPS_MAX, PPS_MIN, SR, clamp, fromPx, maxScroll, toPx, zoomScroll } from "./layout";
 
 /** Which envelope is drawn over the clips of the bar (one at a time, so the lines never fight). */
@@ -43,8 +44,13 @@ class MixView {
   endSamples = $state(0);
   /** Playhead, timeline samples. */
   playhead = $state(0);
-  /** Keep the playhead in view while playing. */
-  follow = $state(true);
+  /** Keep the playhead in view while playing (a View option, remembered). */
+  get follow() {
+    return viewPrefs.value.follow;
+  }
+  set follow(on: boolean) {
+    viewPrefs.set({ follow: on });
+  }
   /** Following is paused because the user scrolled or zoomed the timeline themselves; Play, a seek
    * or "Follow again" brings it back. */
   followPaused = $state(false);
