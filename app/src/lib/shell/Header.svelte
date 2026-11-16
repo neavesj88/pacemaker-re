@@ -21,6 +21,21 @@
   );
   const current = $derived(options.find((o) => session.attached && sameRoot(o.value, session.attached.root))?.value ?? "");
 
+  // The search runs once per animation frame at most. Each change of the box filters the whole
+  // library, which on a slow machine with a big one takes longer than a keystroke: the keys that
+  // arrive meanwhile are now answered by one filter, not one each. On a fast machine every
+  // keystroke still gets its own frame, so nothing is delayed.
+  let typed = "";
+  let frame = 0;
+  function search(e: Event & { currentTarget: HTMLInputElement }) {
+    typed = e.currentTarget.value;
+    if (frame) return;
+    frame = requestAnimationFrame(() => {
+      frame = 0;
+      filters.query = typed;
+    });
+  }
+
   async function pick(select: HTMLSelectElement) {
     const value = select.value;
     // keep showing the open library until the switch really happens (a question may stop it)
@@ -70,7 +85,8 @@
       class="search"
       placeholder="Search, or bpm:120-128 key:~8A tag:peak"
       title="Words match the title, artist, album, genre, key, comments, label, remixer, composer, year and tags. Fields, ranges, -not and OR work too: see the ? in the Tracks toolbar."
-      bind:value={filters.query}
+      value={filters.query}
+      oninput={search}
     />
   {/if}
 </header>
