@@ -34,6 +34,14 @@ A thin strip under the views shows what is happening: a line of text, the track 
 - **While a Sync plan is on screen.** A key written now would change a row the plan was made from, and Sync would refuse the plan as out of date. It carries on when the plan is applied or cleared. This is also a setting.
 - When you press Pause. It stays paused until you press Resume.
 
+## How much of the computer it uses
+
+The defaults follow the computer. How many tracks are analysed at once depends on the number of processors and the free memory: on a computer with two processors, two tracks at a time, otherwise one fewer than the processors, up to a limit. The same count is used for Add tracks, the beat grid batch and the duplicate check. Energy and sections have their own **Tracks analysed at once** setting if you want to pin it.
+
+On a computer with four processors or fewer, **Analyse at low priority** is on by default, and it applies to analysis you start yourself (Add tracks, energy, sections, duplicates, grids) as well as the background worker. That keeps the app responsive on a small machine; results are the same, only slower while the computer is busy.
+
+**When the computer is on battery** can keep going (the default), slow down or wait. Slowing down puts both the background worker and any analysis you start while on battery at low priority. Waiting applies to the background worker only; analysis you start yourself runs anyway.
+
 ## Held back keys
 
 A detected key comes with a confidence score. Background analysis has its own **confidence floor** (per cent, 0 to 100). A key found below it is **not written**. The track is listed as "a key held back by the confidence floor", and it is looked at again as soon as you lower the floor. 0 writes every result. The floor for the manual Key detection has its own, separate setting.

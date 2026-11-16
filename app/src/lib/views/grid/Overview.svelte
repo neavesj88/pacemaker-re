@@ -5,6 +5,7 @@
   import { sectionAt, sectionTitle } from "../analysis/sectionLogic";
   import { bandsOver, clamp, isDownbeat } from "./gridMath";
   import { appearance } from "$lib/state/appearance.svelte";
+  import { displayScale } from "$lib/state/displayScale.svelte";
   import { bitmapSize, fitBitmap } from "./layers";
 
   // The whole track in one strip: the visible window of the main waveform is the lit rectangle;
@@ -58,7 +59,7 @@
     const W = width;
     void appearance.waveBands;
     if (!c || W === 0) return;
-    const dpr = window.devicePixelRatio || 1;
+    const dpr = displayScale.ratio; // read here so a change of screen scale rebuilds the layer
     layer ??= document.createElement("canvas");
     const [bw, bh] = bitmapSize(W, height, dpr);
     fitBitmap(layer, bw, bh);

@@ -3,6 +3,7 @@
   import { bandsOver, clamp, fmtTime, isDownbeat, lowerBound, tickStep } from "./gridMath";
   import { driftClass, hitBeat } from "./vtempoLogic";
   import { appearance } from "$lib/state/appearance.svelte";
+  import { displayScale } from "$lib/state/displayScale.svelte";
   import { bitmapSize, fitBitmap } from "./layers";
 
   // Zoomable colour waveform with beat lines. Low band pink, mid lilac, high green; bar lines
@@ -140,7 +141,7 @@
     void appearance.waveBands; // the colours come from CSS variables that follow this
     if (!c || W === 0 || pps === 0) return;
     const H = height;
-    const dpr = window.devicePixelRatio || 1;
+    const dpr = displayScale.ratio; // read here so a change of screen scale rebuilds the layer
     layer ??= document.createElement("canvas");
     const [bw, bh] = bitmapSize(W, H, dpr);
     fitBitmap(layer, bw, bh);

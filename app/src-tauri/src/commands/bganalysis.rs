@@ -46,7 +46,7 @@ use self::queue::{Backend, Control, Engine, Event, Failure, Failures, Gate, Item
 use super::analysis::{self, audio_path, energy, sections, PeaksState};
 use super::library::kind::{library_kind, PACEMAKER};
 use crate::error::{AppError, AppResult};
-use crate::machine::{set_jobs_low_priority, set_thread_low_priority};
+use crate::machine::{set_jobs_low_priority, set_jobs_slow_on_battery, set_thread_low_priority};
 use crate::state::{JobLock, WriteTicket};
 use crate::store::config_dir;
 
@@ -1024,6 +1024,7 @@ pub fn setup(app: &mut tauri::App) {
     };
     let settings = load_settings(&cfg_dir);
     set_jobs_low_priority(settings.low_priority);
+    set_jobs_slow_on_battery(settings.on_battery == OnBattery::Slow);
     let shared = Arc::new(Shared::new(settings));
     app.manage(shared.clone());
     let peaks = app.state::<Arc<PeaksState>>().inner().clone();
@@ -1052,6 +1053,7 @@ pub fn bganalysis_get(shared: State<'_, Arc<Shared>>) -> View {
 pub fn bganalysis_save_settings(app: AppHandle, shared: State<'_, Arc<Shared>>, settings: Settings) -> AppResult<Settings> {
     save_settings(&config_dir(&app)?, &settings)?;
     set_jobs_low_priority(settings.low_priority);
+    set_jobs_slow_on_battery(settings.on_battery == OnBattery::Slow);
     shared.change(true, |g| g.settings = settings);
     Ok(settings)
 }
@@ -1677,19 +1679,21 @@ mod tests {
     fn a_failing_key_save_does_not_stop_the_energy_lane() {
         let (base, vol, _) = library("keyhold");
         let env = TestEnv::new();
-        let s = Settings { waveforms: false, sections: false, ..Settings::default() };
-        let (mut w, _) = worker(&env, &base, &vol, s);
+        // first only the keys lane is on, so the refused save always comes before any energy work
+        // and the timing of the key batching (3 s or 10 keys) cannot change what is measured
+        let s = Settings { waveforms: false, energy: false, sections: false, ..Settings::default() };
+        let (mut w, shared) = worker(&env, &base, &vol, s);
         env.refuse.store(true, Ordering::SeqCst);
         w.step();
         assert_eq!(env.last_state(), "blocked");
         assert!(w.keys_hold.is_some());
         let energy_events = || env.changed.lock().unwrap().iter().filter(|c| matches!(c, Changed::Energy { .. })).count();
-        // still refused, still inside the wait: keys are skipped, energy gets its turn. How far
-        // the first step got before the save was refused depends on how fast the machine is (a
-        // key save is only tried after 3 s or 10 keys), so the check is on the outcome: by now
-        // the energy results exist and were saved, and not one key was written
+        assert_eq!(energy_events(), 0, "no energy was made yet");
+        // energy is switched on while the keys wait out the refused save: the second step must
+        // make and save energy results, and still not write one key
+        shared.change(true, |g| g.settings.energy = true);
         w.step();
-        assert!(energy_events() > 0, "energy was made and saved while the keys could not be");
+        assert!(energy_events() > 0, "energy ran while keys waited");
         assert_eq!(keys_of(&vol), vec!["", "", "", ""]);
         std::fs::remove_dir_all(&base).unwrap();
     }

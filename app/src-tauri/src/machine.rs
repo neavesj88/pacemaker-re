@@ -113,9 +113,17 @@ pub fn set_jobs_low_priority(low: bool) {
     JOBS_LOW_PRIORITY.store(low, Ordering::Relaxed);
 }
 
+/// "On battery: slow down" is chosen: job threads started while the computer runs on its
+/// battery are below normal priority too, the same as the background worker.
+static JOBS_SLOW_ON_BATTERY: AtomicBool = AtomicBool::new(false);
+
+pub fn set_jobs_slow_on_battery(slow: bool) {
+    JOBS_SLOW_ON_BATTERY.store(slow, Ordering::Relaxed);
+}
+
 /// Called first thing by a thread of a user-started analysis job.
 pub fn job_thread_start() {
-    if JOBS_LOW_PRIORITY.load(Ordering::Relaxed) {
+    if JOBS_LOW_PRIORITY.load(Ordering::Relaxed) || (JOBS_SLOW_ON_BATTERY.load(Ordering::Relaxed) && on_battery()) {
         set_thread_low_priority(true);
     }
 }

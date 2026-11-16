@@ -103,7 +103,11 @@ const MAX_RESERVE: u64 = 1 << 28;
 
 /// How many samples to reserve for a track the container says is `stated` frames long, and
 /// whether the claim alone is enough to refuse it as too long (see [`TOO_LONG_CLAIM_FACTOR`]).
-fn plan_capacity(stated: Option<u64>, sample_rate: u32, limit_minutes: Option<u32>) -> (usize, bool) {
+///
+/// The reservation is also held to an eighth of the free memory (`free_mb`), so several workers
+/// decoding files whose headers overstate their length cannot commit more than half of it between
+/// them; a track longer than that still decodes, the buffer just grows as it goes.
+fn plan_capacity(stated: Option<u64>, sample_rate: u32, limit_minutes: Option<u32>, free_mb: Option<u64>) -> (usize, bool) {
     let Some(frames) = stated else { return (0, false) };
     let limit = limit_minutes.map(|m| u64::from(m) * 60 * u64::from(sample_rate));
     if limit.is_some_and(|l| frames > l.saturating_mul(TOO_LONG_CLAIM_FACTOR)) {
@@ -111,7 +115,8 @@ fn plan_capacity(stated: Option<u64>, sample_rate: u32, limit_minutes: Option<u3
     }
     // a little slack: a decoder can return a few thousand samples more than the header counts
     let want = frames.saturating_add(frames / 64).saturating_add(16_384);
-    let cap = limit.map_or(MAX_RESERVE, |l| l.saturating_add(l / 64).saturating_add(16_384).min(MAX_RESERVE));
+    let by_ram = free_mb.map_or(MAX_RESERVE, |mb| mb.saturating_mul(1024 * 1024) / (4 * 8));
+    let cap = limit.map_or(MAX_RESERVE, |l| l.saturating_add(l / 64).saturating_add(16_384).min(MAX_RESERVE)).min(by_ram);
     (want.min(cap).min(MAX_RESERVE) as usize, false)
 }
 
@@ -152,7 +157,7 @@ fn decode_inner(path: &Path, limit_minutes: Option<u32>) -> Result<Decoded, Erro
     let sample_rate = params.sample_rate.ok_or(Error::NoSampleRate)?;
     let track_id = track.id;
     let stated_frames = track.num_frames;
-    let (reserve, too_long_up_front) = plan_capacity(stated_frames, sample_rate, limit_minutes);
+    let (reserve, too_long_up_front) = plan_capacity(stated_frames, sample_rate, limit_minutes, crate::workers::free_ram_mb());
     if let (true, Some(m)) = (too_long_up_front, limit_minutes) {
         return Err(Error::TooLong { limit_minutes: m });
     }
@@ -232,18 +237,21 @@ mod tests {
 
     #[test]
     fn the_reservation_follows_the_stated_length_and_is_capped() {
-        assert_eq!(plan_capacity(None, 44100, None), (0, false));
-        assert_eq!(plan_capacity(Some(1000), 44100, None), (1000 + 15 + 16_384, false));
+        assert_eq!(plan_capacity(None, 44100, None, None), (0, false));
+        assert_eq!(plan_capacity(Some(1000), 44100, None, None), (1000 + 15 + 16_384, false));
         // a lying header cannot reserve gigabytes
-        assert_eq!(plan_capacity(Some(u64::MAX / 4), 44100, None), (MAX_RESERVE as usize, false));
+        assert_eq!(plan_capacity(Some(u64::MAX / 4), 44100, None, None), (MAX_RESERVE as usize, false));
         // with a limit the reservation stops at the limit (plus slack)
         let limit = 60 * 60 * 44100u64;
-        let (r, refuse) = plan_capacity(Some(limit + 1), 44100, Some(60));
+        let (r, refuse) = plan_capacity(Some(limit + 1), 44100, Some(60), None);
         assert!(!refuse && r as u64 <= limit + limit / 64 + 16_384, "{r}");
         // a header far over the limit is refused without decoding; one just over is not
-        assert_eq!(plan_capacity(Some(limit * 2 + 1), 44100, Some(60)), (0, true));
-        assert_eq!(plan_capacity(Some(limit * 2), 44100, Some(60)).1, false);
-        assert!(!plan_capacity(Some(limit * 3), 44100, None).1, "no limit, nothing refused");
+        assert_eq!(plan_capacity(Some(limit * 2 + 1), 44100, Some(60), None), (0, true));
+        assert_eq!(plan_capacity(Some(limit * 2), 44100, Some(60), None).1, false);
+        assert!(!plan_capacity(Some(limit * 3), 44100, None, None).1, "no limit, nothing refused");
+        // little free memory holds the reservation down (2 GB free: 64 Msamples, 256 MB), without refusing
+        assert_eq!(plan_capacity(Some(limit), 44100, Some(60), Some(2048)), (64 << 20, false));
+        assert_eq!(plan_capacity(Some(1000), 44100, None, Some(2048)), (1000 + 15 + 16_384, false), "a short track is unaffected");
     }
 
     #[test]

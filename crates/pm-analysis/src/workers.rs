@@ -46,10 +46,15 @@ pub fn thread_start() {
     }
 }
 
+/// Free memory in MB right now, when the app registered a way to ask the system.
+pub fn free_ram_mb() -> Option<u64> {
+    RAM_PROBE.get().and_then(|p| p())
+}
+
 /// [`auto_workers`] for this computer, right now.
 pub fn analysis_workers() -> usize {
     let cores = std::thread::available_parallelism().map_or(2, usize::from);
-    auto_workers(cores, RAM_PROBE.get().and_then(|p| p()))
+    auto_workers(cores, free_ram_mb())
 }
 
 #[cfg(test)]

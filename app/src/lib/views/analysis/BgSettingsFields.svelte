@@ -78,7 +78,7 @@
       <option value="slow">Slow down (low priority)</option>
       <option value="pause">Wait until it is plugged in</option>
     </select>
-    <small class="muted">A big library takes hours of processor time, which is battery. Waiting picks the work up again as soon as the computer is plugged in. A computer with no battery is never affected.</small>
+    <small class="muted">A big library takes hours of processor time, which is battery. Slowing down also applies to analysis you start yourself (energy, sections, duplicates, grids, Add tracks) while on battery. Waiting picks the work up again as soon as the computer is plugged in. A computer with no battery is never affected.</small>
   </span>
 </div>
 

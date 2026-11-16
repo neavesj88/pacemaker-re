@@ -2,6 +2,7 @@
   import { driftClass, gapBpms } from "./vtempoLogic";
   import { lowerBound } from "./gridMath";
   import { appearance } from "$lib/state/appearance.svelte";
+  import { displayScale } from "$lib/state/displayScale.svelte";
   import { bitmapSize, fitBitmap } from "./layers";
 
   // Two strips under the waveform, on the same time axis (same viewStart / pxPerSec): the tempo
@@ -79,7 +80,7 @@
     void appearance.waveBands;
     if (!c || W === 0 || pps === 0) return;
     const H = height;
-    const dpr = window.devicePixelRatio || 1;
+    const dpr = displayScale.ratio; // read here so a change of screen scale rebuilds the layer
     layer ??= document.createElement("canvas");
     const [bw, bh] = bitmapSize(W, H, dpr);
     fitBitmap(layer, bw, bh);
