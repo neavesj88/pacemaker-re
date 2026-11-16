@@ -6,11 +6,6 @@
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
-/// Logical processors the system reports (2 when it does not say).
-pub fn logical_cores() -> usize {
-    std::thread::available_parallelism().map_or(2, usize::from)
-}
-
 /// Memory that can be used without making the system swap, in MB. None when the system does not say.
 #[cfg(windows)]
 pub fn available_ram_mb() -> Option<u64> {
@@ -84,15 +79,24 @@ pub fn register() {
     pm_analysis::workers::set_thread_start_hook(job_thread_start);
 }
 
+thread_local! {
+    /// What this thread was last set to, so asking again for the same costs nothing.
+    static THREAD_LOW: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
 /// Puts the calling thread below normal priority (or back to normal). Windows only for now; the
 /// other systems keep the thread as it is.
 #[cfg(windows)]
 pub fn set_thread_low_priority(low: bool) {
     use windows::Win32::System::Threading::{GetCurrentThread, SetThreadPriority, THREAD_PRIORITY_BELOW_NORMAL, THREAD_PRIORITY_NORMAL};
+    if THREAD_LOW.get() == low {
+        return;
+    }
     // SAFETY: the pseudo handle of the calling thread is always valid.
     let r = unsafe { SetThreadPriority(GetCurrentThread(), if low { THREAD_PRIORITY_BELOW_NORMAL } else { THREAD_PRIORITY_NORMAL }) };
-    if let Err(e) = r {
-        eprintln!("machine: could not change the thread priority: {e}");
+    match r {
+        Ok(()) => THREAD_LOW.set(low),
+        Err(e) => eprintln!("machine: could not change the thread priority: {e}"),
     }
 }
 
@@ -131,7 +135,6 @@ mod tests {
 
     #[test]
     fn this_computer_gives_sane_answers() {
-        assert!(logical_cores() >= 1);
         register();
         assert!((1..=pm_analysis::workers::MAX_AUTO_WORKERS).contains(&analysis_workers()));
         let _ = on_battery();

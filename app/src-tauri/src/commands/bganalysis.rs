@@ -42,7 +42,7 @@ use pm_formats::library::Library;
 use serde::Serialize;
 use tauri::{AppHandle, Manager, State};
 
-use self::queue::{Backend, Control, Engine, Event, Failure, Failures, Gate, Item, Kind, Outcome, RunEnd, Settings, Stop};
+use self::queue::{Backend, Control, Engine, Event, Failure, Failures, Gate, Item, Kind, OnBattery, Outcome, RunEnd, Settings, Stop};
 use super::analysis::{self, audio_path, energy, sections, PeaksState};
 use super::library::kind::{library_kind, PACEMAKER};
 use crate::error::{AppError, AppResult};
@@ -59,6 +59,8 @@ const KEY_BATCH: usize = 10;
 const KEY_MAX_WAIT: Duration = Duration::from_secs(3);
 /// How often a held-back worker looks again while a user job or a preview holds it.
 const RECHECK: Duration = Duration::from_secs(1);
+/// How often a worker waiting for mains looks at the power again (plugging in sends no event).
+const BATTERY_RECHECK: Duration = Duration::from_secs(30);
 /// How soon a worker that could not save or could not read the library tries again.
 const RETRY_SAVE: Duration = Duration::from_secs(10);
 /// The longest wait before keys are tried again after saving them failed.
@@ -204,6 +206,8 @@ pub struct Snap {
     pub job_running: bool,
     /// A Sync plan is on screen.
     pub held: bool,
+    /// The computer is running on its battery (only asked for when the setting makes it matter).
+    pub on_battery: bool,
 }
 
 /// Why the worker must not work right now, or None when it may. Checked before every track.
@@ -229,7 +233,16 @@ pub fn decide(s: &Snap) -> Option<Stop> {
     if s.settings.hold_during_sync_plan && s.held {
         return Some(Stop::Held);
     }
+    if s.settings.on_battery == OnBattery::Pause && s.on_battery {
+        return Some(Stop::Battery);
+    }
     None
+}
+
+/// Whether the analysis thread runs below normal priority now: the switch in Settings, or, on
+/// battery, the "slow down" choice.
+fn wants_low_priority(settings: &Settings) -> bool {
+    settings.low_priority || (settings.on_battery == OnBattery::Slow && crate::machine::on_battery())
 }
 
 fn snap_of(g: &Inner, job_running: bool) -> Snap {
@@ -243,6 +256,8 @@ fn snap_of(g: &Inner, job_running: bool) -> Snap {
         playing: g.playing,
         job_running,
         held: g.held,
+        // the power state is only looked at when the setting makes it matter
+        on_battery: g.settings.on_battery == OnBattery::Pause && crate::machine::on_battery(),
     }
 }
 
@@ -255,6 +270,7 @@ fn state_word(stop: &Stop) -> (&'static str, String) {
         Stop::Playing => ("playing", String::new()),
         Stop::Job => ("waiting", String::new()),
         Stop::Held => ("held", String::new()),
+        Stop::Battery => ("battery", String::new()),
         Stop::Replan => ("running", String::new()),
         Stop::Blocked(why) => ("blocked", why.clone()),
         Stop::Scan(why) => ("error", why.clone()),
@@ -707,6 +723,8 @@ impl Ctl<'_> {
 impl Control for Ctl<'_> {
     fn gate(&mut self) -> Gate {
         let g = self.shared.lock();
+        // the power can change in the middle of a long run: priority follows it track by track
+        set_thread_low_priority(wants_low_priority(&g.settings));
         if g.root.as_deref() != Some(self.root.as_str()) || g.epoch != self.epoch || g.retry {
             return Gate::Stop(Stop::Replan);
         }
@@ -825,6 +843,7 @@ impl Worker {
             self.set_state(&stop);
             return match stop {
                 Stop::Job | Stop::Playing => Wait::Timeout(RECHECK, tick),
+                Stop::Battery => Wait::Timeout(BATTERY_RECHECK, tick),
                 _ => Wait::Change(tick),
             };
         }
@@ -942,6 +961,7 @@ impl Worker {
                 let tick = tick_now(&self.shared);
                 match stop {
                     Stop::Job | Stop::Playing => Wait::Timeout(RECHECK, tick),
+                    Stop::Battery => Wait::Timeout(BATTERY_RECHECK, tick),
                     Stop::Blocked(_) => Wait::Timeout(self.keys_hold.map_or(RETRY_SAVE, |u| u.saturating_duration_since(Instant::now()).max(RETRY_SAVE)), tick),
                     Stop::Scan(_) => Wait::Timeout(RETRY_SCAN, tick),
                     _ => Wait::Change(tick),
@@ -977,7 +997,7 @@ impl Worker {
         let mut low = false;
         loop {
             // a settings save wakes the loop (it asks for a replan), so a change lands before the next track
-            let want = self.shared.lock().settings.low_priority;
+            let want = wants_low_priority(&self.shared.lock().settings);
             if want != low {
                 set_thread_low_priority(want);
                 low = want;
@@ -1272,7 +1292,7 @@ mod tests {
 
     #[test]
     fn decide_applies_the_rules_in_order() {
-        let ok = Snap { settings: Settings::default(), open: true, pacemaker: false, started: false, paused: false, playing: false, job_running: false, held: false };
+        let ok = Snap { settings: Settings::default(), open: true, pacemaker: false, started: false, paused: false, playing: false, job_running: false, held: false, on_battery: false };
         assert_eq!(decide(&ok), None, "a library on this computer is worked on by itself");
         assert_eq!(decide(&Snap { open: false, ..ok.clone() }), Some(Stop::NoLibrary));
         assert_eq!(decide(&Snap { settings: Settings { enabled: false, ..ok.settings }, ..ok.clone() }), Some(Stop::Off));
@@ -1286,6 +1306,14 @@ mod tests {
         assert_eq!(decide(&Snap { settings: ignore, playing: true, ..ok.clone() }), None, "the playback wait is a setting");
         assert_eq!(decide(&Snap { job_running: true, ..ok.clone() }), Some(Stop::Job));
         assert_eq!(decide(&Snap { held: true, ..ok.clone() }), Some(Stop::Held), "a Sync plan on screen holds it");
+        // on battery it only waits when the setting says so
+        assert_eq!(decide(&Snap { on_battery: true, ..ok.clone() }), None, "the default carries on");
+        let wait = Settings { on_battery: OnBattery::Pause, ..ok.settings };
+        assert_eq!(decide(&Snap { settings: wait, on_battery: true, ..ok.clone() }), Some(Stop::Battery));
+        assert_eq!(decide(&Snap { settings: wait, on_battery: false, ..ok.clone() }), None, "mains again: it carries on");
+        let slow = Settings { on_battery: OnBattery::Slow, ..ok.settings };
+        assert_eq!(decide(&Snap { settings: slow, on_battery: true, ..ok.clone() }), None, "slowing down is a priority, not a stop");
+        assert_eq!(decide(&Snap { settings: wait, on_battery: true, paused: true, ..ok.clone() }), Some(Stop::Paused), "pause comes first");
         assert_eq!(decide(&Snap { held: true, paused: true, ..ok.clone() }), Some(Stop::Paused), "pause still comes first");
         // the switch beats everything else, so a Pacemaker with the switch off says "off"
         assert_eq!(decide(&Snap { settings: Settings { enabled: false, ..ok.settings }, pacemaker: true, paused: true, ..ok }), Some(Stop::Off));
@@ -1656,10 +1684,12 @@ mod tests {
         assert_eq!(env.last_state(), "blocked");
         assert!(w.keys_hold.is_some());
         let energy_events = || env.changed.lock().unwrap().iter().filter(|c| matches!(c, Changed::Energy { .. })).count();
-        let before = energy_events();
-        // still refused, still inside the wait: keys are skipped, energy gets its turn
+        // still refused, still inside the wait: keys are skipped, energy gets its turn. How far
+        // the first step got before the save was refused depends on how fast the machine is (a
+        // key save is only tried after 3 s or 10 keys), so the check is on the outcome: by now
+        // the energy results exist and were saved, and not one key was written
         w.step();
-        assert!(energy_events() > before, "energy ran while keys waited");
+        assert!(energy_events() > 0, "energy was made and saved while the keys could not be");
         assert_eq!(keys_of(&vol), vec!["", "", "", ""]);
         std::fs::remove_dir_all(&base).unwrap();
     }

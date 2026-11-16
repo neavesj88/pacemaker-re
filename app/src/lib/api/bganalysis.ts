@@ -20,9 +20,13 @@ export type BgSettings = {
   key_min_confidence_pct: number;
   /** Analyse below normal priority so everything else gets the processor first. */
   low_priority: boolean;
+  /** On battery: carry on, carry on below normal priority, or wait until plugged in. */
+  on_battery: BgOnBattery;
 };
 
-export type BgState = "no-library" | "off" | "manual" | "paused" | "playing" | "waiting" | "held" | "running" | "idle" | "blocked" | "error";
+export type BgOnBattery = "keep" | "slow" | "pause";
+
+export type BgState = "no-library" | "off" | "manual" | "paused" | "playing" | "waiting" | "held" | "battery" | "running" | "idle" | "blocked" | "error";
 
 export type BgStatus = {
   state: BgState;

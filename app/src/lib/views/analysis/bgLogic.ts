@@ -19,6 +19,7 @@ export function stripVisible(s: BgStatus): boolean {
     case "playing":
     case "waiting":
     case "held":
+    case "battery":
       return s.left > 0;
     default:
       return false;
@@ -39,6 +40,8 @@ export function waitingNote(s: BgStatus, pending = 0): string | null {
       return "Analysis waiting for your job";
     case "held":
       return "Analysis waiting for the Sync plan";
+    case "battery":
+      return "Analysis waiting for mains power";
     case "paused":
       return "Analysis paused";
     default:
@@ -60,6 +63,8 @@ export function statusLine(s: BgStatus): string {
       return `Background analysis waits for the job you started${more}`;
     case "held":
       return `Background analysis waits while a Sync plan is on screen${more}`;
+    case "battery":
+      return `Background analysis waits until the computer is plugged in${more}`;
     case "blocked":
       return `Background analysis is held up: ${s.detail || "a result could not be saved"}. It tries again shortly.`;
     case "error":

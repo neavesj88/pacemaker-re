@@ -37,6 +37,7 @@ export const DEFAULT_BG_SETTINGS: BgSettings = {
   key_min_confidence_pct: 0,
   // only until the real value arrives: the app starts it on for a machine with four processors or fewer
   low_priority: false,
+  on_battery: "keep",
 };
 
 const NO_STATUS: BgStatus = { state: "no-library", detail: "", root: null, pacemaker: false, word: "", done: 0, total: 0, left: 0, label: "", failures: 0 };

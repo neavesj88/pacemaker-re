@@ -2,6 +2,7 @@
   // Settings > Analysis > Background analysis: the master switch, one switch per kind, the
   // playback wait, the key confidence floor, Run now (the only way a Pacemaker is analysed) and
   // the list of tracks that could not be analysed.
+  import type { BgOnBattery } from "$lib/api/bganalysis";
   import { bg } from "$lib/state/bganalysis.svelte";
   import { session } from "$lib/state/session.svelte";
   import Button from "$lib/ui/Button.svelte";
@@ -68,6 +69,18 @@
     <small class="muted">Everything else on this computer gets the processor first, so the app stays quick on a small machine. Results are the same; analysis is slower while the computer is busy. On by default for computers with four processors or fewer.</small>
   </span>
 </label>
+
+<div class="opt">
+  <span>
+    <label for="bg-battery">When the computer is on battery</label>
+    <select id="bg-battery" value={s.on_battery} onchange={(e) => bg.save({ on_battery: e.currentTarget.value as BgOnBattery })}>
+      <option value="keep">Keep analysing</option>
+      <option value="slow">Slow down (low priority)</option>
+      <option value="pause">Wait until it is plugged in</option>
+    </select>
+    <small class="muted">A big library takes hours of processor time, which is battery. Waiting picks the work up again as soon as the computer is plugged in. A computer with no battery is never affected.</small>
+  </span>
+</div>
 
 <label class="opt">
   <input type="checkbox" checked={s.hold_during_sync_plan} onchange={(e) => bg.save({ hold_during_sync_plan: e.currentTarget.checked })} />

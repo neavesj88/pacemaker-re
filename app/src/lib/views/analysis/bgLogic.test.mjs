@@ -141,3 +141,12 @@ test("the sidebar says when analysis is held back, and nothing when it is not", 
   assert.equal(waitingNote({ ...base, state: "running" }), null);
   assert.equal(waitingNote({ ...base, state: "idle" }), null);
 });
+
+test("waiting for mains power is said in words and keeps the strip while work is left", () => {
+  assert.match(statusLine({ ...base, state: "battery" }), /waits until the computer is plugged in \(100 left in all\)/);
+  assert.equal(waitingNote({ ...base, state: "battery" }), "Analysis waiting for mains power");
+  assert.equal(waitingNote({ ...base, state: "battery", left: 0 }), null, "nothing left, nothing to wait for");
+  assert.ok(stripVisible({ ...base, state: "battery" }));
+  assert.ok(!stripVisible({ ...base, state: "battery", left: 0 }));
+  assert.equal(pauseAction({ ...base, state: "battery" }), null, "it resumes by itself; there is nothing to press");
+});

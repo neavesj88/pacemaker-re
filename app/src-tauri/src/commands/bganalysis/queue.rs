@@ -57,6 +57,22 @@ pub struct Settings {
     /// Run the analysis thread below normal priority, so the app and whatever else is open get
     /// the processor first. Results are the same; a busy machine analyses more slowly.
     pub low_priority: bool,
+    /// What to do on battery. A desktop, or a computer that does not say, is never on battery.
+    pub on_battery: OnBattery,
+}
+
+/// What the analysis does while the computer runs on its battery.
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum OnBattery {
+    /// Carry on as on mains.
+    #[default]
+    Keep,
+    /// Carry on below normal priority (whatever the low priority switch says), so the battery
+    /// is spent on what the user is doing first.
+    Slow,
+    /// Wait until the computer is plugged in again.
+    Pause,
 }
 
 /// A machine with this many logical processors or fewer starts with [`Settings::low_priority`]
@@ -81,6 +97,7 @@ impl Default for Settings {
             hold_during_sync_plan: true,
             key_min_confidence_pct: 0,
             low_priority: low_priority_by_default(logical),
+            on_battery: OnBattery::Keep,
         }
     }
 }
@@ -279,6 +296,8 @@ pub enum Stop {
     Job,
     /// The owner is looking at a Sync plan: keys written now would make it stale.
     Held,
+    /// The computer is on battery and the setting says to wait for mains.
+    Battery,
     /// The open library changed, or something asks for a fresh look at what is missing.
     Replan,
     /// Could not store a result right now.
@@ -421,6 +440,16 @@ impl Engine {
 mod tests {
     use super::*;
     use std::collections::{HashMap, HashSet};
+
+    #[test]
+    fn on_battery_keeps_going_unless_the_user_says_otherwise() {
+        assert_eq!(Settings::default().on_battery, OnBattery::Keep);
+        let old: Settings = serde_json::from_str(r#"{"keys": false}"#).unwrap();
+        assert_eq!(old.on_battery, OnBattery::Keep, "a file from before the option existed carries on as it always did");
+        let s: Settings = serde_json::from_str(r#"{"on_battery": "pause"}"#).unwrap();
+        assert_eq!(s.on_battery, OnBattery::Pause);
+        assert_eq!(serde_json::to_string(&OnBattery::Slow).unwrap(), "\"slow\"");
+    }
 
     #[test]
     fn low_priority_starts_on_only_for_machines_with_few_processors() {

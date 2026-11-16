@@ -28,11 +28,13 @@ const NO_KEY_TRACK = 11;
 const WEAK_KEY_TRACK = 12;
 const KEYS = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
 
-let settings = { enabled: true, waveforms: true, keys: true, energy: true, sections: true, pause_during_playback: true, hold_during_sync_plan: true, key_min_confidence_pct: 0, low_priority: false };
+let settings = { enabled: true, waveforms: true, keys: true, energy: true, sections: true, pause_during_playback: true, hold_during_sync_plan: true, key_min_confidence_pct: 0, low_priority: false, on_battery: "keep" };
 let root: string | null = null;
 let manualRoot: string | null = null;
 let paused = false;
 let playing = false;
+/** The mock has no battery; ?battery=1 on the page address pretends the computer is on one. */
+const onBattery = typeof location !== "undefined" && new URLSearchParams(location.search).get("battery") === "1";
 let held = false;
 let failures: Failure[] = [];
 let lanes: { kind: Kind; items: MTrack[]; total: number; done: number }[] | null = null;
@@ -86,6 +88,7 @@ function hold(): string | null {
   if (settings.pause_during_playback && playing) return "playing";
   if (jobLock.running) return "waiting";
   if (held && settings.hold_during_sync_plan) return "held";
+  if (settings.on_battery === "pause" && onBattery) return "battery";
   return null;
 }
 
