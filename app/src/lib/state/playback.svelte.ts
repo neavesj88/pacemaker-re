@@ -38,7 +38,7 @@ class Playback {
   reloads = $state(0);
 
   /** Track ids that next/previous walk through; empty = the Tracks table as it is shown now. */
-  queue = $state<number[]>([]);
+  queue = $state.raw<number[]>([]);
   /** A seek the engine has not applied yet (seconds on the same scale as `position`). */
   seekRequest = $state<{ secs: number } | null>(null);
 

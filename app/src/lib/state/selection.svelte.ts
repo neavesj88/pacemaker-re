@@ -4,7 +4,7 @@
 import { session } from "./session.svelte";
 
 class Selection {
-  trackIds = $state<number[]>([]);
+  trackIds = $state.raw<number[]>([]);
 
   reset() {
     this.trackIds = [];

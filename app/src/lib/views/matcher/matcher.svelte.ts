@@ -53,7 +53,7 @@ class Matcher {
   parsed = $state<ParsedList | null>(null);
   /** The text `parsed` was made from; the text box differing from it means unapplied edits. */
   parsedText = $state("");
-  rows = $state<MatchRow[]>([]);
+  rows = $state.raw<MatchRow[]>([]);
   /** The user's decisions by request id. */
   choices = $state<Record<number, Choice>>({});
 

@@ -56,7 +56,7 @@ class Cases {
   /** The case being viewed, or null for the list. */
   open = $state<Collection | null>(null);
   /** Its track ids in case order (may include ids no longer in the library). */
-  trackIds = $state<number[]>([]);
+  trackIds = $state.raw<number[]>([]);
   /** Every case with its metadata, by name. */
   infos = $state<CaseInfo[]>([]);
   /** Ids of the tracks in the "Favourites" case. */

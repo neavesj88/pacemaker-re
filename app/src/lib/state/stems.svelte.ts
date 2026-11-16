@@ -35,7 +35,7 @@ class Stems {
   /** The settings being edited; saved with `saveSettings`. */
   draft = $state<StemSettings | null>(null);
 
-  trackIds = $state<number[]>([]);
+  trackIds = $state.raw<number[]>([]);
   dest = $state("");
 
   /** The plan under review; cleared whenever tracks, folder or settings change. */
