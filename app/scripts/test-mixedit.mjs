@@ -16,6 +16,7 @@ import * as R from "../src/lib/state/transitionRecipes.ts";
 import * as ST from "../src/lib/state/sectionTransition.ts";
 import * as SP from "../src/lib/state/snapPrefs.ts";
 import * as CL from "../src/lib/state/crossfadeLength.ts";
+import * as TF from "../src/lib/state/transitionFollow.ts";
 
 import * as L from "../src/lib/views/mixes/layout.ts";
 import * as ML from "../src/lib/views/mixes/mixlist.ts";
@@ -494,7 +495,7 @@ test("recipe settings saved before the version stamp: the old default null becom
 test("recipe settings: defaults, merge ignores junk", () => {
   assert.deepEqual(R.mergeRecipePrefs(undefined), R.DEFAULT_RECIPE_PREFS);
   assert.deepEqual(R.mergeRecipePrefs("x"), R.DEFAULT_RECIPE_PREFS);
-  assert.deepEqual(R.DEFAULT_RECIPE_PREFS, { recipe: "bassSwap", bars: 16, placeAt: "end", cutAt: "end", onConflict: "ask", sectionEdge: "off", sectionReachBars: 8 });
+  assert.deepEqual(R.DEFAULT_RECIPE_PREFS, { recipe: "bassSwap", bars: 16, placeAt: "end", cutAt: "end", onConflict: "ask", sectionEdge: "off", sectionReachBars: 8, onMove: "follow" });
   assert.deepEqual(R.mergeRecipePrefs({ recipe: "echoOut", bars: 4, cutAt: "start", onConflict: "replace" }), { ...R.DEFAULT_RECIPE_PREFS, recipe: "echoOut", bars: 4, cutAt: "start", onConflict: "replace" });
   assert.deepEqual(R.mergeRecipePrefs({ recipe: "nope", bars: -3, cutAt: "middle", onConflict: 7, sectionEdge: "middle", sectionReachBars: "8" }), R.DEFAULT_RECIPE_PREFS);
   assert.equal(R.mergeRecipePrefs({ bars: 1000 }).bars, 16);
@@ -1772,6 +1773,205 @@ test("clips that sit near each other on the bar never share a colour", () => {
       assert.ok(Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]) > 15, `clips ${i} and ${j} are too alike`);
     }
   }
+});
+
+
+// ---- a crossfade and its tools follow a moved clip (state/transitionFollow.ts) -----------------
+
+/** a (0..64 bars) and b (starting `bAt` bars in, 64 bars long) with a built `recipe` of `bars` bars ending with a. */
+function followDoc(bAt = 48, recipe = "longBlend", bars = 16, extra) {
+  const a = clip("a", 0, 64 * BAR, 120, 1, grid(120, 0, 800, 0));
+  const b = clip("b", bAt * BAR, 64 * BAR, 120, 1, grid(120, 0, 800, 0), { channel: 1 });
+  const d = doc([a, b]);
+  const s = R.buildRecipe(d, baseSuggestion(d, bars, (64 - bars) * BAR), recipe, { cutAt: "end" }, E.recipeKit);
+  const built = E.applyTransition(d, s);
+  return extra ? extra(built) : built;
+}
+const eqOf = (d, id) => d.clips.find((c) => c.id === id).processes.filter((p) => p.kind === "tool" && p.toolType === "EQ");
+const absOf = (d, id, p) => d.clips.find((c) => c.id === id).start + p.start;
+const tr = (d) => d.transitions[0];
+/** every EQ of the fade sits exactly on its window */
+function eqsCover(d, label) {
+  const t = tr(d);
+  for (const id of ["a", "b"]) {
+    const [p] = eqOf(d, id);
+    assert.ok(p, `${label}: ${id} has its EQ`);
+    close(absOf(d, id, p), t.start, 1, `${label} ${id} EQ start`);
+    close(p.length, t.length, 1, `${label} ${id} EQ length`);
+  }
+}
+
+test("follow: the owner's case, the incoming clip dragged earlier, the fade and both EQs cover the new overlap", () => {
+  const d = followDoc(48);
+  assert.equal(tr(d).length, 16 * BAR);
+  eqsCover(d, "before");
+  const after = TF.followTransitions(d, E.moveClip(d, "b", 40 * BAR), "follow");
+  const t = tr(after);
+  const f = E.effectiveFade(after, t);
+  assert.equal(f.clamped, false, "nothing is cut when heard");
+  close(t.start, 40 * BAR, 1);
+  close(t.start + t.length, 64 * BAR, BAR);
+  assert.equal(t.length % BAR, 0, "whole bars");
+  eqsCover(after, "after");
+  assert.equal(after.transitions[0].between.to, "b");
+});
+
+test("follow: the setting off, nothing moved, and a transition the edit changed itself", () => {
+  const d = followDoc(48);
+  const moved = E.moveClip(d, "b", 40 * BAR);
+  assert.equal(TF.followTransitions(d, moved, "stay"), moved);
+  assert.equal(TF.followTransitions(d, d, "follow"), d);
+  // the edit rewrote the fade (a drag of the fade itself): left alone
+  const fitted = E.moveTransition(moved, tr(d).id, 41 * BAR, 10 * BAR);
+  const out = TF.followTransitions(d, fitted, "follow", moved);
+  assert.equal(tr(out).start, 41 * BAR);
+});
+
+test("follow: the incoming clip dragged later shrinks the fade and both tools", () => {
+  const d = followDoc(48);
+  const after = TF.followTransitions(d, E.moveClip(d, "b", 54 * BAR), "follow");
+  const t = tr(after);
+  assert.equal(E.effectiveFade(after, t).clamped, false);
+  assert.equal(t.length, 10 * BAR);
+  eqsCover(after, "later");
+  for (const id of ["a", "b"]) {
+    const [p] = eqOf(after, id);
+    const nodes = p.params["EQ-Lo"];
+    assert.equal(nodes.at(-1).pos, Math.round(p.length) - 1);
+    nodes.forEach((n, i) => i && assert.ok(n.pos > nodes[i - 1].pos));
+  }
+  // proportional: the swap sits at the same fraction of the fade as before
+  const frac = (x) => {
+    const [p] = eqOf(x, "a");
+    return p.params["EQ-Lo"].map((n) => n.pos / (p.length - 1));
+  };
+  frac(d).forEach((x, i) => close(x, frac(after)[i], 0.01, "same shape"));
+});
+
+test("follow: a 16-bar fade in a longer overlap keeps its length and its end", () => {
+  const d = followDoc(40, "longBlend", 16); // overlap 24 bars, fade 16 ending with a
+  assert.equal(tr(d).length, 16 * BAR);
+  const earlier = TF.followTransitions(d, E.moveClip(d, "b", 32 * BAR), "follow");
+  assert.equal(tr(earlier).length, 16 * BAR);
+  close(tr(earlier).start + tr(earlier).length, 64 * BAR, BAR);
+  eqsCover(earlier, "kept 16");
+  const later = TF.followTransitions(d, E.moveClip(d, "b", 52 * BAR), "follow"); // 12 bars of overlap
+  assert.equal(tr(later).length, 12 * BAR);
+  assert.equal(E.effectiveFade(later, tr(later)).clamped, false);
+  eqsCover(later, "shrunk");
+});
+
+test("follow: a window that began with the incoming clip keeps beginning there", () => {
+  const d = followDoc(40, "longBlend", 8);
+  // 8 bars from the start of b (not touching a's end), by hand
+  const startOnly = E.updateTransition(d, tr(d).id, (t) => ({ ...t, start: 40 * BAR, length: 8 * BAR }));
+  const after = TF.followTransitions(startOnly, E.moveClip(startOnly, "b", 36 * BAR), "follow");
+  assert.equal(tr(after).start, 36 * BAR);
+  assert.equal(tr(after).length, 8 * BAR);
+});
+
+test("follow: a window placed by hand mid-overlap stays, its tools are pinned under it", () => {
+  const d = followDoc(40, "longBlend", 8);
+  const mid = 44 * BAR;
+  let h = E.updateTransition(d, tr(d).id, (t) => ({ ...t, start: mid, length: 8 * BAR }));
+  for (const id of ["a", "b"]) {
+    const c = h.clips.find((x) => x.id === id);
+    const [p] = eqOf(h, id);
+    h = E.moveProcess(h, id, p.id, mid - c.start);
+  }
+  eqsCover(h, "hand made");
+  const after = TF.followTransitions(h, E.moveClip(h, "b", 36 * BAR), "follow");
+  assert.equal(tr(after).start, mid);
+  assert.equal(tr(after).length, 8 * BAR);
+  eqsCover(after, "floating");
+});
+
+test("follow: no overlap keeps everything, dragging back restores it exactly, the frames in between do not matter", () => {
+  const d = followDoc(48);
+  const apart = TF.followTransitions(d, E.moveClip(d, "b", 80 * BAR), "follow");
+  assert.equal(apart.transitions.length, 1);
+  assert.equal(tr(apart).start, tr(d).start);
+  assert.equal(tr(apart).length, tr(d).length);
+  // frame two of the same drag: `fn` gets the followed document of frame one
+  const early = TF.followTransitions(d, E.moveClip(d, "b", 40 * BAR), "follow");
+  const back = TF.followTransitions(d, E.moveClip(early, "b", 48 * BAR), "follow", early);
+  assert.equal(tr(back).start, tr(d).start);
+  assert.equal(tr(back).length, tr(d).length);
+  for (const id of ["a", "b"]) assert.deepEqual(eqOf(back, id).map((p) => [p.start, p.length, p.params]), eqOf(d, id).map((p) => [p.start, p.length, p.params]));
+  // two routes to the same place give the same document
+  const direct = TF.followTransitions(d, E.moveClip(d, "b", 44 * BAR), "follow");
+  const viaEarly = TF.followTransitions(d, E.moveClip(early, "b", 44 * BAR), "follow", early);
+  assert.equal(tr(viaEarly).start, tr(direct).start);
+  assert.equal(tr(viaEarly).length, tr(direct).length);
+  assert.deepEqual(eqOf(viaEarly, "b").map((p) => [p.start, p.length]), eqOf(direct, "b").map((p) => [p.start, p.length]));
+});
+
+test("follow: your own tools ride with their clip, only the edge-touching ones follow", () => {
+  const d = followDoc(48, "longBlend", 16, (x) => {
+    const y = E.addProcess(x, "b", E.newTool("Reverb", 6 * BAR, BAR, "mine")); // floating mid-fade
+    return E.addProcess(y, "a", E.newTool("Reverb", 10 * BAR, BAR, "early")); // well outside the fade
+  });
+  const after = TF.followTransitions(d, E.moveClip(d, "b", 40 * BAR), "follow");
+  const mine = (x) => x.clips.find((c) => c.id === "b").processes.find((p) => p.id === "mine");
+  assert.equal(mine(after).start, mine(d).start, "local start unchanged: it rides");
+  assert.equal(after.clips.find((c) => c.id === "a").processes.find((p) => p.id === "early").start, 10 * BAR);
+});
+
+test("follow: trims, tempo, Beat-align and several clips at once", () => {
+  const d = followDoc(48);
+  // outgoing trimmed 4 bars: the fade ends with it
+  const trimmed = TF.followTransitions(d, E.resizeClip(d, "a", "right", 60 * BAR), "follow");
+  assert.equal(E.effectiveFade(trimmed, tr(trimmed)).clamped, false);
+  eqsCover(trimmed, "outgoing trim");
+  // incoming trimmed at its start by 4 bars
+  const cut = TF.followTransitions(d, E.resizeClip(d, "b", "left", 52 * BAR), "follow");
+  assert.equal(E.effectiveFade(cut, tr(cut)).clamped, false);
+  eqsCover(cut, "incoming trim");
+  // incoming retimed
+  const faster = TF.followTransitions(d, E.setClipBpm(d, "b", 132), "follow");
+  assert.equal(E.effectiveFade(faster, tr(faster)).clamped, false);
+  eqsCover(faster, "tempo");
+  // both clips by the same distance: the fade translates exactly
+  let both = E.moveClip(d, "a", 8 * BAR);
+  both = E.moveClip(both, "b", 56 * BAR);
+  const shifted = TF.followTransitions(d, both, "follow");
+  assert.equal(tr(shifted).start, tr(d).start + 8 * BAR);
+  assert.equal(tr(shifted).length, tr(d).length);
+  eqsCover(shifted, "both moved");
+  // beat-align after a nudge
+  const aligned = E.beatAlignClip(E.moveClip(d, "b", 40 * BAR + 3000), "b", "bar", "a");
+  const fixed = TF.followTransitions(d, aligned.doc, "follow");
+  assert.equal(E.effectiveFade(fixed, tr(fixed)).clamped, false);
+  eqsCover(fixed, "beat-align");
+});
+
+test("follow: one clip in two fades, both follow and no tool is claimed twice", () => {
+  const a = clip("a", 0, 64 * BAR, 120, 1, grid(120, 0, 800, 0));
+  const b = clip("b", 48 * BAR, 40 * BAR, 120, 1, grid(120, 0, 800, 0), { channel: 1 });
+  const c = clip("c", 80 * BAR, 64 * BAR, 120, 1, grid(120, 0, 800, 0));
+  let d = doc([a, b, c]);
+  const mk = (from, to, start, bars, id) => ({ ...baseSuggestion(d, bars, start), transition: E.newTransition(from, to, start, bars * BAR, id) });
+  d = E.applyTransition(d, R.buildRecipe(d, mk("a", "b", 48 * BAR, 16, "t1"), "longBlend", { cutAt: "end" }, E.recipeKit));
+  d = E.applyTransition(d, R.buildRecipe(d, mk("b", "c", 80 * BAR, 8, "t2"), "longBlend", { cutAt: "end" }, E.recipeKit));
+  const after = TF.followTransitions(d, E.moveClip(d, "b", 44 * BAR), "follow");
+  const t1 = after.transitions.find((t) => t.id === "t1");
+  assert.ok(after.transitions.find((t) => t.id === "t2"));
+  const ids = after.clips.flatMap((x) => x.processes.map((p) => p.id));
+  assert.equal(new Set(ids).size, ids.length);
+  assert.equal(E.effectiveFade(after, t1).clamped, false);
+  close(t1.start, 44 * BAR, 1);
+});
+
+test("follow: a reopened mix with no recipe memory follows too, and the default is follow", () => {
+  const d = followDoc(48);
+  const reopened = E.refresh(JSON.parse(JSON.stringify(d)));
+  const after = TF.followTransitions(reopened, E.moveClip(reopened, "b", 40 * BAR), "follow");
+  assert.equal(tr(after).start, 40 * BAR);
+  assert.equal(R.DEFAULT_RECIPE_PREFS.onMove, "follow");
+  assert.equal(R.mergeRecipePrefs({}).onMove, "follow");
+  assert.equal(R.mergeRecipePrefs({ onMove: "stay" }).onMove, "stay");
+  assert.equal(R.mergeRecipePrefs({ onMove: "sideways" }).onMove, "follow");
+  assert.equal(R.mergeRecipePrefs({ onMove: 3 }).onMove, "follow");
 });
 
 console.log(`\n${n} tests passed`);

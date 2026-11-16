@@ -36,6 +36,21 @@ A recipe builds the crossfade and the tools around it in one go. Choose it in th
 
 If your own tools are in the way, what happens to them is set in Settings, Mixes, Auto transitions. A recipe needs the two clips to overlap by at least its shortest length; the app tells you if they do not.
 
+### When you move a clip
+
+By default a crossfade and the tools its transition placed follow the clips they sit on. Move the incoming clip earlier and the fade, the outgoing clip's EQ and the incoming clip's EQ all re-fit the new overlap, instead of being left behind. The rule depends on how the crossfade was placed:
+
+- **It covered the whole overlap** (the usual result of Auto when the clips overlap by about the Auto length): it covers the new overlap, a bigger one or a smaller one.
+- **It ended with the outgoing clip** (Auto in a longer overlap): it keeps its length in bars and keeps ending there. If the overlap becomes shorter than the fade, the fade shrinks to fit.
+- **It began where the incoming clip begins**: it keeps beginning there, with the same length.
+- **You placed it by hand** somewhere inside the overlap: it stays where it is. Its tools are still pinned under it.
+
+The tools that follow are the ones on the two clips that lie inside the crossfade and touch its start or its end, which is what every recipe makes. A tool you added in the middle of a fade, or outside it, simply moves with its clip. When the crossfade gets longer or shorter the tools are stretched in proportion, so a bass swap keeps its place relative to the fade; **Rebuild as ...** snaps it back onto a beat.
+
+If a move leaves the clips with no overlap the crossfade is kept as it was and does nothing, and it comes back if you drag the clip back or press Undo. Dropping a clip onto another does not create a crossfade. A drag is one Undo step.
+
+Settings, Mixes, Auto transitions, **When a clip moves**, can switch this off: the crossfade then stays where it was made and is cut to the shared audio when played, as before.
+
 ## The mix tempo
 
 The mix has one **mix tempo** box in the toolbar. New tracks and the Match buttons play at it, or at double or half of it, whichever stretches the track least. It is **not saved in the file**: a reopened mix starts at its first track's tempo.

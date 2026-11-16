@@ -9,7 +9,7 @@
 //
 // Pure: runs under plain node. Used with `alignSuggestion` (sectionTransition.ts), which may then
 // move the window on to section boundaries when that setting asks for it.
-import type { MixDoc, TransitionSuggestion } from "../api/mixes";
+import type { Clip, MixDoc, TransitionSuggestion } from "../api/mixes";
 import { BEATS_PER_BAR, SR, clipBeatPoints, clipOf } from "./mixedit.ts";
 import type { Aligned } from "./sectionTransition.ts";
 import { lengthLabel } from "./transitionRecipes.ts";
@@ -45,6 +45,17 @@ export function crossfadeWindow(lo: number, end: number, beat: number, requested
   return { start: Math.round(Math.max(lo, start)), length: Math.round(length) };
 }
 
+/** The automatic window for `requestedBars` of crossfade in the audio from `lo` to `end` that the
+ * incoming clip `b` and the outgoing clip share: it ends at or within a bar of `end` and starts on
+ * a bar line of `b`'s grid. The one rule behind Auto and behind a crossfade following a moved clip
+ * (state/transitionFollow.ts), so the two agree. Null when there is no room. */
+export function autoWindow(b: Clip, lo: number, end: number, beat: number, requestedBars: number): { start: number; length: number } | null {
+  const pts = clipBeatPoints(b)
+    .filter((p) => p.time >= lo - 1 && p.time <= end + 1)
+    .sort((x, y) => x.time - y.time);
+  return crossfadeWindow(lo, end, beat, requestedBars, { bars: pts.filter((p) => p.kind !== "beat").map((p) => p.time), beats: pts.map((p) => p.time) });
+}
+
 /** `base` moved so the crossfade ends with the outgoing clip (`place` "end"). Returns `base` itself
  * (`moved` false) for "start", when the clips are not known, or when the backend's window is already
  * there. A moved window's stock tools no longer fit, so the caller rebuilds them (`moved`). */
@@ -60,10 +71,7 @@ export function placeTransition(doc: MixDoc, base: TransitionSuggestion, request
   const lo = Math.max(t.start, b.visibleStart);
   const end = Math.min(a.visibleEnd, b.visibleEnd);
   const bar = beat * BEATS_PER_BAR;
-  const pts = clipBeatPoints(b)
-    .filter((p) => p.time >= lo - 1 && p.time <= end + 1)
-    .sort((x, y) => x.time - y.time);
-  const w = crossfadeWindow(lo, end, beat, requestedBars, { bars: pts.filter((p) => p.kind !== "beat").map((p) => p.time), beats: pts.map((p) => p.time) });
+  const w = autoWindow(b, lo, end, beat, requestedBars);
   if (!w) return same;
   if (Math.abs(w.start - t.start) <= 1 && Math.abs(w.length - t.length) <= 1) return same;
   const notes: string[] = [];

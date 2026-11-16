@@ -33,6 +33,8 @@ import {
 import { renderMixPreview, type PreviewGains } from "$lib/api/export";
 import { tempoPrefs } from "$lib/views/mixes/tempoPrefs.svelte";
 import { snapPrefs } from "$lib/views/mixes/snapPrefs.svelte";
+import { recipePrefs } from "$lib/views/mixes/recipePrefs.svelte";
+import { followTransitions } from "./transitionFollow";
 import { snapModeOf } from "./snapPrefs";
 import { sections } from "./sections.svelte";
 import { session } from "./session.svelte";
@@ -259,16 +261,19 @@ class Mixes {
     if (!before) return;
     let after = fn(before);
     if (after === before) return;
+    const now = Date.now();
+    const merge = opts.dirties !== false && !!opts.group && opts.group === this.#group && now - this.#groupAt < COALESCE_MS && this.#undo.length > 0;
+    // a crossfade and the tools it placed follow the clips that moved; computed from the document the
+    // undo step began from, so one drag is one step and dragging back puts everything back exactly
+    after = followTransitions(merge ? this.#undo[this.#undo.length - 1].doc : before, after, recipePrefs.value.onMove, before);
     after = E.settleDecks(before, after);
     // a mix that has just become empty forgets its reference tempo: the next first track sets it again
     if (before.clips.length > 0 && after.clips.length === 0) after = { ...after, tempoBpm: E.carryTempo(before.tempoBpm, after) };
-    const now = Date.now();
     if (opts.dirties === false) {
       // not part of the saved document (the reference tempo): no undo step, history untouched
       this.doc = after;
       return;
     }
-    const merge = !!opts.group && opts.group === this.#group && now - this.#groupAt < COALESCE_MS && this.#undo.length > 0;
     if (!merge) {
       this.#undo.push({ doc: before, label });
       if (this.#undo.length > MAX_UNDO) this.#undo.shift();

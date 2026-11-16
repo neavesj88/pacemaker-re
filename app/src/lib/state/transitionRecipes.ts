@@ -125,6 +125,11 @@ export function nearestLength(recipe: RecipeId, bars: number): number {
 // Settings
 // ---------------------------------------------------------------------------------------------
 
+/** What a crossfade and its tools do when a clip they sit on moves, is trimmed or retimed:
+ * "follow" re-fits them to the new overlap (state/transitionFollow.ts), "stay" leaves them put. */
+export type OnMove = "follow" | "stay";
+export const ON_MOVES: OnMove[] = ["follow", "stay"];
+
 export type RecipePrefs = {
   /** The recipe the Auto buttons use. */
   recipe: RecipeId;
@@ -144,6 +149,8 @@ export type RecipePrefs = {
   sectionEdge: SectionEdge;
   /** How far a boundary may be from where the transition would otherwise start or end, in bars. */
   sectionReachBars: number;
+  /** What a crossfade and the tools a transition placed do when a clip moves. */
+  onMove: OnMove;
 };
 
 /** The setting's words: "starts on a section boundary" (empty when off). */
@@ -154,7 +161,7 @@ export function sectionEdgeWords(edge: SectionEdge): string {
 /** The range of `sectionReachBars`. */
 export const SECTION_REACH = { min: 1, max: 32 } as const;
 
-export const DEFAULT_RECIPE_PREFS: RecipePrefs = { recipe: "bassSwap", bars: 16, placeAt: "end", cutAt: "end", onConflict: "ask", sectionEdge: "off", sectionReachBars: 8 };
+export const DEFAULT_RECIPE_PREFS: RecipePrefs = { recipe: "bassSwap", bars: 16, placeAt: "end", cutAt: "end", onConflict: "ask", sectionEdge: "off", sectionReachBars: 8, onMove: "follow" };
 
 /** Saved prefs merged over the defaults, ignoring anything unknown or malformed. */
 export function mergeRecipePrefs(saved: unknown): RecipePrefs {
@@ -172,6 +179,7 @@ export function mergeRecipePrefs(saved: unknown): RecipePrefs {
   if (typeof s.sectionReachBars === "number" && Number.isFinite(s.sectionReachBars) && s.sectionReachBars >= SECTION_REACH.min && s.sectionReachBars <= SECTION_REACH.max) {
     out.sectionReachBars = Math.round(s.sectionReachBars);
   }
+  if (typeof s.onMove === "string" && (ON_MOVES as string[]).includes(s.onMove)) out.onMove = s.onMove as OnMove;
   return out;
 }
 

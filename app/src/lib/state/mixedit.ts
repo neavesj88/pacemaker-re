@@ -707,7 +707,7 @@ export function resizeProcess(doc: MixDoc, clipId: string, id: string, edge: "le
 
 /** Rescales a tool's envelope positions after its length changed from `oldLength` (default:
  * unchanged, only the last-node and derived fields are normalised). */
-function rescaleProcess(p: ProcessDoc, oldLength: number = p.length): ProcessDoc {
+export function rescaleProcess(p: ProcessDoc, oldLength: number = p.length): ProcessDoc {
   const q = withSec(p);
   if (q.kind !== "tool") return q;
   const last = Math.max(0, Math.round(p.length) - 1);

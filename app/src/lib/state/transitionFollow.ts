@@ -1,0 +1,152 @@
+// A crossfade and the tools a transition placed follow the clips they sit on. A crossfade is a bare
+// window in timeline samples and a tool is clip-local, so nothing ties them together: dragging the
+// incoming clip earlier used to leave the fade and the outgoing clip's EQ where they were while the
+// incoming clip's EQ rode along. `followTransitions` re-fits them after any edit that moves, trims
+// or retimes a clip. It is called from `mixes.edit()` (the one funnel every edit goes through), so
+// the live preview, the saved .pmk and the audio export all read the same, already re-fitted
+// document. No file format change: only the stored window and the tools' clip-local starts move.
+//
+// Pure, no Svelte: runs under plain node.
+//
+// It works from `base`, the document the current undo step started from, on every call. A drag is
+// many calls; each one recomputes from the gesture's start, so dragging out and back restores the
+// original exactly, nothing accumulates, and the whole drag is one undo step.
+//
+// What a window was anchored to is read from the geometry of `base` (no stored flag, so mixes
+// opened from the Editor or an old file work too), within one bar:
+//   both ends (it covered the overlap)  -> it covers the new overlap
+//   its end (the usual Auto fade)       -> same length in bars, still ending with the outgoing clip
+//   its start                           -> still starting where the incoming clip does, same length
+//   neither (placed by hand)            -> stays where it is
+// The tools that belong to a transition are the ones on its two clips that lie inside its window
+// and touch its start or its end (every tool a recipe makes does); they are re-pinned to the new
+// window in proportion. Anything else rides with its clip as before.
+import type { Clip, MixDoc, ProcessDoc, ToolDoc, TransitionDoc } from "../api/mixes";
+import { autoWindow } from "./crossfadeLength.ts";
+import { BEATS_PER_BAR, MIN_LENGTH, SR, clipOf, effectiveBpm, effectiveFade, refresh, rescaleProcess } from "./mixedit.ts";
+import type { OnMove } from "./transitionRecipes.ts";
+
+type Win = { start: number; length: number };
+
+const samePos = (a: number, b: number) => Math.abs(a - b) <= 1;
+
+/** A clip changed where or how long it is heard, or how fast it plays. */
+const moved = (a: Clip, b: Clip) => a.start !== b.start || a.visibleStart !== b.visibleStart || a.visibleEnd !== b.visibleEnd || JSON.stringify(a.tempo) !== JSON.stringify(b.tempo);
+
+/** The edit itself changed this transition (Fit to overlap, a drag of the fade, Rebuild): leave it. */
+const touched = (a: TransitionDoc, b: TransitionDoc) => !samePos(a.start, b.start) || !samePos(a.length, b.length) || JSON.stringify(a.curve) !== JSON.stringify(b.curve);
+
+const beatOf = (c: Clip, at: number) => (60 * SR) / Math.max(1, effectiveBpm(c, Math.max(0, at - c.start)));
+
+/** `after` (the document `fn` produced from `before`) with the crossfades whose clips moved since
+ * `base` re-fitted, and their tools with them. `base` is the document the current undo step began
+ * from (`before` when the edit starts a new step). "stay" and "nothing moved" return `after` itself. */
+export function followTransitions(base: MixDoc, after: MixDoc, mode: OnMove, before: MixDoc = base): MixDoc {
+  if (mode !== "follow" || base === after || base.transitions.length === 0) return after;
+  const claimed = new Set<string>();
+  const newT = new Map<string, Win>();
+  const newP = new Map<string, Map<string, ProcessDoc>>(); // clip id -> process id -> replacement
+  const put = (clipId: string, p: ProcessDoc) => newP.set(clipId, (newP.get(clipId) ?? new Map<string, ProcessDoc>()).set(p.id, p));
+
+  for (const t0 of [...base.transitions].sort((a, b) => a.start - b.start)) {
+    const t1 = after.transitions.find((x) => x.id === t0.id);
+    const tb = before.transitions.find((x) => x.id === t0.id);
+    if (!t1 || !tb || touched(tb, t1)) continue;
+    const f = effectiveFade(base, t0);
+    if (!f) continue;
+    const from1 = clipOf(after, f.from.id);
+    const to1 = clipOf(after, f.to.id);
+    if (!from1 || !to1) continue;
+
+    // the tools this transition placed: on its two clips, inside its window, touching an edge of it
+    const beat0 = beatOf(f.to, f.start);
+    const bar0 = beat0 * BEATS_PER_BAR;
+    const w0 = { start: f.start, end: f.start + f.length };
+    const members: { clip: Clip; p: ToolDoc }[] = [];
+    for (const c of [f.from, f.to]) {
+      for (const p of c.processes) {
+        if (p.kind !== "tool" || claimed.has(p.id)) continue;
+        const s = c.start + p.start;
+        const e = s + p.length;
+        if (s >= w0.start - beat0 && e <= w0.end + beat0 && (Math.abs(s - w0.start) <= beat0 || Math.abs(e - w0.end) <= beat0)) {
+          members.push({ clip: c, p });
+          claimed.add(p.id);
+        }
+      }
+    }
+
+    // nothing moved since the gesture began: only a drag that came back needs the fade and tools
+    // put back as they were (`before` is then a followed frame of the same gesture)
+    if (!moved(f.from, from1) && !moved(f.to, to1) && before === base) continue;
+
+    const lo0 = Math.max(f.from.visibleStart, f.to.visibleStart);
+    const end0 = Math.min(f.from.visibleEnd, f.to.visibleEnd);
+    const lo1 = Math.max(from1.visibleStart, to1.visibleStart);
+    const end1 = Math.min(from1.visibleEnd, to1.visibleEnd);
+    const startAnchored = f.start - lo0 <= bar0 + 1;
+    const endAnchored = end0 - w0.end <= bar0 + 1;
+    const beat1 = beatOf(to1, lo1);
+    const bar1 = beat1 * BEATS_PER_BAR;
+
+    let w1: Win | null = null;
+    if (to1.visibleStart > from1.visibleStart && end1 > lo1 && beat1 > 0) {
+      if (!startAnchored && !endAnchored) w1 = { start: f.start, length: f.length };
+      else if (startAnchored && endAnchored) w1 = autoWindow(to1, lo1, end1, beat1, (end1 - lo1) / bar1);
+      else if (endAnchored) w1 = autoWindow(to1, lo1, end1, beat1, f.length / bar0);
+      else {
+        const start = Math.round(lo1 + (f.start - lo0));
+        const length = Math.min(Math.round((f.length / bar0) * bar1), Math.round(end1 - start));
+        w1 = length >= beat1 * 0.5 ? { start, length } : null;
+      }
+    }
+
+    if (!w1) {
+      // the clips no longer overlap (or swapped places): the crossfade is inert, as the mixer treats
+      // it; keep it and its tools as they were when the gesture began, so dragging back restores them
+      newT.set(t0.id, { start: t0.start, length: t0.length });
+      for (const { clip, p } of members) {
+        const c1 = clipOf(after, clip.id);
+        if (c1 && JSON.stringify(c1.tempo) === JSON.stringify(clip.tempo)) put(clip.id, p);
+      }
+      continue;
+    }
+
+    const same = samePos(w1.start, f.start) && samePos(w1.length, f.length);
+    // an unchanged window keeps what was stored (it may reach past the shared audio and be cut when heard)
+    newT.set(t0.id, same ? { start: t0.start, length: t0.length } : w1);
+    const ratio = samePos(w1.length, f.length) ? 1 : w1.length / f.length;
+    const anchor = same ? f.start : w1.start;
+    for (const { clip, p } of members) {
+      const c1 = clipOf(after, clip.id);
+      if (!c1) continue;
+      const abs = anchor + (clip.start + p.start - f.start) * ratio;
+      const length = Math.min(c1.length, Math.max(MIN_LENGTH, Math.round(ratio === 1 ? p.length : p.length * ratio)));
+      const start = Math.min(Math.max(0, Math.round(abs) - c1.start), c1.length - length);
+      put(clip.id, rescaleProcess({ ...p, start, length }, p.length));
+    }
+  }
+
+  let changed = false;
+  const transitions = after.transitions.map((t) => {
+    const w = newT.get(t.id);
+    if (!w || (samePos(w.start, t.start) && samePos(w.length, t.length))) return t;
+    changed = true;
+    return { ...t, start: w.start, length: w.length };
+  });
+  const clips = after.clips.map((c) => {
+    const m = newP.get(c.id);
+    if (!m) return c;
+    let any = false;
+    const processes = c.processes.map((p) => {
+      const q = m.get(p.id);
+      if (!q) return p;
+      if (JSON.stringify(q) === JSON.stringify(p)) return p;
+      any = true;
+      return q;
+    });
+    if (!any) return c;
+    changed = true;
+    return { ...c, processes };
+  });
+  return changed ? refresh({ ...after, clips, transitions }) : after;
+}

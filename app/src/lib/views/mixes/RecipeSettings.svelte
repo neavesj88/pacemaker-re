@@ -2,7 +2,7 @@
   // The auto-transition settings: which recipe the Auto buttons build, how long, where a hard cut
   // falls, and what happens to tools of yours that are in the way. Remembered between sessions.
   import { RECIPES, SECTION_REACH, lengthLabel, nearestLength, recipeDef, requestedBars, sectionEdgeWords, type RecipeId } from "$lib/state/transitionRecipes";
-  import type { CutAt, ConflictPolicy, CrossfadePlace, SectionEdge } from "$lib/state/transitionRecipes";
+  import type { CutAt, ConflictPolicy, CrossfadePlace, OnMove, SectionEdge } from "$lib/state/transitionRecipes";
   import { recipePrefs } from "./recipePrefs.svelte";
 
   const p = $derived(recipePrefs.value);
@@ -80,6 +80,18 @@
     The transition {sectionEdgeWords(p.sectionEdge)} (of either clip) within {p.sectionReachBars} bar{p.sectionReachBars === 1 ? "" : "s"} of where it would otherwise {p.sectionEdge === "end" ? "end" : "start"}, so its length can change. Only for clips whose tracks have detected sections (Sections panel); the notes after building say what moved. Without sections it builds exactly as above.
   </div>
 {/if}
+<div class="field">
+  <label for="rs-move">When a clip moves</label>
+  <select id="rs-move" value={p.onMove} onchange={(e) => recipePrefs.set({ onMove: e.currentTarget.value as OnMove })}>
+    <option value="follow">Crossfade and its tools follow the overlap</option>
+    <option value="stay">They stay where they are</option>
+  </select>
+</div>
+<div class="muted small">
+  {p.onMove === "follow"
+    ? "Drag, nudge, trim, Beat-align or change the tempo of a clip and the crossfade on its overlap, with the EQ and other tools the transition placed, re-fit the new overlap. A crossfade that filled the overlap fills the new one; one that ended with the outgoing clip keeps its length and keeps ending there; one you placed by hand stays put. Tools you added yourself in the middle of a fade ride with their clip. Undo puts it all back in one step."
+    : "A crossfade stays where it was made when a clip moves, and only the tools on the moved clip go with it. Where the fade no longer sits on the overlap it is cut to what both clips share when played; Fit to overlap saves that."}
+</div>
 <div class="muted small">These apply to every Auto button and menu entry in this editor. The result is always ordinary tools and a crossfade curve you can edit.</div>
 
 <style>

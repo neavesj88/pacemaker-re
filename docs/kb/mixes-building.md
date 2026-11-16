@@ -31,6 +31,10 @@ Add tracks any of these ways:
 
 Tracks are matched to the mix tempo as they are added if that setting is on: see [Crossfades, tempo and Match all](mixes-crossfades-tempo.md).
 
+## Moving a clip that has a transition
+
+Drag, nudge, trim, Beat-align or retime a clip and the crossfade on its overlap follows it, together with the EQ, filter, echo and roll tools that the transition placed. The crossfade and its tools are re-fitted to the new overlap in the editor, in what you hear, in the saved file and in an audio export. It is one Undo step per move. Details and the rules are in [Crossfades, tempo and Match all](mixes-crossfades-tempo.md); to turn it off, use Settings, Mixes, Auto transitions, **When a clip moves**.
+
 ## Moving around the timeline
 
 - Clips sit on one bar in their own colours. Drag a clip by its name to move it. Drag a clip edge to trim it. Where two clips overlap they are drawn over each other, each in its own colour and see-through, with the crossfade lines over both. A click in the overlap takes the clip that comes in last; reach the earlier one on its own part, by its edge, or with Tab.
