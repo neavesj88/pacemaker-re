@@ -386,17 +386,23 @@ class Engine {
 
   #halt() {
     cancelAnimationFrame(this.#raf);
+    this.#stopTick();
+  }
+
+  #stopTick() {
     clearInterval(this.#tick);
+    this.#tick = undefined;
   }
 
   #frame = () => {
-    this.#halt();
+    cancelAnimationFrame(this.#raf);
     this.#sync();
     if (playback.playing && this.ready) {
       this.#raf = requestAnimationFrame(this.#frame);
-      // animation frames stop in a hidden or minimised window; the beat loop must keep wrapping
-      this.#tick = setInterval(() => this.#sync(), 100);
-    }
+      // animation frames stop in a hidden or minimised window; the beat loop must keep wrapping.
+      // One timer for the whole play, not a new one on every frame.
+      this.#tick ??= setInterval(() => this.#sync(), 100);
+    } else this.#stopTick();
   };
 
   #ended(m: Media) {
