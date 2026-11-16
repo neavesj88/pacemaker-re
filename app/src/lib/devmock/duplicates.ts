@@ -51,6 +51,17 @@ const fixture: Member[] = [
   row(206, { title: "Demo Track 07", artist: "Example Artist B", file_size: 9_000_000, play_time_secs: 245, times_played: 1 }),
   row(207, { title: "Demo Track 07 Remaster", artist: "Example Artist B", file_size: 9_400_000, play_time_secs: 245, format: "FLAC", bit_rate_kbps: 900, sample_rate: 48000 }),
 ];
+// `?dupes=N` on the dev URL adds N synthetic sets of two or three copies, to check that the
+// Duplicates view stays quick with a big result. Invented data only.
+const extraGroups: number[][] = [];
+{
+  const n = typeof location === "undefined" ? 0 : Math.min(5000, Number(new URLSearchParams(location.search).get("dupes")) || 0);
+  for (let i = 0; i < n; i++) {
+    const ids = Array.from({ length: 2 + (i % 2) }, (_, k) => 10_000 + i * 3 + k);
+    ids.forEach((id, k) => fixture.push(row(id, { title: `Demo Copy ${String(i).padStart(4, "0")}`, artist: `Example Artist ${String.fromCharCode(65 + (i % 26))}`, bit_rate_kbps: [320, 256, 128][k], file_size: 8_000_000 - k * 1_500_000, rating: k, times_played: i % 5 })));
+    extraGroups.push(ids);
+  }
+}
 let alive = new Set(fixture.map((m) => m.track_id));
 let fingerprinted = false;
 let cancel = false;
@@ -63,6 +74,7 @@ function groups(s: DupSettings): Group[] {
     return live.length > 1 ? { id: live[0], members: live.map(byId), links: links.filter((l) => alive.has(l.a) && alive.has(l.b)), modes: [...new Set(links.map((l) => l.mode))], suggested_keeper: live.includes(keeper) ? keeper : live[0] } : null;
   };
   const out: (Group | null)[] = [];
+  if (s.by_tags) for (const ids of extraGroups) out.push(g(ids, ids.slice(1).map((id, k) => ({ a: ids[k], b: id, mode: "tags" as const, score: null, offset_secs: null })), ids[0]));
   if (s.by_tags) out.push(g([201, 202, 203], [{ a: 201, b: 202, mode: "tags", score: null, offset_secs: null }, { a: 202, b: 203, mode: "tags", score: null, offset_secs: null }], 202));
   if (s.by_size) out.push(g([204, 205], [{ a: 204, b: 205, mode: "size", score: null, offset_secs: null }], 205));
   if (s.by_audio && fingerprinted) out.push(g([206, 207], [{ a: 206, b: 207, mode: "audio", score: 0.973, offset_secs: 0.5 }], 207));

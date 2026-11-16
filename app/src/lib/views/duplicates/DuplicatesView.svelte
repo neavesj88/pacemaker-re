@@ -23,6 +23,29 @@
   const fp = $derived(d.fp);
   const pending = $derived(s.by_audio && result ? result.pending.length : 0);
   const groups = $derived(result?.groups ?? []);
+  // Each set is a card of dozens of elements, so a result of a thousand sets is not mounted at once:
+  // the first few appear and the rest follow as the page is scrolled towards them. Ticking all,
+  // the merge and the counts work on the data, not on what is mounted.
+  const CHUNK = 25;
+  let upTo = $state(CHUNK);
+  let sentinel = $state<HTMLElement>();
+  const mounted = $derived(groups.slice(0, upTo));
+  $effect(() => {
+    void result;
+    upTo = CHUNK;
+  });
+  $effect(() => {
+    const el = sentinel;
+    void upTo; // a new observer after every step, so a sentinel still in view asks again
+    if (!el || typeof IntersectionObserver === "undefined") {
+      if (!el) return;
+      upTo = groups.length; // no way to watch the scroll: mount them all, as before
+      return;
+    }
+    const io = new IntersectionObserver((e) => e.some((x) => x.isIntersecting) && (upTo = Math.min(groups.length, upTo + CHUNK)), { rootMargin: "800px 0px" });
+    io.observe(el);
+    return () => io.disconnect();
+  });
   const pct = $derived(fp && fp.total > 0 ? Math.min(100, Math.round((fp.done / fp.total) * 100)) : 0);
 
   function toggle(key: "by_tags" | "by_size" | "by_audio", on: boolean) {
@@ -117,9 +140,10 @@
       <Button small variant="link" onclick={() => d.pickAll(false)}>Tick none</Button>
     </div>
     <div class="groups">
-      {#each groups as g (g.id)}
+      {#each mounted as g (g.id)}
         {#if d.choices[g.id]}<DupGroupCard group={g} choice={d.choices[g.id]} />{/if}
       {/each}
+      {#if upTo < groups.length}<div class="more muted" bind:this={sentinel}>{plural(groups.length - upTo, "more set")} below…</div>{/if}
     </div>
   {/if}
 
@@ -222,6 +246,10 @@
     align-items: baseline;
     gap: 10px;
     margin: 10px 0 6px;
+  }
+  .more {
+    text-align: center;
+    padding: 12px;
   }
   .groups {
     padding-bottom: 8px;
