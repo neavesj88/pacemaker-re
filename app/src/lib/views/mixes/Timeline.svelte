@@ -156,7 +156,7 @@
       if (e.ctrlKey || e.metaKey) {
         e.preventDefault();
         const r = s.getBoundingClientRect();
-        mv.setZoom(clamp(mv.pps * Math.exp(-e.deltaY * 0.0015), PPS_MIN, PPS_MAX), e.clientX - r.left - HEADER_W);
+        mv.setZoom(clamp(mv.pps * Math.exp(-e.deltaY * 0.0015), PPS_MIN, PPS_MAX), e.clientX - r.left - HEADER_W, preview.playing);
       } else if (e.shiftKey && e.deltaX === 0) {
         e.preventDefault();
         mv.pauseFollow();
@@ -212,7 +212,7 @@
 
   // Follow the playhead while playing (Settings > Mixes > Following the playhead). It runs when the
   // playhead moves, which the engine reports about 30 times a second, so the view and the line are
-  // moved in the same step. A user scroll or zoom pauses it (mv.followPaused) until Play, a seek or
+  // moved in the same step. A user scroll, or a zoom while not following, pauses it (mv.followPaused) until Play, a seek or
   // "Follow again"; the tick in the toolbar turns it off.
   $effect(() => {
     const playhead = mv.x(mv.playhead);

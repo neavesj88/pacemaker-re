@@ -98,15 +98,20 @@ class MixView {
     return fromPx(px, this.pps);
   }
 
-  setZoom(pps: number, anchorPx?: number) {
+  /** `playing`: the mix is playing. While the view follows it, zoom holds the playhead where it is
+   * and following carries on (pausing it let the playhead run off the screen mid-mix); otherwise
+   * zooming is the user looking around, and following would pull the view back. */
+  setZoom(pps: number, anchorPx?: number, playing = false) {
     const next = clamp(pps, PPS_MIN, PPS_MAX);
     if (next === this.pps) return;
-    this.followPaused = true; // zooming is the user looking around: following would pull the view back
     // keep the sample under `anchorPx` (a pixel inside the lanes) where it is. The lanes cannot
     // scroll past their new end, so the position is clamped here: a position the element refuses
     // left this state far from the screen, and clips and waveforms were drawn for the wrong part
     const lane = Math.max(0, this.viewW - HEADER_W);
-    const a = clamp(anchorPx ?? lane / 2, 0, lane);
+    const head = this.x(this.playhead) - this.scrollLeft;
+    const holdHead = playing && this.follow && !this.followPaused && head >= 0 && head <= lane;
+    if (!holdHead) this.followPaused = true;
+    const a = clamp(holdHead ? head : (anchorPx ?? lane / 2), 0, lane);
     this.scrollLeft = zoomScroll(this.scrollLeft, this.pps, next, a, this.endSamples, this.viewW);
     this.pps = next;
   }

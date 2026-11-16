@@ -165,9 +165,9 @@
     } else if (!mod && k === "end") {
       toEnd();
     } else if (!mod && (k === "=" || k === "+")) {
-      mv.setZoom(mv.pps * 1.25);
+      mv.setZoom(mv.pps * 1.25, undefined, preview.playing);
     } else if (!mod && (k === "-" || k === "_")) {
-      mv.setZoom(mv.pps / 1.25);
+      mv.setZoom(mv.pps / 1.25, undefined, preview.playing);
     }
   }
 
@@ -251,7 +251,7 @@
         max="100"
         step="0.5"
         value={zoomValue}
-        oninput={(e) => mv.setZoom(ppsFromSlider(e.currentTarget.valueAsNumber))}
+        oninput={(e) => mv.setZoom(ppsFromSlider(e.currentTarget.valueAsNumber), undefined, preview.playing)}
         aria-label="Zoom"
         title="{mv.pps.toFixed(1)} px per second ({PPS_MIN}–{PPS_MAX}). Ctrl+wheel zooms at the pointer."
       />
