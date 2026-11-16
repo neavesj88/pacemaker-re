@@ -10,7 +10,7 @@ const entries: SettingsEntry[] = [
     area: "Appearance",
     title: "Interface size, colours and messages",
     help: "How big everything in the window is, the colours of the waveforms, and how long error messages stay on screen.",
-    keywords: "waveform colours colors theme matrix green neon calm size zoom scale bigger smaller large text monitor display 4k ultrawide error message toast notification seconds",
+    keywords: "playhead smoothness frame rate fps refresh 144 hz battery smooth waveform colours colors theme matrix green neon calm size zoom scale bigger smaller large text monitor display 4k ultrawide error message toast notification seconds",
     how: "inline",
     component: InterfaceSettings,
   },

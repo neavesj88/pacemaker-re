@@ -1,6 +1,6 @@
 <script lang="ts">
   import { appearance } from "$lib/state/appearance.svelte";
-  import { DONE_SECS_CHOICES, ERROR_SECS_CHOICES, GRID_MIN_CHOICES, SCALE_DEFAULT, SCALE_MAX, SCALE_MIN, SCALE_STEP, WAVE_COLOURS, WAVE_THEMES, WAVE_THEME_NAMES, normaliseWaveTheme } from "$lib/state/appearanceLogic";
+  import { DONE_SECS_CHOICES, ERROR_SECS_CHOICES, GRID_MIN_CHOICES, PLAYHEAD_FPS_CHOICES, SCALE_DEFAULT, SCALE_MAX, SCALE_MIN, SCALE_STEP, WAVE_COLOURS, WAVE_THEMES, WAVE_THEME_NAMES, normaliseWaveTheme } from "$lib/state/appearanceLogic";
   import { windowRememberGet, windowRememberSet } from "$lib/api/library";
   import { toast } from "$lib/state/toast.svelte";
   import Button from "$lib/ui/Button.svelte";
@@ -85,6 +85,16 @@
   <p class="muted note">
     Bar lines on the player's waveform stop being drawn when a bar gets narrower than this, so a long track on a narrow window
     is not covered in lines. A lower number keeps the grid on longer tracks.
+  </p>
+  <div class="row">
+    <label for="playhead-fps" class="k">Playhead smoothness</label>
+    <select id="playhead-fps" value={appearance.playheadFps} onchange={(e) => appearance.setPlayheadFps(Number(e.currentTarget.value))}>
+      {#each PLAYHEAD_FPS_CHOICES as f (f)}<option value={f}>{f === 0 ? "Every refresh of the screen" : f === 60 ? "Up to 60 a second" : `Up to ${f} a second`}</option>{/each}
+    </select>
+  </div>
+  <p class="muted note">
+    How often the line that moves along the waveform is redrawn while a track plays. On a 144 Hz screen "up to 60" uses
+    about half the processor time of redrawing at every refresh and looks the same. Fewer is easier on an older computer or a laptop on battery. The sound is not affected.
   </p>
   <div class="row" role="radiogroup" aria-label="Waveform colours">
     <span class="k">Waveform colours</span>

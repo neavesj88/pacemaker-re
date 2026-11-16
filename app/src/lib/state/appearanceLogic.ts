@@ -66,6 +66,27 @@ export function normaliseWaveTheme(raw: unknown): WaveTheme {
   return (WAVE_THEMES as readonly unknown[]).includes(raw) ? (raw as WaveTheme) : WAVE_THEME_DEFAULT;
 }
 
+/** How often the playhead and the time readouts are redrawn while a track plays, per second at most;
+ *  0 = at every refresh of the screen. A 144 or 166 Hz screen drew the playhead that often and the
+ *  page cost about twice the processor time of a 60 Hz one for a move nobody can tell apart, so the
+ *  default stops at 60. The sound and the position the player keeps are not affected. */
+export const PLAYHEAD_FPS_KEY = "pacemaker-revival.playheadFps";
+export const PLAYHEAD_FPS_CHOICES = [60, 30, 0] as const;
+export const PLAYHEAD_FPS_DEFAULT = 60;
+
+export function normalisePlayheadFps(raw: unknown): number {
+  return finite(raw) && (PLAYHEAD_FPS_CHOICES as readonly number[]).includes(raw) ? raw : PLAYHEAD_FPS_DEFAULT;
+}
+
+/** Whether the animation frame at `now` (ms) should redraw the playhead, given the last redraw
+ *  at `last`. A frame counts once three quarters of the interval has passed, so a 60 Hz screen
+ *  under the 60 cap draws every frame, a 144 Hz one about every second frame (72 a second), a
+ *  166 Hz one every third (55) and the 30 cap on a 60 Hz screen every second frame. */
+export function playheadDue(now: number, last: number, fps: number): boolean {
+  if (fps <= 0) return true;
+  return now - last >= (1000 / fps) * 0.75;
+}
+
 /** How long an error message stays, in seconds; 0 = until it is closed. The choices the Settings offer. */
 export const ERROR_SECS_CHOICES = [10, 20, 60, 0] as const;
 export const ERROR_SECS_DEFAULT = 20;

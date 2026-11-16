@@ -21,7 +21,7 @@ The search box matches the title, the one-line help, the keywords and the area n
 
 | Area | What is in it |
 |---|---|
-| Appearance | Interface size, error and "finished" message times, the beat grid on the player, waveform colours |
+| Appearance | Interface size, error and "finished" message times, the beat grid on the player, playhead smoothness, waveform colours |
 | Library | Where your library on this computer is kept, the energy source, metadata clean-up recipes, writing tags to files, Sync |
 | Cases | Smart cases, case export, the duplicate finder |
 | Mixes | Auto transitions, tempo matching, mix audio export, the track list and CUE sheet, the set builder |
@@ -35,6 +35,10 @@ The search box matches the title, the one-line help, the keywords and the area n
 ## Interface size
 
 The slider sets the size of everything in the window, from a small laptop to a very large monitor. Ctrl and + make it bigger, Ctrl and - smaller and Ctrl and 0 put it back to the default. If things no longer fit, pick a smaller size.
+
+## Playhead smoothness
+
+How often the line that moves along the waveform is redrawn while a track plays: up to 60 a second (the default), up to 30, or at every refresh of the screen. On a 144 Hz screen the default uses roughly a third to half less processor time than redrawing every refresh and looks the same; 30 is gentler on an older computer or a laptop on battery. The sound and the position the player keeps are not affected.
 
 ## Waveform colours
 

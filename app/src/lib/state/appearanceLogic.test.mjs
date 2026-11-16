@@ -1,7 +1,7 @@
 // Run: node --experimental-strip-types src/lib/state/appearanceLogic.test.mjs
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { WAVE_COLOURS, WAVE_THEME_DEFAULT, normaliseWaveTheme, addToast, DONE_SECS_DEFAULT, normaliseDoneSecs, ERROR_SECS_DEFAULT, GRID_MIN_DEFAULT, MAX_TOASTS, normaliseGridMin, clampScale, normaliseErrorSecs, normaliseScale, scaleKey, stepScale, toastMs, zoomFactor } from "./appearanceLogic.ts";
+import { PLAYHEAD_FPS_DEFAULT, normalisePlayheadFps, playheadDue, WAVE_COLOURS, WAVE_THEME_DEFAULT, normaliseWaveTheme, addToast, DONE_SECS_DEFAULT, normaliseDoneSecs, ERROR_SECS_DEFAULT, GRID_MIN_DEFAULT, MAX_TOASTS, normaliseGridMin, clampScale, normaliseErrorSecs, normaliseScale, scaleKey, stepScale, toastMs, zoomFactor } from "./appearanceLogic.ts";
 
 // size: 80 to 200 %, default 100, junk gives the default
 assert.equal(clampScale(100), 100);
@@ -89,3 +89,24 @@ assert.ok(lum(WAVE_COLOURS.matrix.low) < lum(WAVE_COLOURS.matrix.mid) && lum(WAV
 // the stylesheet's own values (what shows before the app sets them) are the default theme
 const css = readFileSync(new URL("../styles/tokens.css", import.meta.url), "utf8");
 for (const k of ["low", "mid", "high"]) assert.match(css, new RegExp(`--wave-${k}: ${WAVE_COLOURS.matrix[k]};`), `tokens.css --wave-${k}`);
+
+// playhead smoothness: 60 a second by default, 30 or every refresh as the other choices, junk gives the default
+assert.equal(PLAYHEAD_FPS_DEFAULT, 60);
+for (const ok of [60, 30, 0]) assert.equal(normalisePlayheadFps(ok), ok);
+for (const junk of [null, undefined, "30", 45, -1, NaN, {}]) assert.equal(normalisePlayheadFps(junk), 60, String(junk));
+// how many frames of a screen draw: simulate 1 s of refreshes at each rate
+const drawn = (hz, cap) => {
+  let last = -Infinity, n = 0;
+  for (let f = 0; f < hz; f++) {
+    const now = (f * 1000) / hz;
+    if (playheadDue(now, last, cap)) { last = now; n++; }
+  }
+  return n;
+};
+assert.equal(drawn(60, 60), 60, "a 60 Hz screen under the 60 cap loses no frame");
+assert.equal(drawn(60, 30), 30);
+assert.equal(drawn(144, 60), 72);
+assert.equal(drawn(166, 60), 56);
+assert.equal(drawn(166, 0), 166, "0 = every refresh, as before");
+assert.equal(drawn(30, 60), 30, "a slow screen is never throttled further");
+assert.equal(playheadDue(0, -Infinity, 30), true, "the first frame always draws");

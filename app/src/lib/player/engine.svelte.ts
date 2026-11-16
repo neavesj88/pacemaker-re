@@ -9,6 +9,8 @@ import type { Unlisten } from "$lib/api/events";
 import { playbackAllowFile, playbackBeats, playbackSource } from "$lib/api/playback";
 import { playback } from "$lib/state/playback.svelte";
 import { session } from "$lib/state/session.svelte";
+import { appearance } from "$lib/state/appearance.svelte";
+import { playheadDue } from "$lib/state/appearanceLogic";
 
 /** The few things the engine needs from an audio output. */
 interface Media {
@@ -151,6 +153,8 @@ class Engine {
   #media: Media = this.#clock;
   #token = 0;
   #raf = 0;
+  /** performance.now() of the last playhead redraw. */
+  #drawn = -Infinity;
   #tick: ReturnType<typeof setInterval> | undefined;
   #cuePreviewing = false;
   #started = false;
@@ -375,11 +379,13 @@ class Engine {
     );
   }
 
-  /** Copies the output's clock into the transport, applying the beat loop. */
-  #sync() {
+  /** Copies the output's clock into the transport, applying the beat loop. With `draw` false the
+   * loop is still applied but the position is not written, so nothing on the page is redrawn. */
+  #sync(draw = true) {
     const off = playback.mixPreview?.fromSecs ?? 0;
     const loop = playback.mixPreview ? null : playback.loop;
     if (loop && this.#media.time >= loop.end) this.#media.time = loop.start;
+    if (!draw) return;
     playback.position = off + this.#media.time;
     if (!playback.duration && this.#media.duration) playback.duration = this.#media.duration;
   }
@@ -396,7 +402,12 @@ class Engine {
 
   #frame = () => {
     cancelAnimationFrame(this.#raf);
-    this.#sync();
+    // the playhead is redrawn at the chosen rate (Settings > Appearance), not at every refresh of
+    // a fast screen; the first frame of a play and every frame after a pause or seek still draws
+    const now = performance.now();
+    const due = !playback.playing || playheadDue(now, this.#drawn, appearance.playheadFps);
+    if (due) this.#drawn = now;
+    this.#sync(due);
     if (playback.playing && this.ready) {
       this.#raf = requestAnimationFrame(this.#frame);
       // animation frames stop in a hidden or minimised window; the beat loop must keep wrapping.

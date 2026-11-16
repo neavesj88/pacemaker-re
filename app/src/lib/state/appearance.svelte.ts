@@ -10,6 +10,9 @@ import {
   GRID_MIN_DEFAULT,
   GRID_MIN_KEY,
   normaliseGridMin,
+  normalisePlayheadFps,
+  PLAYHEAD_FPS_DEFAULT,
+  PLAYHEAD_FPS_KEY,
   normaliseWaveTheme,
   WAVE_COLOURS,
   WAVE_THEME_DEFAULT,
@@ -34,6 +37,8 @@ class Appearance {
   doneSecs = $state(loadPref(DONE_SECS_KEY, normaliseDoneSecs, () => DONE_SECS_DEFAULT));
   /** Least width of one bar (px) that still gets a bar line on the player waveform; 0 = no grid. */
   gridMinBarPx = $state(loadPref(GRID_MIN_KEY, normaliseGridMin, () => GRID_MIN_DEFAULT));
+  /** Playhead redraws per second while playing at most; 0 = every screen refresh. */
+  playheadFps = $state(loadPref(PLAYHEAD_FPS_KEY, normalisePlayheadFps, () => PLAYHEAD_FPS_DEFAULT));
   /** Colours of the waveforms: "matrix" (calm green, default) or "neon". */
   waveTheme = $state<WaveTheme>(loadPref(WAVE_THEME_KEY, normaliseWaveTheme, () => WAVE_THEME_DEFAULT));
   /** The three band colours of the chosen theme; canvases read this so they redraw when it changes. */
@@ -93,6 +98,11 @@ class Appearance {
   setGridMinBarPx(px: number) {
     this.gridMinBarPx = normaliseGridMin(px);
     savePref(GRID_MIN_KEY, this.gridMinBarPx);
+  }
+
+  setPlayheadFps(fps: number) {
+    this.playheadFps = normalisePlayheadFps(fps);
+    savePref(PLAYHEAD_FPS_KEY, this.playheadFps);
   }
 
   setDoneSecs(secs: number) {
