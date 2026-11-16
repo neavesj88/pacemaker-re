@@ -18,6 +18,8 @@ export type BgSettings = {
   hold_during_sync_plan: boolean;
   /** A detected key below this confidence (per cent, 0-100) is listed, not written. */
   key_min_confidence_pct: number;
+  /** Analyse below normal priority so everything else gets the processor first. */
+  low_priority: boolean;
 };
 
 export type BgState = "no-library" | "off" | "manual" | "paused" | "playing" | "waiting" | "held" | "running" | "idle" | "blocked" | "error";

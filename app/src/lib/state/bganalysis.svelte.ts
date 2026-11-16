@@ -35,6 +35,8 @@ export const DEFAULT_BG_SETTINGS: BgSettings = {
   pause_during_playback: true,
   hold_during_sync_plan: true,
   key_min_confidence_pct: 0,
+  // only until the real value arrives: the app starts it on for a machine with four processors or fewer
+  low_priority: false,
 };
 
 const NO_STATUS: BgStatus = { state: "no-library", detail: "", root: null, pacemaker: false, word: "", done: 0, total: 0, left: 0, label: "", failures: 0 };

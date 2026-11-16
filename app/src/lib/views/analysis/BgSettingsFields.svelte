@@ -62,6 +62,14 @@
 </label>
 
 <label class="opt">
+  <input type="checkbox" checked={s.low_priority} onchange={(e) => bg.save({ low_priority: e.currentTarget.checked })} />
+  <span>
+    Analyse at low priority
+    <small class="muted">Everything else on this computer gets the processor first, so the app stays quick on a small machine. Results are the same; analysis is slower while the computer is busy. On by default for computers with four processors or fewer.</small>
+  </span>
+</label>
+
+<label class="opt">
   <input type="checkbox" checked={s.hold_during_sync_plan} onchange={(e) => bg.save({ hold_during_sync_plan: e.currentTarget.checked })} />
   <span>
     Wait while a Sync plan is on screen

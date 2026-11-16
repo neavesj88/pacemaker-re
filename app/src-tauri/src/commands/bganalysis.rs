@@ -877,7 +877,14 @@ impl Worker {
     }
 
     fn run_forever(mut self) {
+        let mut low = false;
         loop {
+            // a settings save wakes the loop (it asks for a replan), so a change lands before the next track
+            let want = self.shared.lock().settings.low_priority;
+            if want != low {
+                set_thread_low_priority(want);
+                low = want;
+            }
             let w = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| self.step())).unwrap_or_else(|_| {
                 // a bug must not end the queue for the rest of the session; look again shortly
                 self.engine.replan();
@@ -887,6 +894,21 @@ impl Worker {
         }
     }
 }
+
+/// Puts the calling thread below normal priority (or back to normal). Windows only for now; the
+/// other systems keep the thread as it is.
+#[cfg(windows)]
+fn set_thread_low_priority(low: bool) {
+    use windows::Win32::System::Threading::{GetCurrentThread, SetThreadPriority, THREAD_PRIORITY_BELOW_NORMAL, THREAD_PRIORITY_NORMAL};
+    // SAFETY: the pseudo handle of the calling thread is always valid.
+    let r = unsafe { SetThreadPriority(GetCurrentThread(), if low { THREAD_PRIORITY_BELOW_NORMAL } else { THREAD_PRIORITY_NORMAL }) };
+    if let Err(e) = r {
+        eprintln!("bganalysis: could not change the thread priority: {e}");
+    }
+}
+
+#[cfg(not(windows))]
+fn set_thread_low_priority(_low: bool) {}
 
 fn tick_now(shared: &Shared) -> u64 {
     shared.lock().tick
@@ -1525,6 +1547,23 @@ mod tests {
         assert!(matches!(w.step(), Wait::Timeout(..)));
         assert_eq!(env.last_state(), "error");
         std::fs::remove_dir_all(&base).unwrap();
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn the_priority_switch_changes_the_calling_thread_and_back() {
+        use windows::Win32::System::Threading::{GetCurrentThread, GetThreadPriority, THREAD_PRIORITY_BELOW_NORMAL, THREAD_PRIORITY_NORMAL};
+        // a thread of its own, so no other test's thread is touched
+        std::thread::spawn(|| {
+            let now = || unsafe { GetThreadPriority(GetCurrentThread()) };
+            assert_eq!(now(), THREAD_PRIORITY_NORMAL.0);
+            set_thread_low_priority(true);
+            assert_eq!(now(), THREAD_PRIORITY_BELOW_NORMAL.0);
+            set_thread_low_priority(false);
+            assert_eq!(now(), THREAD_PRIORITY_NORMAL.0);
+        })
+        .join()
+        .unwrap();
     }
 
     #[test]

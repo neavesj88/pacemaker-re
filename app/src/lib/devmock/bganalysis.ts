@@ -28,7 +28,7 @@ const NO_KEY_TRACK = 11;
 const WEAK_KEY_TRACK = 12;
 const KEYS = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
 
-let settings = { enabled: true, waveforms: true, keys: true, energy: true, sections: true, pause_during_playback: true, hold_during_sync_plan: true, key_min_confidence_pct: 0 };
+let settings = { enabled: true, waveforms: true, keys: true, energy: true, sections: true, pause_during_playback: true, hold_during_sync_plan: true, key_min_confidence_pct: 0, low_priority: false };
 let root: string | null = null;
 let manualRoot: string | null = null;
 let paused = false;

@@ -54,11 +54,34 @@ pub struct Settings {
     pub hold_during_sync_plan: bool,
     /// A detected key below this confidence (per cent) is not written; it is listed instead.
     pub key_min_confidence_pct: u8,
+    /// Run the analysis thread below normal priority, so the app and whatever else is open get
+    /// the processor first. Results are the same; a busy machine analyses more slowly.
+    pub low_priority: bool,
+}
+
+/// A machine with this many logical processors or fewer starts with [`Settings::low_priority`]
+/// on: with so few, one analysis thread at full priority is felt by everything else. Bigger
+/// machines have a core to spare and start with it off.
+const FEW_PROCESSORS: usize = 4;
+
+fn low_priority_by_default(logical: usize) -> bool {
+    logical <= FEW_PROCESSORS
 }
 
 impl Default for Settings {
     fn default() -> Self {
-        Settings { enabled: true, waveforms: true, keys: true, energy: true, sections: true, pause_during_playback: true, hold_during_sync_plan: true, key_min_confidence_pct: 0 }
+        let logical = std::thread::available_parallelism().map_or(FEW_PROCESSORS, usize::from);
+        Settings {
+            enabled: true,
+            waveforms: true,
+            keys: true,
+            energy: true,
+            sections: true,
+            pause_during_playback: true,
+            hold_during_sync_plan: true,
+            key_min_confidence_pct: 0,
+            low_priority: low_priority_by_default(logical),
+        }
     }
 }
 
@@ -385,6 +408,20 @@ impl Engine {
 mod tests {
     use super::*;
     use std::collections::{HashMap, HashSet};
+
+    #[test]
+    fn low_priority_starts_on_only_for_machines_with_few_processors() {
+        assert!(low_priority_by_default(1) && low_priority_by_default(2) && low_priority_by_default(4));
+        assert!(!low_priority_by_default(5) && !low_priority_by_default(24));
+        // a settings file from before the option existed takes this machine's default
+        let old: Settings = serde_json::from_str(r#"{"keys": false}"#).unwrap();
+        assert_eq!(old.low_priority, Settings::default().low_priority);
+        assert!(!old.keys);
+        // and one that states it keeps what it states
+        let on: Settings = serde_json::from_str(r#"{"low_priority": true}"#).unwrap();
+        let off: Settings = serde_json::from_str(r#"{"low_priority": false}"#).unwrap();
+        assert!(on.low_priority && !off.low_priority);
+    }
 
     fn item(id: i64) -> Item {
         Item { id, location: format!("/pmdb_tracks/t{id}.mp3"), size: 1000 + id, label: format!("Track {id}") }
