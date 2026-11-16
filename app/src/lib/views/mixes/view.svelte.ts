@@ -45,6 +45,9 @@ class MixView {
   playhead = $state(0);
   /** Keep the playhead in view while playing. */
   follow = $state(true);
+  /** Following is paused because the user scrolled or zoomed the timeline themselves; Play, a seek
+   * or "Follow again" brings it back. */
+  followPaused = $state(false);
   pickerOpen = $state(true);
   /** Height of the track table under the mix, px (dragged by its top edge, remembered). */
   pickerH = $state(loadPickerHeight() ?? 380);
@@ -96,6 +99,7 @@ class MixView {
   setZoom(pps: number, anchorPx?: number) {
     const next = clamp(pps, PPS_MIN, PPS_MAX);
     if (next === this.pps) return;
+    this.followPaused = true; // zooming is the user looking around: following would pull the view back
     // keep the sample under `anchorPx` (a pixel inside the lanes) where it is. The lanes cannot
     // scroll past their new end, so the position is clamped here: a position the element refuses
     // left this state far from the screen, and clips and waveforms were drawn for the wrong part
@@ -103,6 +107,14 @@ class MixView {
     const a = clamp(anchorPx ?? lane / 2, 0, lane);
     this.scrollLeft = zoomScroll(this.scrollLeft, this.pps, next, a, this.endSamples, this.viewW);
     this.pps = next;
+  }
+
+  pauseFollow() {
+    this.followPaused = true;
+  }
+
+  resumeFollow() {
+    this.followPaused = false;
   }
 
   /** Scrolls the lanes to `px`, within what they can scroll. */
@@ -115,6 +127,7 @@ class MixView {
     const sec = Math.max(10, samples / SR);
     this.pps = clamp((this.viewW - HEADER_W - 40) / sec, PPS_MIN, PPS_MAX);
     this.scrollLeft = 0;
+    this.followPaused = true;
   }
 
   reset() {

@@ -106,6 +106,7 @@ const PREF_ENTRIES = {
   "pm.mixes.recipes.v1": "auto-transitions",
   "pm.mixes.tempo.v1": "mix-tempo",
   "pm.mixes.snap.v1": "mix-snap",
+  "pm.mixes.follow.v1": "mix-follow",
   "pm.setbuilder.prefs.v1": "set-builder",
   "pacemaker-revival.setlist.v1": "setlist-print",
   "pacemaker-revival.vdj.v1": "virtualdj-export",
@@ -218,4 +219,13 @@ test("an inline entry whose component edits page-saved state saves it itself", (
     }
   }
   assert.ok(checked >= 2, `checked ${checked}`);
+});
+
+test("Settings search finds the playhead-following setting by what a person would type", () => {
+  const src = readFileSync(join(views, "mixes", "settings.ts"), "utf8");
+  const block = /id: "mix-follow",[\s\S]*?\n  \},/.exec(src)?.[0];
+  assert.ok(block, "the mix-follow entry exists");
+  const field = (name) => new RegExp(`${name}: "([^"]*)"`).exec(block)?.[1] ?? "";
+  const entry = e("mix-follow", field("area"), field("title"), field("help"), field("keywords"));
+  for (const q of ["follow", "follow playhead", "scroll", "smooth", "jump", "mixes playhead", "page"]) assert.equal(matches(entry, q), true, q);
 });

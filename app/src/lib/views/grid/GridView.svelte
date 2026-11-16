@@ -16,6 +16,8 @@
   import Overview from "./Overview.svelte";
   import TempoPanel from "./TempoPanel.svelte";
   import TempoStrip from "./TempoStrip.svelte";
+  import { followScroll } from "$lib/views/mixes/followLogic";
+  import { followPrefs } from "$lib/views/mixes/followPrefs.svelte";
   import TrackPick from "./TrackPick.svelte";
   import WaveCanvas from "./WaveCanvas.svelte";
   import { keyBoth } from "$lib/views/tracks/trackLogic";
@@ -107,8 +109,12 @@
     const loop = () => {
       head = Math.min(livePos(), editor.duration || Infinity);
       const span = viewSpan;
-      if (follow && span > 0 && (head > viewStart + span * 0.92 || head < viewStart)) {
-        viewStart = Math.max(0, Math.min(head - span * 0.08, Math.max(0, editor.duration - span)));
+      if (follow && span > 0) {
+        // the same smooth or paged following as the mix editor (Settings > Mixes); in seconds, one
+        // pixel at a time, so the waveform layer is redrawn only when the picture really moves
+        const end = Math.max(0, editor.duration - span);
+        const to = followScroll({ playhead: head, scroll: viewStart, view: span, maxScroll: end, stop: end, prefs: followPrefs.value, unit: 1 / pxPerSec });
+        if (to !== null) viewStart = to;
       }
       raf = requestAnimationFrame(loop);
     };

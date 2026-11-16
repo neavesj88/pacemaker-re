@@ -1,6 +1,7 @@
 import { mixExport } from "$lib/state/mixexport.svelte";
 import { tracklist } from "$lib/state/tracklist.svelte";
 import type { SettingsEntry } from "../settings/types";
+import FollowSettings from "./FollowSettings.svelte";
 import MixExportSettings from "./MixExportSettings.svelte";
 import RecipeSettings from "./RecipeSettings.svelte";
 import SnapSettings from "./SnapSettings.svelte";
@@ -25,6 +26,15 @@ const entries: SettingsEntry[] = [
     keywords: "mix snap beat bar phrase grid align beatmatch drag magnet",
     how: "inline",
     component: SnapSettings,
+  },
+  {
+    id: "mix-follow",
+    area: "Mixes",
+    title: "Following the playhead",
+    help: "How the timeline scrolls while a mix plays: smoothly with the playhead (the default) or a page at a time when it reaches the edge, and where the playhead sits. The beat grid editor's Follow uses it too.",
+    keywords: "mix follow playhead scroll smooth page jump timeline playing auto scroll grid editor",
+    how: "inline",
+    component: FollowSettings,
   },
   {
     id: "mix-tempo",

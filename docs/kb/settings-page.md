@@ -24,7 +24,7 @@ The search box matches the title, the one-line help, the keywords and the area n
 | Appearance | Interface size, error and "finished" message times, the beat grid on the player, playhead smoothness, waveform colours |
 | Library | Where your library on this computer is kept, the energy source, metadata clean-up recipes, writing tags to files, Sync |
 | Cases | Smart cases, case export, the duplicate finder |
-| Mixes | Auto transitions, tempo matching, mix audio export, the track list and CUE sheet, the set builder |
+| Mixes | Auto transitions, snap and beat-align, following the playhead, tempo matching, mix audio export, the track list and CUE sheet, the set builder |
 | Analysis | The BPM range, background analysis, key detection, energy, sections, suspect beat grids, tempo tools, the gap map |
 | Import and export | Watch folders, the request list matcher, the printable setlist, VirtualDJ list export |
 | History | The play log |

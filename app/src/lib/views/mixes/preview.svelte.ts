@@ -241,6 +241,7 @@ class Preview {
     try {
       if (!(await this.#ensure(doc))) return;
       if (token !== this.#token) return;
+      mv.resumeFollow();
       mv.playhead = toSamples(startSec);
       await this.#send(() => mixLivePlay(startSec));
       if (token !== this.#token) return;
@@ -265,6 +266,7 @@ class Preview {
     this.#stopRange();
     await this.#pauseLive();
     this.status = "rendering";
+    mv.resumeFollow();
     mv.playhead = toSamples(fromSec);
     try {
       const { path } = await mixes.renderPreview(fromSec, to, mixExport.previewGains(), mixExport.prefs.edgeFadeMs, this.#vocalIds(doc));
@@ -335,6 +337,7 @@ class Preview {
   /** Moves the playhead; while playing, the music jumps there at once. */
   async seek(samples: number) {
     const s = Math.max(0, samples);
+    mv.resumeFollow();
     mv.playhead = s;
     if (this.#range) {
       await this.play(s);

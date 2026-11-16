@@ -340,7 +340,10 @@
         <label class="ctl" title="Preview volume only; it is not saved in the mix">Master
           <input type="range" min="0" max="1" step="0.01" bind:value={preview.volume} aria-label="Preview volume" />
         </label>
-        <label class="ctl follow"><input type="checkbox" bind:checked={mv.follow} /> follow playhead</label>
+        <label class="ctl follow" title="Scroll the timeline with the playhead while playing. How it scrolls is in Settings > Mixes."><input type="checkbox" bind:checked={mv.follow} onchange={() => mv.resumeFollow()} /> follow playhead</label>
+        {#if mv.follow && mv.followPaused && preview.playing}
+          <button class="again" onclick={() => mv.resumeFollow()} title="You scrolled or zoomed the timeline, so it stopped following. Click to bring the view back to the playhead and follow it again.">Follow again</button>
+        {/if}
         <span class="legend">plays live as you edit · drag clips · click a block to edit it · Space plays from the playhead · double-click the timeline to move it</span>
       </div>
       {#if mv.pickerOpen}<MixPicker />{/if}
@@ -503,6 +506,16 @@
   }
   .follow {
     margin-left: 8px;
+  }
+  .again {
+    margin-left: 4px;
+    padding: 1px 8px;
+    font-size: 12px;
+    color: var(--text);
+    background: var(--panel);
+    border: 1px solid var(--accent);
+    border-radius: 4px;
+    cursor: pointer;
   }
   .legend {
     margin-left: auto;

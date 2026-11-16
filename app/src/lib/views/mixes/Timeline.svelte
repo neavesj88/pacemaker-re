@@ -21,7 +21,9 @@
   import EnvelopeSvg from "./EnvelopeSvg.svelte";
   import FadeBlock from "./FadeBlock.svelte";
   import { toolPrefs } from "./listPrefs.svelte";
-  import { HEADER_W, PPS_MAX, PPS_MIN, SR, clamp, clipColour, envToKey, keyToEnv, laneContentW, packRows, rulerTicks, mmss } from "./layout";
+  import { followScroll } from "./followLogic";
+  import { followPrefs } from "./followPrefs.svelte";
+  import { HEADER_W, PPS_MAX, PPS_MIN, SR, clamp, clipColour, envToKey, keyToEnv, laneContentW, maxScroll, packRows, rulerTicks, mmss } from "./layout";
   import { preview } from "./preview.svelte";
   import ToolBlock from "./ToolBlock.svelte";
   import { mv } from "./view.svelte";
@@ -120,8 +122,13 @@
 
   // ---- scrolling and zoom -------------------------------------------------------------------
 
+  /** The scroll position the code last asked the element for (zoom, "scroll to", following). A
+   * scroll event that lands anywhere else is the user's own scrolling (wheel, scrollbar, keys). */
+  let askedScroll = 0;
+
   function onscroll() {
     if (scroller) {
+      if (Math.abs(scroller.scrollLeft - askedScroll) > 1.5) mv.pauseFollow();
       mv.scrollLeft = scroller.scrollLeft;
       mv.viewW = scroller.clientWidth;
     }
@@ -132,11 +139,13 @@
     const s = scroller;
     const want = mv.scrollLeft;
     if (!s || Math.abs(s.scrollLeft - want) <= 0.5) return;
+    askedScroll = want;
     s.scrollLeft = want;
     // the element refuses a position past its end, and then sends no scroll event when it could not
     // move at all: take its answer, or the view state keeps a scroll position that is not on screen
     // (clips and waveforms were then drawn for the wrong part of the timeline)
     const got = s.scrollLeft;
+    askedScroll = got;
     if (Math.abs(got - want) > 0.5) untrack(() => (mv.scrollLeft = got));
   });
 
@@ -150,6 +159,7 @@
         mv.setZoom(clamp(mv.pps * Math.exp(-e.deltaY * 0.0015), PPS_MIN, PPS_MAX), e.clientX - r.left - HEADER_W);
       } else if (e.shiftKey && e.deltaX === 0) {
         e.preventDefault();
+        mv.pauseFollow();
         s.scrollLeft += e.deltaY;
       }
     };
@@ -200,12 +210,27 @@
     });
   });
 
-  // keep the playhead in view while playing: scroll when it runs off the right edge
+  // Follow the playhead while playing (Settings > Mixes > Following the playhead). It runs when the
+  // playhead moves, which the engine reports about 30 times a second, so the view and the line are
+  // moved in the same step. A user scroll or zoom pauses it (mv.followPaused) until Play, a seek or
+  // "Follow again"; the tick in the toolbar turns it off.
   $effect(() => {
-    const px = mv.x(mv.playhead);
-    if (!preview.playing || !mv.follow) return;
-    const right = mv.scrollLeft + mv.viewW - HEADER_W;
-    if (px > right - 24 && px < right + 400) mv.scrollLeft = Math.max(0, px - (mv.viewW - HEADER_W) * 0.15);
+    const playhead = mv.x(mv.playhead);
+    if (!preview.playing || !mv.follow || mv.followPaused) return;
+    const prefs = followPrefs.value;
+    untrack(() => {
+      const lane = mv.viewW - HEADER_W;
+      const to = followScroll({
+        playhead,
+        scroll: mv.scrollLeft,
+        view: lane,
+        maxScroll: maxScroll(mv.endSamples, mv.pps, mv.viewW),
+        // the end of the mix at the right edge, with a little room
+        stop: Math.max(0, mv.x(doc.length) + 40 - lane),
+        prefs,
+      });
+      if (to !== null) mv.scrollTo(to);
+    });
   });
 
   // ---- ruler ----------------------------------------------------------------------------------
