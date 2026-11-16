@@ -14,6 +14,7 @@ import { energySource } from "$lib/state/energySource.svelte";
 import { filterByLabels, NO_LABELS, type TrackLabels } from "$lib/state/labels";
 import { labels } from "$lib/state/labels.svelte";
 import { session } from "$lib/state/session.svelte";
+import { pipelineFields } from "./keepOrder";
 import { compileQuery, type QueryContext } from "./query";
 import type { TableState } from "./tableState.svelte";
 import { filterTracks, sortTracksBy, type CaseLookup } from "./trackLogic";
@@ -70,6 +71,12 @@ export function tracksViewRows(all: Track[], st: TableState = tracksState): Trac
     (id) => energy.of(id),
     cases,
   );
+}
+
+/** The track fields the table's search, filter and sort read right now, or null when a search
+ *  query is active (it can read any field). See keepOrder.ts. */
+export function orderFields(st: TableState = tracksState): ReadonlySet<string> | null {
+  return compileQuery(st.search.applied).empty ? pipelineFields(st.filter, st.prefs.sort) : null;
 }
 
 const makeCaseSet = (ids: readonly number[]) => {
