@@ -118,14 +118,21 @@ impl Player {
                 let run = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 loop {
                     w.stats.loops.fetch_add(1, Relaxed);
-                    // while the last frames are queued there is nothing to render: wait, do not spin
-                    let wait = if w.playing && !w.ending && w.ring.len() < TARGET_FRAMES as usize { Duration::ZERO } else { Duration::from_millis(4) };
                     let mut batch = Vec::new();
-                    match rx.recv_timeout(wait) {
-                        Ok(c) => batch.push(c),
-                        Err(RecvTimeoutError::Timeout) => {}
-                        Err(RecvTimeoutError::Disconnected) => break,
-                    }
+                    // paused (or no mix): nothing to do until a command comes, so no timer at all
+                    // (a mix that was open and paused used to wake the CPU 64 times a second)
+                    let first = match w.wait() {
+                        None => match rx.recv() {
+                            Ok(c) => Some(c),
+                            Err(_) => break,
+                        },
+                        Some(wait) => match rx.recv_timeout(wait) {
+                            Ok(c) => Some(c),
+                            Err(RecvTimeoutError::Timeout) => None,
+                            Err(RecvTimeoutError::Disconnected) => break,
+                        },
+                    };
+                    batch.extend(first);
                     while let Ok(c) = rx.try_recv() {
                         batch.push(c);
                     }
@@ -221,6 +228,25 @@ impl Worker {
     fn set_ending(&mut self, e: bool) {
         self.ending = e;
         self.ring.set_last(e);
+    }
+
+    /// How long the worker may sleep before it has something to do: `None` while nothing plays
+    /// (only a command can change that), otherwise until the ring has drained enough to refill,
+    /// the last frames have played, or the next position report is due, whichever is first. Never
+    /// longer than the old fixed 4 ms poll was needed for, never shorter than 1 ms.
+    fn wait(&self) -> Option<Duration> {
+        if !self.playing {
+            return None;
+        }
+        let len = self.ring.len();
+        if !self.ending && len < TARGET_FRAMES as usize {
+            return Some(Duration::ZERO);
+        }
+        // while the last frames are queued there is nothing to render: wait, do not spin
+        let frames = if self.ending { len } else { len - TARGET_FRAMES as usize + 1 };
+        let drain = Duration::from_micros(frames as u64 * 1_000_000 / u64::from(crate::RATE));
+        let until_position = POSITION_EVERY.saturating_sub(self.last_pos.elapsed());
+        Some(drain.min(until_position).clamp(Duration::from_millis(1), Duration::from_millis(20)))
     }
 
     fn note(&self, s: impl Into<String>) {
@@ -701,6 +727,45 @@ mod tests {
         let passes = p.stats.loops.load(Relaxed) - loops;
         assert!(passes < 400, "{passes} loop passes in 500 ms: the worker is spinning");
         drop(p);
+    }
+
+    /// A mix that is open but not playing costs no wake-ups; playing wakes the worker about as
+    /// often as it has something to do (refills and the position report), not every 4 ms.
+    #[test]
+    fn the_worker_sleeps_while_paused_and_wakes_sparingly_while_playing() {
+        let ring = Arc::new(Ring::new(1 << 15));
+        let (notify, events) = collect_events();
+        let p = Player::spawn(ring.clone(), getter(2), notify);
+        p.send(Command::Load(mix_of(2, 1.0), LiveOptions::default()));
+        std::thread::sleep(Duration::from_millis(200));
+        let l0 = p.stats.loops.load(Relaxed);
+        std::thread::sleep(Duration::from_millis(1000));
+        let idle = p.stats.loops.load(Relaxed) - l0;
+        eprintln!("wakeups per second, mix open and paused: {idle}");
+        assert!(idle <= 2, "{idle} wake-ups in 1 s with nothing playing");
+
+        let fake = Fake::start(ring.clone(), 480, 1.0, false);
+        p.send(Command::Play(0));
+        assert!(wait_for(|| ring.tail() > 44100, 10.0));
+        let (l1, s1) = (p.stats.loops.load(Relaxed), p.stats.steps.load(Relaxed));
+        let u1 = ring.underruns();
+        std::thread::sleep(Duration::from_millis(2000));
+        let (loops, steps) = (p.stats.loops.load(Relaxed) - l1, p.stats.steps.load(Relaxed) - s1);
+        eprintln!("wakeups per second, playing: {} (refills {})", loops / 2, steps / 2);
+        assert_eq!(ring.underruns(), u1, "the device ran dry");
+        assert!(events.lock().unwrap().iter().filter(|e| matches!(e, Event::Position { playing: true, .. })).count() >= 40, "position reports must keep their pace");
+        // pausing goes back to sleep
+        p.send(Command::Pause);
+        std::thread::sleep(Duration::from_millis(300));
+        let l2 = p.stats.loops.load(Relaxed);
+        std::thread::sleep(Duration::from_millis(1000));
+        assert!(p.stats.loops.load(Relaxed) - l2 <= 2, "still waking after a pause");
+        // and a command wakes it at once
+        let t = ring.tail();
+        p.send(Command::Play(0));
+        assert!(wait_for(|| ring.tail() > t + 20_000, 10.0), "did not play again after the pause");
+        drop(p);
+        drop(fake);
     }
 
     #[test]
