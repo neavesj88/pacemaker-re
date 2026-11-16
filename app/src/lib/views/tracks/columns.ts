@@ -162,10 +162,10 @@ export function mergePrefs(saved: unknown, base: ViewPrefs = defaultPrefs()): Vi
 }
 
 /** The CSS grid track of each shown column: its width, or (when `fillWidth` is on) at least that
- *  width and a share of any spare room in proportion to it, for Title and Artist only. A pinned
+ *  width and an equal share of any spare room (so Title does not swallow it all), for Title and Artist only. A pinned
  *  column (one the user dragged) and the column being dragged (`fixedKey`) are exactly their width. */
 export function gridTemplate(cols: readonly ColDef[], widths: Readonly<Record<string, number>>, fillWidth: boolean, fixedKey: string | null = null, pinned: readonly string[] = []): string {
-  return cols.map((c) => (fillWidth && FLEX_COLUMNS.includes(c.key) && c.key !== fixedKey && !pinned.includes(c.key) ? `minmax(${widths[c.key]}px, ${widths[c.key]}fr)` : `${widths[c.key]}px`)).join(" ");
+  return cols.map((c) => (fillWidth && FLEX_COLUMNS.includes(c.key) && c.key !== fixedKey && !pinned.includes(c.key) ? `minmax(${widths[c.key]}px, 1fr)` : `${widths[c.key]}px`)).join(" ");
 }
 
 /** The columns to draw: in the saved order, hidden ones left out. */

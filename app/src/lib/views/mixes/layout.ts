@@ -44,7 +44,8 @@ export function mmss(sec: number): string {
 
 /** Bar and beat of a timeline sample at `bpm` (1-based, 4/4 from timeline 0). */
 export function barBeat(samples: number, bpm: number): { bar: number; beat: number } {
-  const beat = Math.max(0, samples) / ((60 / bpm) * SR);
+  // a sample of slack: a clip snapped onto a bar line is stored rounded to a whole sample
+  const beat = (Math.max(0, samples) + 1) / ((60 / bpm) * SR);
   return { bar: Math.floor(beat / 4) + 1, beat: Math.floor(beat % 4) + 1 };
 }
 

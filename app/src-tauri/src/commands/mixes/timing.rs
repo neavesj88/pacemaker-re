@@ -346,7 +346,7 @@ pub fn auto_transition(doc: &MixDoc, from_id: &str, to_id: &str, bars: Option<f6
         notes.push(format!("{} beat(s) is under a bar: no bass swap tools", (len / beat).round()));
     }
     if bars < requested {
-        notes.push(format!("{bars_avail:.1} bars overlap: using {bars}"));
+        notes.push(format!("{bars_avail:.1} bars of the two clips overlap, so the plain suggestion is {bars} bars"));
     }
     if (a.effective_bpm(t0 - a.span.start) - bpm).abs() > 0.1 {
         notes.push("the clips play at different tempos here: beat-match the incoming clip first".into());
@@ -637,7 +637,7 @@ mod tests {
         let s = auto_transition(&d, "a", "b", Some(32.0)).unwrap();
         assert_eq!(s.bars, 8.0);
         assert!(s.bars_available > 10.0 && s.bars_available < 12.0);
-        assert!(s.notes.iter().any(|n| n.contains("using 8")));
+        assert!(s.notes.iter().any(|n| n.contains("suggestion is 8 bars")));
         assert_eq!(auto_transition(&d, "a", "b", Some(4.0)).unwrap().bars, 4.0);
         // a length that is not on the ladder is kept when it fits
         assert_eq!(auto_transition(&d, "a", "b", Some(6.0)).unwrap().bars, 6.0);

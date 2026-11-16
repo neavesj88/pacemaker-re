@@ -889,7 +889,9 @@ export function effectiveFade(doc: MixDoc, t: { start: number; length: number })
   const start = Math.max(ts, to.c.visibleStart);
   const end = Math.min(te, from.c.visibleEnd);
   if (!(end > start)) return null;
-  return { start, length: end - start, clamped: start !== ts || end !== te, from: from.c, to: to.c };
+  // a sub-sample difference is rounding, not an overrun
+  const clamped = Math.abs(start - ts) > 1 || Math.abs(end - te) > 1;
+  return { start, length: end - start, clamped, from: from.c, to: to.c };
 }
 
 /** Cuts a crossfade to the audio its two clips share (`effectiveFade`), so what is stored is what is

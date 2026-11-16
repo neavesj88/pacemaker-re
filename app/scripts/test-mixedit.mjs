@@ -1426,6 +1426,14 @@ test("effectiveFade: never reaches past the outgoing clip's audible end (trim in
   assert.equal(E.effectiveFade(d, { start: 20 * BAR, length: 0 }), null);
 });
 
+test("effectiveFade: a sub-sample overrun is rounding, not a crossfade that reaches past the clips", () => {
+  const out = clip("out", 0, 40 * BAR, 120, 1, null);
+  const inc = clip("in", 20 * BAR, 40 * BAR, 120, 1, null, { channel: 1 });
+  const d = doc([out, inc]);
+  assert.equal(E.effectiveFade(d, { start: 30 * BAR, length: 10 * BAR + 0.5 }).clamped, false);
+  assert.equal(E.effectiveFade(d, { start: 30 * BAR, length: 10 * BAR + 2 }).clamped, true);
+});
+
 test("effectiveFade picks the clips the way the mixer does: the last to start is incoming, of the rest the last to end is outgoing", () => {
   const a = clip("a", 0, 30 * BAR, 120, 1, null);
   const b = clip("b", 0, 50 * BAR, 120, 1, null, { start: 5 * BAR, channel: 1 });

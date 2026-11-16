@@ -45,6 +45,33 @@ function spaceFree(t: EventTarget | null): boolean {
 export default function init(): Unlisten {
   const stopEngine = engine.start();
 
+  // Hover, then Space: the pointer over the mix timeline or the player's waveform wins over a row
+  // or a button that happens to have the focus (right after selecting a track, or clicking Play
+  // with the mouse). It runs before them (capture), so they never see the press.
+  const hoverDown = (e: KeyboardEvent) => {
+    if (e.code !== "Space" || e.ctrlKey || e.metaKey || typing(e.target) || !session.library) return;
+    if (hoverCue.surface === null || overlayOpen()) return;
+    const t = e.target;
+    // a button or checkbox-like control keeps Space unless it is a plain button (those stay operable by Enter)
+    if (t instanceof Element && t.closest(OWN_SPACE) && !t.closest("button, [role=button]")) return;
+    const hover = decideSpace({
+      surface: hoverCue.surface,
+      typing: false,
+      ownedByControl: false,
+      mixPlayingElsewhere: spaceStopsMix(preview.playing, nav.view),
+    });
+    if (hover === "default") return;
+    e.preventDefault(); // the page must not scroll
+    e.stopPropagation();
+    if (e.repeat) return;
+    if (hover === "move-mix-cue") void preview.seek(toSamples(hoverCue.secs));
+    else {
+      // the cue flag moves; a track that is playing carries on from there
+      playback.setCue(hoverCue.secs);
+      if (playback.playing) playback.seek(hoverCue.secs);
+    }
+  };
+
   const down = (e: KeyboardEvent) => {
     if (e.key === "Alt") hoverCue.exact = true;
     if (e.ctrlKey || e.metaKey || typing(e.target) || !session.library) return;
@@ -52,24 +79,6 @@ export default function init(): Unlisten {
     if (e.altKey && !(e.code === "Space" && hoverCue.surface !== null)) return;
     if (e.code === "Space") {
       if (!spaceFree(e.target)) return;
-      // a row or view that already handled the press keeps it: one key, one action
-      const hover = e.defaultPrevented ? "default" : decideSpace({
-        surface: hoverCue.surface,
-        typing: false,
-        ownedByControl: false,
-        mixPlayingElsewhere: spaceStopsMix(preview.playing, nav.view),
-      });
-      if (hover !== "default") {
-        e.preventDefault(); // the page must not scroll, and the mix editor sees the press as handled
-        if (e.repeat) return;
-        if (hover === "move-mix-cue") void preview.seek(toSamples(hoverCue.secs));
-        else {
-          // the cue flag moves; a track that is playing carries on from there
-          playback.setCue(hoverCue.secs);
-          if (playback.playing) playback.seek(hoverCue.secs);
-        }
-        return;
-      }
       // Alt+Space only ever means the hover cue; with nothing to move it is not ours
       if (e.altKey) return;
       // a table row, the mix editor or the grid editor already acted on this press: one key, one
@@ -96,7 +105,10 @@ export default function init(): Unlisten {
     if (e.key === "Alt") hoverCue.exact = false;
     if (typing(e.target)) return;
     if (e.code === "Space") {
-      if (session.library && spaceFree(e.target)) e.preventDefault();
+      // the button that had the press taken by the hover cue must not click on release
+      const t = e.target;
+      const hoverButton = hoverCue.surface !== null && !overlayOpen() && t instanceof Element && t.closest("button, [role=button]") !== null;
+      if (session.library && (spaceFree(e.target) || hoverButton)) e.preventDefault();
     } else if (e.code === "KeyC") engine.cueRelease();
   };
   // losing the window while CUE is held must not leave it playing
@@ -106,10 +118,12 @@ export default function init(): Unlisten {
     hoverCue.clear();
   };
 
+  window.addEventListener("keydown", hoverDown, true);
   window.addEventListener("keydown", down);
   window.addEventListener("keyup", up);
   window.addEventListener("blur", blur);
   return () => {
+    window.removeEventListener("keydown", hoverDown, true);
     window.removeEventListener("keydown", down);
     window.removeEventListener("keyup", up);
     window.removeEventListener("blur", blur);

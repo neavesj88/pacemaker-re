@@ -238,6 +238,8 @@
   }
   .seg {
     position: absolute;
+    top: 0;
+    bottom: 0;
     box-sizing: border-box;
     pointer-events: auto;
     cursor: grab;

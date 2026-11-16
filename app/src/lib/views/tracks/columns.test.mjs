@@ -160,9 +160,9 @@ test("Title and Artist share spare width when asked; every other column keeps it
   assert.equal(p.fillWidth, true);
   const cols = shownColumns(p).filter((c) => ["fav", "title", "artist", "bpm"].includes(c.key));
   const w = p.widths;
-  assert.equal(gridTemplate(cols, w, true), `${w.fav}px minmax(${w.title}px, ${w.title}fr) minmax(${w.artist}px, ${w.artist}fr) ${w.bpm}px`);
-  assert.equal(gridTemplate(cols, w, true, "title"), `${w.fav}px ${w.title}px minmax(${w.artist}px, ${w.artist}fr) ${w.bpm}px`, "the column being dragged is exact");
-  assert.equal(gridTemplate(cols, w, true, null, ["title"]), `${w.fav}px ${w.title}px minmax(${w.artist}px, ${w.artist}fr) ${w.bpm}px`, "a pinned column stays exact after release, same as while dragged");
+  assert.equal(gridTemplate(cols, w, true), `${w.fav}px minmax(${w.title}px, 1fr) minmax(${w.artist}px, 1fr) ${w.bpm}px`);
+  assert.equal(gridTemplate(cols, w, true, "title"), `${w.fav}px ${w.title}px minmax(${w.artist}px, 1fr) ${w.bpm}px`, "the column being dragged is exact");
+  assert.equal(gridTemplate(cols, w, true, null, ["title"]), `${w.fav}px ${w.title}px minmax(${w.artist}px, 1fr) ${w.bpm}px`, "a pinned column stays exact after release, same as while dragged");
   assert.deepEqual(mergePrefs({ pinned: ["title", "bpm", "x"] }).pinned, ["title"], "only Title/Artist can be pinned");
   assert.equal(mergePrefs({ widths: { title: 1500 } }).widths.title, 1500, "Title may be wider than 800");
   assert.equal(mergePrefs({ widths: { bpm: 1500 } }).widths.bpm, 800);

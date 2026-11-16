@@ -39,6 +39,9 @@ test("bar and beat at the mix tempo", () => {
   assert.deepEqual(L.barBeat(0, 120), { bar: 1, beat: 1 });
   assert.deepEqual(L.barBeat(L.SR * 2.5, 120), { bar: 2, beat: 2 });
   assert.deepEqual(L.barBeat(L.SR * 7.99, 120), { bar: 4, beat: 4 });
+  // a clip snapped onto a bar line is stored rounded to a whole sample, half a sample short
+  assert.deepEqual(L.barBeat(Math.round(28.125 * L.SR), 128), { bar: 16, beat: 1 });
+  assert.deepEqual(L.barBeat(Math.round(28.125 * L.SR) - 100, 128), { bar: 15, beat: 4 });
 });
 
 test("ruler ticks: grid-aligned, labelled sparsely, beats only when roomy", () => {

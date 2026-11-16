@@ -218,7 +218,7 @@
 <div class="buttons">
   <button onclick={toolMenu} title="Add a tool, loop, reverse or ignore to this clip at the playhead">+ Tool ▾</button>
   <button disabled={!nb.prev} onclick={() => void beatmatch(clip.id)} title={nb.prev ? "Match tempo and beats to the previous clip (half or double time when that stretches this track less)" : "There is no earlier clip"}>Beat-match</button>
-  <button onclick={() => beatAlign(clip.id)} title="Move this clip, without changing its tempo, to the nearest place where its beat grid lines up with its neighbour's (at the grain of the Snap setting). A clip without a beat grid is not moved.">Beat-align</button>
+  <button onclick={() => beatAlign(clip.id)} title="Move this clip, without changing its tempo, to the nearest place where its beat grid lines up with the audible part of its neighbour's (at the grain of the Snap setting), so it never lands past the end of the neighbour. A clip without a beat grid is not moved.">Beat-align</button>
   <button disabled={!nb.next} onclick={() => nb.next && void autoTransition(clip.id, nb.next.id)} title="Transition into the next clip with the recipe set below">Auto transition</button>
 </div>
 <details class="defaults">

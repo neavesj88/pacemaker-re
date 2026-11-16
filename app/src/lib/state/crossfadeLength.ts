@@ -12,6 +12,7 @@
 import type { MixDoc, TransitionSuggestion } from "../api/mixes";
 import { BEATS_PER_BAR, SR, clipBeatPoints, clipOf } from "./mixedit.ts";
 import type { Aligned } from "./sectionTransition.ts";
+import { lengthLabel } from "./transitionRecipes.ts";
 import type { CrossfadePlace } from "./transitionRecipes.ts";
 
 /** The length of `x` samples as whole bars of `beat * 4`, or whole beats when under a bar. */
@@ -67,7 +68,7 @@ export function placeTransition(doc: MixDoc, base: TransitionSuggestion, request
   if (Math.abs(w.start - t.start) <= 1 && Math.abs(w.length - t.length) <= 1) return same;
   const notes: string[] = [];
   const shared = (end - lo) / bar;
-  if (w.length / bar < requestedBars - 1e-9) notes.push(`${shared.toFixed(1)} bars of the two clips overlap, so the crossfade is ${w.length / bar} bar${w.length / bar === 1 ? "" : "s"} long`);
+  if (w.length / bar < requestedBars - 1e-9) notes.push(`${shared.toFixed(1)} bars of the two clips overlap, so the crossfade is ${lengthLabel(w.length / bar)} long`);
   notes.push("The crossfade ends at or just before the end of the outgoing clip");
   const suggestion: TransitionSuggestion = {
     ...base,

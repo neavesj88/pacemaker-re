@@ -272,7 +272,7 @@
         <option value="section">Section</option>
       </select>
     </span>
-    <Button small disabled={doc.clips.length < 2} onclick={() => beatAlign()} title="Move the selected clip (or, with a crossfade selected, its incoming clip) to the nearest place where its beat grid lines up with its neighbour's, at the grain chosen here. Its tempo does not change. A clip without a beat grid is not moved. Undo puts it back.">Beat-align</Button>
+    <Button small disabled={doc.clips.length < 2} onclick={() => beatAlign()} title="Move the selected clip (or, with a crossfade selected, its incoming clip) to the nearest place where its beat grid lines up with the audible part of its neighbour's, at the grain chosen here (a phrase after the neighbour ends does not count). Its tempo does not change. A clip without a beat grid is not moved. Undo puts it back.">Beat-align</Button>
     <label class="ctl follow" title={sections.showMarkers ? "Draw the detected sections (intro, build, drop, breakdown, outro) on the clips. Clips of tracks without sections show nothing." : "Turned off in the Sections panel's settings (show markers on waveforms)"}>
       <input type="checkbox" checked={mv.sectionMarkers && sections.showMarkers} disabled={!sections.showMarkers} onchange={(e) => mv.setSectionMarkers(e.currentTarget.checked)} /> sections
     </label>

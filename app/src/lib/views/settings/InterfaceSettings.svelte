@@ -108,7 +108,7 @@
       </label>
     {/each}
   </div>
-  <p class="muted note">The player, the track pictures and the grid editor. The clips of a mix keep their own colours, so you can tell them apart. Calm keeps the waveforms in the app's own green; Neon is the pink, lilac and bright green of the original mockup.</p>
+  <p class="muted note">The player, the track pictures and the grid editor. The clips of a mix keep their own colours, so you can tell them apart. Calm keeps the waveforms in the app's own green; Neon uses bright pink, lilac and green.</p>
   <p class="muted note">Other messages (saved, copied) disappear by themselves after a few seconds. Any message has a × to close it.</p>
 </div>
 
