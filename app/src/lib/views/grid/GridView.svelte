@@ -16,6 +16,7 @@
   import Overview from "./Overview.svelte";
   import TempoPanel from "./TempoPanel.svelte";
   import TempoStrip from "./TempoStrip.svelte";
+  import TrackPick from "./TrackPick.svelte";
   import WaveCanvas from "./WaveCanvas.svelte";
   import { keyBoth } from "$lib/views/tracks/trackLogic";
   import { vtempo } from "./vtempo.svelte";
@@ -300,14 +301,7 @@
   {:else}
     <div class="bar">
       {#key pickerKey}
-        <select
-          aria-label="Track"
-          value={editor.trackId ?? ""}
-          onchange={(e) => request(Number(e.currentTarget.value))}
-        >
-          {#if editor.trackId === null}<option value="" disabled>Choose a track…</option>{/if}
-          {#each tracks as t (t.track_id)}<option value={t.track_id}>{label(t)}</option>{/each}
-        </select>
+        <TrackPick {tracks} current={editor.trackId} onpick={request} />
       {/key}
       {#if editor.loaded}
         <span class="chip" class:g={!editor.dirty && !!editor.doc} class:bad={!editor.doc}>
@@ -614,9 +608,6 @@
   }
   .spacer {
     flex: 1;
-  }
-  select {
-    max-width: 380px;
   }
   .chip {
     font-size: 11px;
