@@ -341,7 +341,7 @@
           <input type="range" min="0" max="1" step="0.01" bind:value={preview.volume} aria-label="Preview volume" />
         </label>
         <label class="ctl follow"><input type="checkbox" bind:checked={mv.follow} /> follow playhead</label>
-        <span class="legend">plays live as you edit · drag clips · click a block to edit it · Space plays from the playhead, or moves it to where the pointer is on the timeline</span>
+        <span class="legend">plays live as you edit · drag clips · click a block to edit it · Space plays from the playhead · double-click the timeline to move it</span>
       </div>
       {#if mv.pickerOpen}<MixPicker />{/if}
     </div>

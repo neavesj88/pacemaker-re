@@ -1,13 +1,12 @@
 <script lang="ts">
   // The player's colour waveform: three-band peaks (colours from Settings: calm matrix green or neon),
   // beat ticks with the bar starts brighter, the cue flag, the beat loop and the playhead.
-  // Click or drag to seek. Copied from ui/Waveform (single colour, integration-owned) rather
+  // Click or drag to seek, double-click to move the cue flag. Copied from ui/Waveform (single colour, integration-owned) rather
   // than extended, as ARCHITECTURE.md rule 7 asks.
   import { gridAlpha, tickTier } from "./waveTicks";
   import { appearance } from "$lib/state/appearance.svelte";
   import type { Peak } from "$lib/api/analysis";
-  import { hoverLabel, waveSecs } from "./hoverCue";
-  import { hoverCue } from "./hoverCue.svelte";
+  import { waveSecs } from "./cuePoint";
 
   let {
     peaks,
@@ -20,7 +19,7 @@
     busy = false,
     disabled = false,
     onseek,
-    cueHover = false,
+    oncue,
   }: {
     peaks: Peak[] | null;
     beats?: number[];
@@ -34,8 +33,8 @@
     busy?: boolean;
     disabled?: boolean;
     onseek?: (fraction: number) => void;
-    /** A track is loaded: hovering shows where Space would put the cue, and Space moves it there. */
-    cueHover?: boolean;
+    /** Double-click: the cue flag goes to this time (seconds, exactly where the pointer is). Absent = no cue to move. */
+    oncue?: (secs: number) => void;
   } = $props();
 
   // The box fills whatever height the player bar gives it (48 px at the bar's default size); the
@@ -159,26 +158,14 @@
     dragging = false;
   }
 
-  // Hover, then Space: the pointer's time is shared with the one Space handler (init.ts). The bar
-  // has no beat-snap setting, so the cue goes exactly under the pointer.
-  let hoverF = $state<number | null>(null);
-  function hover(e: PointerEvent) {
-    if (!cueHover || disabled || duration <= 0) return;
+  // Double-click puts the cue flag exactly under the pointer (the bar has no beat snapping). The
+  // first click of the pair already moved the playing position, as a single click always does.
+  function dbl(e: MouseEvent) {
+    if (disabled || !oncue || e.button !== 0) return;
     const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
     const secs = waveSecs(e.clientX, r.left, r.width, 0, duration);
-    if (secs === null) return;
-    hoverF = secs / duration;
-    hoverCue.set("player", secs);
+    if (secs !== null) oncue(secs);
   }
-  function unhover() {
-    hoverF = null;
-    hoverCue.clear("player");
-  }
-  // the track went away (or the bar was disabled) while the pointer stayed: nothing to aim at
-  $effect(() => {
-    if (!cueHover || disabled) unhover();
-    return () => hoverCue.clear("player");
-  });
   /** Left / Right move 5 seconds (30 with Shift), Home and End jump to the ends. */
   function key(e: KeyboardEvent) {
     if (disabled || duration <= 0 || e.ctrlKey || e.metaKey || e.altKey) return;
@@ -209,21 +196,13 @@
   aria-valuetext="{clock(progress * duration)} of {clock(duration)}"
   onkeydown={key}
   onpointerdown={down}
-  onpointermove={(e) => {
-    move(e);
-    hover(e);
-  }}
-  onpointerleave={unhover}
+  onpointermove={move}
+  ondblclick={dbl}
   onpointerup={up}
   onpointercancel={up}
 >
   <canvas bind:this={canvas} style:width="{width}px" style:height="{height}px"></canvas>
   {#if !disabled}<div class="head" style:left="{Math.min(1, Math.max(0, progress)) * 100}%"></div>{/if}
-  {#if hoverF !== null && cueHover && !disabled}
-    <div class="hair" style:left="{Math.min(1, Math.max(0, hoverF)) * 100}%">
-      <span class:flip={hoverF > 0.85}>{hoverLabel(hoverF * duration)}</span>
-    </div>
-  {/if}
   {#if busy}<div class="note">loading…</div>{/if}
 </div>
 
@@ -261,32 +240,6 @@
     background: var(--green);
     box-shadow: 0 0 6px var(--green);
     pointer-events: none;
-  }
-  /* where Space would put the cue */
-  .hair {
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    width: 1px;
-    background: var(--text);
-    opacity: 0.8;
-    pointer-events: none;
-  }
-  .hair span {
-    position: absolute;
-    top: 2px;
-    left: 4px;
-    padding: 0 4px;
-    font-size: 11px;
-    line-height: 16px;
-    border-radius: 3px;
-    background: var(--deep);
-    color: var(--text);
-    white-space: nowrap;
-  }
-  .hair span.flip {
-    left: auto;
-    right: 4px;
   }
   .note {
     position: absolute;

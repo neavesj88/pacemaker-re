@@ -9,7 +9,7 @@
   //
   // Only what is near the viewport is rendered (clips, blocks, ruler marks, waveform canvases),
   // so a long mix with many clips stays as cheap as a short one.
-  import { onDestroy, onMount, untrack } from "svelte";
+  import { untrack } from "svelte";
   import type { Clip, EnvNode, ProcessDoc, TransitionDoc } from "$lib/api/mixes";
   import * as E from "$lib/state/mixedit";
   import { mixes } from "$lib/state/mixes.svelte";
@@ -23,8 +23,6 @@
   import { toolPrefs } from "./listPrefs.svelte";
   import { HEADER_W, PPS_MAX, PPS_MIN, SR, clamp, clipColour, envToKey, keyToEnv, laneContentW, packRows, rulerTicks, mmss } from "./layout";
   import { preview } from "./preview.svelte";
-  import { cueTime, hoverLabel, timelineSecs } from "$lib/player/hoverCue";
-  import { hoverCue } from "$lib/player/hoverCue.svelte";
   import ToolBlock from "./ToolBlock.svelte";
   import { mv } from "./view.svelte";
 
@@ -210,43 +208,6 @@
     if (px > right - 24 && px < right + 400) mv.scrollLeft = Math.max(0, px - (mv.viewW - HEADER_W) * 0.15);
   });
 
-  // ---- hover, then Space ----------------------------------------------------------------------
-  // The pointer's time is shared with the one Space handler (player/init.ts), which moves the
-  // playhead there. With Snap on it lands on the nearest beat (Alt = exactly under the pointer), so
-  // the hairline shows the snapped time. Recomputed when the pointer moves, the timeline scrolls or
-  // zooms, Alt changes or the mix is edited.
-  let pointerX = $state<number | null>(null);
-  $effect(() => {
-    const x = pointerX;
-    const exact = hoverCue.exact;
-    const d = doc;
-    const snapOn = mixes.snap !== "off";
-    void mv.scrollLeft;
-    void mv.pps;
-    // (untracked: the shared hover is written here, never read back)
-    if (x === null || !scroller) return untrack(() => hoverCue.clear("mix"));
-    const sec = timelineSecs(x, scroller.getBoundingClientRect().left, HEADER_W, mv.scrollLeft, mv.pps);
-    if (sec === null) return untrack(() => hoverCue.clear("mix"));
-    let beats: number[] = [];
-    if (snapOn && !exact) {
-      const at = Math.round(sec * SR);
-      beats = E.snapTargets(d, "beat", [], [at - 4 * SR, at + 4 * SR], mixes.sectionLookup).map((t) => t / SR);
-    }
-    const at = cueTime(sec, beats, snapOn, exact);
-    untrack(() => hoverCue.set("mix", at));
-  });
-  const hoverMove = (e: PointerEvent) => {
-    pointerX = e.clientX;
-    hoverCue.exact = e.altKey;
-  };
-  const hoverLeave = () => (pointerX = null);
-  // the window losing focus (Alt+Tab) can leave no pointer-leave behind: forget the hover
-  onMount(() => {
-    window.addEventListener("blur", hoverLeave);
-    return () => window.removeEventListener("blur", hoverLeave);
-  });
-  onDestroy(() => hoverCue.clear("mix"));
-
   // ---- ruler ----------------------------------------------------------------------------------
 
   function scrub(e: PointerEvent) {
@@ -359,15 +320,30 @@
     menu = { x: r.left, y: r.bottom + 2, items: clip ? toolItems(clip, mv.playhead) : [{ label: "Add a track first", disabled: true, onclick: () => {} }] };
   }
 
+  // ---- double-click: the cue ----------------------------------------------------------------
+
+  /** What a double-click must leave to its own gesture: buttons (+ crossfade, Auto), tool blocks,
+   * crossfade strips and curves, and the envelope lines, whose presses already add and remove nodes. */
+  const OWN_DBLCLICK = "button, input, select, svg.env, .strip, .handle, .block, [data-crossfade].selected";
+
+  /** Double-click on the ruler, a clip or an empty lane moves the playhead (the mix's cue): a
+   * playing mix carries on from there, a stopped one only moves the playhead. It goes to the nearest
+   * snap point when Snap is on (the same rule as a dropped track), exactly where the pointer is with
+   * Alt. It never edits: a clip only moves after the pointer has travelled a few pixels. */
+  function cueDbl(e: MouseEvent) {
+    if (e.button !== 0 || (e.target instanceof Element && e.target.closest(OWN_DBLCLICK))) return;
+    const raw = sampleAt(e);
+    const at = e.altKey ? raw : snapAt(raw);
+    if (at !== mv.playhead) void preview.seek(at);
+  }
+
   // ---- dropping tracks from the picker --------------------------------------------------------
 
   // Pointer drag from the picker (state/trackDrag.svelte.ts; HTML5 drag and drop does not reach the
   // page in the Windows app). The pointer's x is the time; the deck is chosen by the store.
-  const dropSample = (clientX: number, left: number) => {
-    const at = Math.max(0, Math.round(mv.samples(laneOffset(clientX, left))));
-    const targets = E.snapTargets(doc, mixes.snap, [], [at - SR, at + SR], mixes.sectionLookup);
-    return E.snap(at, targets, mixes.threshold);
-  };
+  /** `at` moved to the nearest snap point (the Snap setting's grain, within about 10 px) if one is near. */
+  const snapAt = (at: number) => E.snap(at, E.snapTargets(doc, mixes.snap, [], [at - SR, at + SR], mixes.sectionLookup), mixes.threshold);
+  const dropSample = (clientX: number, left: number) => snapAt(Math.max(0, Math.round(mv.samples(laneOffset(clientX, left)))));
   const barDrop: DropOptions = {
     scope: "mix",
     accept: () => true,
@@ -412,8 +388,7 @@
   const overlayName = { gain: "Gain", tempo: "Tempo", key: "Key" } as const;
 </script>
 
-<!-- svelte-ignore a11y_no_static_element_interactions -->
-<div class="timeline" bind:this={root} onpointermove={hoverMove} onpointerleave={hoverLeave}>
+<div class="timeline" bind:this={root}>
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div class="scroller" bind:this={scroller} {onscroll}>
     <div class="inner" style:width="{HEADER_W + contentW}px">
@@ -423,7 +398,7 @@
           <span class="muted">{bpm.toFixed(2)} BPM</span>
         </div>
         <!-- svelte-ignore a11y_no_static_element_interactions -->
-        <div class="track" style:width="{contentW}px" onpointerdown={scrub} title="Click or drag to place the playhead. Shift-drag marks a stretch to export (Shift-click clears it).">
+        <div class="track" style:width="{contentW}px" onpointerdown={scrub} ondblclick={cueDbl} title="Click or drag to place the playhead. Double-click puts it on the nearest snap point (Alt = exactly here). Shift-drag marks a stretch to export (Shift-click clears it).">
           {#each ticks.beats as s (s)}<i class="beat" style:left="{s * mv.pps}px"></i>{/each}
           {#each ticks.bars as b (b.bar)}
             <i class="bar" style:left="{b.sec * mv.pps}px"></i>
@@ -457,6 +432,7 @@
           bind:this={barEl}
           style:width="{contentW}px"
           onpointerdown={bgDown}
+          ondblclick={cueDbl}
           oncontextmenu={trackMenu}
           use:trackDropTarget={barDrop}
         >
@@ -563,7 +539,7 @@
           <button class="mini" onclick={toolButton} title="Add a tool, loop, reverse or ignore to the selected clip (or the one under the playhead)">+ Tool ▾</button>
         </div>
         <!-- svelte-ignore a11y_no_static_element_interactions -->
-        <div class="track" style:width="{contentW}px" onpointerdown={bgDown} oncontextmenu={trackMenu}>
+        <div class="track" style:width="{contentW}px" onpointerdown={bgDown} ondblclick={cueDbl} oncontextmenu={trackMenu}>
           {#each fx.items as it (it.p.id)}
             {#if inView(it.start, it.end)}
               <ToolBlock clip={it.clip} process={it.p} top={4 + it.row * (FX_ROW + 2)} height={FX_ROW} conflict={conflicts.has(it.p.id)} accent={colourOf(it.clip.id)} oncontext={processMenu} />
@@ -581,9 +557,6 @@
         {/if}
         {#if mv.rangeBand}
           <div class="xrange" style:left="{HEADER_W + mv.x(mv.rangeBand.from)}px" style:width="{Math.max(2, mv.x(mv.rangeBand.to - mv.rangeBand.from))}px" title="The part of the mix the export will contain"></div>
-        {/if}
-        {#if hoverCue.surface === "mix"}
-          <div class="hair" style:left="{HEADER_W + mv.x(hoverCue.secs * SR)}px"><span>{hoverLabel(hoverCue.secs)}</span></div>
         {/if}
         <div class="playhead" style:left="{HEADER_W + mv.x(mv.playhead)}px"><span>{mmss(mv.playhead / SR)}</span></div>
       </div>
@@ -781,28 +754,6 @@
     background: var(--green);
     box-shadow: 0 0 6px var(--green);
     pointer-events: none;
-  }
-  /* where Space would put the playhead */
-  .hair {
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    width: 1px;
-    background: var(--text);
-    opacity: 0.8;
-    pointer-events: none;
-  }
-  .hair span {
-    position: absolute;
-    top: 3px;
-    left: 4px;
-    font-size: 10px;
-    line-height: 14px;
-    padding: 0 4px;
-    border-radius: 2px;
-    background: var(--deep);
-    color: var(--text);
-    white-space: nowrap;
   }
   .playhead span {
     position: absolute;

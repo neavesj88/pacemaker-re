@@ -3,7 +3,7 @@ id: mixes-building
 title: Building a mix
 topic: Mixes
 order: 1
-keywords: mix, mixes, mix editor, timeline, clip, track table, add tracks, drag, playhead, snap, zoom, play, preview, live play, save, save as, undo, pmk, import, setlist, track list, cue sheet, mix tempo, unsaved
+keywords: mix, mixes, mix editor, timeline, clip, track table, add tracks, drag, playhead, snap, zoom, double-click, cue, play, preview, live play, save, save as, undo, pmk, import, setlist, track list, cue sheet, mix tempo, unsaved
 summary: Make a mix from the track table under the timeline, move and trim clips, play it live, and save it.
 ---
 
@@ -48,7 +48,7 @@ Delete removes the selected clips after asking, and Ctrl+Z brings them back unti
 The transport at the bottom of the editor plays the mix live from the computer.
 
 - **Play** or the Space bar plays and pauses. The first and last buttons jump to the start and the end.
-- **Point at the timeline and press Space** to move the playhead to that spot. A thin line with a time shows where it will go. If the mix is playing it carries on from there; if it is stopped, only the playhead moves. With **Snap** on, the playhead goes to the nearest beat (when the track under it has a beat grid); hold **Alt** while pressing Space to put it exactly under the pointer. With the pointer anywhere else, Space plays and pauses.
+- **Double-click** the ruler, a clip or an empty part of the timeline to move the playhead there. If the mix is playing it carries on from the new place; if it is stopped, only the playhead moves. With **Snap** on, the playhead goes to the nearest snap point the Snap setting names, if one is close; hold **Alt** while double-clicking to put it exactly under the pointer. A double-click never moves a clip: dragging does. Space always plays and pauses.
 - **follow playhead** scrolls the timeline with the playhead. **Master** is the preview volume only (it is not saved in the mix).
 - The preview plays the crossfades, tools and tempo changes of the mix. When you have set loudness for the export, the preview plays at the level the last analysis found, and says "export level".
 - A long mix reads the tracks nearest the playhead first. How much decoded audio is kept in memory is the Playback memory setting: by default the computer decides (an eighth of its memory, from 256 to 1024 MB, so a small computer keeps fewer tracks decoded), and you can type your own number instead.

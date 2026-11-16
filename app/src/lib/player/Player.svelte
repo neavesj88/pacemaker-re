@@ -175,7 +175,7 @@
       <div class="muted line">Mix preview</div>
     {:else}
       <b class="title muted">Nothing loaded</b>
-      <div class="muted line" title="Select a track and press Space. Then point at the wave and press Space to move the cue there.">Select a track and press Space. Then point at the wave and press Space to move the cue there.</div>
+      <div class="muted line" title="Select a track and press Space to play it. Double-click the wave to move the cue flag there.">Select a track, press Space · double-click sets the cue</div>
     {/if}
     {#if status}<div class="line status" class:bad={status.bad} title={status.text}>{status.text}</div>
       {#if status.hint}<div class="line hint">{status.hint}</div>{/if}
@@ -193,7 +193,7 @@
     busy={engine.loading}
     disabled={!loaded || !engine.ready}
     onseek={seekFraction}
-    cueHover={!!track && engine.ready && !mix}
+    oncue={track && engine.ready && !mix ? (secs) => playback.setCue(secs) : undefined}
   />
 
   <div class="controls">
