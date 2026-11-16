@@ -19,7 +19,7 @@ files.
 | Path | Purpose | Owner |
 | --- | --- | --- |
 | `routes/+page.svelte` | Thin shell: header, banners, job strip, sidebar, active view, player slot, overlays | integration |
-| `routes/+layout.svelte`, `+layout.ts` | Global CSS; SPA mode; installs devmock outside Tauri | integration |
+| `routes/+layout.svelte`, `+layout.ts` | Global CSS; SPA mode; installs devmock outside Tauri, in `npm run dev` or a build made with `VITE_DEVMOCK=1` only (a release build leaves the 200 KB mock out) | integration |
 | `lib/styles/tokens.css`, `base.css` | The device palette (do not change colours); element defaults, `.muted` / `.num` / `.empty` | integration |
 | `lib/format.ts` | `mmss`, `baseName`, `volumeName` | integration |
 | `lib/shell/Header`, `Sidebar`, `Banners`, `Welcome`, `JobStrip` (`.svelte`) | App chrome; `JobStrip` shows any job | integration |
