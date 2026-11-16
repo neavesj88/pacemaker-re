@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { rowWindow } from "$lib/state/rowWindow";
   import { untrack } from "svelte";
   import { mmss } from "$lib/format";
   import { nav } from "$lib/state/nav.svelte";
@@ -23,6 +24,19 @@
     const t = q.trim().toLowerCase();
     const all = lib?.tracks ?? [];
     return t ? all.filter((x) => `${x.artist} ${x.title}`.toLowerCase().includes(t)) : all;
+  });
+  // Only the rows in view exist; the rest of the list is two spacer rows. 20,000 tracks used to be
+  // 100,000 elements and 650 ms to open.
+  let listEl = $state<HTMLElement>();
+  let listTop = $state(0);
+  let listH = $state(280);
+  let rowH = $state(28);
+  const win = $derived(rowWindow(listTop, listH, rowH, 0, shown.length, 6));
+  const shownRows = $derived(shown.slice(win.start, win.end));
+  $effect(() => {
+    void shownRows;
+    const li = listEl?.querySelector<HTMLElement>("li[data-row]");
+    if (li) untrack(() => (Math.abs(li.getBoundingClientRect().height - rowH) > 0.5 ? (rowH = li.getBoundingClientRect().height) : 0));
   });
   const chosen = $derived(new Set(stems.trackIds));
   const allShownChosen = $derived(shown.length > 0 && shown.every((t) => chosen.has(t.track_id)));
@@ -65,9 +79,10 @@
       <Button small disabled={stems.running || stems.trackIds.length === 0} onclick={() => stems.setTracks([])}>Clear</Button>
     </div>
 
-    <ul class="list" aria-label="Tracks">
-      {#each shown as t (t.track_id)}
-        <li>
+    <ul class="list" aria-label="Tracks" bind:this={listEl} bind:clientHeight={listH} onscroll={(e) => (listTop = e.currentTarget.scrollTop)}>
+      {#if win.start > 0}<li class="spacer" aria-hidden="true" style:height="{win.start * rowH}px"></li>{/if}
+      {#each shownRows as t, i (t.track_id)}
+        <li data-row aria-setsize={shown.length} aria-posinset={win.start + i + 1}>
           <label class:on={chosen.has(t.track_id)}>
             <input type="checkbox" checked={chosen.has(t.track_id)} disabled={stems.running} onchange={() => stems.toggle(t.track_id)} />
             <span class="name">{t.artist || "Unknown artist"} - {t.title || "Untitled"}</span>
@@ -77,6 +92,7 @@
       {:else}
         <li class="empty">{lib.tracks.length === 0 ? "This library has no tracks." : "No track matches the search."}</li>
       {/each}
+      {#if win.end < shown.length}<li class="spacer" aria-hidden="true" style:height="{(shown.length - win.end) * rowH}px"></li>{/if}
     </ul>
 
     <div class="dest">
@@ -148,6 +164,7 @@
     min-width: 160px;
   }
   .list {
+    overflow-anchor: none;
     list-style: none;
     margin: 8px 0;
     padding: 0;
@@ -157,11 +174,16 @@
     border-radius: 4px;
     background: var(--deep);
   }
+  /* one fixed height, so the rows that are not mounted can be a single spacer */
   li {
-    content-visibility: auto;
-    contain-intrinsic-size: auto 28px;
+    height: 28px;
+  }
+  li.spacer {
+    height: auto;
   }
   li label {
+    box-sizing: border-box;
+    height: 28px;
     display: flex;
     align-items: center;
     gap: 8px;
