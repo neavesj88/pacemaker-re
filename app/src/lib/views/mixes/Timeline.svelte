@@ -21,7 +21,7 @@
   import EnvelopeSvg from "./EnvelopeSvg.svelte";
   import FadeBlock from "./FadeBlock.svelte";
   import { toolPrefs } from "./listPrefs.svelte";
-  import { HEADER_W, PPS_MAX, PPS_MIN, SR, clamp, clipColour, envToKey, keyToEnv, packRows, rulerTicks, mmss } from "./layout";
+  import { HEADER_W, PPS_MAX, PPS_MIN, SR, clamp, clipColour, envToKey, keyToEnv, laneContentW, packRows, rulerTicks, mmss } from "./layout";
   import { preview } from "./preview.svelte";
   import { cueTime, hoverLabel, timelineSecs } from "$lib/player/hoverCue";
   import { hoverCue } from "$lib/player/hoverCue.svelte";
@@ -57,7 +57,13 @@
   // ---- geometry -----------------------------------------------------------------------------
 
   const bpm = $derived(doc.tempoBpm ?? (doc.clips[0] ? E.effectiveBpm(doc.clips[0], doc.clips[0].trimStart) : 120));
-  const contentW = $derived(Math.max(mv.viewW - HEADER_W, mv.x(Math.max(doc.length, mv.playhead) + 45 * SR)));
+  /** Where the content ends: the mix or the playhead, whichever is later, and 45 s of room after it. */
+  const endSamples = $derived(Math.max(doc.length, mv.playhead) + 45 * SR);
+  const contentW = $derived(laneContentW(endSamples, mv.pps, mv.viewW));
+  // zooming needs it to know how far the lanes can scroll
+  $effect(() => {
+    mv.endSamples = endSamples;
+  });
   /** Visible range in track pixels, with half a screen of margin each side. */
   const vis = $derived({ l: mv.scrollLeft - mv.viewW / 2, r: mv.scrollLeft + mv.viewW * 1.5 });
   const inView = (startSamples: number, endSamples: number) => mv.x(endSamples) >= vis.l && mv.x(startSamples) <= vis.r;
@@ -127,7 +133,13 @@
   $effect(() => {
     const s = scroller;
     const want = mv.scrollLeft;
-    if (s && Math.abs(s.scrollLeft - want) > 0.5) s.scrollLeft = want;
+    if (!s || Math.abs(s.scrollLeft - want) <= 0.5) return;
+    s.scrollLeft = want;
+    // the element refuses a position past its end, and then sends no scroll event when it could not
+    // move at all: take its answer, or the view state keeps a scroll position that is not on screen
+    // (clips and waveforms were then drawn for the wrong part of the timeline)
+    const got = s.scrollLeft;
+    if (Math.abs(got - want) > 0.5) untrack(() => (mv.scrollLeft = got));
   });
 
   $effect(() => {
@@ -184,7 +196,7 @@
       if (bottom > s.scrollTop + s.clientHeight) s.scrollTop = bottom - s.clientHeight;
       const lo = mv.scrollLeft;
       const hi = mv.scrollLeft + mv.viewW - HEADER_W;
-      if (x1 < lo || x0 > hi) mv.scrollLeft = Math.max(0, x0 - (mv.viewW - HEADER_W) * 0.2);
+      if (x1 < lo || x0 > hi) mv.scrollTo(x0 - (mv.viewW - HEADER_W) * 0.2);
       // on a short window the Mix pane itself scrolls and the whole timeline can lie below its fold
       root?.scrollIntoView({ block: "nearest", inline: "nearest" });
     });

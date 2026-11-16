@@ -11,7 +11,7 @@
   import { mixes } from "$lib/state/mixes.svelte";
   import { sections } from "$lib/state/sections.svelte";
   import { exceeds, stretchText } from "$lib/state/tempoMatch";
-  import { HEADER_W, SR, clipBands, clipSlices, titleTop as placeTitle } from "./layout";
+  import { SR, clipBands, clipSlices, titleTop as placeTitle, waveWindow } from "./layout";
   import ClipSections from "./ClipSections.svelte";
   import ClipWave from "./ClipWave.svelte";
   import { tempoPrefs } from "./tempoPrefs.svelte";
@@ -64,13 +64,7 @@
   // The canvas covers the viewport plus half a screen each side, in 256 px steps, so scrolling
   // redraws rarely.
   const STEP = 256;
-  const win = $derived.by(() => {
-    const vl = mv.scrollLeft - mv.viewW / 2 - left;
-    const vr = mv.scrollLeft + mv.viewW - HEADER_W + mv.viewW / 2 - left;
-    const from = Math.max(0, Math.floor(vl / STEP) * STEP);
-    const to = Math.min(width, Math.ceil(vr / STEP) * STEP);
-    return { from, to: Math.max(from + 1, to) };
-  });
+  const win = $derived(waveWindow(mv.scrollLeft, mv.viewW, left, width, STEP));
 
   const title = $derived(clip.track?.title || clip.fuzzyId.title || "Unknown track");
   const tempoText = $derived.by(() => {

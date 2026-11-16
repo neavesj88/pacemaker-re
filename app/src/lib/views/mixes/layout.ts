@@ -18,6 +18,32 @@ export const toPx = (samples: number, pps: number) => (samples / SR) * pps;
 /** Samples at pixel `px`. */
 export const fromPx = (px: number, pps: number) => (px / pps) * SR;
 
+/** Width of the scrollable lanes (everything right of the lane headers): the viewport at least,
+ * else the end of the content (`endSamples`: mix end or playhead, plus the empty room after it). */
+export const laneContentW = (endSamples: number, pps: number, viewW: number): number => Math.max(Math.max(0, viewW - HEADER_W), toPx(endSamples, pps));
+
+/** The furthest the lanes can scroll: 0 while everything fits. A scroll position beyond it is one
+ * the browser clamps away, so a view state holding it no longer matches the screen. */
+export const maxScroll = (endSamples: number, pps: number, viewW: number): number => Math.max(0, laneContentW(endSamples, pps, viewW) - Math.max(0, viewW - HEADER_W));
+
+/** The lanes' scroll position after a zoom from `pps` to `next`, keeping the time under `anchorPx`
+ * (a pixel inside the lanes' viewport) where it is, and never past what the new zoom can scroll. */
+export function zoomScroll(scrollLeft: number, pps: number, next: number, anchorPx: number, endSamples: number, viewW: number): number {
+  const at = (scrollLeft + anchorPx) / pps;
+  return clamp(at * next - anchorPx, 0, maxScroll(endSamples, next, viewW));
+}
+
+/** The part of a clip to draw a waveform canvas for, in pixels from the clip's left edge: the lanes'
+ * viewport plus half a screen each side, widened to whole `step`s so scrolling redraws rarely.
+ * `clipLeft` is the clip's left edge in lane pixels, `clipW` its width. At least 1 px wide; a clip wholly off screen gets an empty window past its end. */
+export function waveWindow(scrollLeft: number, viewW: number, clipLeft: number, clipW: number, step: number): { from: number; to: number } {
+  const vl = scrollLeft - viewW / 2 - clipLeft;
+  const vr = scrollLeft + viewW - HEADER_W + viewW / 2 - clipLeft;
+  const from = Math.max(0, Math.floor(vl / step) * step);
+  const to = Math.min(clipW, Math.ceil(vr / step) * step);
+  return { from, to: Math.max(from + 1, to) };
+}
+
 /** Zoom slider (0..100) to pixels per second: logarithmic, so every step feels alike. */
 export function ppsFromSlider(v: number): number {
   return PPS_MIN * Math.pow(PPS_MAX / PPS_MIN, clamp(v, 0, 100) / 100);

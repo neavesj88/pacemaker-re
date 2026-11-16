@@ -178,14 +178,14 @@
     if (!d) return;
     void preview.seek(d.length);
     const px = mv.x(d.length);
-    if (px < mv.scrollLeft || px > mv.scrollLeft + mv.viewW - 80) mv.scrollLeft = Math.max(0, px - mv.viewW + 120);
+    if (px < mv.scrollLeft || px > mv.scrollLeft + mv.viewW - 80) mv.scrollTo(px - mv.viewW + 120);
   }
 
   async function playPause() {
     if (!preview.playing && preview.status !== "rendering") {
       // bring the playhead into view before starting
       const px = mv.x(mv.playhead);
-      if (px < mv.scrollLeft || px > mv.scrollLeft + mv.viewW - 200) mv.scrollLeft = Math.max(0, px - 80);
+      if (px < mv.scrollLeft || px > mv.scrollLeft + mv.viewW - 200) mv.scrollTo(px - 80);
     }
     await preview.toggle();
   }

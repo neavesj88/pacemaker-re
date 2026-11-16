@@ -2,7 +2,7 @@
 // panels and lanes are open, tracks waiting to be added. The document and its undo history are in
 // state/mixes.svelte.ts; this file never edits a document.
 import { session } from "$lib/state/session.svelte";
-import { HEADER_W, PPS_MAX, PPS_MIN, SR, clamp, fromPx, toPx } from "./layout";
+import { HEADER_W, PPS_MAX, PPS_MIN, SR, clamp, fromPx, maxScroll, toPx, zoomScroll } from "./layout";
 
 /** Which envelope is drawn over the clips of the bar (one at a time, so the lines never fight). */
 export type EnvOverlay = "none" | "gain" | "tempo" | "key";
@@ -38,6 +38,9 @@ class MixView {
   /** Scroll position and size of the lanes' viewport, in pixels (set by the timeline). */
   scrollLeft = $state(0);
   viewW = $state(900);
+  /** Where the content ends (samples: the mix end or the playhead, plus the empty room after it).
+   * The timeline keeps it current; zooming needs it to know how far the lanes can scroll. */
+  endSamples = $state(0);
   /** Playhead, timeline samples. */
   playhead = $state(0);
   /** Keep the playhead in view while playing. */
@@ -93,11 +96,18 @@ class MixView {
   setZoom(pps: number, anchorPx?: number) {
     const next = clamp(pps, PPS_MIN, PPS_MAX);
     if (next === this.pps) return;
-    // keep the sample under `anchorPx` (a pixel inside the viewport) where it is
-    const a = anchorPx ?? this.viewW / 2;
-    const at = (this.scrollLeft + a) / this.pps;
+    // keep the sample under `anchorPx` (a pixel inside the lanes) where it is. The lanes cannot
+    // scroll past their new end, so the position is clamped here: a position the element refuses
+    // left this state far from the screen, and clips and waveforms were drawn for the wrong part
+    const lane = Math.max(0, this.viewW - HEADER_W);
+    const a = clamp(anchorPx ?? lane / 2, 0, lane);
+    this.scrollLeft = zoomScroll(this.scrollLeft, this.pps, next, a, this.endSamples, this.viewW);
     this.pps = next;
-    this.scrollLeft = Math.max(0, at * next - a);
+  }
+
+  /** Scrolls the lanes to `px`, within what they can scroll. */
+  scrollTo(px: number) {
+    this.scrollLeft = clamp(px, 0, maxScroll(this.endSamples, this.pps, this.viewW));
   }
 
   /** Zooms so that `samples` fills the viewport. */

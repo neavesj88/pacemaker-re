@@ -135,7 +135,7 @@ export async function addTracks(ids: number[], at?: number) {
           if (Math.abs(last.visibleStart - pos) > SR) {
             moved.push(`${clipTitle(last)} at ${mmss(last.visibleStart / SR)}`);
             // show where it went: the clip is not under the playhead
-            mv.scrollLeft = Math.max(0, mv.x(last.visibleStart) - mv.viewW * 0.2);
+            mv.scrollTo(mv.x(last.visibleStart) - mv.viewW * 0.2);
           }
           pos = last.visibleEnd;
         }

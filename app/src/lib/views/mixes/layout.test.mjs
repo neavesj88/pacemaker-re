@@ -142,4 +142,53 @@ test("tool colours and labels fall back sensibly", () => {
   assert.ok(L.toolColour("nonsense").startsWith("var("));
 });
 
+test("lanes only scroll as far as the content reaches", () => {
+  const end = L.SR * 100; // 100 s of content
+  assert.equal(L.maxScroll(end, 5, 1132), 0); // 500 px fits the 1000 px lanes
+  assert.equal(L.maxScroll(end, 20, 1132), 1000); // 2000 px in 1000 px lanes
+  assert.equal(L.laneContentW(end, 5, 1132), 1000);
+  assert.equal(L.maxScroll(end, 20, 50), 2000); // a window narrower than the headers
+});
+
+test("zooming keeps the anchor in place and never scrolls past the end", () => {
+  const end = L.SR * 100;
+  // zoom in 4x around the middle of 1000 px lanes: the time under the anchor stays under it
+  const sl = L.zoomScroll(0, 5, 20, 500, end, 1132);
+  assert.equal(sl, 1500 - 500);
+  // zoomed right out, the lanes cannot scroll at all: the old position is not kept
+  assert.equal(L.zoomScroll(1000, 20, 5, 500, end, 1132), 0);
+  // the case that blanked a clip: zooming in a little at the far right while everything still fits
+  // used to add a scroll position the element refused, again and again
+  let pps = 5;
+  let at = 0;
+  for (let i = 0; i < 40; i++) {
+    const next = pps * 1.09;
+    at = L.zoomScroll(at, pps, next, 900, end, 1132);
+    pps = next;
+    assert.ok(at >= 0 && at <= L.maxScroll(end, pps, 1132) + 1e-9);
+  }
+});
+
+test("the waveform window covers what is on screen at any scroll and zoom", () => {
+  const STEP = 256;
+  let seed = 7;
+  const rnd = () => (seed = (seed * 1664525 + 1013904223) % 4294967296) / 4294967296;
+  for (let i = 0; i < 5000; i++) {
+    const viewW = 400 + Math.floor(rnd() * 5000);
+    const lane = viewW - L.HEADER_W;
+    const clipW = 2 + rnd() * 40000;
+    const clipLeft = rnd() * 40000 - 5000;
+    const scroll = rnd() * 45000;
+    const w = L.waveWindow(scroll, viewW, clipLeft, clipW, STEP);
+    assert.ok(w.from >= 0 && w.to >= w.from + 1 && w.from % STEP === 0);
+    // the part of the clip inside the lanes' viewport [scroll, scroll + lane] must lie inside the window
+    const vis0 = Math.max(0, scroll - clipLeft);
+    const vis1 = Math.min(clipW, scroll + lane - clipLeft);
+    if (vis1 > vis0) {
+      assert.ok(w.from <= vis0 + 1e-9, `left gap ${JSON.stringify({ viewW, clipW, clipLeft, scroll, w })}`);
+      assert.ok(w.to >= vis1 - 1e-9, `right gap ${JSON.stringify({ viewW, clipW, clipLeft, scroll, w })}`);
+    }
+  }
+});
+
 console.log(`\n${n} layout tests passed`);
