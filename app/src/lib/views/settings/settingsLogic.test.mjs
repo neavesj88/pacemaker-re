@@ -116,6 +116,7 @@ const PREF_ENTRIES = {
   "pacemaker-revival.errorSeconds": "interface",
   "pacemaker-revival.waveGridMinBarPx": "interface",
   "pacemaker-revival.waveColours": "interface",
+  "pacemaker-revival.playheadFps": "interface",
   "pacemaker-revival.finishedNoteSeconds": "interface",
 };
 const VIEW_STATE = {
