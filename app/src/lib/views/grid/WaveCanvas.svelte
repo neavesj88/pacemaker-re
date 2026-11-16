@@ -2,6 +2,8 @@
   import type { Peak } from "$lib/api/analysis";
   import { bandsOver, clamp, fmtTime, isDownbeat, lowerBound, tickStep } from "./gridMath";
   import { driftClass, hitBeat } from "./vtempoLogic";
+  import { appearance } from "$lib/state/appearance.svelte";
+  import { bitmapSize, fitBitmap } from "./layers";
 
   // Zoomable colour waveform with beat lines. Low band pink, mid lilac, high green; bar lines
   // white and bold, other beats thin green; the device cue is a yellow flag; the playhead white.
@@ -119,18 +121,33 @@
 
   const css = (name: string) => (host ? getComputedStyle(host).getPropertyValue(name).trim() || "#888" : "#888");
 
+  // Everything but the playhead is drawn into an off-screen layer, and only when the view, the
+  // peaks, the beat lines, the size or the colours change. While a track plays, each frame then
+  // only blits that layer and draws the playhead: the per-pixel peak search, the ruler and the
+  // beat lines are not repeated, and the colours are not read from the stylesheet again.
+  let layer: HTMLCanvasElement | null = null;
+  let layerVersion = $state(0);
+  let layerCount = 0;
+  let L = { t0: 0, pps: 1, W: 0, H: 0, dpr: 1, text: "#888" };
+  /** Where the playhead was last drawn on this layer, to skip a frame that would draw it in the
+   *  same place. */
+  let paintedX = Number.NaN;
+
   $effect(() => {
     const c = canvas;
     const W = width;
     const pps = pxPerSec;
+    void appearance.waveBands; // the colours come from CSS variables that follow this
     if (!c || W === 0 || pps === 0) return;
     const H = height;
     const dpr = window.devicePixelRatio || 1;
-    c.width = Math.round(W * dpr);
-    c.height = Math.round(H * dpr);
-    const g = c.getContext("2d");
+    layer ??= document.createElement("canvas");
+    const [bw, bh] = bitmapSize(W, H, dpr);
+    fitBitmap(layer, bw, bh);
+    const g = layer.getContext("2d");
     if (!g) return;
-    g.scale(dpr, dpr);
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    g.clearRect(0, 0, W, H);
     const t0 = viewStart;
     const t1 = t0 + W / pps;
     const top = RULER;
@@ -243,10 +260,30 @@
       g.fill();
     }
 
-    // playhead
-    if (playhead >= t0 && playhead <= t1) {
-      g.fillStyle = css("--text");
-      g.fillRect(Math.round((playhead - t0) * pps) - 1, 0, 2, H);
+    L = { t0, pps, W, H, dpr, text: css("--text") };
+    paintedX = Number.NaN;
+    layerVersion = ++layerCount;
+  });
+
+  $effect(() => {
+    const c = canvas;
+    const head = playhead;
+    void layerVersion;
+    if (!c || !layer || L.W === 0) return;
+    const { t0, pps, W, H, dpr } = L;
+    const x = head >= t0 && head <= t0 + W / pps ? Math.round((head - t0) * pps) - 1 : -1e9;
+    if (x === paintedX && c.width === layer.width && c.height === layer.height) return;
+    paintedX = x;
+    fitBitmap(c, layer.width, layer.height);
+    const g = c.getContext("2d");
+    if (!g) return;
+    g.setTransform(1, 0, 0, 1, 0, 0);
+    g.clearRect(0, 0, c.width, c.height);
+    g.drawImage(layer, 0, 0);
+    if (x > -1e8) {
+      g.setTransform(dpr, 0, 0, dpr, 0, 0);
+      g.fillStyle = L.text;
+      g.fillRect(x, 0, 2, H);
     }
   });
 

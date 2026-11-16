@@ -1,6 +1,8 @@
 <script lang="ts">
   import { driftClass, gapBpms } from "./vtempoLogic";
   import { lowerBound } from "./gridMath";
+  import { appearance } from "$lib/state/appearance.svelte";
+  import { bitmapSize, fitBitmap } from "./layers";
 
   // Two strips under the waveform, on the same time axis (same viewStart / pxPerSec): the tempo
   // the beat positions imply (a step line, one step per beat, with the sections labelled) and,
@@ -62,18 +64,29 @@
     return [lo - pad, hi + pad] as const;
   });
 
+  // Everything but the playhead goes into an off-screen layer, redrawn only when the view, the
+  // grid, the drift or the size change; each frame of playback blits it and draws the playhead.
+  let layer: HTMLCanvasElement | null = null;
+  let layerVersion = $state(0);
+  let layerCount = 0;
+  let L = { t0: 0, pps: 1, W: 0, H: 0, dpr: 1, text: "#888" };
+  let paintedX = Number.NaN;
+
   $effect(() => {
     const c = canvas;
     const W = width;
     const pps = pxPerSec;
+    void appearance.waveBands;
     if (!c || W === 0 || pps === 0) return;
     const H = height;
     const dpr = window.devicePixelRatio || 1;
-    c.width = Math.round(W * dpr);
-    c.height = Math.round(H * dpr);
-    const g = c.getContext("2d");
+    layer ??= document.createElement("canvas");
+    const [bw, bh] = bitmapSize(W, H, dpr);
+    fitBitmap(layer, bw, bh);
+    const g = layer.getContext("2d");
     if (!g) return;
-    g.scale(dpr, dpr);
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    g.clearRect(0, 0, W, H);
     const t0 = viewStart;
     const t1 = t0 + W / pps;
     const X = (t: number) => (t - t0) * pps;
@@ -162,10 +175,31 @@
       g.globalAlpha = 1;
     }
 
-    // ---- playhead ----
-    if (playhead >= t0 && playhead <= t1) {
-      g.fillStyle = css("--text");
-      g.fillRect(Math.round(X(playhead)) - 1, 0, 2, H);
+    L = { t0, pps, W, H, dpr, text: css("--text") };
+    paintedX = Number.NaN;
+    layerVersion = ++layerCount;
+  });
+
+  // ---- playhead ----
+  $effect(() => {
+    const c = canvas;
+    const head = playhead;
+    void layerVersion;
+    if (!c || !layer || L.W === 0) return;
+    const { t0, pps, W, H, dpr } = L;
+    const x = head >= t0 && head <= t0 + W / pps ? Math.round((head - t0) * pps) - 1 : -1e9;
+    if (x === paintedX && c.width === layer.width && c.height === layer.height) return;
+    paintedX = x;
+    fitBitmap(c, layer.width, layer.height);
+    const g = c.getContext("2d");
+    if (!g) return;
+    g.setTransform(1, 0, 0, 1, 0, 0);
+    g.clearRect(0, 0, c.width, c.height);
+    g.drawImage(layer, 0, 0);
+    if (x > -1e8) {
+      g.setTransform(dpr, 0, 0, dpr, 0, 0);
+      g.fillStyle = L.text;
+      g.fillRect(x, 0, 2, H);
     }
   });
 

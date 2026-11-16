@@ -4,6 +4,8 @@
   import SectionBand from "../analysis/SectionBand.svelte";
   import { sectionAt, sectionTitle } from "../analysis/sectionLogic";
   import { bandsOver, clamp, isDownbeat } from "./gridMath";
+  import { appearance } from "$lib/state/appearance.svelte";
+  import { bitmapSize, fitBitmap } from "./layers";
 
   // The whole track in one strip: the visible window of the main waveform is the lit rectangle;
   // click or drag to move it. Bar lines are faint ticks so a drifting grid shows from afar.
@@ -42,16 +44,28 @@
 
   const css = (name: string) => (host ? getComputedStyle(host).getPropertyValue(name).trim() || "#888" : "#888");
 
+  // The waveform, bar lines and cue are drawn into an off-screen layer when the peaks, grid, cue,
+  // size or colours change. Each frame of playback then only blits it and draws the lit window and
+  // the playhead on top (same order, same pixels as drawing everything at once).
+  let layer: HTMLCanvasElement | null = null;
+  let layerVersion = $state(0);
+  let layerCount = 0;
+  let L = { W: 0, dpr: 1, duration: 0, soft: "#888", accent: "#888", text: "#888" };
+  let painted = "";
+
   $effect(() => {
     const c = canvas;
     const W = width;
+    void appearance.waveBands;
     if (!c || W === 0) return;
     const dpr = window.devicePixelRatio || 1;
-    c.width = Math.round(W * dpr);
-    c.height = Math.round(height * dpr);
-    const g = c.getContext("2d");
+    layer ??= document.createElement("canvas");
+    const [bw, bh] = bitmapSize(W, height, dpr);
+    fitBitmap(layer, bw, bh);
+    const g = layer.getContext("2d");
     if (!g) return;
-    g.scale(dpr, dpr);
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    g.clearRect(0, 0, W, height);
     g.fillStyle = css("--deep");
     g.fillRect(0, 0, W, height);
     const mid = height / 2;
@@ -83,16 +97,43 @@
         g.fillStyle = css("--g-cue");
         g.fillRect(Math.round((cue / duration) * W), 0, 2, height);
       }
+    }
+    L = { W, dpr, duration, soft: css("--accent-soft"), accent: css("--accent"), text: css("--text") };
+    painted = "";
+    layerVersion = ++layerCount;
+  });
+
+  $effect(() => {
+    const c = canvas;
+    const vs = viewStart;
+    const span = viewSpan;
+    const head = playhead;
+    void layerVersion;
+    if (!c || !layer || L.W === 0) return;
+    const { W, dpr, duration: D } = L;
+    // what this frame would draw; the same as the last frame means nothing to do
+    const x0 = D > 0 ? (vs / D) * W : 0;
+    const w = Math.max(3, (span / D) * W);
+    const px = D > 0 ? Math.round((head / D) * W) - 1 : 0;
+    const key = `${D > 0}|${x0}|${w}|${px}`;
+    if (key === painted && c.width === layer.width && c.height === layer.height) return;
+    painted = key;
+    fitBitmap(c, layer.width, layer.height);
+    const g = c.getContext("2d");
+    if (!g) return;
+    g.setTransform(1, 0, 0, 1, 0, 0);
+    g.clearRect(0, 0, c.width, c.height);
+    g.drawImage(layer, 0, 0);
+    if (D > 0) {
+      g.setTransform(dpr, 0, 0, dpr, 0, 0);
       // the visible window
-      const x0 = (viewStart / duration) * W;
-      const w = Math.max(3, (viewSpan / duration) * W);
-      g.fillStyle = css("--accent-soft");
+      g.fillStyle = L.soft;
       g.fillRect(x0, 0, w, height);
-      g.strokeStyle = css("--accent");
+      g.strokeStyle = L.accent;
       g.lineWidth = 1;
       g.strokeRect(x0 + 0.5, 0.5, w - 1, height - 1);
-      g.fillStyle = css("--text");
-      g.fillRect(Math.round((playhead / duration) * W) - 1, 0, 2, height);
+      g.fillStyle = L.text;
+      g.fillRect(px, 0, 2, height);
     }
   });
 
