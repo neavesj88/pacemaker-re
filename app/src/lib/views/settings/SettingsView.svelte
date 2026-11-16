@@ -35,7 +35,7 @@
       await e.load?.();
       return true;
     } catch (err) {
-      toast.show(`Could not read the settings of ${e.title}: ${err}`, "bad", 8000);
+      toast.error(`Couldn't read the ${e.title} settings.`, err);
       return false;
     } finally {
       loading = null;

@@ -36,7 +36,7 @@
       await deviceVerifyBackup(folder);
     } catch (e) {
       device.job = null;
-      toast.show(String(e), "bad", 8000);
+      toast.error("Couldn't check the backup.", e);
     }
   }
 
@@ -49,7 +49,7 @@
       await deviceBackup(lib.root, d, includeAudio);
     } catch (e) {
       device.job = null;
-      toast.show(String(e), "bad", 8000);
+      toast.error("Couldn't back up.", e);
     }
   }
 </script>

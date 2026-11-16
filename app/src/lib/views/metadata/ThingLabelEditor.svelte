@@ -48,7 +48,7 @@
     const ok = await store.apply(startIds, draftOps(draft));
     busy = false;
     if (!ok) return; // the store already said why; the dialog stays so nothing is lost
-    toast.show(startIds.length === 1 ? `Saved the labels of 1 ${noun}` : `Saved the labels of ${startIds.length} ${thingsWord(noun)}`, "ok");
+    toast.show(`Labels saved on ${startIds.length === 1 ? `1 ${noun}` : `${startIds.length} ${thingsWord(noun)}`}.`, "ok");
     thingEditor.close();
   }
 </script>

@@ -158,7 +158,7 @@ class Interop {
         const ok = await labels.apply(g.ids, [{ op: "set_colour", colour: g.colour }]);
         if (!ok) {
           // the label store already said why; the ones before this call were saved
-          toast.show(`Stopped after ${plural(done, "colour label")}; the rest were not set.`, "bad", 8000);
+          toast.show(`Stopped after ${plural(done, "colour label")}; the rest were not set.`, "bad");
           return;
         }
         done += g.ids.length;
@@ -226,9 +226,9 @@ class Interop {
       const dest = await pickSavePath(`${safe}.${ext}`, label, ext);
       if (!dest) return;
       const r = await interopExport(lib.root, format, where, dest);
-      // notes name the smart cases written or left out; longer than a plain "Saved", so it stays up longer
+      // notes name the smart cases written or left out: they are the details
       const notes = r.notes ?? [];
-      toast.show([`Saved ${plural(r.tracks, "track")} to ${baseName(r.path)}.`, ...notes].join(" "), "ok", notes.length ? 12000 : 4000);
+      toast.show(`Saved ${plural(r.tracks, "track")} to ${baseName(r.path)}.`, "ok", { details: notes.length ? notes.join(" ") : undefined });
     } catch (e) {
       this.error = String(e);
     } finally {

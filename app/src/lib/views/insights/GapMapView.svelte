@@ -76,7 +76,7 @@
     tracksState.bpmMax = filter.bpmMax === null ? "" : String(filter.bpmMax);
     tracksState.keyFilter = filter.key;
     nav.go("tracks");
-    toast.show(`Tracks now shows ${cellName(matrix, picked.row, picked.col)}. Use Clear filters there to see everything again.`, "info", 6000);
+    toast.show(`Tracks now shows ${cellName(matrix, picked.row, picked.col)}. Use Clear filters there to see everything again.`, "info");
   }
 
   function selectTab(id: (typeof tabs)[number]) {

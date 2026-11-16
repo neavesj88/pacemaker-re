@@ -32,8 +32,8 @@ export default function init(): Unlisten {
         }
         if (e.job !== MIX_EXPORT_JOB) return;
         mv.exporting = false;
-        if (e.error) toast.show(`Export failed: ${e.error}`, "bad", 12000);
-        else toast.show(e.summary || "Exported the mix", e.failed > 0 || e.ok === 0 ? "info" : "ok", 10000);
+        if (e.error) toast.error("Couldn't export the mix.", e.error);
+        else toast.show(e.summary || "Exported the mix", e.failed > 0 || e.ok === 0 ? "info" : "ok");
       }),
   ]);
 }

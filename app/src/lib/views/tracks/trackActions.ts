@@ -34,7 +34,7 @@ export async function revealInExplorer(trackId: number) {
   try {
     await revealTrack(root, trackId);
   } catch (e) {
-    toast.show(`Could not show the file: ${e}`, "bad");
+    toast.error("Couldn't show the file.", e);
   }
 }
 
@@ -44,7 +44,7 @@ export async function rate(track: Track, stars: number) {
   const root = session.library?.root;
   if (!root || stars === track.rating) return;
   if (!jobs.canWrite) {
-    toast.show("Ratings can't be saved while a job runs or the library is read-only.", "bad");
+    toast.show("Can't save while a job runs or the library is read-only.", "bad");
     return;
   }
   const before = track.rating;
@@ -57,6 +57,6 @@ export async function rate(track: Track, stars: number) {
   } catch (e) {
     // only if nothing else changed the rating meanwhile
     if (session.library?.tracks.find((t) => t.track_id === id)?.rating === stars) session.patchTracks([id], { rating: before });
-    toast.show(`Could not save the rating: ${e}`, "bad");
+    toast.error("Couldn't save the rating.", e);
   }
 }

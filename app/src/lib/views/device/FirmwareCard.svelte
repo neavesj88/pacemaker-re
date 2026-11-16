@@ -46,7 +46,7 @@
       await deviceFirmwareInstall(lib.root, p.path);
     } catch (e) {
       device.job = null;
-      toast.show(String(e), "bad", 8000);
+      toast.error("Couldn't install the firmware.", e);
     }
   }
 

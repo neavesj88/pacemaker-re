@@ -123,7 +123,7 @@
       } catch {
         // the list refreshes next time the Mixes view opens
       }
-      toast.show(`Created the mix “${created.saved.name}”`, "ok", 6000);
+      toast.show(`Created the mix “${created.saved.name}”`, "ok");
       phase = "done";
     } catch (e) {
       problem = `The mix was not created: ${e instanceof Error ? e.message : String(e)}`;

@@ -271,7 +271,7 @@ class Cases {
     const n = await this.addTracks(caseId, ids);
     if (n === undefined) return;
     const noun = (k: number) => `${k} track${k === 1 ? "" : "s"}`;
-    toast.show(n === 0 ? `Already in “${name}”` : n < ids.length ? `Added ${noun(n)} to “${name}” (${ids.length - n} already there)` : `Added ${noun(n)} to “${name}”`, "ok");
+    toast.show(n === 0 ? `Already in “${name}”.` : `Added ${noun(n)} to “${name}”.`, "ok", { key: "case-add" });
   }
 
   /** Asks where to save, then writes the case as M3U8, CSV or rekordbox XML. */
@@ -286,7 +286,7 @@ class Cases {
       toast.show(`Saved ${r.tracks} track${r.tracks === 1 ? "" : "s"} to ${baseName(r.path)}`, "ok");
       void caseExport.rememberQuick(dest, format);
     } catch (e) {
-      toast.show(`Could not export: ${e}`, "bad", 8000);
+      toast.error("Couldn't export.", e);
     }
   }
 
@@ -300,10 +300,10 @@ class Cases {
       const dest = await pickSavePath(saveSuggestion(caseExport.saved, s.name, EXT[format], "smart case"), FORMAT_LABEL[format], EXT[format]);
       if (!dest) return;
       const r = await exportSmartCase(root, s.id, format, dest);
-      toast.show(`Saved ${r.tracks} track${r.tracks === 1 ? "" : "s"} that “${s.name}” matches now to ${baseName(r.path)}`, "ok", 6000);
+      toast.show(`Saved ${r.tracks} track${r.tracks === 1 ? "" : "s"} that “${s.name}” matches now to ${baseName(r.path)}`, "ok");
       void caseExport.rememberQuick(dest, format);
     } catch (e) {
-      toast.show(`Could not export: ${e}`, "bad", 8000);
+      toast.error("Couldn't export.", e);
     }
   }
 

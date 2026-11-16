@@ -59,13 +59,13 @@
     saving = true;
     try {
       const n = await deviceSettingsWrite(lib.root, changes.map((c) => ({ id: c.s.id, value: edits[c.s.id] })));
-      toast.show(`${plural(n, "setting")} written. The Pacemaker reads them when it next starts.`, "ok", 6000);
+      toast.show(`${plural(n, "setting")} written. The Pacemaker reads them when it next starts.`, "ok");
       edits = {};
       confirming = false;
       await device.load(lib.root);
     } catch (e) {
       confirming = false;
-      toast.show(String(e), "bad", 8000);
+      toast.error("Couldn't write the settings.", e);
     } finally {
       saving = false;
     }

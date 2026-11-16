@@ -35,9 +35,9 @@
     try {
       await vocal.set(lib.root, mode);
       const name = OPTIONS.find((o) => o.mode === mode)!.title;
-      toast.show(`Vocal filter: ${name}. The Pacemaker reads it when it next starts.`, "ok", 6000);
+      toast.show(`Vocal filter: ${name}. The Pacemaker reads it when it next starts.`, "ok");
     } catch (e) {
-      toast.show(String(e), "bad", 8000);
+      toast.error("Couldn't set the vocal filter.", e);
     } finally {
       pick = null;
     }

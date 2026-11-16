@@ -11,6 +11,10 @@ summary: How to search the help, the keyboard shortcuts, and where the same arti
 
 The help is a set of short articles inside the app. It works without an internet connection.
 
+## Messages
+
+Messages that pop up at the bottom of the window are one short sentence: what happened and one number. When there is more to say (every name, the full error, every warning) the message has a **Details** button. Some messages have a button of their own, such as **Undo** after a transition, Beat-match, Beat-align or Match all; it works only while that is still your latest edit, otherwise use Ctrl+Z. A message stays while the pointer is on it. How long a failure stays up is in Settings, Appearance.
+
 ## Finding an article
 
 1. Press **F1** anywhere in the app, or click **Help** in the sidebar. The cursor is in the search box.

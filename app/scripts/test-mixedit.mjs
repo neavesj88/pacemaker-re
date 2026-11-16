@@ -834,9 +834,12 @@ test("confirmation and report wording names every mix and file", () => {
   assert.deepEqual(ML.deleteSummary({ deleted: [{ id: 1, name: "A" }], failed: [] }), { text: "Deleted 1 mix.", ok: true });
   const f = ML.deleteSummary({ deleted: [], failed: Array.from({ length: 6 }, (_, i) => ({ id: i, name: `M${i}`, error: "renamed" })) });
   assert.equal(f.ok, false);
-  assert.match(f.text, /^Nothing was deleted\. Kept 6: “M0”: renamed; .*“M3”: renamed and 2 more\.$/);
+  assert.equal(f.text, "6 mixes couldn't be deleted.");
+  assert.match(f.details, /^“M0”: renamed\n.*“M5”: renamed$/s, "each kept mix and its reason is in the details");
+  assert.equal(ML.deleteSummary({ deleted: [{ id: 1, name: "A" }], failed: [{ id: 2, name: "B", error: "x" }] }).text, "Deleted 1; 1 couldn't be deleted.");
   const e = ML.exportSummary({ written: [{ id: 1, name: "A", path: "x" }, { id: 2, name: "B", path: "y" }], skipped: [{ id: 3, name: "C" }], failed: [] }, "D:\\out");
-  assert.equal(e.text, "Exported 2 mixes to D:\\out. Skipped 1 (file already there).");
+  assert.equal(e.text, "Exported 2 mixes. 1 already there.");
+  assert.equal(e.details, "Folder: D:\\out");
   assert.equal(e.ok, true);
   assert.equal(ML.exportSummary({ written: [], skipped: [], failed: [{ id: 1, name: "A", error: "disk full" }] }, "d").ok, false);
 });
@@ -1271,7 +1274,7 @@ test("beat-align: the incoming clip's beat lands exactly on a beat of the outgoi
     // idempotent: the second press finds it already lined up
     const again = E.beatAlignClip(r.doc, "in", grain);
     assert.equal(again.moved, false, `${grain} again`);
-    assert.match(again.message, /Already lined up/);
+    assert.match(again.message, /Already aligned/);
     // the move is what playback uses: the document's start, nothing else changed
     assert.equal(moved.start, r.result.start);
     assert.equal(moved.length, inc.length);

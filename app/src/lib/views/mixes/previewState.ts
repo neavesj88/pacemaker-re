@@ -51,3 +51,43 @@ export function addKept(listed: readonly string[], more: readonly string[]): str
   for (const k of more) if (!out.includes(k)) out.push(k);
   return out;
 }
+
+// ---------------------------------------------------------------------------------------------
+// The words of the mix editor's toasts: one short sentence each (see state/toastText.ts for the rule).
+// What does not fit (names, times, every warning) is returned as `details`, behind the card's Details button.
+// ---------------------------------------------------------------------------------------------
+
+const plural = (n: number, one: string, many = one + "s") => `${n} ${n === 1 ? one : many}`;
+
+/** What adding tracks says, in one card: how many went in, and a short tail for those placed later or kept at their own tempo. */
+export function addTracksToast(r: { added: number; moved: readonly string[]; kept: readonly string[] }): { text: string; details?: string } {
+  const lead = r.added === 1 ? "Track added" : `${r.added} tracks added`;
+  const tail: string[] = [];
+  if (r.moved.length) tail.push(r.added === 1 ? "placed later, decks busy" : `${r.moved.length} placed later, decks busy`);
+  if (r.kept.length) tail.push(`${r.kept.length === 1 ? "1 track" : `${r.kept.length} tracks`} kept at own tempo`);
+  const lines: string[] = [];
+  if (r.moved.length) lines.push(`Both decks were busy where you asked, so it went later: ${r.moved.join("; ")}.`);
+  if (r.kept.length) lines.push(keptNote(r.kept));
+  return { text: tail.length ? `${lead}; ${tail.join("; ")}.` : lead, details: lines.length ? lines.join("\n") : undefined };
+}
+
+/** What Beat-match says: the tempo it matched to; the backend's warnings (a big stretch, no downbeat, a half-time match) are the details. */
+export function beatmatchToast(targetBpm: number, notes: readonly string[]): { text: string; details?: string } {
+  const head = `Matched to ${targetBpm.toFixed(1)} BPM`;
+  if (notes.length === 0) return { text: head + "." };
+  return { text: `${head}, with ${plural(notes.length, "warning")}.`, details: notes.map((n) => n.charAt(0).toUpperCase() + n.slice(1)).join(".\n") + "." };
+}
+
+/** What Match all says: how many tracks now play at the mix tempo, and how many were left as they were. */
+export function matchAllToast(r: { applied: number; already: number; kept: readonly string[]; ramps: readonly string[] }, bpm: number): { text: string; kind: "ok" | "info"; details?: string } {
+  const left = r.kept.length + r.ramps.length;
+  const tempo = Math.round(bpm * 10) / 10;
+  const lines: string[] = [];
+  if (r.ramps.length) lines.push(`Left alone, they have a tempo ramp (use Sync on the clip to rescale it): ${r.ramps.join("; ")}.`);
+  if (r.kept.length) lines.push(`Left at their own tempo, matching would stretch them too much: ${r.kept.join("; ")}.`);
+  const details = lines.length ? lines.join("\n") : undefined;
+  if (r.applied === 0 && left === 0) return { text: `Every track already plays at ${tempo} BPM.`, kind: "ok" };
+  if (r.applied === 0) return { text: `${plural(left, "track")} kept: stretch or tempo ramp.`, kind: "info", details };
+  const lead = `Matched ${plural(r.applied, "track")} to ${tempo} BPM`;
+  return left > 0 ? { text: `${lead}; ${left} kept.`, kind: "info", details } : { text: lead + ".", kind: "ok" };
+}

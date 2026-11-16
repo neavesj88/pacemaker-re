@@ -208,7 +208,7 @@ class VTempo {
   async evenSection(s: Section) {
     const r = evenRange(s, this.beatCount);
     if (!r) {
-      toast.show("This section has no beat between its two ends to space out", "bad");
+      toast.show("No beat to space out here.", "bad");
       return false;
     }
     return editor.tempoEdit({ kind: "even", ...r });
@@ -253,7 +253,7 @@ class VTempo {
       if (Math.abs(b.pos - frame) < Math.abs(doc.beats[k].pos - frame)) k = i;
     });
     if (k === 0) {
-      toast.show("The first beat already starts a section: put the playhead further on", "bad");
+      toast.show("Move the playhead past the first beat.", "bad");
       return;
     }
     editor.addSplit(doc.beats[k].pos);

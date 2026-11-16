@@ -6,7 +6,7 @@ import { mixes } from "$lib/state/mixes.svelte";
 import { placeTransition } from "$lib/state/crossfadeLength";
 import { alignGrainOf } from "$lib/state/snapPrefs";
 import { alignSuggestion } from "$lib/state/sectionTransition";
-import { toast } from "$lib/state/toast.svelte";
+import { toast, type ToastAction } from "$lib/state/toast.svelte";
 import { vocal } from "$lib/state/vocal.svelte";
 import {
   buildRecipe,
@@ -23,7 +23,7 @@ import { recipePrefs } from "./recipePrefs.svelte";
 import { snapPrefs } from "./snapPrefs.svelte";
 import { vocalTools } from "./vocalTools.svelte";
 import { mv } from "./view.svelte";
-import { addKept, keptNote } from "./previewState";
+import { addKept, addTracksToast, beatmatchToast } from "./previewState";
 import { stretchText } from "$lib/state/tempoMatch";
 
 export const errText = (e: unknown) => (typeof e === "string" ? e : e instanceof Error ? e.message : String(e));
@@ -63,6 +63,20 @@ export function targetClip(at: number = mv.playhead): Clip | undefined {
   return sel ?? selProcessClip ?? under ?? all[0];
 }
 
+/** An Undo button for the edit that was just made. It undoes that edit only while it is still the newest one,
+ * so a late click never reverts something else. */
+export function undoAction(): ToastAction {
+  const id = mixes.doc?.id;
+  const depth = mixes.undoDepth;
+  return {
+    label: "Undo",
+    run: () => {
+      if (mixes.doc?.id === id && mixes.undoDepth === depth) mixes.undo();
+      else toast.show("Edited since; use Ctrl+Z.", "info");
+    },
+  };
+}
+
 /** Adds a tool or region on `clip` at timeline `at`. Tools of one kind may not overlap on a
  * clip, so the new one is moved past an existing one; says why when it cannot be placed. */
 export function addProcessTo(type: string, clip: Clip | undefined, at: number = mv.playhead, asVocal = false): boolean {
@@ -86,7 +100,7 @@ export function addProcessTo(type: string, clip: Clip | undefined, at: number = 
       start = hit.start + hit.length;
       length = Math.min(want, clip.length - start);
       if (length < E.MIN_LENGTH) {
-        toast.show(`There is no room for another ${asVocal ? "Vocal" : toolLabel(type, vocal.mode)} on "${clipTitle(clip)}" after the existing one.`, "info");
+        toast.show(`No room for another ${asVocal ? "Vocal" : toolLabel(type, vocal.mode)} on this clip.`, "info");
         return false;
       }
     }
@@ -142,23 +156,20 @@ export async function addTracks(ids: number[], at?: number) {
         }
       }
     } catch (e) {
-      toast.show(`Could not add track: ${errText(e)}`, "bad", 7000);
+      toast.error("Couldn't add the track.", errText(e));
     }
   }
-  if (added > 0) toast.show(added === 1 ? "Track added" : `${added} tracks added`, "ok");
-  if (moved.length > 0) toast.show(`Both decks were busy where you asked, so it went later: ${moved.join("; ")}.`, "info", 8000);
-  if (kept.length > 0) showKept(kept);
+  if (added > 0) {
+    // one card for the whole add; the tracks kept at their own tempo collect across adds made while it is showing
+    const open = keptCard && toast.items.some((t) => t.id === keptCard!.id);
+    const names = addKept(open ? keptCard!.names : [], kept);
+    const r = addTracksToast({ added, moved, kept: names });
+    keptCard = { id: toast.show(r.text, kept.length > 0 || moved.length > 0 ? "info" : "ok", { details: r.details, key: "add-tracks" }), names };
+  }
 }
 
-/** The card for tracks kept at their own tempo. Tracks added one at a time (a double-click each) add
- * to the card that is still showing instead of stacking a new one over the clip panel. */
+/** The card of the last add, so tracks kept at their own tempo (added one at a time) are counted together. */
 let keptCard: { id: number; names: string[] } | null = null;
-function showKept(kept: string[]) {
-  const open = keptCard && toast.items.some((t) => t.id === keptCard!.id);
-  const names = addKept(open ? keptCard!.names : [], kept);
-  if (open) toast.dismiss(keptCard!.id);
-  keptCard = { id: toast.show(keptNote(names), "info", 10000), names };
-}
 
 /** Duplicates the selection: clips go right after themselves, a clip's processes after the
  * last one. */
@@ -218,11 +229,13 @@ export function pasteAtPlayhead() {
 export async function beatmatch(clipId: string) {
   try {
     const s = await mixes.beatmatch(clipId);
-    const bits = [`Matched to ${s.targetBpm.toFixed(1)} BPM`];
-    if (s.notes.length) bits.push(s.notes.join("; "));
-    toast.show(bits.join(". "), "ok", 7000);
+    const t = beatmatchToast(s.targetBpm, s.notes);
+    toast.show(t.text, s.notes.length ? "info" : "ok", { details: t.details, action: undoAction() });
   } catch (e) {
-    toast.show(`Beat-match: ${errText(e)}`, "bad", 7000);
+    // "Not matched: ..." is the answer, not a failure: nothing changed, and it says why
+    const why = errText(e);
+    if (/^Not matched/.test(why)) toast.show(why, "info");
+    else toast.error("Couldn't beat-match.", why);
   }
 }
 
@@ -243,11 +256,11 @@ export function beatAlign(clipId?: string) {
     } else id = doc.clips.find((c) => mixes.selected.includes(c.id))?.id ?? targetClip()?.id;
   }
   if (!id) {
-    toast.show("Beat-align: select a clip or a crossfade first.", "bad", 6000);
+    toast.show("Select a clip or crossfade first.", "info");
     return;
   }
   const r = mixes.beatAlign(id, alignGrainOf(snapPrefs.value), against);
-  toast.show(r.moved ? `Beat-align: ${r.message}` : `Beat-align: nothing moved. ${r.message}`, r.moved ? "ok" : "bad", 8000);
+  toast.show(r.message, r.moved ? "ok" : "info", r.moved ? { action: undoAction() } : {});
 }
 
 export type AutoOptions = {
@@ -293,7 +306,7 @@ export async function autoTransition(fromId: string, toId: string, opts: AutoOpt
     // backend's and the placement's explanations (the label already says how long it came out)
     const known = new Set([...base.notes, ...placed.suggestion.notes]);
     const own = built.notes.filter((n) => !known.has(n));
-    const noteText = own.length ? " " + own.map((n) => n.charAt(0).toUpperCase() + n.slice(1)).join(". ") + "." : "";
+    const sentence = (n: string) => n.charAt(0).toUpperCase() + n.slice(1).replace(/[.]$/, "") + ".";
 
     const finish = (replace: boolean) => {
       recipePrefs.built.set(built.transition.id, { recipe, bars: built.bars });
@@ -310,7 +323,10 @@ export async function autoTransition(fromId: string, toId: string, opts: AutoOpt
       if (skipped) bits.push(`${skipped} new left out, yours are in the way.`);
       if (kept) bits.push(`${kept} old kept.`);
       if (replace && way.length) bits.push(`Replaced ${way.length}.`);
-      toast.show(bits.join(" ") + noteText, "ok", 5000);
+      // the card says the recipe and its length, plus the one thing most worth knowing; the rest is in Details
+      const extras = [...bits.slice(1), ...own.map(sentence)];
+      const more = [...extras, ...[...known].map(sentence)];
+      toast.show([bits[0], extras[0]].filter(Boolean).join(" "), "ok", { details: more.length > 1 ? more.join("\n") : undefined, action: undoAction() });
     };
 
     if (way.length === 0) return finish(false);
@@ -325,7 +341,7 @@ export async function autoTransition(fromId: string, toId: string, opts: AutoOpt
       run: () => finish(true),
     });
   } catch (e) {
-    toast.show(`Auto transition: ${errText(e)}`, "bad", 9000);
+    toast.error("Couldn't build the transition.", errText(e));
   }
 }
 

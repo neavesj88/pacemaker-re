@@ -76,7 +76,7 @@
       }
       ondone(r);
     } catch (e) {
-      toast.show(String(e), "bad", 8000);
+      toast.error("Couldn't save the preset.", e);
     } finally {
       busy = false;
     }

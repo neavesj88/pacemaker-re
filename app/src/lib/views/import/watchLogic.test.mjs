@@ -126,7 +126,7 @@ test("the signature changes when the set of files does", () => {
 });
 
 test("auto results are worded and logged", () => {
-  assert.equal(autoDoneText("2 added, 1 failed", 1, null), "Watch folder: 2 added, 1 failed. Open Import to see what failed.");
+  assert.equal(autoDoneText("2 added, 1 failed", 1, null), "Watch folder: 2 added, 1 failed.");
   assert.equal(autoDoneText("3 added", 0, null), "Watch folder: 3 added.");
   assert.equal(autoDoneText("", 0, null), "Watch folder: nothing to do.");
   assert.match(autoDoneText("x", 0, "disk is full"), /failed: disk is full/);

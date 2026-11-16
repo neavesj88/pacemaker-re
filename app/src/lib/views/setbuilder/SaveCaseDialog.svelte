@@ -35,7 +35,7 @@
     const id = await cases.create(name.trim(), ids);
     busy = false;
     if (id !== undefined) {
-      toast.show(`Saved the case “${name.trim()}”: ${ids.length} track${ids.length === 1 ? "" : "s"} in set order`, "ok", 6000);
+      toast.show(`Saved the case “${name.trim()}”: ${ids.length} track${ids.length === 1 ? "" : "s"} in set order`, "ok");
       onclose();
     }
   }

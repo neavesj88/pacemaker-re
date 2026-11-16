@@ -61,6 +61,6 @@ The setting applies to the player, the track pictures and the grid editor. The c
 ## Energy and sections
 
 - **Energy** is your own 1 to 10 rating. **Energy (auto)** is an estimate from the audio. Which one counts where a single number is needed is the **Energy source** setting.
-- **Sections** finds the intro, builds, drops, breakdowns and outro of each track and marks them on waveforms. The mix editor can snap to them.
+- **Sections** finds the intro, builds, drops, breakdowns and outro of each track and marks them on waveforms. The mix editor can snap to them. If a track reads "Already analysed; nothing to do" but you want more or fewer sections, change the sensitivity in the Sections panel and analyse again.
 
 Both are kept by this app and are not written into the library. See [Background analysis](background-analysis.md).

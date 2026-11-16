@@ -8,7 +8,7 @@
   import { device } from "./device.svelte";
   import { plural } from "./format";
   import { relink } from "./relink.svelte";
-  import { deadRowLine, massWarning, removalReport } from "./trustLogic";
+  import { deadRowLine, massWarning, removalToast } from "./trustLogic";
   import WideModal from "./WideModal.svelte";
 
   // The Health card's fixes, each with the names of everything it would touch:
@@ -63,7 +63,7 @@
     try {
       const rep = await deviceFixRemoveRows(root, chosen.map((r) => r.track_id), acknowledged);
       close();
-      toast.show(removalReport(rep), rep.skipped.length ? "bad" : "ok", 12000);
+      toast.show(removalToast(rep).text, rep.skipped.length ? "bad" : "ok", { details: removalToast(rep).details });
       await session.load(root, true);
       device.snapshotTick++;
       await device.load(root);

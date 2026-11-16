@@ -51,7 +51,7 @@
   async function applySection(s: Section) {
     const v = Number((drafts[draftKey(s)] ?? s.bpm.toFixed(2)).replace(",", "."));
     if (!Number.isFinite(v) || v <= 0) {
-      toast.show("Enter a tempo in BPM, for example 128 or 127.5", "bad");
+      toast.show("Enter a tempo, like 128 or 127.5.", "bad");
       return;
     }
     if (Math.abs(v - s.bpm) < 0.005) {

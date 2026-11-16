@@ -45,7 +45,7 @@
       space.closeConfirm();
     } catch (e) {
       device.job = null;
-      toast.show(String(e), "bad", 8000);
+      toast.error("Couldn't run the space cleanup.", e);
     } finally {
       starting = false;
     }

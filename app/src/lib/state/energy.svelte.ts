@@ -40,7 +40,7 @@ class Energy {
     } catch (e) {
       if (session.library?.root === root) {
         this.state = null;
-        toast.show(`Could not read the energy estimates: ${e}`, "bad");
+        toast.error("Couldn't read the energy estimates.", e);
       }
     }
   }
@@ -107,7 +107,7 @@ class Energy {
       await this.load();
       return true;
     } catch (e) {
-      toast.show(`Could not save the energy settings: ${e}`, "bad");
+      toast.error("Couldn't save the energy settings.", e);
       return false;
     }
   }
@@ -121,7 +121,7 @@ class Energy {
       await this.load();
       return n;
     } catch (e) {
-      toast.show(`Could not forget the energy estimates: ${e}`, "bad");
+      toast.error("Couldn't forget the energy estimates.", e);
       return null;
     }
   }

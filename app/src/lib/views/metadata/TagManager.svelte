@@ -74,13 +74,12 @@
     const ok = p.kind === "delete" ? await labels.remove(p.tag) : p.kind === "merge" ? await labels.rename(p.from, p.into) : await labels.forgetOrphans();
     busy = false;
     if (!ok) return;
-    const tail = (n: number) => (n ? ` and ${goneNoun(n)}` : "");
     toast.show(
       p.kind === "delete"
-        ? `Deleted the tag “${p.tag}” from ${noun(p.ids.length)}${tail(p.gone.length)}`
+        ? `Deleted tag “${p.tag}” from ${noun(p.ids.length)}.`
         : p.kind === "merge"
-          ? `Merged “${p.from}” into “${p.into}” on ${noun(p.ids.length)}${tail(p.gone.length)}`
-          : `Forgot the labels of ${p.gone.length} removed track${p.gone.length === 1 ? "" : "s"}`,
+          ? `Merged “${p.from}” into “${p.into}”.`
+          : `Forgot the labels of ${p.gone.length} removed track${p.gone.length === 1 ? "" : "s"}.`,
       "ok",
     );
     pending = null;

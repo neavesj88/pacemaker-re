@@ -213,7 +213,7 @@ class MixExport {
     const extras = this.extras();
     if (!root || !doc || !extras || this.analysing) return;
     if (this.problem) {
-      toast.show(this.problem, "bad", 8000);
+      toast.show(this.problem, "bad");
       return;
     }
     this.#pending = { doc, key: this.#key() ?? "", mode: vocal.mode, vocal: extras.vocalToolIds?.join("|") ?? "" };
@@ -224,7 +224,7 @@ class MixExport {
     } catch (e) {
       this.analysing = false;
       this.#pending = null;
-      toast.show(`Could not measure: ${errText(e)}`, "bad", 10000);
+      toast.error("Couldn't measure.", errText(e));
     }
   }
 
@@ -248,8 +248,8 @@ class MixExport {
   analysisEnded(error: string | null, summary: string) {
     this.analysing = false;
     this.#pending = null;
-    if (error) toast.show(`Measuring failed: ${error}`, "bad", 10000);
-    else if (/cancelled/i.test(summary)) toast.show(summary, "info", 4000);
+    if (error) toast.error("Couldn't measure the loudness.", error);
+    else if (/cancelled/i.test(summary)) toast.show(summary, "info");
   }
 
   /** The gains the editor's preview plays with, or undefined (see `previewGainsOf`). */

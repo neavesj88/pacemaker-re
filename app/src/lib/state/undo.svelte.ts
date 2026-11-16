@@ -64,7 +64,7 @@ class UndoStore {
       this.settingsWarning = v.warning;
       toast.show("Saved", "ok");
     } catch (e) {
-      toast.show(String(e), "bad", 8000);
+      toast.error("Couldn't save the setting.", e);
     }
   }
 
@@ -117,7 +117,7 @@ class UndoStore {
       await this.afterUndo(report);
       return report;
     } catch (e) {
-      toast.show(String(e), "bad", 8000);
+      toast.error("Couldn't undo.", e);
       await this.refresh();
       return null;
     } finally {
@@ -132,12 +132,12 @@ class UndoStore {
     try {
       const p = await this.preview(1);
       if (id && p.top_entry_id !== id) {
-        toast.show(`That edit is no longer the newest one. Use the ${session.isComputer ? "This library" : "Device"} view's edit history.`, "bad", 8000);
+        toast.show("Not the newest edit. Use the edit history.", "bad");
         return;
       }
       await this.apply(1, p.top_entry_id);
     } catch (e) {
-      toast.show(String(e), "bad", 8000);
+      toast.error("Couldn't check the last edit.", e);
     }
   }
 
@@ -146,11 +146,11 @@ class UndoStore {
     const done = report.items.filter((i) => !i.skip);
     const left = report.items.filter((i) => i.skip);
     if (done.length === 0) {
-      toast.show(left.length ? `Nothing was put back: ${left[0].label}, ${left[0].what.toLowerCase()} ${left[0].skip}` : "Nothing to put back.", "bad", 8000);
+      toast.show(left.length ? "Nothing put back: it changed since." : "Nothing to put back.", "info", { details: left.map((i) => `${i.label}, ${i.what.toLowerCase()} ${i.skip}`).join("\n") || undefined });
     } else {
       const first = done[0];
-      const what = done.length === 1 ? `${first.label}: ${first.what.toLowerCase()} is ${first.becomes} again` : `${done.length} changes put back`;
-      toast.show(`Undone. ${what}${left.length ? `; ${left.length} left alone because they changed since` : ""}.`, "ok", 8000);
+      const what = done.length === 1 ? `${first.what.toLowerCase()} is ${first.becomes} again` : `${done.length} changes put back`;
+      toast.show(`Undone: ${what}${left.length ? `; ${left.length} left alone` : ""}.`, "ok", { details: done.length === 1 ? first.label : undefined });
     }
     if (root) {
       await session.load(root, true);

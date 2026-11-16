@@ -50,7 +50,7 @@ class ThingLabels {
       this.root = root;
       if (v.notice) toast.show(v.notice, "bad");
     } catch (e) {
-      if (seq === this.#seq) toast.show(`Could not read the ${this.kind} labels: ${e}`, "bad");
+      if (seq === this.#seq) toast.error(`Couldn't read the ${this.kind} labels.`, e);
     }
   }
 
@@ -69,7 +69,7 @@ class ThingLabels {
       }
       return true;
     } catch (e) {
-      toast.show(`Could not save the ${this.kind} labels: ${e}`, "bad");
+      toast.error(`Couldn't save the ${this.kind} labels.`, e);
       return false;
     }
   }

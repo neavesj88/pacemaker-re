@@ -55,12 +55,7 @@
     const done = choice === "new" ? await cases.transferToNew(from.id, newName, ids, move) : typeof choice === "number" ? await cases.transfer(from.id, choice, ids, move) : undefined;
     working = false;
     if (!done) return;
-    toast.show(
-      move
-        ? `Moved ${plural(done.removed, "track")} from “${from.name}” to “${destName}”${done.added < done.removed ? ` (${done.removed - done.added} already there)` : ""}`
-        : `Copied ${plural(done.added, "track")} to “${destName}”${done.added < ids.length ? ` (${ids.length - done.added} already there)` : ""}`,
-      "ok",
-    );
+    toast.show(`${move ? "Moved" : "Copied"} ${plural(move ? done.removed : done.added, "track")} to “${destName}”.`, "ok");
     onclose();
   }
 </script>

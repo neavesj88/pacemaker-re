@@ -100,7 +100,7 @@ class Stems {
       const p = await pickFolder("Folder for the vocal and instrumental files");
       if (p) this.setDest(p);
     } catch (e) {
-      toast.show(`Could not open the folder picker: ${e}`, "bad");
+      toast.error("Couldn't open the folder picker.", e);
     }
   }
 
@@ -117,7 +117,7 @@ class Stems {
       await this.refresh();
       return true;
     } catch (e) {
-      toast.show(String(e), "bad", 8000);
+      toast.error("Couldn't start the stems job.", e);
       return false;
     }
   }
@@ -137,7 +137,7 @@ class Stems {
       await stemsDownload(id, version);
     } catch (e) {
       this.download = null;
-      toast.show(String(e), "bad", 10000);
+      toast.error("Couldn't download the model.", e);
     }
   }
 
@@ -152,7 +152,7 @@ class Stems {
       await stemsRemove(id);
       toast.show("Removed from this computer.", "ok");
     } catch (e) {
-      toast.show(String(e), "bad", 8000);
+      toast.error("Couldn't remove the model.", e);
     }
     await this.refresh();
   }
@@ -190,7 +190,7 @@ class Stems {
       void this.rememberFolder(this.dest.trim());
     } catch (e) {
       this.running = false;
-      toast.show(String(e), "bad", 10000);
+      toast.error("Couldn't start the stems job.", e);
     }
   }
 
@@ -240,14 +240,15 @@ class Stems {
   async onJobDone(e: DoneEvent) {
     if (e.job === STEMS_DOWNLOAD_JOB) {
       this.download = null;
-      toast.show(e.error ? `Download failed: ${e.error}` : e.summary, e.error ? "bad" : "ok", e.error ? 12000 : 6000);
+      if (e.error) toast.error("Download failed.", e.error);
+      else toast.show(e.summary, "ok");
       await this.refresh();
     } else if (e.job === STEMS_JOB) {
       this.running = false;
       this.cancelling = false;
       this.progress = null;
-      if (e.error) toast.show(`Stems failed: ${e.error}`, "bad", 12000);
-      else toast.show(e.summary || "Stems finished", e.failed > 0 ? "info" : "ok", 10000);
+      if (e.error) toast.error("Stems failed.", e.error);
+      else toast.show(e.summary || "Stems finished", e.failed > 0 ? "info" : "ok");
       await this.refresh();
     }
   }

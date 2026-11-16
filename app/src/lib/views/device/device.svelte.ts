@@ -69,7 +69,7 @@ class DeviceStore {
   }
 
   cancel() {
-    deviceCancel().catch((e) => toast.show(String(e), "bad", 8000));
+    deviceCancel().catch((e) => toast.error("Couldn't cancel the job.", e));
   }
 
   /** Reads everything for a volume. Health scans every file, so it runs apart from the quick reads. */
@@ -117,13 +117,13 @@ class DeviceStore {
         this.results = {};
         this.verify = null;
         this.verifyOpen = false;
-        toast.show("Ejected. It is safe to unplug the USB cable.", "ok", 8000);
+        toast.show("Ejected. Safe to unplug.", "ok");
         await session.refreshVolumes();
       } else {
-        toast.show("Eject was requested but the drive is still there. Close anything using it and try again.", "bad", 8000);
+        toast.show("Couldn't eject: something is using the drive.", "bad");
       }
     } catch (e) {
-      toast.show(String(e), "bad", 8000);
+      toast.error("Couldn't eject.", e);
     } finally {
       this.ejecting = false;
     }
@@ -146,14 +146,14 @@ class DeviceStore {
     if (ev.error?.includes("Cancelled:")) {
       // stopped by the user: not a failure, and the backend has already cleaned up
       const msg = ev.error.slice(ev.error.indexOf("Cancelled:"));
-      toast.show(msg, "ok", 8000);
+      toast.show(msg, "ok");
       this.results[ev.job] = msg;
     } else if (ev.error) {
-      toast.show(ev.error, "bad", 8000);
+      toast.error("Couldn't finish the job.", ev.error);
       this.results[ev.job] = `Failed: ${ev.error}`;
     } else {
       this.results[ev.job] = ev.summary;
-      toast.show(ev.summary, ev.failed > 0 ? "bad" : "ok", 8000);
+      toast.show(ev.summary, ev.failed > 0 ? "bad" : "ok");
     }
     // only what the open library is: a job that ends after the user switched library or unplugged
     // the drive must not read the old root (a missing drive would show as an error after a success)
@@ -173,7 +173,7 @@ class DeviceStore {
           // the per-file result is the point of the check: show it
           this.verifyOpen = !!this.verify;
         } catch (e) {
-          toast.show(String(e), "bad", 8000);
+          toast.error("Couldn't read the check result.", e);
         }
       }
       return;

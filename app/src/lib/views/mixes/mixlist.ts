@@ -193,13 +193,12 @@ export function planLine(p: ExportPlanItem): string {
 
 export type DeleteResult = { deleted: { id: number; name: string }[]; failed: { id: number; name: string; error: string }[] };
 
-/** The toast after a bulk delete: what was deleted, and each mix that was kept with the reason. */
-export function deleteSummary(r: DeleteResult): { text: string; ok: boolean } {
+/** The toast after a bulk delete: how many went and how many were kept; each kept mix and its reason is the details. */
+export function deleteSummary(r: DeleteResult): { text: string; ok: boolean; details?: string } {
   const head = r.deleted.length ? `Deleted ${plural(r.deleted.length, "mix", "mixes")}.` : "Nothing was deleted.";
   if (r.failed.length === 0) return { text: head, ok: true };
-  const shown = r.failed.slice(0, 4).map((f) => `“${f.name}”: ${f.error}`);
-  const more = r.failed.length > shown.length ? ` and ${r.failed.length - shown.length} more` : "";
-  return { text: `${head} Kept ${r.failed.length}: ${shown.join("; ")}${more}.`, ok: false };
+  const text = r.deleted.length ? `Deleted ${r.deleted.length}; ${r.failed.length} couldn't be deleted.` : `${plural(r.failed.length, "mix", "mixes")} couldn't be deleted.`;
+  return { text, ok: false, details: r.failed.map((f) => `“${f.name}”: ${f.error}`).join("\n") };
 }
 
 export type ExportResult = {
@@ -208,16 +207,14 @@ export type ExportResult = {
   failed: { id: number; name: string; error: string }[];
 };
 
-export function exportSummary(r: ExportResult, dir: string): { text: string; ok: boolean } {
+export function exportSummary(r: ExportResult, dir: string): { text: string; ok: boolean; details?: string } {
   const bits: string[] = [];
-  bits.push(r.written.length ? `Exported ${plural(r.written.length, "mix", "mixes")} to ${dir}.` : "Nothing was exported.");
-  if (r.skipped.length) bits.push(`Skipped ${r.skipped.length} (file already there).`);
-  if (r.failed.length) {
-    const shown = r.failed.slice(0, 4).map((f) => `“${f.name}”: ${f.error}`);
-    const more = r.failed.length > shown.length ? ` and ${r.failed.length - shown.length} more` : "";
-    bits.push(`Failed ${r.failed.length}: ${shown.join("; ")}${more}.`);
-  }
-  return { text: bits.join(" "), ok: r.failed.length === 0 };
+  bits.push(r.written.length ? `Exported ${plural(r.written.length, "mix", "mixes")}.` : "Nothing was exported.");
+  if (r.skipped.length) bits.push(`${r.skipped.length} already there.`);
+  if (r.failed.length) bits.push(`${r.failed.length} failed.`);
+  // the folder and each failure with its reason are the long form
+  const lines = [r.written.length ? `Folder: ${dir}` : "", ...r.failed.map((f) => `“${f.name}”: ${f.error}`)].filter(Boolean);
+  return { text: bits.join(" "), ok: r.failed.length === 0, details: lines.length ? lines.join("\n") : undefined };
 }
 
 /** The deep-link keys that carry track ids into the Mixes view: with or without the area prefix. */

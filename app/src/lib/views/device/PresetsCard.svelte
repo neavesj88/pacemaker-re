@@ -56,7 +56,7 @@
       if (!path) return;
       importing = { path, file: await devicePresetReadFile(path) };
     } catch (e) {
-      toast.show(String(e), "bad", 8000);
+      toast.error("Couldn't import the preset.", e);
     }
   }
 
@@ -65,9 +65,9 @@
       const dest = await pickPresetSavePath(p.name);
       if (!dest) return;
       await devicePresetExport(p.name, dest);
-      toast.show(`"${p.name}" saved to ${dest}`, "ok", 6000);
+      toast.show(`"${p.name}" saved to ${dest}`, "ok");
     } catch (e) {
-      toast.show(String(e), "bad", 8000);
+      toast.error("Couldn't save the preset.", e);
     }
   }
 
@@ -77,11 +77,11 @@
     deletingNow = true;
     try {
       await devicePresetDelete(p.name);
-      toast.show(`Preset "${p.name}" deleted. The card was not changed.`, "ok", 5000);
+      toast.show(`Preset "${p.name}" deleted. The card was not changed.`, "ok");
       deleting = null;
       await reload();
     } catch (e) {
-      toast.show(String(e), "bad", 8000);
+      toast.error("Couldn't delete the preset.", e);
     } finally {
       deletingNow = false;
     }
@@ -90,7 +90,7 @@
   async function stored(r: SaveResult) {
     saving = false;
     importing = null;
-    if (r.summary) toast.show(`Preset "${r.summary.name}" stored (${r.summary.settings} settings).`, "ok", 5000);
+    if (r.summary) toast.show(`Preset "${r.summary.name}" stored (${r.summary.settings} settings).`, "ok");
     await reload();
   }
 

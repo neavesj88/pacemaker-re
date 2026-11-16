@@ -23,7 +23,7 @@
     try {
       await listMeta.update(doc.id, change);
     } catch (e) {
-      toast.show(`Could not save the details: ${errText(e)}`, "bad", 7000);
+      toast.error("Couldn't save the details.", errText(e));
     }
   }
 </script>

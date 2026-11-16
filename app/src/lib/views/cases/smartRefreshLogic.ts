@@ -75,6 +75,16 @@ export function doneSummary(r: RefreshReport, lib: LibraryKind = "pacemaker"): s
   return text;
 }
 
+/** The toast after a refresh: how many smart cases were refreshed and how many were not; the names and the reasons are the details. */
+export function doneToast(r: RefreshReport, lib: LibraryKind = "pacemaker"): { text: string; details?: string } {
+  const did = changed(r);
+  const stuck = skipped(r);
+  if (did.length === 0 && stuck.length === 0) return { text: "Smart cases are already up to date." };
+  const head = did.length ? `Refreshed ${plural(did.length, "smart case")}.` : "No smart case was refreshed.";
+  const tail = stuck.length ? ` ${stuck.length} couldn't be refreshed.` : "";
+  return { text: head + tail, details: doneSummary(r, lib) };
+}
+
 /** A string that is the same for the same pending changes, so an answered "Not now" is not
  *  asked again until something different would change. Skips are included: a smart case that
  *  starts or stops being skipped is news. */

@@ -66,7 +66,7 @@ class Sections {
     } catch (e) {
       if (session.library?.root === root) {
         this.state = null;
-        toast.show(`Could not read the sections: ${e}`, "bad");
+        toast.error("Couldn't read the sections.", e);
       }
     }
   }
@@ -97,9 +97,7 @@ class Sections {
       }
       if (plan.length === 0) {
         toast.show(
-          ids?.length
-            ? "Those tracks were already analysed and their beat grids have not changed. To find more or fewer sections, change the sensitivity in the Sections panel."
-            : "Every track is already analysed and no beat grid has changed.",
+          "Already analysed; nothing to do.",
           "info",
         );
         return;
@@ -135,7 +133,7 @@ class Sections {
       await this.load();
       return true;
     } catch (e) {
-      toast.show(`Could not save the section settings: ${e}`, "bad");
+      toast.error("Couldn't save the section settings.", e);
       return false;
     }
   }
@@ -149,7 +147,7 @@ class Sections {
       await this.load();
       return n;
     } catch (e) {
-      toast.show(`Could not forget the sections: ${e}`, "bad");
+      toast.error("Couldn't forget the sections.", e);
       return null;
     }
   }

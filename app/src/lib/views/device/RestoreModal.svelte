@@ -41,11 +41,7 @@
     try {
       const rep = await deviceRestoreSnapshot(root, name, diff.fingerprint);
       onclose();
-      toast.show(
-        `Restored music.db from ${stampLabel(stamp)}: ${holds(rep.counts)}. The previous one is saved as ${rep.safety_copy}.`,
-        "ok",
-        12000,
-      );
+      toast.show(`Restored music.db from ${stampLabel(stamp)}.`, "ok", { details: `${holds(rep.counts)}. The previous one is saved as ${rep.safety_copy}.` });
       await session.load(root, true);
       device.snapshotTick++;
       await device.load(root);

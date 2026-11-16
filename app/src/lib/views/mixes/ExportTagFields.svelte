@@ -27,7 +27,7 @@
         changed();
       }
     } catch (e) {
-      toast.show(`Could not open the file dialog: ${errText(e)}`, "bad", 7000);
+      toast.error("Couldn't open the file dialog.", errText(e));
     }
   }
 

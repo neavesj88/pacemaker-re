@@ -45,7 +45,7 @@ export function openMix(id: number) {
       mv.reset();
       listMeta.set(id, mixes.doc?.meta ?? null);
     } catch (e) {
-      toast.show(`Could not open the mix: ${errText(e)}`, "bad", 9000);
+      toast.error("Couldn't open the mix.", errText(e));
     }
   });
 }
@@ -87,7 +87,7 @@ export function renameMix(m: MixSummary) {
       if (!root) throw new Error("no library is open");
       if (name !== m.name) await mixRename(root, m.id, name);
       await reloadList();
-      toast.show(`Renamed to “${name}”`, "ok");
+      toast.show(`Renamed to “${name}”`, "ok", { key: "mix-rename" });
     },
   };
 }
@@ -134,7 +134,7 @@ export function saveMixAs() {
       mv.reset();
       listMeta.set(saved.id, mixes.doc?.meta ?? null);
       await reloadList();
-      toast.show(`Saved as “${saved.name}”. “${doc.name}” was not changed.`, "ok", 7000);
+      toast.show(`Saved a copy as “${saved.name}”.`, "ok");
     },
   };
 }
@@ -162,7 +162,7 @@ export function deleteMixes(ms: MixSummary[], done?: () => void) {
       await reloadList();
       done?.();
       const s = deleteSummary(r);
-      toast.show(s.text, s.ok ? "ok" : "bad", s.ok ? 4000 : 14000);
+      toast.show(s.text, s.ok ? "ok" : "bad", { details: s.details });
     },
   });
 }
@@ -180,7 +180,7 @@ export async function importPmk() {
     const m = mixes.list.find((x) => x.id === id);
     toast.show(`Imported “${m?.name ?? "mix"}”`, "ok");
   } catch (e) {
-    toast.show(`Import failed: ${errText(e)}`, "bad", 12000);
+    toast.error("Couldn't import the mix.", errText(e));
   }
 }
 
@@ -194,7 +194,7 @@ export async function exportPmk(m: MixSummary) {
     await mixExportPmk(root, m.id, dest);
     toast.show(`Exported “${m.name}”`, "ok");
   } catch (e) {
-    toast.show(`Export failed: ${errText(e)}`, "bad", 9000);
+    toast.error("Couldn't export the mix.", errText(e));
   }
 }
 
@@ -222,11 +222,11 @@ export async function exportMixes(ms: MixSummary[]) {
         if (writing === 0) return;
         const r = await mixExportMany(root, dir, plan);
         const s = exportSummary(r, dir);
-        toast.show(s.text, s.ok ? "ok" : "bad", s.ok ? 6000 : 14000);
+        toast.show(s.text, s.ok ? "ok" : "bad", { details: s.details });
       },
     });
   } catch (e) {
-    toast.show(`Export failed: ${errText(e)}`, "bad", 12000);
+    toast.error("Couldn't export the mix.", errText(e));
   }
 }
 
@@ -236,9 +236,9 @@ export async function cancelExport() {
   if (!mv.exporting) return;
   try {
     await exportCancel();
-    toast.show("Cancelling the export…", "info", 3000);
+    toast.show("Cancelling the export…", "info");
   } catch (e) {
-    toast.show(`Could not cancel the export: ${errText(e)}`, "bad", 7000);
+    toast.error("Couldn't cancel the export.", errText(e));
   }
 }
 
@@ -249,17 +249,17 @@ export async function exportAudio() {
   const doc = mixes.doc;
   if (!root || !doc || mv.exporting || mixExport.analysing) return;
   if (doc.clips.length === 0) {
-    toast.show("There is nothing to export: add a track first.", "info");
+    toast.show("Add a track before exporting.", "info");
     return;
   }
   mixExport.ensureLoaded();
   const extras = mixExport.extras();
   if (!extras) {
-    toast.show("Fix the range in the export settings first.", "bad", 6000);
+    toast.show("Fix the range in the export settings first.", "bad");
     return;
   }
   if (mixExport.problem) {
-    toast.show(mixExport.problem, "bad", 8000);
+    toast.show(mixExport.problem, "bad");
     return;
   }
   const wanted = mixExport.prefs.format;
@@ -271,7 +271,7 @@ export async function exportAudio() {
       filters: saveFilters(wanted),
     });
   } catch (e) {
-    toast.show(`Could not open the save dialog: ${errText(e)}`, "bad", 7000);
+    toast.error("Couldn't open the save dialog.", errText(e));
     return;
   }
   if (!picked) return;
@@ -286,7 +286,7 @@ export async function exportAudio() {
   try {
     if (needsDiskCheck(picked, dest, tracklist.writeCue)) found = await exportCueTarget(dest);
   } catch (e) {
-    toast.show(`Export failed: ${errText(e)}`, "bad", 12000);
+    toast.error("Couldn't export the mix.", errText(e));
     return;
   }
   const { items, replaceCue } = replacements(picked, dest, format, tracklist.writeCue, tracklist.cueIfExists, found);
@@ -308,17 +308,17 @@ async function startExport(root: string, doc: NonNullable<typeof mixes.doc>, des
   mv.exporting = true;
   mv.exportPct = 0;
   mv.exportPhase = mixExport.active ? "measuring" : "rendering";
-  toast.show(`${mixExport.active ? "Measuring and rendering" : "Rendering"} “${doc.name}” to ${format.toUpperCase()}…`, "info", 6000);
+  toast.show(`${mixExport.active ? "Measuring and rendering" : "Rendering"} “${doc.name}” to ${format.toUpperCase()}…`, "info");
   try {
     // resolves when the job has started; init.ts reports the end from the job-done event
     const started = await exportMixAudio(root, doc, dest, format, tracklist.writeCue ? tracklist.snapshot() : undefined, replaceCue, extras);
     if (started.cuePath) {
       const name = baseName(started.cuePath);
-      toast.show(started.cueReplaces ? `${name} will be replaced when the render finishes.` : `The CUE sheet ${name} is written when the render finishes.`, "info", 8000);
+      toast.show(started.cueReplaces ? `Replacing ${name} when done.` : `CUE sheet ${name} written when done.`, "info");
     }
   } catch (e) {
     mv.exporting = false;
-    toast.show(`Export failed: ${errText(e)}`, "bad", 12000);
+    toast.error("Couldn't export the mix.", errText(e));
   }
 }
 
@@ -342,15 +342,15 @@ export async function checkOpenMixAfterReload(root: string) {
     preview.stop();
     try {
       await mixes.open(doc.id);
-      toast.show(`“${name}” was changed in the library (a restore or sync), so it was read again.`, "info", 9000);
+      toast.show(`“${name}” changed in the library; reloaded.`, "info");
     } catch (e) {
-      toast.show(`“${name}” changed in the library but could not be read again: ${errText(e)}`, "bad", 9000);
+      toast.error(`“${name}” changed in the library; couldn't reload it.`, e);
     }
   } else if (verdict === "removed") {
     preview.stop();
     mixes.close();
     void mixes.refreshList();
-    toast.show(`“${name}” is no longer in the library (a restore or sync removed it), so the editor was closed.`, "info", 9000);
+    toast.show(`“${name}” was removed from the library; editor closed.`, "info");
   } else if (verdict === "changed" || verdict === "gone") {
     if (verdict === "changed" && stamp === mixes.keptStamp) return; // already answered "Keep my edits" for this version
     mixes.libraryStamp = stamp;

@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
-  ageText, deadRowLine, diffSentences, diffSummary, massWarning, moreText, pillText, planLine, removalReport, stampLabel, stampToDate,
+  ageText, deadRowLine, diffSentences, diffSummary, massWarning, moreText, pillText, planLine, removalReport, removalToast, stampLabel, stampToDate,
   statusCounts, verifyVerdict, visibleChecks,
 } from "./trustLogic.ts";
 
@@ -100,6 +100,12 @@ test("undo wording", () => {
     planLine({ what: "Genre", current: "Techno", becomes: "House", skip: "changed since this edit (now Techno); left alone" }),
     "Genre: changed since this edit (now Techno); left alone",
   );
+});
+
+test("the removal toast is one short line and keeps the long form for the details", () => {
+  const t = removalToast({ removed: ["a", "b"], skipped: ["X: kept"], cases_touched: 1 });
+  assert.equal(t.text, "2 rows removed. A backup was saved. 1 row left alone.");
+  assert.match(t.details, /Restore from a snapshot brings them back/);
 });
 
 test("a removal is reported with what stayed and how to get it back", () => {

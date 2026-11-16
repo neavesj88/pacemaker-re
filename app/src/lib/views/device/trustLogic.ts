@@ -163,6 +163,12 @@ export function planLine(i: { what: string; current: string; becomes: string; sk
   return i.skip ? `${i.what}: ${i.skip}` : `${i.what}: ${i.current} → ${i.becomes}`;
 }
 
+/** The toast after a row removal: how many rows went and that a copy was saved first; the long form (what was left alone and why) is the details. */
+export function removalToast(r: { removed: string[]; skipped: string[]; cases_touched: number }): { text: string; details: string } {
+  const left = r.skipped.length ? ` ${n(r.skipped.length, "row")} left alone.` : "";
+  return { text: `${n(r.removed.length, "row")} removed. A backup was saved.${left}`, details: removalReport(r) };
+}
+
 /** What a row removal did, in one sentence for the toast: what went, what was left alone and why. */
 export function removalReport(r: { removed: string[]; skipped: string[]; cases_touched: number }): string {
   const rows = `${n(r.removed.length, "row")} removed from the library`;

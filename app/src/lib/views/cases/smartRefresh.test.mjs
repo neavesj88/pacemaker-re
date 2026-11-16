@@ -3,7 +3,7 @@
 // signature that remembers an answered "Not now". Synthetic names only.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { changeParts, changed, decideCheck, doneSummary, itemLine, itemTrackLines, loopMessage, needsAttention, planSignature, remakeWhen, skipped, stuckLines, trackLine } from "./smartRefreshLogic.ts";
+import { changeParts, changed, decideCheck, doneSummary, doneToast, itemLine, itemTrackLines, loopMessage, needsAttention, planSignature, remakeWhen, skipped, stuckLines, trackLine } from "./smartRefreshLogic.ts";
 
 const tr = (id, title = `Sample Title ${id}`, artist = "Sample Artist") => ({ track_id: id, title, artist });
 const item = (over = {}) => ({
@@ -132,6 +132,14 @@ test("a deleted copy's note says when it comes back, per the setting", () => {
   assert.equal(remakeWhen("off"), "the next time you refresh");
   assert.equal(remakeWhen("ask"), "when you answer yes to the refresh question");
   assert.equal(remakeWhen("auto"), "automatically straight afterwards");
+});
+
+test("the refresh toast is one short line, the names are the details", () => {
+  const r = report(item({ id: 1, name: "A", added: [tr(1)] }), item({ id: 4, name: "D", action: "skip", error: "bad rule" }));
+  const t = doneToast(r);
+  assert.equal(t.text, "Refreshed 1 smart case. 1 couldn't be refreshed.");
+  assert.match(t.details, /“A”.*Not refreshed: “D” \(bad rule\)/);
+  assert.equal(doneToast(report(item({ action: "unchanged" }))).text, "Smart cases are already up to date.");
 });
 
 test("for a library on this computer the sentences say ★ case and name the library, never the Pacemaker", () => {

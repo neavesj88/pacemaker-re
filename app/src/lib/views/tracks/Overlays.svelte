@@ -23,7 +23,7 @@
     if (!ids) return;
     const n = await cases.addTracks(caseId, ids);
     addToCase.close();
-    if (n !== undefined) toast.show(n === 0 ? `Already in “${caseName}”` : `Added ${noun(n)} to “${caseName}”`, "ok");
+    if (n !== undefined) toast.show(n === 0 ? `Already in “${caseName}”.` : `Added ${noun(n)} to “${caseName}”.`, "ok");
   }
 
   async function fresh() {

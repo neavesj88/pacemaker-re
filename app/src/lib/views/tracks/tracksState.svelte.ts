@@ -118,7 +118,7 @@ class TracksState extends TableState {
       this.#lastJson = JSON.stringify(this.captureState(true));
       this.viewsRoot = root;
     } catch (e) {
-      toast.show(`Could not read the saved filters: ${e}`, "bad");
+      toast.error("Couldn't read your filters.", e);
     }
   }
 
@@ -147,7 +147,7 @@ class TracksState extends TableState {
       await tracksViewsSetState(p.root, p.state);
     } catch (e) {
       // once per library: a read-only file would otherwise complain at every keystroke
-      if (!this.#saveFailed) toast.show(`Could not remember the filters and sort: ${e}`, "bad");
+      if (!this.#saveFailed) toast.error("Couldn't remember the filters and sort.", e);
       this.#saveFailed = true;
     }
   }
@@ -164,7 +164,7 @@ class TracksState extends TableState {
       this.viewsNotice = v.notice ?? "";
       return true;
     } catch (e) {
-      toast.show(`Could not save the preset: ${e}`, "bad");
+      toast.error("Couldn't save the preset.", e);
       return false;
     }
   }
@@ -178,7 +178,7 @@ class TracksState extends TableState {
       this.presets = v.presets;
       return true;
     } catch (e) {
-      toast.show(`Could not delete the preset: ${e}`, "bad");
+      toast.error("Couldn't delete the preset.", e);
       return false;
     }
   }
@@ -220,7 +220,7 @@ class TracksState extends TableState {
       this.favourites.clear();
       for (const id of ids) this.favourites.add(id);
     } catch (e) {
-      toast.show(`Could not read the favourites: ${e}`, "bad");
+      toast.error("Couldn't read the favourites.", e);
     }
   }
 
@@ -232,7 +232,7 @@ class TracksState extends TableState {
     const todo = ids.filter((id) => this.favourites.has(id) !== on);
     if (todo.length === 0) return;
     if (!jobs.canWrite) {
-      toast.show("Favourites can't be changed while a job runs or the library is read-only.", "bad");
+      toast.show("Can't save while a job runs or the library is read-only.", "bad");
       return;
     }
     for (const id of todo) {
@@ -249,7 +249,7 @@ class TracksState extends TableState {
           if (on) this.favourites.delete(undo);
           else this.favourites.add(undo);
         }
-        toast.show(`Could not change the favourites: ${e}`, "bad");
+        toast.error("Couldn't change the favourites.", e);
         return;
       }
     }

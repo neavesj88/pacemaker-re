@@ -96,7 +96,7 @@ class Bg {
       this.#lastState = v.status.state;
       this.loaded = true;
     } catch (e) {
-      toast.show(`Could not read the background analysis settings: ${e}`, "bad");
+      toast.error("Couldn't read the analysis settings.", e);
     }
   }
 
@@ -115,7 +115,7 @@ class Bg {
       return true;
     } catch (e) {
       this.settings = before;
-      toast.show(`Could not save the background analysis settings: ${e}`, "bad");
+      toast.error("Couldn't save the analysis settings.", e);
       return false;
     }
   }
@@ -139,7 +139,7 @@ class Bg {
     try {
       await bgSetPaused(paused);
     } catch (e) {
-      toast.show(String(e), "bad");
+      toast.error("Couldn't pause analysis.", e);
     }
   }
 
@@ -155,7 +155,7 @@ class Bg {
       this.checkedAt = Date.now();
       toast.show("Checking this library for anything missing. If nothing is, nothing runs.");
     } catch (e) {
-      toast.show(String(e), "bad");
+      toast.error("Couldn't start the check.", e);
     }
   }
 
@@ -169,7 +169,7 @@ class Bg {
       this.#lastFailures = 0;
       void this.refreshFailures();
     } catch (e) {
-      toast.show(String(e), "bad");
+      toast.error("Couldn't retry.", e);
     }
   }
 

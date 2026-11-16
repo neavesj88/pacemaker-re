@@ -67,7 +67,7 @@
         space.update((x) => (x.archive_dir = d));
         await space.save();
       } catch (e) {
-        toast.show(String(e), "bad", 8000);
+        toast.error("Couldn't choose the folder.", e);
         return;
       }
     }
@@ -78,7 +78,7 @@
     try {
       await deviceSpaceOpenFolder(dir);
     } catch (e) {
-      toast.show(String(e), "bad", 8000);
+      toast.error("Couldn't open the folder.", e);
     }
   }
 </script>

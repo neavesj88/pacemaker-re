@@ -18,7 +18,8 @@ export default function init(): Unlisten {
         const bad = !!e.error || e.failed > 0;
         const text = e.error ? `Export failed: ${e.error}` : e.summary || "Exported";
         vdj.finish({ text, bad });
-        toast.show(text, e.error ? "bad" : bad ? "info" : "ok", 12000);
+        if (e.error) toast.error("Couldn't export.", e.error);
+        else toast.show(text, bad ? "info" : "ok");
       }),
   ]);
 }

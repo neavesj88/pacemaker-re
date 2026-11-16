@@ -219,7 +219,7 @@
   async function applyBpm() {
     const v = Number(bpmText.replace(",", "."));
     if (!Number.isFinite(v) || v <= 0) {
-      toast.show("Enter a tempo in BPM, for example 128 or 127.5", "bad");
+      toast.show("Enter a tempo, like 128 or 127.5.", "bad");
       bpmText = editor.bpm ? editor.bpm.toFixed(2) : "";
       return;
     }
@@ -285,7 +285,7 @@
       try {
         usedByMixes = await gridMixesUsing(lib.root, editor.loaded.track_id);
       } catch (err) {
-        toast.show(`Could not check which mixes use this track: ${String(err)}`, "bad", 8000);
+        toast.error("Couldn't check which mixes use this track.", String(err));
         return;
       }
     }

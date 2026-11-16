@@ -87,7 +87,7 @@ class CaseExport {
       this.saved = s.prefs;
       this.warning = s.warning;
     } catch (e) {
-      toast.show(`Could not save the export choices: ${e}`, "bad", 8000);
+      toast.error("Couldn't save the export choices.", e);
     }
   }
 
@@ -213,7 +213,7 @@ class CaseExport {
       await cancelExport();
     } catch (e) {
       this.cancelling = false;
-      toast.show(`Could not cancel: ${e}`, "bad");
+      toast.error("Couldn't cancel.", e);
     }
   }
 
@@ -236,7 +236,8 @@ class CaseExport {
     if (this.open) this.stage = "done";
     else {
       this.stage = "setup";
-      toast.show(ev.error ? `Export failed: ${ev.error}` : ev.summary || "Export finished", ev.error || ev.failed > 0 ? "bad" : "ok", 10000);
+      if (ev.error) toast.error("Couldn't export.", ev.error);
+      else toast.show(ev.summary || "Export finished", ev.failed > 0 ? "bad" : "ok");
     }
   }
 

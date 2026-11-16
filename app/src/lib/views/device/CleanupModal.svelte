@@ -48,7 +48,7 @@
       await deviceCleanup(lib.root, list);
     } catch (e) {
       device.job = null;
-      toast.show(String(e), "bad", 8000);
+      toast.error("Couldn't clean up.", e);
     }
   }
 </script>

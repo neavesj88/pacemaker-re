@@ -80,7 +80,7 @@ The mix has one **mix tempo** box in the toolbar. New tracks and the Match butto
 
 ## Match all
 
-**Match all** plays every track at the mix tempo. It is half and double aware: a 70 BPM track in a 140 BPM mix plays at 70, not stretched to 140. When it finishes it tells you:
+**Match all** plays every track at the mix tempo. It is half and double aware: a 70 BPM track in a 140 BPM mix plays at 70, not stretched to 140. When it finishes a short message says how many tracks were matched (for example "Matched 5 tracks to 128 BPM; 2 kept"), with **Details** and **Undo** on it. Details lists:
 
 - how many tracks were matched, and how many already played at the tempo,
 - which tracks it left alone because they have a **tempo ramp** (use Sync on the clip to rescale those),
@@ -98,7 +98,7 @@ Select a clip. Its panel has:
 - **Pitch / speed**: fine steps of -0.1, -0.01, +0.01 and +0.1 percent, or type a percentage. This is the fine BPM control for lining beats up by ear.
 - **Sync to mix tempo** and **Sync to previous clip** match this clip to one or the other (half or double included).
 - **Add ramp node at playhead** makes a tempo ramp: drag the node up or down and the tempo changes linearly between nodes. **Flatten ramp** goes back to one tempo.
-- **Beat-match** moves this clip so its beats sit on the previous clip's. It changes the clip's tempo and start.
+- **Beat-match** moves this clip so its beats sit on the previous clip's. It changes the clip's tempo and start. When matching would stretch the track more than **Warn above**, nothing changes and the message says "Not matched" with the stretch it would need; use **Sync to previous clip**, then **Match anyway**, to do it regardless. Any warning (a big stretch, no first downbeat, a half-time match) is under **Details** on the message, and **Undo** on the message takes the match back.
 
 Whether the pitch stays or follows the speed is the clip's tempo mode: by default the audio is time-stretched and the pitch stays.
 

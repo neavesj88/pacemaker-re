@@ -105,7 +105,7 @@ class Duplicates {
       this.settings = s.settings;
       this.settingsWarning = s.warning;
     } catch (e) {
-      toast.show(`Could not save the duplicate settings: ${e}`, "bad", 8000);
+      toast.error("Couldn't save the duplicate settings.", e);
     }
   }
 
@@ -197,7 +197,8 @@ class Duplicates {
       }
       await this.find();
     } else if (e.job === DUPES_MERGE_JOB) {
-      toast.show(e.error ?? e.summary, e.error || e.failed ? "bad" : "ok", 8000);
+      if (e.error) toast.error("Couldn't merge the duplicates.", e.error);
+      else toast.show(e.summary, e.failed ? "bad" : "ok");
       this.mergeOpen = false;
       this.plan = null;
       await cases.refresh();

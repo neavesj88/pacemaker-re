@@ -20,7 +20,7 @@ class EnergySourceState {
       this.source = v.source;
       this.problem = v.problem ?? "";
     } catch (e) {
-      toast.show(`Could not read the energy source setting: ${e}`, "bad");
+      toast.error("Couldn't read the energy source setting.", e);
     } finally {
       this.loaded = true;
     }
@@ -37,7 +37,7 @@ class EnergySourceState {
       this.problem = "";
       return true;
     } catch (e) {
-      toast.show(`Could not save the energy source: ${e}`, "bad");
+      toast.error("Couldn't save the energy source.", e);
       return false;
     }
   }

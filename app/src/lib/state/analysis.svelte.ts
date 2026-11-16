@@ -128,11 +128,11 @@ class Analysis {
     const lib = session.library;
     const name = canonicalKeyName(keyText);
     if (!lib || !name) {
-      toast.show(`"${keyText.trim()}" is not a musical key (for example Am, F#m, Bb or C).`, "bad");
+      toast.show("Not a key. Try Am, F#m or Bb.", "bad");
       return false;
     }
     if (!jobs.canWrite) {
-      toast.show("Keys can't be saved while a job runs or the library is read-only.", "bad");
+      toast.show("Can't save while a job runs or the library is read-only.", "bad");
       return false;
     }
     const tracks = this.tracksOf(ids);
@@ -144,14 +144,12 @@ class Analysis {
       session.patchTracks(tracks.map((t) => t.track_id), { key: name });
       const n = tracks.length;
       toast.show(
-        changed === 0
-          ? `${n === 1 ? trackLabel(tracks[0]) : `${n} tracks`} already had the key ${name}`
-          : `Key ${name} set on ${changed} track${changed === 1 ? "" : "s"}${changed < n ? ` (${n - changed} already had it)` : ""}`,
+        changed === 0 ? `Already had key ${name}.` : `Key ${name} set on ${changed} track${changed === 1 ? "" : "s"}.`,
         "ok",
       );
       return true;
     } catch (e) {
-      toast.show(`Could not save the key: ${e}`, "bad");
+      toast.error("Couldn't save the key.", e);
       return false;
     }
   }

@@ -5,7 +5,7 @@
 // what a refresh would do. Every write is `smart_cases_refresh_apply`, which goes through the
 // device write gate; the preview and the write take their track lists from one function.
 import { smartRefreshApply, smartRefreshPlan, type RefreshReport } from "$lib/api/cases";
-import { changed, decideCheck, doneSummary, loopMessage, planSignature, skipped, stuckLines, type RefreshMemory } from "$lib/views/cases/smartRefreshLogic";
+import { changed, decideCheck, doneToast, loopMessage, planSignature, skipped, stuckLines, type RefreshMemory } from "$lib/views/cases/smartRefreshLogic";
 import { cases } from "./cases.svelte";
 import { jobs } from "./jobs.svelte";
 import { session } from "./session.svelte";
@@ -60,7 +60,7 @@ class SmartRefresh {
       } else if (action === "stuck") {
         // nothing to write, but a smart case cannot be refreshed: say so once
         this.#mem.failed = sig;
-        toast.show(doneSummary(plan, session.library?.kind), "bad", 9000);
+        toast.show(doneToast(plan, session.library?.kind).text, "bad", { details: doneToast(plan, session.library?.kind).details });
         session.error = stuckLines(skipped(plan)).join("\n");
       } else if (action === "loop") {
         this.#mem.failed = sig;
@@ -81,8 +81,8 @@ class SmartRefresh {
     try {
       const plan = await smartRefreshPlan(root);
       if (this.#root() !== root) return;
-      if (plan.items.length === 0) toast.show(session.isComputer ? "No smart case has a ★ case in this library" : "No smart case is on the Pacemaker", "ok");
-      else if (plan.changes === 0 && skipped(plan).length === 0) toast.show(doneSummary(plan, session.library?.kind), "ok");
+      if (plan.items.length === 0) toast.show("No smart cases to refresh.", "ok");
+      else if (plan.changes === 0 && skipped(plan).length === 0) toast.show(doneToast(plan, session.library?.kind).text, "ok");
       else {
         this.manual = true;
         this.report = plan;
@@ -121,7 +121,7 @@ class SmartRefresh {
       this.#mem.failed = stuck.length > 0 && wrote.length === 0 ? sig : "";
       await cases.loadSmart();
       await cases.refresh();
-      toast.show(doneSummary(done, session.library?.kind), stuck.length ? "bad" : "ok", 9000);
+      toast.show(doneToast(done, session.library?.kind).text, stuck.length ? "bad" : "ok", { details: doneToast(done, session.library?.kind).details });
       if (stuck.length) session.error = stuckLines(stuck).join("\n");
     } catch (e) {
       this.#mem.failed = sig;

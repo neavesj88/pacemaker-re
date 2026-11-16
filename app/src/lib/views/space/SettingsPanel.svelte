@@ -16,7 +16,7 @@
       const d = await pickArchiveFolder();
       if (d) space.update((x) => (x.archive_dir = d));
     } catch (e) {
-      toast.show(String(e), "bad", 8000);
+      toast.error("Couldn't choose the folder.", e);
     }
   }
 </script>

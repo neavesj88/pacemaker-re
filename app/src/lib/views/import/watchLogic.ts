@@ -93,10 +93,9 @@ export function decide(i: DecideInput): Action {
 }
 
 /** The finished-line toast of an automatic add. */
-export function autoDoneText(summary: string, failed: number, error: string | null): string {
+export function autoDoneText(summary: string, _failed: number, error: string | null): string {
   if (error) return `Watch folder add failed: ${error}`;
-  const tail = failed > 0 ? " Open Import to see what failed." : "";
-  return `Watch folder: ${summary || "nothing to do"}.${tail}`;
+  return `Watch folder: ${summary || "nothing to do"}.`;
 }
 
 /** The log entry of an automatic add, from the paths that were handed over and the job result. */

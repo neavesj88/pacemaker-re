@@ -11,6 +11,15 @@
   // panel nor the picker's rows, scrollbar and helper text (only the foot of the timeline, for the few
   // seconds they stay); null = not there, use the player-bar position.
   let dock = $state<{ bottom: number; left: number } | null>(null);
+  // cards whose Details are open: they stay until closed, so a long error can be read
+  let open = $state<Record<number, boolean>>({});
+  function toggle(id: number) {
+    open[id] = !open[id];
+    if (open[id]) toast.hold(id);
+  }
+  function leave(id: number) {
+    if (!open[id]) toast.release(id);
+  }
 
   $effect(() => {
     void toast.items.length;
@@ -52,8 +61,18 @@
 <!-- In the mix editor the clip panel fills the lower right and the picker the bottom, so the messages sit above the transport row there -->
 <div class="toasts" class:centre={nav.view === "mixes"} aria-live="polite" style="bottom: {dock && nav.view === 'mixes' ? dock.bottom : lift + GAP}px; {dock && nav.view === 'mixes' ? `left: ${dock.left}px; max-width: min(560px, calc(100vw - 28px))` : ''}">
   {#each toast.items as t (t.id)}
-    <div class="toast {t.kind}" role={t.kind === "bad" ? "alert" : "status"}>
-      <span class="text">{t.text}{#if t.count > 1} <span class="times">×{t.count}</span>{/if}</span>
+    <div class="toast {t.kind}" role={t.kind === "bad" ? "alert" : "status"} onmouseenter={() => toast.hold(t.id)} onmouseleave={() => leave(t.id)} onfocusin={() => toast.hold(t.id)} onfocusout={() => leave(t.id)}>
+      <div class="body">
+        <span class="text">{t.text}{#if t.count > 1} <span class="times">×{t.count}</span>{/if}</span>
+        {#if t.details && open[t.id]}<span class="details">{t.details}</span>{/if}
+      </div>
+      {#if t.action}
+        {@const act = t.action}
+        <button class="act" onclick={() => { act.run(); toast.dismiss(t.id); }}>{act.label}</button>
+      {/if}
+      {#if t.details}
+        <button class="act quiet" aria-expanded={!!open[t.id]} onclick={() => toggle(t.id)}>{open[t.id] ? "Less" : "Details"}</button>
+      {/if}
       <button class="close" aria-label="Dismiss this message" title="Dismiss" onclick={() => toast.dismiss(t.id)}>×</button>
     </div>
   {/each}
@@ -92,9 +111,46 @@
   .times {
     color: var(--muted);
   }
-  .text {
+  .body {
     flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  /* a stray long string cannot cover the timeline: three lines, then an ellipsis (Details has the rest) */
+  .text {
     overflow-wrap: anywhere;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .details {
+    white-space: pre-line;
+    overflow-wrap: anywhere;
+    max-height: 9em;
+    overflow-y: auto;
+    color: var(--muted);
+    font-size: 0.92em;
+    user-select: text;
+  }
+  .act {
+    flex: none;
+    background: none;
+    border: 1px solid currentColor;
+    border-radius: 4px;
+    color: inherit;
+    font: inherit;
+    padding: 0 8px;
+    cursor: pointer;
+  }
+  .act.quiet {
+    border-color: transparent;
+    text-decoration: underline;
+    padding: 0 4px;
+    opacity: 0.8;
   }
   .close {
     flex: none;

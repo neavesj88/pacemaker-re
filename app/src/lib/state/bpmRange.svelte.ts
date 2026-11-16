@@ -70,7 +70,7 @@ class BpmRange {
       const saved = await bpmRangeSet({ lo });
       this.lo = normaliseLo(saved.lo);
     } catch (e) {
-      toast.show(String(e), "bad");
+      toast.error("Couldn't save the range.", e);
       this.failed++;
       return;
     }

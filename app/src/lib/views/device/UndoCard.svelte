@@ -29,7 +29,7 @@
     try {
       await deviceUndoClear(root);
     } catch (e) {
-      toast.show(String(e), "bad", 8000);
+      toast.error("Couldn't clear the undo log.", e);
     }
   }
 </script>

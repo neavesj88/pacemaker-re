@@ -143,7 +143,7 @@
       warning = "";
     } catch (e) {
       saveState = "error";
-      toast.show(`Could not save the setlist details: ${String(e)}`, "bad", 9000);
+      toast.error("Couldn't save the setlist details.", String(e));
     }
   }
 
@@ -168,7 +168,7 @@
       w.focus();
       w.print();
     } catch (e) {
-      toast.show(`Printing is not available here (${e instanceof Error ? e.message : String(e)}). Use Save as HTML and print that file from a browser.`, "bad", 10000);
+      toast.show("Printing isn't available. Use Save as HTML.", "bad", { details: e instanceof Error ? e.message : String(e) });
     }
   }
 
@@ -180,9 +180,9 @@
       const dest = await pickSetlistPath(fileNameFor(sheet.title.trim() || name));
       if (!dest) return;
       const out = await saveSetlistHtml(root, dest, page(true));
-      toast.show(`Saved ${out.path}`, "ok", 6000);
+      toast.show(`Saved ${out.path}`, "ok");
     } catch (e) {
-      toast.show(`Could not save the page: ${String(e)}`, "bad", 9000);
+      toast.error("Couldn't save the page.", String(e));
     } finally {
       saving = false;
     }

@@ -91,12 +91,12 @@
     const hidden = new Set(hiddenNow());
     const shown = rows.filter((r) => present.includes(r.track_id)).map((r) => r.track_id);
     if (shown.length === 0) {
-      toast.show(`${present.length === 1 ? "That track is" : "Those tracks are"} hidden by the current search or filters. Clear them to see ${present.length === 1 ? "it" : "them"}.`, "info");
+      toast.show("Hidden by your search or filters.", "info");
       return;
     }
     list?.reveal(shown[0], true);
     tracksState.selectedIds = shown; // reveal picks one; the rest of the list stays selected
-    if (hidden.size > 0) toast.show(`${shown.length} of ${present.length} tracks shown; ${hidden.size} hidden by the current search or filters.`, "info");
+    if (hidden.size > 0) toast.show(`${shown.length} of ${present.length} tracks shown (${hidden.size} hidden by filters).`, "info");
     if (present.length < want.length) toast.show(`${want.length - present.length} of those tracks are no longer in the library.`, "info");
   }
 
@@ -107,7 +107,7 @@
     }
     if (!rows.some((r) => r.track_id === id)) {
       if (!tracksState.prefs.findClearsFilters) {
-        toast.show("That track is hidden by the current search or filters. Clear them to see it.", "info");
+        toast.show("Hidden by your search or filters.", "info");
         return;
       }
       tracksState.clearAllFilters();

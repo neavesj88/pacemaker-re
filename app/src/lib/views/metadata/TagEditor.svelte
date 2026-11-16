@@ -45,7 +45,7 @@
     const ok = await labels.apply(startIds, draftOps(draft));
     busy = false;
     if (!ok) return; // the store already said why; the dialog stays so nothing is lost
-    toast.show(startIds.length === 1 ? "Saved the labels of 1 track" : `Saved the labels of ${startIds.length} tracks`, "ok");
+    toast.show(`Labels saved on ${startIds.length === 1 ? "1 track" : `${startIds.length} tracks`}.`, "ok");
     labelEditor.closeEditor();
   }
 </script>

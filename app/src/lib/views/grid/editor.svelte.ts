@@ -170,7 +170,7 @@ class GridEditor {
       this.error = "";
       return true;
     } catch (err) {
-      toast.show(String(err).replace(/^invalid: /, ""), "bad");
+      toast.error("Couldn't apply that.", err);
       return false;
     } finally {
       this.busy = false;
@@ -192,7 +192,7 @@ class GridEditor {
       this.error = "";
       return true;
     } catch (err) {
-      toast.show(String(err).replace(/^invalid: /, ""), "bad");
+      toast.error("Couldn't apply that.", err);
       return false;
     } finally {
       this.busy = false;
@@ -251,7 +251,7 @@ class GridEditor {
       this.error = "";
       return true;
     } catch (err) {
-      toast.show(`Analysis failed: ${String(err)}`, "bad");
+      toast.error("Couldn't analyse the track.", String(err));
       return false;
     } finally {
       this.busy = false;
@@ -302,7 +302,7 @@ class GridEditor {
         if (JSON.stringify(now.doc) !== JSON.stringify(this.#baseDocState)) {
           const where = session.isComputer ? "in the library" : "on the device";
           this.error = `The beat grid ${where} changed since this track was opened. Re-open the track to see the current grid; nothing was saved.`;
-          toast.show(`Grid changed ${where}: nothing saved`, "bad");
+          toast.show(`Grid changed ${where}; nothing saved.`, "bad");
           return false;
         }
       }

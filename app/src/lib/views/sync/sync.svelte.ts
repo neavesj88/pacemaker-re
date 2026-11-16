@@ -231,7 +231,7 @@ class SyncStore {
   }
 
   cancel() {
-    deviceCancel().catch((e) => toast.show(String(e), "bad", 8000));
+    deviceCancel().catch((e) => toast.error("Couldn't cancel the sync.", e));
   }
 }
 

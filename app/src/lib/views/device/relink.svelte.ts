@@ -106,7 +106,7 @@ class RelinkStore {
       this.settings = v.settings;
       this.settingsWarning = v.warning;
     } catch (e) {
-      toast.show(`Could not save the options: ${String(e)}`, "bad", 8000);
+      toast.error("Couldn't save the options.", String(e));
     }
   }
 
@@ -194,7 +194,7 @@ class RelinkStore {
       this.sel[row.track_id] = { ticked: true, idx: 0, manual: c };
     } catch (e) {
       // the file cannot be used (not audio, used by another track, ...): say why, keep the row as it was
-      toast.show(`${row.label}: ${String(e).replace(/^invalid: /, "")}`, "bad", 9000);
+      toast.error("Can't use that file.", e);
     } finally {
       this.inspecting = null;
     }

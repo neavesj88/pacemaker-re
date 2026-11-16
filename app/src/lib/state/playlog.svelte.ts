@@ -59,7 +59,7 @@ class PlayLogStore {
     try {
       const rep = await playlogAdopt(root);
       this.last = rep;
-      toast.show(`Play log kept. ${rep.detail ?? ""}`.trim(), "ok", 8000);
+      toast.show(`Play log kept. ${rep.detail ?? ""}`.trim(), "ok");
     } finally {
       this.tick++;
     }
@@ -106,13 +106,13 @@ class PlayLogStore {
       return true;
     };
     if (rep.status === "started" && once("started")) {
-      toast.show("Play log started for this library. Plays are worked out from changes after this point.", "ok", 6000);
+      toast.show("Play log started for this library.", "ok");
     } else if (rep.status === "mismatch" && once("mismatch")) {
-      toast.show("This library does not match its play log. Nothing was logged; see History, Play log.", "bad", 8000);
+      toast.show("Play log doesn't match this library. Nothing logged.", "bad");
     } else if (rep.status === "candidate" && once("candidate")) {
-      toast.show(`A play log from another drive matches ${session.place.thisCard}. Nothing is logged until you choose; see History, Play log.`, "ok", 8000);
+      toast.show(`Found a play log for ${session.place.thisCard}. Choose in History.`, "ok");
     } else if (rep.status === "recovered" && once("recovered")) {
-      toast.show("The old play log could not be read, so it was kept aside and a new one started.", "bad", 8000);
+      toast.show("Old play log unreadable; started a new one.", "bad");
     }
   }
 

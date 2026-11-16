@@ -492,20 +492,19 @@ export function beatAlignClip(doc: MixDoc, id: string, grain: Grain, against?: s
   const c = clipOf(doc, id);
   const none = (message: string): BeatAlign => ({ doc, moved: false, result: null, message });
   if (!c) return none("That clip is not in the mix.");
-  if (doc.clips.length < 2) return none("There is no other clip to line up with.");
-  if (!hasGrid(c)) return none("This track has no beat grid, so there is nothing to line up. Analyse it first.");
+  if (doc.clips.length < 2) return none("No other clip to line up with.");
+  if (!hasGrid(c)) return none("This track has no beat grid. Analyse it first.");
   const n = against ? clipOf(doc, against) : alignNeighbour(doc, c, c.start, null);
   if (!n) return none("No other clip has a beat grid to line up with.");
-  if (!hasGrid(n)) return none("The other clip's track has no beat grid, so there is nothing to line up with.");
+  if (!hasGrid(n)) return none("The other clip has no beat grid.");
   const r = alignClipStart(doc, id, c.start, grain, { against: n.id });
-  if (!r) return none(`The two grids have no ${grain === "beat" ? "beats" : grain === "bar" ? "bars" : "phrases"} in the audible part to line up.`);
-  const name = n.track?.title ? `"${n.track.title}"` : "the other clip";
-  const tail = r.tempoMatched ? "" : " The tempos differ here, so the beats drift apart after this point: use Match all to play them at one tempo.";
-  if (r.shift === 0) return { doc, moved: false, result: r, message: `Already lined up with ${name} at the ${grain}.${tail}` };
+  if (!r) return none(`No shared ${grain === "beat" ? "beats" : grain === "bar" ? "bars" : "phrases"} to line up.`);
+  const tail = r.tempoMatched ? "" : " Tempos differ: use Match all.";
+  if (r.shift === 0) return { doc, moved: false, result: r, message: `Already aligned.${tail}` };
   const moved = moveClip(doc, id, r.start);
-  if (clipOf(moved, id)!.start !== r.start) return none("The clip cannot move that far (it would start before the beginning of the mix).");
+  if (clipOf(moved, id)!.start !== r.start) return none("Can't move earlier than the mix start.");
   const secs = Math.abs(r.shift / SR).toFixed(2);
-  return { doc: moved, moved: true, result: r, message: `Moved ${r.shift > 0 ? "later" : "earlier"} by ${secs} s: its ${grain} now lands on ${name}'s.${tail}` };
+  return { doc: moved, moved: true, result: r, message: `Moved ${secs} s ${r.shift > 0 ? "later" : "earlier"}, ${grain}s aligned.${tail}` };
 }
 
 // ---------------------------------------------------------------------------------------------

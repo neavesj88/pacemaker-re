@@ -74,7 +74,7 @@ class Labels {
       const v = await loadTags(root);
       if (seq === this.#seq && session.library?.root === root) this.#setView(v, root);
     } catch (e) {
-      if (seq === this.#seq) toast.show(`Could not read the tags: ${e}`, "bad");
+      if (seq === this.#seq) toast.error("Couldn't read the tags.", e);
     }
   }
 
@@ -94,7 +94,7 @@ class Labels {
       this.version++;
       return true;
     } catch (e) {
-      toast.show(`Could not save the tags: ${e}`, "bad");
+      toast.error("Couldn't save the tags.", e);
       return false;
     }
   }
@@ -125,7 +125,7 @@ class Labels {
       if (session.library?.root === root) this.#setView(v, root);
       return true;
     } catch (e) {
-      toast.show(`Could not ${what}: ${e}`, "bad");
+      toast.error(`Couldn't ${what}.`, e);
       return false;
     }
   }

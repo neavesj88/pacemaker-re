@@ -147,7 +147,7 @@ class WatchStore {
     if (action.kind === "none") return;
     if (action.kind === "toast") {
       this.#announced.set(root, sig);
-      toast.show(action.text, action.tone === "bad" ? "bad" : "info", 9000);
+      toast.show(action.text, action.tone === "bad" ? "bad" : "info");
     } else if (action.kind === "confirm") {
       // told only when the question really opened; if another one was waiting, the next scan asks again
       if (await jobs.askAdd(action.paths, { source: "a watched folder" })) this.#announced.set(root, sig);
@@ -157,14 +157,14 @@ class WatchStore {
       for (const p of action.paths) this.#tried.add(p);
       const started = await jobs.askAdd(action.paths, { source: "a watched folder", auto: true });
       if (started) {
-        toast.show(`Adding ${names.length} new file${names.length === 1 ? "" : "s"} from the watched folders.`, "info", 6000);
+        toast.show(`Adding ${names.length} new file${names.length === 1 ? "" : "s"} from the watched folders.`, "info");
       } else {
         // nothing started (another question or job in the way, or the backend refused): these
         // files are not "tried", so a later scan offers them to the automatic add again
         this.#auto = null;
         for (const p of action.paths) this.#tried.delete(p);
         if (reason === "manual") {
-          toast.show("Nothing was added: another question or job is in the way. Scan again when it is done.", "info", 7000);
+          toast.show("Busy. Scan again when the job ends.", "info");
         }
       }
     }
@@ -226,7 +226,7 @@ class WatchStore {
     const auto = this.#auto;
     this.#auto = null;
     if (auto) {
-      toast.show(autoDoneText(ev.summary, ev.failed, ev.error), ev.error || ev.failed > 0 ? "bad" : "ok", 9000);
+      toast.show(autoDoneText(ev.summary, ev.failed, ev.error), ev.error || ev.failed > 0 ? "bad" : "ok");
       try {
         const st = await watchLogAdd(auto.root, logEntryFor("auto", auto.names, ev));
         if (auto.root === this.#root) this.#take(st);

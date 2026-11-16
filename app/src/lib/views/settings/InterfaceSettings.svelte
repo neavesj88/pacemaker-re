@@ -23,7 +23,7 @@
       remember = await windowRememberSet(on);
     } catch (e) {
       remember = before;
-      toast.show(`Could not change that: ${e}`, "bad", 8000);
+      toast.error("Couldn't change that.", e);
     }
   }
 

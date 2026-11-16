@@ -201,12 +201,9 @@ class CleanupState {
       const r = await applyCleanup(root, $state.snapshot(s) as CleanupSettings, accepted);
       await session.load(root, true);
       const dropped = r.stale + r.rejected;
-      toast.show(
-        `Cleaned ${plural(r.fields, "field")} on ${plural(r.tracks, "track")}` +
-          (dropped ? `; ${dropped} left alone (changed since the preview, or too long)` : ""),
-        dropped ? "info" : "ok",
-        dropped ? 7000 : 4000,
-      );
+      toast.show(`Cleaned ${plural(r.tracks, "track")}.${dropped ? ` ${dropped} left alone.` : ""}`, dropped ? "info" : "ok", {
+        details: `${plural(r.fields, "field")} cleaned${dropped ? `; ${dropped} left alone (changed since the preview, or too long)` : ""}.`,
+      });
       await this.refresh();
       if (s.write_back && r.fields > 0) {
         const fields = [...new Set([...fieldsByTrack(accepted).values()].flat())];

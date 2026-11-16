@@ -18,7 +18,7 @@
     busy = true;
     const old = c?.path;
     if (await session.chooseComputerFolder()) {
-      toast.show(`The library on this computer is now ${session.computer?.path}. The one in ${old} was not moved or deleted.`, "ok", 8000);
+      toast.show("Library on this computer changed.", "ok", { details: `Now ${session.computer?.path}. The one in ${old} was not moved or deleted.` });
     }
     busy = false;
   }

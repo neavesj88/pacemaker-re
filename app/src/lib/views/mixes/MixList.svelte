@@ -36,7 +36,7 @@
     void session.library;
     loading = true;
     reloadList()
-      .catch((e) => toast.show(`Could not list the mixes: ${errText(e)}`, "bad", 8000))
+      .catch((e) => toast.error("Couldn't list the mixes.", errText(e)))
       .finally(() => (loading = false));
   });
 
@@ -82,7 +82,7 @@
     try {
       await listMeta.rate(m.id, r);
     } catch (e) {
-      toast.show(`Could not set the rating: ${errText(e)}`, "bad", 7000);
+      toast.error("Couldn't set the rating.", errText(e));
     }
   }
 

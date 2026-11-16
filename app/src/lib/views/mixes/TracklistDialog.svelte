@@ -94,7 +94,7 @@
       await copyText(text);
       toast.show(`Copied the ${fmt.label.toLowerCase()} (${lines} line${lines === 1 ? "" : "s"})`, "ok");
     } catch (e) {
-      toast.show(`Could not copy: ${errText(e)}`, "bad", 7000);
+      toast.error("Couldn't copy.", errText(e));
     }
   }
 
@@ -134,7 +134,7 @@
       const written = await exportTracklistSave(root, d, tracklist.snapshot(), tracklist.format, dest, cueAudio);
       toast.show(`Saved ${baseName(written)}`, "ok");
     } catch (e) {
-      toast.show(`Could not save the list: ${errText(e)}`, "bad", 10000);
+      toast.error("Couldn't save the list.", errText(e));
     } finally {
       busy = false;
     }

@@ -115,12 +115,16 @@ export function toastMs(kind: "info" | "ok" | "bad", ms: number, errorSecs: numb
 }
 
 /** The most toasts on screen at once; the oldest goes first, so a closed-by-hand stack cannot grow without end. */
-export const MAX_TOASTS = 4;
+export const MAX_TOASTS = 3;
 
 /** The stack after a message is added. The same message again (same text and kind) replaces its
- *  earlier card and counts it ("x3"), so adding ten tracks one by one is one card, not a wall. */
-export function addToast<T extends { id: number; text: string; kind: string; count: number }>(items: readonly T[], next: Omit<T, "count">, max = MAX_TOASTS): T[] {
-  const same = items.find((t) => t.text === next.text && t.kind === next.kind);
+ *  earlier card and counts it ("x3"), so adding ten tracks one by one is one card, not a wall. A
+ *  message with a `key` replaces the earlier card with that key whatever its text (a count that
+ *  changes with each add), and starts its own count. */
+export function addToast<T extends { id: number; text: string; kind: string; count: number; key?: string }>(items: readonly T[], next: Omit<T, "count">, max = MAX_TOASTS): T[] {
+  const byKey = next.key ? items.find((t) => t.key === next.key) : undefined;
+  const same = byKey ?? items.find((t) => t.text === next.text && t.kind === next.kind);
   const rest = items.filter((t) => t !== same);
-  return [...rest, { ...next, count: (same?.count ?? 0) + 1 } as T].slice(-max);
+  const count = same && same.text === next.text && same.kind === next.kind ? same.count + 1 : 1;
+  return [...rest, { ...next, count } as T].slice(-max);
 }

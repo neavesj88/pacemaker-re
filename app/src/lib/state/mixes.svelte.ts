@@ -201,7 +201,7 @@ class Mixes {
         this.#load(await mixOpen(root, saved.id));
       } catch (e) {
         // the copy exists; do not let a retry in the dialog run into its own name
-        toast.show(`Saved as "${saved.name}", but it could not be opened: ${e instanceof Error ? e.message : String(e)}`, "bad", 12000);
+        toast.error(`Saved as "${saved.name}", but couldn't open it.`, e);
       }
       return saved;
     } finally {
@@ -594,16 +594,16 @@ class Mixes {
       // ramp keeps its shape (the whole curve is scaled).
       const choice = hd.choice;
       if (hd.outOfRange) {
-        throw new Error(`nothing changed: ${choice.factor === 2 ? "double" : "half"} time would push part of this clip's tempo curve outside the 0.1 to 4 speed range`);
+        throw new Error("Not matched: the tempo curve would leave the 0.1 to 4 speed range.");
       }
       if (hd.held) {
-        throw new Error(`nothing changed: ${choice.factor === 2 ? "double" : "half"} time would stretch this track ${stretchText(choice.stretchPct)}, more than the ${tempoPrefs.value.warnPct} % limit in the settings. Use "Sync to previous clip" and then "Match anyway" to do it regardless`);
+        throw new Error(`Not matched: ${choice.factor === 2 ? "double" : "half"} time is ${stretchText(choice.stretchPct)}, over your ${tempoPrefs.value.warnPct}% limit.`);
       }
       this.edit("Match tempo", () => hd.doc);
       return { ...s, targetBpm: choice.playsAt, speed: choice.speed, notes: [...s.notes, `Matched at ${choice.factor === 2 ? "double" : "half"} time (${stretchText(choice.stretchPct)}); the beats were not re-aligned`] };
     }
     if (c && s.speed > 0 && exceeds(s.speed, tempoPrefs.value.warnPct)) {
-      throw new Error(`nothing changed: matching the beats would stretch this track ${stretchText((s.speed - 1) * 100)}, more than the ${tempoPrefs.value.warnPct} % limit in the settings. Use "Sync to previous clip" and then "Match anyway" to do it regardless`);
+      throw new Error(`Not matched: ${stretchText((s.speed - 1) * 100)} stretch is over your ${tempoPrefs.value.warnPct}% limit.`);
     }
     this.edit("Beat-match", (d) => E.applyBeatmatch(d, s));
     return s;

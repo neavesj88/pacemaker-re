@@ -15,7 +15,7 @@
       await r.run();
       confirm.close();
     } catch (e) {
-      toast.show(errText(e), "bad", 8000);
+      toast.error("Couldn't do that.", errText(e));
       confirm.close();
     } finally {
       busy = false;

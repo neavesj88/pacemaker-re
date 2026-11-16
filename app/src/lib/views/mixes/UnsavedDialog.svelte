@@ -20,7 +20,7 @@
     } catch (e) {
       // keep the dialog closed but the mix open: the message names what blocks the save
       unsaved.next = null;
-      toast.show(`Not saved: ${errText(e)}`, "bad", 9000);
+      toast.error("Couldn't save the mix.", errText(e));
     } finally {
       busy = false;
     }

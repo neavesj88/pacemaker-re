@@ -112,7 +112,7 @@
     try {
       await preview.playRange(i.fromSecs, i.toSecs);
     } catch (e) {
-      toast.show(`Could not preview: ${errText(e)}`, "bad", 7000);
+      toast.error("Couldn't preview.", errText(e));
     }
   }
 

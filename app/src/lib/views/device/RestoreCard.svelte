@@ -43,7 +43,7 @@
     try {
       await deviceSnapshotsOpen(lib.root);
     } catch (e) {
-      toast.show(String(e), "bad", 8000);
+      toast.error("Couldn't open the snapshots.", e);
     }
   }
 </script>

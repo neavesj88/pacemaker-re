@@ -2,7 +2,8 @@
 //
 //   node --experimental-strip-types src/lib/views/mixes/previewState.test.mjs      (from app/)
 import assert from "node:assert/strict";
-import { addKept, keptNote, sameAudio, sameRender, volumeToDb } from "./previewState.ts";
+import { addKept, addTracksToast, beatmatchToast, keptNote, matchAllToast, sameAudio, sameRender, volumeToDb } from "./previewState.ts";
+import { wordCount, TOAST_HARD } from "../../state/toastText.ts";
 
 let n = 0;
 const test = (name, fn) => {
@@ -48,6 +49,30 @@ test("tracks kept at their own tempo collect in one note", () => {
   assert.deepEqual(b, ["A (+9 % to reach 128.0 BPM)", "B (-8 %)"]);
   assert.match(keptNote(b), /A \(\+9 % to reach 128\.0 BPM\); B \(-8 %\)\./);
   assert.deepEqual(a, ["A (+9 % to reach 128.0 BPM)"], "the earlier list is not changed");
+});
+
+test("the mix editor's toasts are one short line, the long form is in the details", () => {
+  const all = [];
+  all.push(addTracksToast({ added: 1, moved: [], kept: [] }));
+  all.push(addTracksToast({ added: 3, moved: ["A at 2:10", "B at 3:05"], kept: ["A (+9 % to reach 128.0 BPM)", "B (-8 %)"] }));
+  all.push(addTracksToast({ added: 1, moved: ["A at 2:10"], kept: ["A (+9 %)"] }));
+  all.push(beatmatchToast(128, []));
+  all.push(beatmatchToast(126.04, ["the reference clip plays at 126.00 BPM, not the mix tempo 128.00; matched to the clip", "no first downbeat in one of the grids"]));
+  all.push(matchAllToast({ applied: 5, already: 2, kept: [], ramps: [] }, 128));
+  all.push(matchAllToast({ applied: 5, already: 2, kept: ["A (+25 %)", "B (-30 %)"], ramps: ["C"] }, 128.04));
+  all.push(matchAllToast({ applied: 0, already: 4, kept: [], ramps: [] }, 128));
+  all.push(matchAllToast({ applied: 0, already: 0, kept: ["A (+25 %)"], ramps: [] }, 128));
+  for (const t of all) assert.ok(wordCount(t.text) <= TOAST_HARD, t.text);
+  assert.equal(addTracksToast({ added: 1, moved: [], kept: [] }).text, "Track added");
+  assert.equal(addTracksToast({ added: 3, moved: ["x"], kept: ["y"] }).text, "3 tracks added; 1 placed later, decks busy; 1 track kept at own tempo.");
+  assert.match(addTracksToast({ added: 3, moved: ["A at 2:10"], kept: [] }).details, /A at 2:10/);
+  assert.equal(beatmatchToast(128, []).text, "Matched to 128.0 BPM.");
+  assert.equal(beatmatchToast(126, ["a", "b"]).details, "A.\nB.");
+  assert.equal(matchAllToast({ applied: 5, already: 0, kept: [], ramps: [] }, 128).text, "Matched 5 tracks to 128 BPM.");
+  const m = matchAllToast({ applied: 5, already: 0, kept: ["A (+25 %)"], ramps: ["C"] }, 128);
+  assert.equal(m.text, "Matched 5 tracks to 128 BPM; 2 kept.");
+  assert.equal(m.kind, "info");
+  assert.match(m.details, /tempo ramp[^\n]*C\.\nLeft at their own tempo[^\n]*A \(\+25 %\)/);
 });
 
 console.log(`${n} passed`);

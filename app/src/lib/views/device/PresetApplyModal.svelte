@@ -54,17 +54,11 @@
     writing = true;
     try {
       const rep = await devicePresetApply(lib.root, name, ids);
-      toast.show(
-        rep.changed === 0
-          ? `Nothing needed changing: the card already had those values.`
-          : `${plural(rep.changed, "setting")} written from "${name}". The Pacemaker reads them when it next starts.`,
-        "ok",
-        6000,
-      );
+      toast.show(rep.changed === 0 ? "Nothing to change." : `${plural(rep.changed, "setting")} written.`, "ok");
       await device.load(lib.root);
       onclose();
     } catch (e) {
-      toast.show(String(e), "bad", 8000);
+      toast.error("Couldn't apply the preset.", e);
       // the card may have changed under the list: look again
       error = "";
       diff = null;
