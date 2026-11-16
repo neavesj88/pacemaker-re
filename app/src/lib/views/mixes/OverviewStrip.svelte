@@ -23,6 +23,16 @@
   let canvas = $state<HTMLCanvasElement | null>(null);
   let w = $state(0);
   let h = $state(0);
+  /** The screen's pixel ratio. It changes when the window moves to another screen (the 5120 monitor, a laptop), with no change of size in CSS pixels. */
+  let dpr = $state(window.devicePixelRatio || 1);
+  $effect(() => {
+    const mq = matchMedia(`(resolution: ${dpr}dppx)`);
+    const changed = () => (dpr = window.devicePixelRatio || 1);
+    mq.addEventListener("change", changed, { once: true });
+    return () => mq.removeEventListener("change", changed);
+  });
+  /** The pointer is over the box: the cursor says it can be dragged. */
+  let overBox = $state(false);
 
   const span = $derived(overviewSpan(doc.length / SR));
   const laneW = $derived(Math.max(0, mv.viewW - HEADER_W));
@@ -49,7 +59,6 @@
     const cv = canvas;
     if (!cv || w < 2 || h < 2) return;
     const clips = doc.clips;
-    const dpr = window.devicePixelRatio || 1;
     // everything that changes the picture; the playhead and the box are not in it
     const key: unknown[] = [cv, w, h, dpr, span];
     for (const c of clips) key.push(c.id, c.visibleStart, c.visibleEnd, c.trimStart, c.length, c.tempo, c.clipBypassed, peakCache.get(c.track?.location ?? "", c.track?.durationSecs ?? 0));
@@ -154,6 +163,11 @@
     el.addEventListener("pointercancel", up);
   }
 
+  function hover(e: PointerEvent) {
+    const el = area;
+    overBox = !!el && onBox(e.clientX - el.getBoundingClientRect().left, box);
+  }
+
   function key(e: KeyboardEvent) {
     if (e.key !== "ArrowLeft" && e.key !== "ArrowRight" && e.key !== "Home" && e.key !== "End") return;
     e.preventDefault();
@@ -180,7 +194,10 @@
     aria-valuemax={Math.round(maxPx())}
     aria-valuenow={Math.round(mv.scrollLeft)}
     title="The whole mix. The box is the part shown below: drag it, or click to centre the view there."
+    class:grab={overBox}
     onpointerdown={down}
+    onpointermove={hover}
+    onpointerleave={() => (overBox = false)}
     onkeydown={key}
   >
     <canvas bind:this={canvas} style:width="{w}px" style:height="{h}px" aria-hidden="true"></canvas>
@@ -246,13 +263,17 @@
     top: 1px;
     bottom: 1px;
     box-sizing: border-box;
-    border: 1.5px solid var(--green);
-    background: color-mix(in srgb, var(--green) 12%, transparent);
+    border: 2px solid var(--green);
+    background: color-mix(in srgb, var(--green) 14%, transparent);
+    /* dims the rest of the strip (the area clips it), so the part shown below stands out */
+    box-shadow: 0 0 0 100vmax color-mix(in srgb, var(--deep) 55%, transparent);
     border-radius: 2px;
-    cursor: grab;
     pointer-events: none;
   }
-  .area:active .box {
+  .area.grab {
+    cursor: grab;
+  }
+  .area.grab:active {
     cursor: grabbing;
   }
   .head {

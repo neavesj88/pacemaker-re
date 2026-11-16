@@ -215,7 +215,7 @@
     <div class="handle r" role="presentation" style:height="{height}px" onpointerdown={(e) => down(e, "right")} oncontextmenu={ctx}></div>
   {/if}
   {#if mv.sectionMarkers && sections.showMarkers}<ClipSections {clip} pps={mv.pps} />{/if}
-  <span class="title" style:top="{titleTop}px" style:max-width="{Math.max(0, width - 8)}px">{title}<em>{tempoText}</em></span>
+  <span class="title" style:top="{titleTop}px" style:max-width="{Math.max(0, width - 8)}px">{title}{#if height >= 70}<em>{tempoText}</em>{/if}</span>
   {#if stretchBadge}
     <span class="stretch" style:top="{titleTop + 16}px" title="This track plays {Math.abs(speed * 100 - 100).toFixed(1)} % {speed > 1 ? 'faster' : 'slower'} than its own tempo, more than the stretch limit in the settings. The clip's panel offers to keep its own tempo.">{stretchBadge}</span>
   {/if}

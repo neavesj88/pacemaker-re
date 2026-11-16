@@ -88,16 +88,25 @@
   });
   const fxH = $derived(fx.count * (FX_ROW + 2) + 8);
   let viewH = $state(0);
-  /** What the tool strip needs; it also takes the pane's room that a shortened bar leaves (below). */
+  /** The height of the horizontal scrollbar under the lanes, px. */
+  let sbH = $state(0);
+  /** What the tool strip needs; it also takes the pane's room that nothing else uses (below). */
   const fxNeed = $derived(Math.max(FX_MIN, fxH));
-  /** The height the bar has zoomed in: what the pane has left. */
-  const BAR_FULL = $derived(Math.min(BAR_MAX, Math.max(BAR_MIN, viewH - RULER_H - fxNeed - 2)));
+  /** The height the lanes have when zoomed in: the pane as it is with the bar at full height. It comes from the
+   * editor column (mv.paneFullH), not from this pane, because the pane itself shrinks with the bar. */
+  const fullH = $derived(mv.paneFullH > 0 ? mv.paneFullH - sbH : viewH);
+  const BAR_FULL = $derived(Math.min(BAR_MAX, Math.max(BAR_MIN, fullH - RULER_H - fxNeed - 2)));
   /** Zoomed out the bar gets shorter (View > Clip height), so everything on and in it follows this one number. */
   const BAR_H = $derived(clipBarHeight(mv.pps, BAR_FULL, viewPrefs.value.clipHeight));
   const LANE_H = $derived(BAR_H - PAD * 2);
-  /** The room a shortened bar frees goes to the tool strip (more rows of tools show without scrolling). */
-  const fxLaneH = $derived(Math.max(fxNeed, viewH - RULER_H - BAR_H - 2));
+  /** With the track table open, the room a shortened bar frees goes to the table (the editor shrinks this pane by
+   * mv.barExtra), so the tool strip keeps the height it has zoomed in. Without the table the strip takes the room. */
+  const fxLaneH = $derived(mv.pickerOpen ? Math.max(fxNeed, fullH - RULER_H - BAR_FULL - 2) : Math.max(fxNeed, viewH - RULER_H - BAR_H - 2));
   const ovH = $derived(viewPrefs.value.overview ? OVERVIEW_H : 0);
+  $effect(() => {
+    mv.barExtra = mv.pickerOpen ? BAR_FULL - BAR_H : 0;
+    mv.paneNeed = ovH + RULER_H + BAR_H + fxNeed + 2 + sbH;
+  });
   /** The width the vertical scrollbar takes from the lanes (the strip above ends where they end). */
   let sbW = $state(0);
   const conflicts = $derived.by(() => {
@@ -179,6 +188,7 @@
     const size = () => {
       mv.viewW = s.clientWidth;
       viewH = s.clientHeight;
+      sbH = s.offsetHeight - s.clientHeight;
       sbW = s.offsetWidth - s.clientWidth;
     };
     const ro = new ResizeObserver(size);

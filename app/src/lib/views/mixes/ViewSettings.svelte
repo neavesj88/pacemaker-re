@@ -29,7 +29,7 @@
   <label class="check"><input type="checkbox" checked={mv.sectionMarkers && sections.showMarkers} disabled={!sections.showMarkers} onchange={(e) => mv.setSectionMarkers(e.currentTarget.checked)} /> draw the detected sections on the clips</label>
 </div>
 <div class="muted small">
-  Shrinks as you zoom out: zoomed in, the clips are as tall as the window allows; zooming out makes them shorter (down to a height where the name, section labels and crossfades can still be read), so the tools under them have more room. The waveform is drawn the same way, just shorter. Always full height keeps the zoomed-in height at every zoom. The whole-mix strip shows every clip, the overlaps and the playhead, with a box over the part shown below: click it to centre the view, drag the box to scroll. Sections on the clips also needs "show markers on waveforms" in the Sections panel's settings. These are also in the View menu in the mix editor.
+  Shrinks as you zoom out: zoomed in, the clips are as tall as the window allows; zooming out makes them shorter (down to a height where the name, section labels and crossfades can still be read), so the track table under the mix gets the room (it grows as the clips shrink). Turning the whole-mix strip on takes its height from the table, not from the clips. The waveform is drawn the same way, just shorter. Always full height keeps the zoomed-in height at every zoom. The whole-mix strip shows every clip, the overlaps and the playhead, with a box over the part shown below: click it to centre the view, drag the box to scroll. Sections on the clips also needs "show markers on waveforms" in the Sections panel's settings. These are also in the View menu in the mix editor.
 </div>
 
 <style>

@@ -3,6 +3,7 @@
   // mix editor turns it on and off; this is how it behaves). The beat grid editor's Follow uses the
   // same choice. Remembered between sessions.
   import { followPrefs } from "./followPrefs.svelte";
+  import { mv } from "./view.svelte";
   import { viewPrefs } from "./viewPrefs.svelte";
   import type { FollowMode } from "./followLogic";
 
@@ -16,7 +17,7 @@
 
 <div class="field">
   <span class="lbl">Following</span>
-  <label class="check"><input type="checkbox" checked={viewPrefs.value.follow} onchange={(e) => viewPrefs.set({ follow: e.currentTarget.checked })} /> scroll the timeline with the playhead while a mix plays</label>
+  <label class="check"><input type="checkbox" checked={viewPrefs.value.follow} onchange={(e) => { viewPrefs.set({ follow: e.currentTarget.checked }); if (e.currentTarget.checked) mv.resumeFollow(); }} /> scroll the timeline with the playhead while a mix plays</label>
 </div>
 <div class="field" role="radiogroup" aria-label="While a mix plays, the view">
   <span class="lbl">While playing, the view</span>

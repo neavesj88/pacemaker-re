@@ -123,7 +123,8 @@
     position: relative;
     display: flex;
     flex-direction: column;
-    flex: 0 1 auto;
+    /* grows into the room a shortened clip bar frees above it (the mix pane is pinned to what it needs) */
+    flex: 1 1 auto;
     min-height: 160px;
     min-width: 0;
     border-top: 1px solid var(--line-hi);

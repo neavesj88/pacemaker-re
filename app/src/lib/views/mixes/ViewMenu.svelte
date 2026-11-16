@@ -19,7 +19,7 @@
 
   const v = $derived(viewPrefs.value);
   const HEIGHTS: { id: ClipHeightMode; label: string; tip: string }[] = [
-    { id: "shrink", label: "Shrinks as you zoom out (default)", tip: "Zoomed in the clips are as tall as the window allows; zooming out makes them shorter, so the tools under them have more room." },
+    { id: "shrink", label: "Shrinks as you zoom out (default)", tip: "Zoomed in the clips are as tall as the window allows; zooming out makes them shorter, and the track table below grows into the room." },
     { id: "full", label: "Always full height", tip: "The clips keep the height they have zoomed in, at every zoom." },
   ];
   const FOLLOW_MODES: { id: FollowMode; label: string }[] = [

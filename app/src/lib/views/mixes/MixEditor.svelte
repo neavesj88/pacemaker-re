@@ -5,7 +5,7 @@
   import * as E from "$lib/state/mixedit";
   import { mixExport } from "$lib/state/mixexport.svelte";
   import { mixes } from "$lib/state/mixes.svelte";
-    import { tracklist } from "$lib/state/tracklist.svelte";
+  import { tracklist } from "$lib/state/tracklist.svelte";
   import { toast } from "$lib/state/toast.svelte";
   import Button from "$lib/ui/Button.svelte";
   import { beatAlign, describe, clipTitle, duplicateSelection, errText, pasteAtPlayhead } from "./actions";
@@ -51,6 +51,28 @@
   // fit a mix to the window when it is opened
   let fittedFor = -1;
   let tlEl = $state<HTMLDivElement | null>(null);
+  let leftEl = $state<HTMLDivElement | null>(null);
+  let transportEl = $state<HTMLDivElement | null>(null);
+  /** The pane's pinned height while the track table is open: the pane as it is zoomed in (the strip added),
+   * less what the shortened bar hands to the table. The table takes whatever the pane leaves. */
+  const paneH = $derived(Math.max(mv.paneNeed, mv.paneFullH + (viewPrefs.value.overview ? OVERVIEW_H : 0) - mv.barExtra));
+  // the room the lanes would have zoomed in: the column less the transport and the table (floored as the pane's CSS min-height always was)
+  $effect(() => {
+    const l = leftEl;
+    const t = transportEl;
+    if (!l || !t) return;
+    const measure = () => {
+      const floor = innerHeight <= 800 ? 240 : 250;
+      const ov = viewPrefs.value.overview ? OVERVIEW_H : 0;
+      const room = l.clientHeight - t.offsetHeight;
+      mv.paneFullH = Math.max(floor, mv.pickerOpen ? room - mv.pickerH : room - ov);
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(l);
+    ro.observe(t);
+    return () => ro.disconnect();
+  });
   $effect(() => {
     const id = mixes.doc?.id ?? -1;
     if (id !== fittedFor) {
@@ -321,10 +343,16 @@
   {/if}
 
   <div class="body">
-    <div class="left">
-      <div class="tl" bind:this={tlEl} style:--ov="{viewPrefs.value.overview ? OVERVIEW_H : 0}px"><Timeline ondelete={requestDelete} /></div>
+    <div class="left" bind:this={leftEl}>
+      <div
+        class="tl"
+        bind:this={tlEl}
+        style:--ov="{viewPrefs.value.overview ? OVERVIEW_H : 0}px"
+        style:flex={mv.pickerOpen && mv.paneFullH > 0 ? `0 0 ${paneH}px` : null}
+        style:min-height={mv.pickerOpen && mv.paneNeed > 0 ? `${mv.paneNeed}px` : null}
+      ><Timeline ondelete={requestDelete} /></div>
 
-      <div class="transport">
+      <div class="transport" bind:this={transportEl}>
         <Button aria-label="Back to start" onclick={() => { void preview.seek(0); mv.scrollLeft = 0; }}>⏮</Button>
         <Button variant="primary" aria-label={preview.playing ? "Pause" : "Play"} onclick={playPause} disabled={doc.clips.length === 0}>
           {preview.playing ? "❚❚ Pause" : preview.status === "rendering" ? "Rendering…" : "▶ Play"}

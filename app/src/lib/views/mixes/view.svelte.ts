@@ -59,6 +59,13 @@ class MixView {
   pickerOpen = $state(true);
   /** Height of the track table under the mix, px (dragged by its top edge, remembered). */
   pickerH = $state(loadPickerHeight() ?? 380);
+  /** The height the timeline pane has zoomed in (px, strip excluded): the editor column minus the transport and the
+   * track table. Set by the editor; the timeline sizes its bar from it, not from its own (shrinking) pane. */
+  paneFullH = $state(0);
+  /** How much shorter the bar is than zoomed in (px): the pane gives this much to the track table. Set by the timeline. */
+  barExtra = $state(0);
+  /** The least the timeline pane can be (px) with the bar at its current height. Set by the timeline. */
+  paneNeed = $state(0);
   /** An audio export is rendering. */
   exporting = $state(false);
   /** Progress of the running audio export, 0..1. */
