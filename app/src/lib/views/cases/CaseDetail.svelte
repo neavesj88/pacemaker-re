@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onDestroy, untrack } from "svelte";
+  import { onDestroy, tick, untrack } from "svelte";
   import type { CaseMeta } from "$lib/api/cases";
   import { mmss } from "$lib/format";
   import { caseExport } from "$lib/state/caseExport.svelte";
@@ -15,6 +15,7 @@
   import { toast } from "$lib/state/toast.svelte";
   import { session } from "$lib/state/session.svelte";
   import { insertIndex } from "$lib/state/dragLogic";
+  import { revealTop, rowWindow } from "$lib/state/rowWindow";
   import { armReorder, endReorder } from "$lib/state/pointerReorder.svelte";
   import { armTrackDrag, endTrackDrag, trackDrag, trackDropTarget } from "$lib/state/trackDrag.svelte";
   import Button from "$lib/ui/Button.svelte";
@@ -64,6 +65,27 @@
   let rows = $derived(
     sortRows(searchRows(all, query), caseView.prefs.sortKey, caseView.prefs.sortAsc, sortTracks, (id) => cases.favourites.has(id)),
   );
+  // Only the rows in view (and a few either side) exist; the rest of the height is two spacer
+  // rows. A case of 5,000 tracks used to mount 5,000 rows and 85,000 elements.
+  const ROW = 28;
+  const OVERSCAN = 8;
+  let scroller = $state<HTMLElement>();
+  let scrollTop = $state(0);
+  let viewH = $state(600);
+  let rowH = $state(ROW);
+  let headH = $state(31);
+  const win = $derived(rowWindow(scrollTop, viewH, rowH, headH, rows.length, OVERSCAN));
+  const shownRows = $derived(rows.slice(win.start, win.end));
+  // the real heights, in case the font or the interface size makes them differ from the guess
+  $effect(() => {
+    void shownRows;
+    const tr = tbody?.querySelector<HTMLElement>("tr[data-i]");
+    const th = scroller?.querySelector<HTMLElement>("thead");
+    untrack(() => {
+      if (tr && Math.abs(tr.getBoundingClientRect().height - rowH) > 0.5) rowH = tr.getBoundingClientRect().height;
+      if (th && Math.abs(th.getBoundingClientRect().height - headH) > 0.5) headH = th.getBoundingClientRect().height;
+    });
+  });
   let totalSecs = $derived(all.reduce((s, r) => s + (r.t?.play_time_secs ?? 0), 0));
   let selected = $derived(new Set(selection.trackIds));
   let selectedRows = $derived(all.filter((r) => selected.has(r.id)));
@@ -94,7 +116,7 @@
         anchor = n;
       }
       focusIdx = n;
-      (tbody?.children[n] as HTMLElement | undefined)?.focus();
+      void focusRow(n);
     } else if (e.key === " ") {
       e.preventDefault();
       // Space plays or pauses the row, as in the Tracks view and the picker; Ctrl+click still toggles a row
@@ -106,6 +128,19 @@
       e.preventDefault();
       play(rows[i].id);
     }
+  }
+
+  /** Scrolls row `n` into view if it is not, then focuses it (it may not exist until then). */
+  async function focusRow(n: number) {
+    if (scroller) {
+      const to = revealTop(n, scroller.scrollTop, viewH, rowH, headH);
+      if (to !== scroller.scrollTop) {
+        scroller.scrollTop = to;
+        scrollTop = to;
+      }
+    }
+    await tick();
+    tbody?.querySelector<HTMLElement>(`tr[data-i="${n}"]`)?.focus({ preventScroll: true });
   }
 
   function pick(i: number, e: MouseEvent) {
@@ -171,7 +206,7 @@
     if (!canReorder) return;
     const id = rows[i].id;
     armReorder(e, {
-      rows: () => [...(tbody?.querySelectorAll<HTMLElement>("tr") ?? [])],
+      rows: () => [...(tbody?.querySelectorAll<HTMLElement>("tr[data-i]") ?? [])],
       scroller: () => tbody?.closest<HTMLElement>(".scroll"),
       begin: () => {
         if (!selected.has(id)) {
@@ -181,15 +216,18 @@
         const ids = new Set(all.filter((r) => r.id === id || selected.has(r.id)).map((r) => r.id));
         drag = { ids, over: i, after: false };
       },
+      // the rows the gesture sees start at the first one that exists, not at the top of the case
       over: (p) => {
-        if (drag) drag = { ...drag, ...p };
+        if (drag) drag = { ...drag, over: p.over + firstShown(), after: p.after };
       },
       drop: (p) => {
-        if (drag) moveBlock(drag.ids, insertIndex(p));
+        if (drag) moveBlock(drag.ids, insertIndex({ over: p.over + firstShown(), after: p.after }));
       },
       end: () => (drag = null),
     });
   }
+
+  const firstShown = () => Number(tbody?.querySelector<HTMLElement>("tr[data-i]")?.dataset.i ?? 0);
 
   function nudge(dir: -1 | 1) {
     if (!canReorder || selectedRows.length === 0) return;
@@ -398,11 +436,14 @@
       tabindex="0"
       role="region"
       aria-label="Tracks in the case"
+      bind:this={scroller}
+      bind:clientHeight={viewH}
+      onscroll={(e) => (scrollTop = e.currentTarget.scrollTop)}
       use:trackDropTarget={dropOptions}
     >
-      <table role="grid" aria-multiselectable="true" aria-label="Tracks in the case">
+      <table role="grid" aria-multiselectable="true" aria-label="Tracks in the case" aria-rowcount={rows.length + 1}>
         <thead>
-          <tr>
+          <tr aria-rowindex="1">
             <th
               class="grip sortable"
               tabindex="0"
@@ -427,23 +468,29 @@
           </tr>
         </thead>
         <tbody bind:this={tbody}>
-          {#each rows as r, i (r.id)}
+          {#if win.start > 0}<tr class="spacer" aria-hidden="true" style:height="{win.start * rowH}px"><td colspan={cols.length + 1}></td></tr>{/if}
+          {#each shownRows as r, i (r.id)}
+            {@const ri = win.start + i}
             <tr
-              tabindex={i === Math.min(focusIdx, rows.length - 1) ? 0 : -1}
+              data-i={ri}
+              aria-rowindex={ri + 2}
+              class="r"
+              class:alt={ri % 2 === 1}
+              tabindex={ri === Math.min(focusIdx, rows.length - 1) ? 0 : -1}
               aria-selected={selected.has(r.id)}
-              onkeydown={(e) => rowKey(e, i)}
+              onkeydown={(e) => rowKey(e, ri)}
               class:sel={selected.has(r.id)}
               class:dim={!r.t || session.needs.has(r.id)}
-              class:before={drag && drag.over === i && !drag.after && !drag.ids.has(r.id)}
-              class:after={drag && drag.over === i && drag.after && !drag.ids.has(r.id)}
+              class:before={drag && drag.over === ri && !drag.after && !drag.ids.has(r.id)}
+              class:after={drag && drag.over === ri && drag.after && !drag.ids.has(r.id)}
               class:moving={drag?.ids.has(r.id)}
               class:reorder={canReorder}
-              onclick={(e) => pick(i, e)}
+              onclick={(e) => pick(ri, e)}
               ondblclick={() => r.t && play(r.id)}
-              oncontextmenu={(e) => rowMenu(e, i)}
-              onpointerdown={(e) => armTrackDrag(e, `case:${open.id}`, () => rowDrag(i))}
+              oncontextmenu={(e) => rowMenu(e, ri)}
+              onpointerdown={(e) => armTrackDrag(e, `case:${open.id}`, () => rowDrag(ri))}
             >
-              <td class="grip muted" onpointerdown={(e) => armDrag(e, i)} data-no-drag={canReorder ? "" : undefined} title={canReorder ? "Drag to reorder" : undefined}>{canReorder ? "≡ " : ""}{position.get(r.id)}</td>
+              <td class="grip muted" onpointerdown={(e) => armDrag(e, ri)} data-no-drag={canReorder ? "" : undefined} title={canReorder ? "Drag to reorder" : undefined}>{canReorder ? "≡ " : ""}{position.get(r.id)}</td>
               {#each cols as c (c.key)}
                 {#if c.key === "fav"}
                   <td class="heart">
@@ -489,6 +536,7 @@
               {/each}
             </tr>
           {/each}
+          {#if win.end < rows.length}<tr class="spacer" aria-hidden="true" style:height="{(rows.length - win.end) * rowH}px"><td colspan={cols.length + 1}></td></tr>{/if}
         </tbody>
       </table>
       {#if rows.length === 0}
@@ -717,6 +765,8 @@
     min-height: 170px;
     overflow: auto;
     outline: none;
+    /* rows come and go around the view; the browser must not "correct" the scroll position for it */
+    overflow-anchor: none;
   }
   /* A short window (a 1080p laptop with banners above): tighter bars, and a table tall enough for
      several rows so the pane scrolls once, not twice. */
@@ -788,17 +838,23 @@
     padding: 0;
     text-align: center;
   }
-  tbody tr:nth-child(odd) {
+  /* every row is the same height, so the rows that are not mounted can be one spacer */
+  tbody tr.r {
+    height: 28px;
     background: var(--row);
   }
-  tbody tr:nth-child(even) {
+  tbody tr.r.alt {
     background: var(--row-alt);
   }
-  tbody tr:hover {
+  tbody tr.r:hover {
     background: var(--hover);
   }
-  tbody tr.sel {
+  tbody tr.r.sel {
     background: var(--accent-soft);
+  }
+  tr.spacer td {
+    padding: 0;
+    border: 0;
   }
   tbody tr:focus-visible {
     outline: 1px solid var(--accent);

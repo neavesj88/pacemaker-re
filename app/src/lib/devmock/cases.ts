@@ -21,7 +21,19 @@ const metaById = new Map<number, Omit<CaseMeta, "name"> & { times_played: number
   [3, { genre: "", year: 2024, rating: 0, producer: "", remixer: "", comments: "", times_played: 0, last_played: 0 }],
 ]);
 
-const trackById = new Map(tracks.map((t) => [t.track_id, t]));
+// rebuilt when the fixture grows: `?tracks=N` pads it after this module has loaded
+const byIdCache = { n: -1, map: new Map<number, (typeof tracks)[number]>() };
+const trackById = {
+  get map() {
+    if (byIdCache.n !== tracks.length) {
+      byIdCache.n = tracks.length;
+      byIdCache.map = new Map(tracks.map((t) => [t.track_id, t]));
+    }
+    return byIdCache.map;
+  },
+  has: (id: number) => trackById.map.has(id),
+  get: (id: number) => trackById.map.get(id),
+};
 const known = (id: number) => trackById.has(id);
 
 function refresh(c: MockCase) {
