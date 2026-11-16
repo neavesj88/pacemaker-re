@@ -32,7 +32,7 @@
 
   const scopeKind = $derived(cleanup.scope.kind);
   const caseId = $derived(cleanup.scope.kind === "case" ? cleanup.scope.caseId : (cleanup.cases[0]?.id ?? 0));
-  const nSelected = $derived(lib ? selection.trackIds.filter((id) => lib.tracks.some((t) => t.track_id === id)).length : 0);
+  const nSelected = $derived(lib ? selection.trackIds.filter((id) => session.trackIds.has(id)).length : 0);
 
   function pickKind(kind: string) {
     if (kind === "case") void cleanup.setScope({ kind: "case", caseId: cleanup.cases[0]?.id ?? 0 });

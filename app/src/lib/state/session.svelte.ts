@@ -90,6 +90,10 @@ class Session {
     return placeWords(this.kind);
   }
 
+  /** The ids of every track in the open library, for "is this id in the library" without a scan
+   *  of the whole list per id (selecting a big set and then asking about each one was quadratic). */
+  trackIds = $derived(new Set((this.library?.tracks ?? []).map((t) => t.track_id)));
+
   /** Tracks whose .str is missing, empty or unreadable (or never analysed), with the reason. */
   needs = $derived(new Map((this.library?.needs_analysis ?? []).map((n) => [n.track_id, n.reason])));
 

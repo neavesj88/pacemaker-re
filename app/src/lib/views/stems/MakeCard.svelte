@@ -26,7 +26,7 @@
   });
   const chosen = $derived(new Set(stems.trackIds));
   const allShownChosen = $derived(shown.length > 0 && shown.every((t) => chosen.has(t.track_id)));
-  const sel = $derived(selection.trackIds.filter((id) => lib?.tracks.some((t) => t.track_id === id)));
+  const sel = $derived(selection.trackIds.filter((id) => session.trackIds.has(id)));
 
   const onDevice = $derived(looksLikeDevice(stems.dest, lib?.root));
   const notReady = $derived(stems.status ? stems.status.blocked : "Reading the status…");
@@ -34,7 +34,8 @@
 
   function toggleShown() {
     const ids = shown.map((t) => t.track_id);
-    stems.setTracks(allShownChosen ? stems.trackIds.filter((id) => !ids.includes(id)) : [...stems.trackIds, ...ids]);
+    const drop = new Set(ids);
+    stems.setTracks(allShownChosen ? stems.trackIds.filter((id) => !drop.has(id)) : [...stems.trackIds, ...ids]);
   }
 
   async function review() {

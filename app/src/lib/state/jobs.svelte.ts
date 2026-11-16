@@ -184,7 +184,7 @@ class Jobs {
   async askReanalyse(only?: number[]) {
     const lib = session.library;
     if (!lib) return;
-    const ids = only ? [...new Set(only)].filter((id) => lib.tracks.some((t) => t.track_id === id)) : [...session.needs.keys()];
+    const ids = only ? [...new Set(only)].filter((id) => session.trackIds.has(id)) : [...session.needs.keys()];
     if (ids.length === 0) return;
     const n = ids.length;
     const wanted = new Set(ids);
