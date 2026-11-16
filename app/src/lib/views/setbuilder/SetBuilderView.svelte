@@ -166,7 +166,7 @@
   // ---- actions -----------------------------------------------------------------------------
   let savingCase = $state(false);
   let creatingMix = $state(false);
-  let canAct = $derived(jobs.canWrite && rows.length > 0);
+  let canAct = $derived(jobs.canWrite && rows.length > 0 && !setBuilder.solving);
 
   function onkey(e: KeyboardEvent) {
     if (savingCase || creatingMix) return;
@@ -203,11 +203,16 @@
         <Button onclick={() => requestLoad("reload")} title="Read the source again. Locks, tracks you left out and your edits are dropped (you are asked first)" disabled={setBuilder.loading}>Reload</Button>
       {/if}
       <span class="sp"></span>
-      <Button variant="primary" onclick={() => setBuilder.solve()} disabled={rows.length + setBuilder.out.length < 2}>
-        {rows.length > 0 ? "Re-solve" : "Order the set"}
-      </Button>
-      <Button onclick={() => setBuilder.undo()} disabled={!setBuilder.canUndo} title={setBuilder.canUndo ? `Undo: ${setBuilder.undoLabel} (Ctrl+Z)` : "Nothing to undo"}>Undo</Button>
-      <Button onclick={() => setBuilder.restoreSourceOrder()} disabled={!setBuilder.source} title="Back to the order the tracks came in; left-out tracks come back and locks are cleared">Original order</Button>
+      {#if setBuilder.solving}
+        <span class="muted" role="status">Ordering the set…</span>
+        <Button onclick={() => setBuilder.cancelSolve()} title="Stop ordering and keep the set as it was">Cancel</Button>
+      {:else}
+        <Button variant="primary" onclick={() => setBuilder.solve()} disabled={rows.length + setBuilder.out.length < 2}>
+          {rows.length > 0 ? "Re-solve" : "Order the set"}
+        </Button>
+      {/if}
+      <Button onclick={() => setBuilder.undo()} disabled={!setBuilder.canUndo || setBuilder.solving} title={setBuilder.canUndo ? `Undo: ${setBuilder.undoLabel} (Ctrl+Z)` : "Nothing to undo"}>Undo</Button>
+      <Button onclick={() => setBuilder.restoreSourceOrder()} disabled={!setBuilder.source || setBuilder.solving} title="Back to the order the tracks came in; left-out tracks come back and locks are cleared">Original order</Button>
       <Button onclick={() => (savingCase = true)} disabled={!canAct}>Save as case…</Button>
       <Button onclick={() => (creatingMix = true)} disabled={!canAct}>Create mix…</Button>
     </div>

@@ -13,6 +13,7 @@ import { mixSides } from "$lib/views/analysis/sectionLogic";
 import { parseKey } from "$lib/views/tracks/trackLogic";
 import { energyOf } from "./energy";
 import { setPrefs } from "./prefs.svelte";
+import { runSolve, type SolveRun } from "./solveRunner";
 import { bestInsert, evaluate, MAX_SOLVE_TRACKS, moveBlock, pinPositions, solve, solverOptions, type SetSummary, type SetTrack } from "./solver";
 
 export type Source =
@@ -66,10 +67,21 @@ class SetBuilder {
   notice = $state("");
   canUndo = $state(false);
   undoLabel = $state("");
+  /** The solver is working (in a worker: the window stays usable, but the set is not edited
+   *  meanwhile, since the answer replaces it). */
+  solving = $state(false);
 
   /** The source's own order, to go back to. */
   #original: number[] = [];
   #history: Snapshot[] = [];
+  /** Which solve may still apply its answer; a load, a clear or a cancel moves it on. */
+  #solveSeq = 0;
+  #run: SolveRun | null = null;
+  /** The settings changed while the solver was working: its answer is for the old ones. */
+  #settingsMoved = false;
+  /** The undo step a running solve pushed, to take back if it is cancelled. */
+  #solveRemembered = false;
+  #editedBefore = false;
 
   /** Solver input for every track in the set or left out. */
   byId = $derived.by(() => {
@@ -107,6 +119,7 @@ class SetBuilder {
   async load(source: Source) {
     const lib = session.library;
     if (!lib) return;
+    this.#stopSolve();
     this.loading = true;
     try {
       const ids = source.kind === "case" ? await caseTracks(lib.root, source.id) : source.ids;
@@ -160,6 +173,7 @@ class SetBuilder {
   }
 
   clear() {
+    this.#stopSolve();
     this.source = null;
     this.order = [];
     this.out = [];
@@ -187,6 +201,7 @@ class SetBuilder {
   }
 
   undo() {
+    if (this.solving) return;
     const s = this.#history.pop();
     if (!s) return;
     this.order = s.order;
@@ -202,7 +217,8 @@ class SetBuilder {
   /** Orders the set again. Locked tracks keep their place; tracks the user left out stay out;
    * tracks dropped for length are considered again. */
   solve(remember = true) {
-    const o = solverOptions(setPrefs.value);
+    if (this.solving) return;
+    const o = $state.snapshot(solverOptions(setPrefs.value));
     const userOut = this.out.filter((x) => x.why === "you");
     const pool = [...this.order, ...this.out.filter((x) => x.why === "length").map((x) => x.id)]
       .map((id) => this.byId.get(id))
@@ -213,23 +229,63 @@ class SetBuilder {
     }
     this.notice = "";
     if (remember) this.#remember("Re-solve");
+    this.#solveRemembered = remember;
+    this.#editedBefore = this.edited;
     // positions are counted over the tracks the solver is given (ids the library lost are not slots)
     const pins = pinPositions(this.order, this.pinned, (id) => this.byId.has(id));
-    const r = solve(pool, pins, o);
-    this.order = r.order;
-    this.out = [...userOut, ...r.dropped.map((id): Out => ({ id, why: "length" }))];
-    this.short = r.short;
-    this.pinned = new Set(r.order.filter((id) => this.pinned.has(id)));
-    this.edited = false;
+    const seq = ++this.#solveSeq;
+    this.solving = true;
+    this.#settingsMoved = false;
+    const run = runSolve(pool, pins, o);
+    this.#run = run;
+    run.result.then(
+      (r) => {
+        if (seq !== this.#solveSeq) return;
+        this.#run = null;
+        this.solving = false;
+        this.order = r.order;
+        this.out = [...userOut, ...r.dropped.map((id): Out => ({ id, why: "length" }))];
+        this.short = r.short;
+        this.pinned = new Set(r.order.filter((id) => this.pinned.has(id)));
+        this.edited = this.#settingsMoved;
+      },
+      (e) => {
+        if (seq !== this.#solveSeq) return;
+        this.#run = null;
+        this.solving = false;
+        this.notice = `The set could not be ordered: ${e instanceof Error ? e.message : String(e)}`;
+        if (this.#solveRemembered) this.undo();
+      },
+    );
+  }
+
+  /** Stops a running solve and leaves the set as it was before it. */
+  cancelSolve() {
+    if (!this.solving) return;
+    const undoStep = this.#solveRemembered;
+    this.#stopSolve();
+    if (undoStep) this.undo();
+    this.edited = this.#settingsMoved || this.#editedBefore;
+  }
+
+  /** Drops a running solve without touching the set (a new source is replacing it anyway). */
+  #stopSolve() {
+    if (!this.solving) return;
+    this.#solveSeq++;
+    this.#run?.cancel();
+    this.#run = null;
+    this.solving = false;
   }
 
   /** The settings changed: the set on screen is no longer what a solve would give. */
   settingsChanged() {
     if (this.source) this.edited = true;
+    if (this.solving) this.#settingsMoved = true;
   }
 
   /** Back to the order the tracks came in. Left-out tracks come back too. */
   restoreSourceOrder() {
+    if (this.solving) return;
     if (!this.source) return;
     this.#remember("Original order");
     this.order = this.#original.filter((id) => this.byId.has(id));
@@ -244,6 +300,7 @@ class SetBuilder {
   /** Moves tracks so they sit before position `at` of the current order. Moved tracks are locked
    * where they land when the setting is on. */
   move(ids: number[], at: number) {
+    if (this.solving) return;
     const next = moveBlock(this.order, new Set(ids), at);
     if (next === this.order) return;
     this.#remember("Move");
@@ -260,6 +317,7 @@ class SetBuilder {
   }
 
   toggleLock(id: number) {
+    if (this.solving) return;
     const s = new Set(this.pinned);
     if (s.has(id)) s.delete(id);
     else if (this.order.includes(id)) s.add(id);
@@ -267,11 +325,13 @@ class SetBuilder {
   }
 
   lockAll(on: boolean) {
+    if (this.solving) return;
     this.pinned = on ? new Set(this.order) : new Set();
   }
 
   /** Takes tracks out of the set (they stay in the library and in the source). */
   leaveOut(ids: number[]) {
+    if (this.solving) return;
     const gone = new Set(ids);
     if (!this.order.some((id) => gone.has(id))) return;
     this.#remember("Leave out");
@@ -283,6 +343,7 @@ class SetBuilder {
 
   /** Puts a left-out track back where it costs the set least. */
   addBack(id: number) {
+    if (this.solving) return;
     const t = this.byId.get(id);
     if (!t || !this.out.some((o) => o.id === id)) return;
     this.#remember("Add back");
@@ -294,6 +355,7 @@ class SetBuilder {
 
   /** Forgets entries the library no longer has. */
   dropMissing() {
+    if (this.solving) return;
     const m = new Set(this.missing);
     if (m.size === 0) return;
     this.#remember("Drop missing");

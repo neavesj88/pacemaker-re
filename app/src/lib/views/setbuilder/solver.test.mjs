@@ -10,6 +10,8 @@ import * as E from "../../state/mixedit.ts";
 import * as R from "../../state/transitionRecipes.ts";
 import * as B from "./buildMix.ts";
 import * as S from "./solver.ts";
+import { handleSolve } from "./solveHandler.ts";
+import { runSolve } from "./solveRunner.ts";
 import { MIN_MIX_BARS } from "../analysis/sectionLogic.ts";
 
 let n = 0;
