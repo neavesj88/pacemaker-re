@@ -191,4 +191,31 @@ test("the waveform window covers what is on screen at any scroll and zoom", () =
   }
 });
 
+test("the clip bar height: full zoomed in, short far out, eased and monotonic in between", () => {
+  const full = 300;
+  assert.equal(L.clipBarHeight(L.SHRINK_NEAR_PPS, full), full);
+  assert.equal(L.clipBarHeight(L.PPS_MAX, full), full);
+  assert.equal(L.clipBarHeight(L.SHRINK_FAR_PPS, full), L.BAR_FAR);
+  assert.equal(L.clipBarHeight(L.PPS_MIN, full), L.BAR_FAR);
+  // halfway in log zoom is halfway in height (the smoothstep is symmetric)
+  const mid = Math.sqrt(L.SHRINK_FAR_PPS * L.SHRINK_NEAR_PPS);
+  assert.ok(Math.abs(L.clipBarHeight(mid, full) - (L.BAR_FAR + full) / 2) <= 1);
+  let prev = 0;
+  for (let pps = L.PPS_MIN; pps <= L.PPS_MAX; pps *= 1.03) {
+    const h = L.clipBarHeight(pps, full);
+    assert.ok(h >= prev && h >= L.BAR_FAR && h <= full && Number.isInteger(h), `pps ${pps} -> ${h}`);
+    // eased: one 3 % zoom step never moves the bar by more than a few pixels
+    if (prev) assert.ok(h - prev <= 6, `step too big at ${pps}: ${h - prev}`);
+    prev = h;
+  }
+});
+
+test("the clip bar height: Always full height never changes; a small window is not made taller", () => {
+  for (const pps of [L.PPS_MIN, 0.3, 2, 9, 30, 400]) assert.equal(L.clipBarHeight(pps, 200, "full"), 200);
+  assert.equal(L.clipBarHeight(0.1, 50), 50);
+  assert.equal(L.clipBarHeight(0.1, L.BAR_FAR), L.BAR_FAR);
+  assert.equal(L.shrinkFactor(0), 0);
+  assert.equal(L.shrinkFactor(NaN), 0);
+});
+
 console.log(`\n${n} layout tests passed`);

@@ -334,3 +334,28 @@ export function clipSlices(clips: { id: string; visibleStart: number; visibleEnd
 export function titleTop(slices: ClipSlice[], stripH: number): number {
   return slices[0]?.overlapped ? stripH + 3 : 3;
 }
+
+// ---- clip lane height ---------------------------------------------------------------------------
+
+/** The bar (padding and clip lane) is this high, px, at the far zoom-out, where the title, the
+ * section labels and the crossfade strip are still readable. */
+export const BAR_FAR = 64;
+/** At or below this zoom (px per second) the bar is at its smallest; at or above NEAR it is as tall
+ * as the window allows. In between it eases with the logarithm of the zoom, so every wheel step
+ * feels alike. */
+export const SHRINK_FAR_PPS = 2;
+export const SHRINK_NEAR_PPS = 30;
+
+/** 0 (far out) to 1 (zoomed in): how much of its full height the clip lane has at this zoom (a smoothstep over log zoom). */
+export function shrinkFactor(pps: number): number {
+  if (!(pps > 0)) return 0;
+  const s = clamp((Math.log(pps) - Math.log(SHRINK_FAR_PPS)) / (Math.log(SHRINK_NEAR_PPS) - Math.log(SHRINK_FAR_PPS)), 0, 1);
+  return s * s * (3 - 2 * s);
+}
+
+/** The height of the bar (px) at zoom `pps`, when the window would give it `full`. "full" mode, or a
+ * window that gives less than the far-out height, always uses `full`. Whole pixels. */
+export function clipBarHeight(pps: number, full: number, mode: "shrink" | "full" = "shrink"): number {
+  if (mode === "full" || full <= BAR_FAR) return Math.round(full);
+  return Math.round(BAR_FAR + (full - BAR_FAR) * shrinkFactor(pps));
+}
