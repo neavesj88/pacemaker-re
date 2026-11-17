@@ -47,6 +47,8 @@
       if (!sync.pairSet || !(there(sync.pair.from) && there(sync.pair.to))) want = defaultPair(options, open);
     }
     if (want && (want.from !== sync.pair.from || want.to !== sync.pair.to || !sync.pairSet)) sync.setPair(want);
+    // "Send to Pacemaker" / "Get from Pacemaker" from another view means: show what would change now
+    if (dir && want && pairReady(want)) void sync.check();
   });
 
   $effect(() => {
@@ -78,7 +80,12 @@
   function pick(side: "from" | "to", value: string) {
     sync.setPair(pickSide(side, value, pair, options));
   }
-  const quick = (dir: "send" | "get") => sync.setPair(pairFor(dir, options, pair));
+  /** Send / Get: choose the pair and check what would change straight away (the run still needs Sync). */
+  function quick(dir: "send" | "get") {
+    const p = pairFor(dir, options, pair);
+    sync.setPair(p);
+    if (pairReady(p)) void sync.check();
+  }
 
   function start() {
     if (!canStart) return;
@@ -160,6 +167,14 @@
       {sync.error}
       {#if sync.stale}<Button small onclick={() => sync.check()}>Check again</Button>{/if}
     </p>
+  {/if}
+
+  {#if sync.planning}
+    <section class="card" aria-label="Checking" aria-busy="true">
+      <h3>Checking what would change…</h3>
+      <p class="muted">Reading {nameOf(pair.from)} and {nameOf(pair.to)}. Nothing is copied yet.</p>
+      <div class="indeterminate" aria-hidden="true"><i></i></div>
+    </section>
   {/if}
 
   {#if sync.running || (device.job?.kind === JOB_SYNC)}
@@ -310,6 +325,27 @@
   }
   .lead {
     margin: 0;
+  }
+  .indeterminate {
+    height: 4px;
+    border-radius: 2px;
+    background: var(--line);
+    overflow: hidden;
+  }
+  .indeterminate i {
+    display: block;
+    width: 30%;
+    height: 100%;
+    background: var(--accent);
+    animation: slide 1.1s ease-in-out infinite;
+  }
+  @keyframes slide {
+    from {
+      transform: translateX(-100%);
+    }
+    to {
+      transform: translateX(340%);
+    }
   }
   .card {
     border: 1px solid var(--line);
