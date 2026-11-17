@@ -1629,7 +1629,8 @@ pub fn write_settings(root: &Path, changes: &[(i64, f64)]) -> Result<usize, Erro
 /// the path.
 const VOCAL_FLAG: &str = "revival-vocal";
 /// The kill switch: while `.Pacemaker/revival-no-preload` exists the device runs its stock Wah
-/// whatever the vocal flag says. This module only ever reads it.
+/// whatever the vocal flag says. The wrapper script turns every preloaded library off while it exists
+/// (scripts/device/pmplayer-wrapper.sh). Only [`set_no_preload`] writes it.
 const NO_PRELOAD_FLAG: &str = "revival-no-preload";
 
 /// What the vocal flag file asks of the device.
@@ -1720,6 +1721,33 @@ pub fn write_vocal(root: &Path, mode: VocalMode) -> Result<VocalState, Error> {
     let now = read_vocal(root)?;
     if now.mode != mode {
         return invalid(format!("the flag file reads back as {:?} after writing {:?}", now.mode, mode));
+    }
+    Ok(now)
+}
+
+/// Creates (`on`) or deletes (`!on`) the empty recovery file `.Pacemaker/revival-no-preload`, which
+/// turns off Revival's preloaded add-ons at the device's next start. Atomic, a no-op when the card
+/// already says so, touches no other file. Returns the state read back from the card.
+pub fn set_no_preload(root: &Path, on: bool) -> Result<VocalState, Error> {
+    let dir = pacemaker_dir(root);
+    if !dir.is_dir() {
+        return Err(Error::NotALibrary(root.to_path_buf()));
+    }
+    let path = dir.join(NO_PRELOAD_FLAG);
+    if on {
+        if !path.exists() {
+            crate::library::atomic_write(&path, b"")?;
+        }
+    } else {
+        match fs::remove_file(&path) {
+            Ok(()) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => return Err(e.into()),
+        }
+    }
+    let now = read_vocal(root)?;
+    if now.kill_switch != on {
+        return invalid(format!("the recovery file reads back as {} after {}", if now.kill_switch { "present" } else { "absent" }, if on { "creating it" } else { "removing it" }));
     }
     Ok(now)
 }
@@ -2395,6 +2423,34 @@ mod tests {
         assert_eq!(emit_settings(&a).as_bytes(), raw.as_slice());
         let v = describe_settings(&a);
         assert!(v.settings.iter().all(|s| s.present), "every known id is in a real dump: {:?}", v.settings.iter().filter(|s| !s.present).map(|s| s.id).collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn recovery_file_is_created_empty_removed_and_touches_nothing_else() {
+        let root = scratch("norecover");
+        let pm = root.join(".Pacemaker");
+        fs::create_dir_all(&pm).unwrap();
+        fs::write(pm.join("music.db"), b"db").unwrap();
+        fs::write(pm.join("revival-vocal"), b"i").unwrap();
+        assert!(!read_vocal(&root).unwrap().kill_switch);
+        let on = set_no_preload(&root, true).unwrap();
+        assert!(on.kill_switch);
+        assert_eq!(fs::read(pm.join("revival-no-preload")).unwrap(), b"");
+        // creating again keeps it; the other files are untouched
+        assert!(set_no_preload(&root, true).unwrap().kill_switch);
+        assert_eq!(fs::read(pm.join("music.db")).unwrap(), b"db");
+        assert_eq!(fs::read(pm.join("revival-vocal")).unwrap(), b"i");
+        assert!(!set_no_preload(&root, false).unwrap().kill_switch);
+        assert!(!pm.join("revival-no-preload").exists());
+        // removing what is not there is fine; nothing stray is left behind
+        assert!(!set_no_preload(&root, false).unwrap().kill_switch);
+        let mut names: Vec<String> = fs::read_dir(&pm).unwrap().map(|e| e.unwrap().file_name().to_string_lossy().into_owned()).collect();
+        names.sort();
+        assert_eq!(names, ["music.db", "revival-vocal"]);
+        // not a library: refused, and no folder is invented
+        let bare = scratch("norecover-bare");
+        assert!(set_no_preload(&bare, true).is_err());
+        assert!(!bare.join(".Pacemaker").exists());
     }
 
     #[test]
