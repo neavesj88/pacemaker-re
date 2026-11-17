@@ -8,6 +8,7 @@ import {
   deviceOverview,
   deviceSettings,
   deviceVerifyReport,
+  JOB_BACKUP,
   JOB_RELINK,
   JOB_VERIFY,
   type DeviceOverview,
@@ -43,6 +44,9 @@ class DeviceStore {
   /** The per-file result of the last finished backup verification. */
   verify = $state<VerifyReport | null>(null);
   verifyOpen = $state(false);
+  /** When a backup of the open card last finished without error in this session (the app keeps no
+   *  record across runs); the firmware warning shows it. */
+  lastBackupAt = $state<number | null>(null);
   #root = "";
 
   /** Anything that writes to the volume (a device job here, an import or re-analysis elsewhere,
@@ -65,6 +69,7 @@ class DeviceStore {
     this.results = {};
     this.verify = null;
     this.verifyOpen = false;
+    this.lastBackupAt = null;
     this.#root = "";
   }
 
@@ -117,6 +122,7 @@ class DeviceStore {
         this.results = {};
         this.verify = null;
         this.verifyOpen = false;
+        this.lastBackupAt = null;
         toast.show("Ejected. Safe to unplug.", "ok");
         await session.refreshVolumes();
       } else {
@@ -152,6 +158,8 @@ class DeviceStore {
       toast.error("Couldn't finish the job.", ev.error);
       this.results[ev.job] = `Failed: ${ev.error}`;
     } else {
+      // an incomplete backup (some files not copied) is not a "verified backup" to show the user
+      if (ev.job === JOB_BACKUP && !(ev.failed > 0)) this.lastBackupAt = Date.now();
       this.results[ev.job] = ev.summary;
       toast.show(ev.summary, ev.failed > 0 ? "bad" : "ok");
     }

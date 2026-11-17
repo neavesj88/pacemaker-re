@@ -4,8 +4,18 @@ import { libraryKind } from "../state/place";
 import { libraryFor, stripIds } from "./libraries";
 import type { Handlers } from "./types";
 
+// The drives the browser preview "has plugged in". Simulate the Pacemaker prompt from the console:
+// pmPlug("E:\\") then pmUnplug("E:\\"); the next check (every 3 s) notices.
+const volumes = ["P:\\"];
+if (typeof window !== "undefined") {
+  Object.assign(window, {
+    pmPlug: (root: string) => void (volumes.includes(root) || volumes.push(root)),
+    pmUnplug: (root: string) => void (volumes.includes(root) && volumes.splice(volumes.indexOf(root), 1)),
+  });
+}
+
 export const handlers: Handlers = {
-  list_volumes: () => ["P:\\"],
+  list_volumes: () => [...volumes],
   app_notices: () => "# Third-party notices\n\nThe licences of the software in this app are listed here in the installed app.\n",
   open_library: (a) => {
     const root = a.root ?? "P:\\";

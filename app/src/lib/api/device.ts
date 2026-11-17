@@ -117,6 +117,12 @@ export const deviceSettingsWrite = (root: string, changes: { id: number; value: 
 export const deviceVocal = (root: string) => invoke<VocalState>("device_vocal", { root });
 /** Sets the flag: off deletes revival-vocal, vocal writes it empty, inverted writes "i". Returns the state read back. */
 export const deviceVocalSet = (root: string, mode: VocalMode) => invoke<VocalState>("device_vocal_set", { root, mode });
+/** Creates or deletes the empty recovery file `.Pacemaker/revival-no-preload`; returns the state read back
+ * (`kill_switch` is that file). The device reads it at its next start. */
+export const deviceRecoverySet = (root: string, on: boolean) => invoke<VocalState>("device_recovery_set", { root, on });
+/** The firmware that ships with the app (newest valid file in its resource folder), or null. Reads the app, not a Pacemaker. */
+export type BundledFirmware = { path: string; file_name: string; fw_version: number };
+export const deviceBundledFirmware = () => invoke<BundledFirmware | null>("device_bundled_firmware");
 export const deviceFirmwareInspect = (path: string) => invoke<PfwInfo>("device_firmware_inspect", { path });
 export const deviceFirmwareInstall = (root: string, path: string) =>
   invoke<void>("device_firmware_install", { root, path });

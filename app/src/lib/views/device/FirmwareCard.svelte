@@ -9,11 +9,15 @@
   import { jobs } from "$lib/state/jobs.svelte";
   import { session } from "$lib/state/session.svelte";
   import { toast } from "$lib/state/toast.svelte";
+  import { vocal } from "$lib/state/vocal.svelte";
   import Button from "$lib/ui/Button.svelte";
   import Modal from "$lib/ui/Modal.svelte";
   import Card from "./Card.svelte";
   import { device } from "./device.svelte";
   import JobProgress from "./JobProgress.svelte";
+  import { firmwareOffer } from "./firmware.svelte";
+  import { isRevivalFirmware, offerUpdate, recoveryButton, recoveryState } from "./firmwareLogic";
+  import FirmwareWarning from "./FirmwareWarning.svelte";
   import HelpLink from "../help/HelpLink.svelte";
   import { bytes } from "./format";
 
@@ -21,6 +25,62 @@
   let pending = $derived(fw?.pending_pfw ?? []);
   let picked = $state<{ path: string; info: PfwInfo } | null>(null);
   let inspecting = $state(false);
+  /** A Revival file waiting for the warning dialog's Copy firmware. */
+  let warn = $state<{ path: string; info: PfwInfo } | null>(null);
+  let recoveryBusy = $state(false);
+
+  // the file the app ships is read from the app's own folder; the recovery file is read from the card
+  // the way the Vocal card does (the user opened this library by clicking it)
+  $effect(() => {
+    void firmwareOffer.load();
+  });
+  $effect(() => {
+    const root = session.library?.root;
+    if (root) void vocal.load(root);
+  });
+
+  let bundled = $derived(firmwareOffer.bundled);
+  let offered = $derived(offerUpdate(bundled?.fw_version ?? null, fw?.fw_version, firmwareOffer.offer));
+  let recoveryOn = $derived(vocal.state ? vocal.state.kill_switch : null);
+
+  async function toggleRecovery() {
+    const lib = session.library;
+    if (!lib || recoveryOn === null) return;
+    recoveryBusy = true;
+    try {
+      await vocal.setRecovery(lib.root, !recoveryOn);
+      toast.show(recoveryOn ? "Recovery file removed." : "Recovery file added. Revival's add-ons stay off at the next start.", "ok");
+    } catch (e) {
+      toast.error("Couldn't change the recovery file.", e);
+    } finally {
+      recoveryBusy = false;
+    }
+  }
+
+  // Inspects the file that ships with the app, then asks first like every Revival install.
+  async function updateBundled() {
+    if (!bundled) return;
+    inspecting = true;
+    try {
+      const info = await deviceFirmwareInspect(bundled.path);
+      if (info.problems.length) toast.error("The included firmware cannot be installed.", info.problems.join("; "));
+      else warn = { path: bundled.path, info };
+    } catch (e) {
+      toast.error("Couldn't check the included firmware.", e);
+    } finally {
+      inspecting = false;
+    }
+  }
+
+  // Any Revival file goes through the warning; other files are copied as before.
+  function confirmCopy() {
+    const p = picked;
+    if (!p) return;
+    if (isRevivalFirmware(p.info.file_name, p.info.fw_version)) {
+      picked = null;
+      warn = p;
+    } else void install(p);
+  }
 
   // Reads the chosen file and shows what it is before anything is copied.
   async function choose() {
@@ -36,10 +96,10 @@
     }
   }
 
-  async function install() {
-    const p = picked;
+  async function install(p: { path: string; info: PfwInfo } | null) {
     const lib = session.library;
     picked = null;
+    warn = null;
     if (!p || !lib) return;
     device.begin(JOB_FIRMWARE, "Copying the firmware file");
     try {
@@ -58,7 +118,10 @@
   {#if !fw}
     <p class="muted">Reading the drive…</p>
   {:else}
-    <div class="field"><span class="k">Firmware</span><span class="num">{fw.fw_version ?? "unknown"}</span></div>
+    <div class="field"><span class="k">On the Pacemaker</span><span class="num">{fw.fw_version ?? "unknown"}</span></div>
+    {#if bundled}
+      <div class="field"><span class="k">Included with the app</span><span class="num">{bundled.fw_version}</span></div>
+    {/if}
     <div class="field"><span class="k">Software</span><span class="num">{fw.sw_version ?? "unknown"}</span></div>
     <div class="field"><span class="k">Bootloader</span><span class="num">{fw.bootloader_version ?? "unknown"}</span></div>
     <div class="field"><span class="k">Serial</span><span class="num">{fw.serial_masked ?? "unknown"}</span></div>
@@ -68,7 +131,20 @@
     {#if !fw.fw_version}<p class="note">No readable .Pacemaker/system.xml on this drive.</p>{/if}
   {/if}
 
+  {#if offered && bundled}
+    <p class="update">Update available. Settings reset after updating.</p>
+  {/if}
   <div class="actions">
+    {#if offered && bundled}
+      <Button
+        variant="primary"
+        disabled={inspecting || device.blocked || !session.library}
+        title={jobs.busy ? "Another job is still running" : undefined}
+        onclick={updateBundled}
+      >
+        Update to {bundled.fw_version}
+      </Button>
+    {/if}
     <Button
       disabled={inspecting || device.blocked || !session.library}
       title={jobs.busy ? "Another job is still running" : undefined}
@@ -78,6 +154,24 @@
     </Button>
   </div>
   <JobProgress kind={JOB_FIRMWARE} />
+
+  {#if fw}
+    <div class="field recovery">
+      <span class="k">Recovery file</span>
+      <span class="rec">
+        <span>{recoveryOn === null ? "Reading…" : recoveryState(recoveryOn)}</span>
+        <Button
+          small
+          disabled={recoveryOn === null || recoveryBusy || device.blocked || !session.library}
+          title={device.blocked ? "A job is still writing to the device" : undefined}
+          onclick={toggleRecovery}
+        >
+          {recoveryBusy ? "Saving…" : recoveryButton(!!recoveryOn)}
+        </Button>
+      </span>
+    </div>
+    <p class="hint">Turns off Revival's add-ons at the next start.</p>
+  {/if}
 
   {#if pending.length > 0}
     <div class="steps" role="region" aria-label="Finish the firmware install">
@@ -138,16 +232,21 @@
     {#snippet actions()}
       <Button data-autofocus onclick={() => (picked = null)}>Cancel</Button>
       {#if i.problems.length === 0}
-        <Button variant="primary" onclick={install}>Copy to device</Button>
+        <Button variant="primary" onclick={confirmCopy}>Copy to device</Button>
       {/if}
     {/snippet}
   </Modal>
 {/if}
 
+{#if warn}
+  {@const w = warn}
+  <FirmwareWarning fileName={w.info.file_name} fwVersion={w.info.fw_version} onconfirm={() => install(w)} oncancel={() => (warn = null)} />
+{/if}
+
 <style>
   .field {
     display: grid;
-    grid-template-columns: 96px 1fr;
+    grid-template-columns: 130px 1fr;
     gap: 6px;
     margin: 4px 0;
   }
@@ -157,6 +256,28 @@
   }
   .actions {
     margin-top: 10px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .update {
+    margin: 10px 0 0;
+    font-size: 12px;
+    color: var(--accent);
+  }
+  .rec {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .recovery {
+    margin-top: 12px;
+  }
+  .hint {
+    margin: 2px 0 0;
+    font-size: 12px;
+    color: var(--muted);
   }
   .note {
     font-size: 12px;

@@ -6,7 +6,7 @@
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "npm run build",
+    "beforeBuildCommand": "npm run bundle-firmware && npm run build",
     "frontendDist": "../build"
   },
   "app": {
@@ -31,7 +31,8 @@
     "active": true,
     "targets": "all",
     "resources": {
-      "../../THIRD-PARTY-NOTICES.md": "THIRD-PARTY-NOTICES.md"
+      "../../THIRD-PARTY-NOTICES.md": "THIRD-PARTY-NOTICES.md",
+      "firmware/*": "firmware/"
     },
     "icon": [
       "icons/32x32.png",

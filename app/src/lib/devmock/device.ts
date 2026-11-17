@@ -87,8 +87,10 @@ const has = (a: Record<string, unknown>, word: string) => String(a.root ?? "").t
 // The Vocal filter flag of the mock card. "killswitch" in the drive's name puts revival-no-preload on it,
 // "oldfw" makes its firmware older than the filter.
 let vocalMode: "off" | "vocal" | "inverted" = "off";
+// the recovery file as the Firmware card's button leaves it (null: the drive's name decides)
+let noPreload: boolean | null = null;
 const vocalState = (a: Record<string, unknown>) => {
-  const kill_switch = has(a, "killswitch");
+  const kill_switch = noPreload ?? has(a, "killswitch");
   const firmware_too_old = has(a, "oldfw");
   return { mode: vocalMode, kill_switch, firmware_too_old, effective: kill_switch || firmware_too_old ? "off" : vocalMode };
 };
@@ -173,14 +175,27 @@ export const handlers: Handlers = {
     return vocalState(a);
   },
 
+  device_recovery_set: (a) => {
+    noPreload = !!a.on;
+    return vocalState(a);
+  },
+
+  // the firmware the app ships
+  device_bundled_firmware: () => ({
+    path: "C:/demo/pacemaker-revival-180096074.pfw",
+    file_name: "pacemaker-revival-180096074.pfw",
+    fw_version: 180096074,
+  }),
+
   device_firmware_inspect: (a) => {
     const bad = String(a.path).toLowerCase().includes("bad");
+    const num = /(\d{9})\.pfw$/i.exec(String(a.path))?.[1] ?? "180096070";
     return {
       file_name: String(a.path).split(/[\\/]/).pop() || "firmware-demo.pfw",
       size: 50_000 * 1024 + 512,
-      tag: "dfw_180096070",
-      sw_version: "180096070",
-      fw_version: "180096070",
+      tag: `dfw_${num}`,
+      sw_version: num,
+      fw_version: num,
       bootloader_version: "12838",
       md5_ok: !bad,
       problems: bad ? ["the checksum in the trailer does not match the file: it is damaged or incomplete"] : [],

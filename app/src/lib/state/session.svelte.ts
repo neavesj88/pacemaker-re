@@ -155,6 +155,12 @@ class Session {
     this.volumes = await listVolumes();
   }
 
+  /** Shows the volumes a background check found (see connect.svelte.ts), without opening any. The
+   *  list is replaced only when it changed, so the pickers do not redraw every few seconds. */
+  setVolumes(list: string[]) {
+    if (list.length !== this.volumes.length || list.some((v, i) => v !== this.volumes[i])) this.volumes = list;
+  }
+
   /** Re-reads where the library on this computer is and whether it exists (after a setting changed). */
   async refreshComputer() {
     try {

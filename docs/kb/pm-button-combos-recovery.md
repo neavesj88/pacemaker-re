@@ -3,7 +3,7 @@ id: pm-button-combos-recovery
 title: Button combinations and recovery
 topic: Using the Pacemaker
 order: 10
-keywords: button combination, held keys, power on, dfu, recovery, debug menu, diagnostic mode, production test, restore hdd, check fs, clean fs, factory reset, reset, hard drive needs checking, restore hard drive, brick, unbrick
+keywords: recovery file, revival-no-preload, button combination, held keys, power on, dfu, recovery, debug menu, diagnostic mode, production test, restore hdd, check fs, clean fs, factory reset, reset, hard drive needs checking, restore hard drive, brick, unbrick
 summary: The key combinations held at power-on (DFU, debug menu, diagnostics), what each does, and which can erase the library.
 ---
 
@@ -31,6 +31,10 @@ If it shows "Sorry friend... hard drive needs checking":
 2. Press **Continue**. It asks **Restore hard drive?**
 3. Confirm with two presses. Both partitions are formatted.
 4. After "Hard drive restored. Please upgrade firmware.", put a `.pfw` file on the storage: see [Installing firmware with the app](install-firmware.md).
+
+## Start without Revival's add-ons
+
+If a Revival firmware will not start, put the empty file `.Pacemaker/revival-no-preload` on the storage and start again. On a Pacemaker that opens in the app, press **Add recovery file** on the Firmware card of the Device page; **Remove recovery file** undoes it: [The Device page](device-page.md#firmware).
 
 ## Recover with DFU
 

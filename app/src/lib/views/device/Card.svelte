@@ -2,10 +2,10 @@
   import type { Snippet } from "svelte";
 
   // A titled panel of the device view (the mockup's .card).
-  let { title, aside, children }: { title: string; aside?: Snippet; children?: Snippet } = $props();
+  let { title, aside, children, id }: { title: string; aside?: Snippet; children?: Snippet; id?: string } = $props();
 </script>
 
-<section class="card">
+<section class="card" {id}>
   <header>
     <h4>{title}</h4>
     {@render aside?.()}

@@ -3,7 +3,7 @@ id: troubleshooting
 title: Troubleshooting and FAQ
 topic: Problems and answers
 order: 1
-keywords: troubleshooting, faq, problem, not seen, not detected, drive not found, firmware did not install, hard drive needs checking, restore hard drive, slow loading, stutter, sd card slow, dma, half tempo, bpm half, double tempo, missing keys, no key, drum tracks, settings reset, plan out of date, cannot add tracks
+keywords: troubleshooting, recovery file, faq, problem, not seen, not detected, drive not found, firmware did not install, hard drive needs checking, restore hard drive, slow loading, stutter, sd card slow, dma, half tempo, bpm half, double tempo, missing keys, no key, drum tracks, settings reset, plan out of date, cannot add tracks
 summary: Fixes for a Pacemaker not detected, failed firmware installs, the hard drive check message, slow SD card loading, wrong BPM octave and missing keys.
 ---
 
@@ -27,6 +27,8 @@ summary: Fixes for a Pacemaker not detected, failed firmware installs, the hard 
 | File in the wrong place | Put it directly in the `.Pacemaker` folder of the FAT32 volume, not a subfolder. |
 | Settings gone after install | A new firmware number resets settings. Re-apply a preset: [The Device page](device-page.md). |
 | "FW Upgrade is NOT OK" | Firmware number and root system do not match. Use a matching build. |
+
+If a Revival firmware installed but the unit will not start, put `.Pacemaker/revival-no-preload` on the card (Device page, Firmware card, **Add recovery file**): [Button combinations and recovery](pm-button-combos-recovery.md).
 
 Last resort: method 5 (DFU) in [Ways to install firmware](firmware-methods.md).
 

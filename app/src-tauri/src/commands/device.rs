@@ -139,6 +139,66 @@ pub async fn device_vocal_set(app: AppHandle, root: String, mode: VocalMode) -> 
     crate::state::quick_write(app, root, move || -> AppResult<VocalState> { Ok(ops_device::write_vocal(Path::new(&path), mode)?) }).await
 }
 
+/// Creates or deletes the empty recovery file `.Pacemaker/revival-no-preload`: while it exists the
+/// device starts without Revival's preloaded add-ons (today the vocal filter). Takes effect at the
+/// next start. Returns the state read back (its `kill_switch` is the file).
+#[tauri::command]
+pub async fn device_recovery_set(app: AppHandle, root: String, on: bool) -> AppResult<VocalState> {
+    // nothing to write when the card already says so (no gate, no first-write snapshot)
+    let probe = root.clone();
+    if let Ok(current) = tauri::async_runtime::spawn_blocking(move || ops_device::read_vocal(Path::new(&probe))).await? {
+        if current.kill_switch == on {
+            return Ok(current);
+        }
+    }
+    // the same quick-write path as the vocal flag: refused during an eject / backup / firmware
+    // install, snapshotted once per session, waited for by Eject
+    let path = root.clone();
+    crate::state::quick_write(app, root, move || -> AppResult<VocalState> { Ok(ops_device::set_no_preload(Path::new(&path), on)?) }).await
+}
+
+/// The firmware file that ships with the app (`firmware/` in the resource folder).
+#[derive(Debug, Serialize, PartialEq, Eq)]
+pub struct BundledFirmware {
+    pub path: String,
+    pub file_name: String,
+    /// The firmware number from the file's trailer.
+    pub fw_version: u64,
+}
+
+/// The newest valid `pacemaker-revival-<number>.pfw` in `dir` (newest by the number in its name),
+/// or none. A file whose trailer, checksum or version gate fails the normal inspection is skipped,
+/// so a damaged bundle never reaches the install button.
+pub fn find_bundled_firmware(dir: &Path) -> Option<BundledFirmware> {
+    let mut found: Vec<(u64, PathBuf)> = std::fs::read_dir(dir)
+        .ok()?
+        .filter_map(|e| e.ok())
+        .filter_map(|e| {
+            let name = e.file_name().to_string_lossy().into_owned().to_ascii_lowercase();
+            let n = name.strip_prefix("pacemaker-revival-")?.strip_suffix(".pfw")?;
+            if n.is_empty() || !n.bytes().all(|b| b.is_ascii_digit()) {
+                return None;
+            }
+            Some((n.parse().ok()?, e.path()))
+        })
+        .collect();
+    found.sort_by(|a, b| b.0.cmp(&a.0));
+    found.into_iter().find_map(|(_, p)| {
+        let info = ops_device::inspect_pfw(&p).ok()?;
+        if !info.problems.is_empty() {
+            return None;
+        }
+        Some(BundledFirmware { path: p.to_string_lossy().into_owned(), file_name: info.file_name, fw_version: info.fw_version.parse().ok()? })
+    })
+}
+
+/// The firmware shipped with the app, or none. Reads the app's own resource folder, never a Pacemaker.
+#[tauri::command]
+pub async fn device_bundled_firmware(app: AppHandle) -> AppResult<Option<BundledFirmware>> {
+    let dir = app.path().resource_dir()?.join("firmware");
+    tauri::async_runtime::spawn_blocking(move || -> AppResult<Option<BundledFirmware>> { Ok(find_bundled_firmware(&dir)) }).await?
+}
+
 /// Checks a `.pfw` (trailer, checksum, the device's version gate). Nothing is written.
 #[tauri::command]
 pub async fn device_firmware_inspect(path: String) -> AppResult<PfwInfo> {
@@ -329,6 +389,8 @@ macro_rules! device_commands {
                 $crate::commands::device::device_settings_write,
                 $crate::commands::device::device_vocal,
                 $crate::commands::device::device_vocal_set,
+                $crate::commands::device::device_recovery_set,
+                $crate::commands::device::device_bundled_firmware,
                 $crate::commands::device::device_firmware_inspect,
                 $crate::commands::device::device_firmware_install,
                 $crate::commands::device::device_backup,
@@ -381,4 +443,52 @@ macro_rules! device_commands {
             $($rest),*
         }
     };
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn scratch(tag: &str) -> PathBuf {
+        let d = std::env::temp_dir().join(format!("pmrev-bundled-{tag}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        d
+    }
+
+    fn pfw(fw: &str) -> Vec<u8> {
+        pm_formats::pfw::build(&vec![7u8; 4096], fw, fw, "12838", "00000000-0000-0000-0000-000000000000")
+    }
+
+    #[test]
+    fn bundled_firmware_is_the_newest_valid_file() {
+        let d = scratch("newest");
+        // README keeps the resource glob matching; it is never a candidate
+        std::fs::write(d.join("README.txt"), "x").unwrap();
+        assert_eq!(find_bundled_firmware(&d), None, "only a README: none");
+        std::fs::write(d.join("pacemaker-revival-180096073.pfw"), pfw("180096073")).unwrap();
+        std::fs::write(d.join("pacemaker-revival-180096074.pfw"), pfw("180096074")).unwrap();
+        // not a Revival build name, and a name with extra text: both ignored
+        std::fs::write(d.join("other-180096099.pfw"), pfw("180096099")).unwrap();
+        std::fs::write(d.join("pacemaker-revival-180096099.pfw.prev"), pfw("180096099")).unwrap();
+        let b = find_bundled_firmware(&d).unwrap();
+        assert_eq!(b.fw_version, 180096074);
+        assert_eq!(b.file_name, "pacemaker-revival-180096074.pfw");
+        assert!(Path::new(&b.path).is_file());
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn a_damaged_newest_file_falls_back_to_the_next_and_a_missing_folder_is_none() {
+        let d = scratch("damaged");
+        std::fs::write(d.join("pacemaker-revival-180096073.pfw"), pfw("180096073")).unwrap();
+        let mut bad = pfw("180096074");
+        bad[10] ^= 0xff; // the checksum no longer matches
+        std::fs::write(d.join("pacemaker-revival-180096074.pfw"), bad).unwrap();
+        assert_eq!(find_bundled_firmware(&d).unwrap().fw_version, 180096073);
+        std::fs::write(d.join("pacemaker-revival-180096075.pfw"), b"not a firmware").unwrap();
+        assert_eq!(find_bundled_firmware(&d).unwrap().fw_version, 180096073);
+        assert_eq!(find_bundled_firmware(&d.join("nope")), None);
+        let _ = std::fs::remove_dir_all(&d);
+    }
 }

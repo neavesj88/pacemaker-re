@@ -55,7 +55,7 @@
   }
 </script>
 
-<Card title="Backup">
+<Card title="Backup" id="device-backup-card">
   {#snippet aside()}<HelpLink id="device-page" anchor="backup" />{/snippet}
   <p class="muted">
     Database, settings, system file and beat grids.

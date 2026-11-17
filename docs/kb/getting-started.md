@@ -26,7 +26,7 @@ Switch with the library picker at the top of the window. Free space applies to a
 | Copy my Pacemaker's library to this computer | Shown when a Pacemaker is connected. Lists what will be copied, then copies. |
 | Open a Pacemaker | Connect over USB, then press Rescan. A folder containing `.Pacemaker` also opens. |
 
-If the library drive is missing, connect it and press Rescan.
+If the library drive is missing, connect it and press Rescan. A connected Pacemaker also gets a small prompt with **Open it**: [Libraries](libraries.md#pacemaker-connected).
 
 ## Add tracks
 

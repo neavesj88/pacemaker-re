@@ -1,5 +1,6 @@
 import { undo } from "$lib/state/undo.svelte";
 import type { SettingsEntry } from "../settings/types";
+import FirmwareSettings from "./FirmwareSettings.svelte";
 import { relink } from "./relink.svelte";
 import RelinkSettings from "./RelinkSettings.svelte";
 import SafetyCard from "./SafetyCard.svelte";
@@ -24,6 +25,15 @@ const entries: SettingsEntry[] = [
     load: () => relink.loadSettings(),
     how: "inline",
     component: RelinkSettings,
+  },
+  {
+    id: "device-firmware-offer",
+    area: "Device",
+    title: "Included firmware",
+    help: "Whether the Firmware card offers the firmware that ships with the app when its number is higher than the Pacemaker's.",
+    keywords: "firmware update included bundled offer revival upgrade pfw notice",
+    how: "inline",
+    component: FirmwareSettings,
   },
 ];
 

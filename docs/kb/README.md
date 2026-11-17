@@ -55,7 +55,7 @@ New: [Getting started](getting-started.md). Problems: [Troubleshooting and FAQ](
 
 ## Firmware and hardware
 
-- [Installing firmware with the app](install-firmware.md): The Firmware card on the Device page checks a .pfw file, copies it to the Pacemaker and shows the steps to finish the install.
+- [Installing firmware with the app](install-firmware.md): The Firmware card on the Device page installs the firmware included with the app or a .pfw file you choose, after a warning, and shows the steps to finish the install.
 - [Upgrading the storage to a microSD card](storage-upgrade.md): Step-by-step guide to replacing the Pacemaker's 1.8-inch hard drive with a microSD card on a ZIF adapter: parts, tools, teardown, first start and firmware.
 - [Other ways to upgrade the storage](storage-alternatives.md): Compares the ways to replace the 1.8-inch hard drive: microSD adapters, iFlash boards, CompactFlash, mSATA, ZIF SSD and another hard drive.
 - [Ways to install firmware](firmware-methods.md): Five ways to put a firmware file on the Pacemaker or recover a unit that will not start: the app, manual copy, restore-library.py, USB and DFU.

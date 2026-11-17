@@ -1,7 +1,7 @@
 // The Vocal filter flag of the open library's card, shared by the Device view (which sets it) and the
 // mix editor (which names the Wah tool after it). The backend renders previews and exports with the
 // same flag, so what the editor shows is what the mix will sound like.
-import { deviceVocal, deviceVocalSet, type VocalMode, type VocalState } from "$lib/api/device";
+import { deviceRecoverySet, deviceVocal, deviceVocalSet, type VocalMode, type VocalState } from "$lib/api/device";
 import { session } from "./session.svelte";
 
 class Vocal {
@@ -47,6 +47,16 @@ class Vocal {
   async set(root: string, mode: VocalMode) {
     const seq = ++this.#seq;
     const s = await deviceVocalSet(root, mode);
+    if (root === this.#root && seq === this.#seq) {
+      this.state = s;
+      this.error = "";
+    } else if (root === this.#root) await this.load(root);
+  }
+
+  /** Creates or deletes the recovery file (`revival-no-preload`); throws the backend's message when refused. */
+  async setRecovery(root: string, on: boolean) {
+    const seq = ++this.#seq;
+    const s = await deviceRecoverySet(root, on);
     if (root === this.#root && seq === this.#seq) {
       this.state = s;
       this.error = "";

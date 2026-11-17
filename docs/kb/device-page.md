@@ -11,6 +11,8 @@ summary: The Device page shows storage, library health, firmware, backup, restor
 
 **Device** (under Tools) manages the connected Pacemaker. For a library on this computer it is called **This library** and shows only Library health, Restore from a snapshot, Edit history and Safety settings.
 
+When a Pacemaker is plugged in, a prompt offers to open it: [Libraries](libraries.md#pacemaker-connected).
+
 ## Eject
 
 1. Press **Eject**.
@@ -37,7 +39,22 @@ In **Review...** only ticked files are deleted, after you confirm. Deleting audi
 
 ## Firmware
 
-Shows the firmware, software and bootloader numbers. **Install firmware...** copies a firmware file to the Pacemaker. See [Installing firmware with the app](install-firmware.md).
+Shows the firmware number on the Pacemaker, **Included with the app** (when there is one), the software and bootloader numbers.
+
+| Control | What it does |
+|---|---|
+| **Update to** (number) | Shown with "Update available" when the included firmware is newer. Opens the warning, then copies the included file |
+| **Install firmware...** | Checks a `.pfw` file you choose, then copies it |
+| **Recovery file** | Shows "On the card" or "Not on the card". **Add recovery file** creates `.Pacemaker/revival-no-preload`, **Remove recovery file** deletes it |
+
+Revival firmware always opens a warning first. **Copy firmware** stays disabled until both boxes are ticked:
+
+- A verified backup of this Pacemaker (the last backup this session is shown, or **Go to the Backup card**).
+- Install at your own risk.
+
+The warning also lists what to do if the Pacemaker does not start. See [Installing firmware with the app](install-firmware.md).
+
+While the recovery file exists the Pacemaker starts without Revival's add-ons (today the Vocal filter). It applies at the next start.
 
 ## Vocal filter
 
