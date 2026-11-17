@@ -92,6 +92,35 @@ describe("the reader never makes HTML", () => {
   });
 });
 
+describe("search hits point at a chapter", () => {
+  const art = (id, body) => L.parseArticle(`---\nid: ${id}\ntitle: ${id} title\ntopic: Start here\nkeywords: one, two, three\nsummary: A summary that is long enough.\n---\n\n# ${id} title\n\n${body}`, id + ".md");
+  const idx = L.buildIndex([
+    art("alpha", "Intro text.\n\n## Charging\n\nPlug in the cable.\n\n## Recovery mode\n\nHold the buttons to recover. The cable is not needed."),
+    art("beta", "No headings here, only cable talk."),
+  ]);
+  const hit = (q, id) => L.search(idx, q).find((h) => h.article.id === id);
+  it("the chapter with the word, and the snippet is from that chapter", () => {
+    const h = hit("recover", "alpha");
+    assert.equal(h.chapter.slug, "recovery-mode");
+    assert.ok(h.chapter.text.some((s) => s.hit));
+    assert.ok(h.snippet.map((s) => s.text).join("").includes("Hold the buttons"));
+  });
+  it("a word in a heading beats the same word in another chapter's text; ties go to the earlier chapter", () => {
+    assert.equal(hit("charging", "alpha").chapter.slug, "charging");
+    assert.equal(hit("cable", "alpha").chapter.slug, "charging");
+  });
+  it("most of the words wins", () => assert.equal(hit("cable buttons", "alpha").chapter.slug, "recovery-mode"));
+  it("text before the first heading, or no headings, has no chapter", () => {
+    assert.equal(hit("intro", "alpha").chapter, null);
+    assert.equal(hit("cable", "beta").chapter, null);
+  });
+  it("sectionsOf cuts at every heading and keeps the heading text", () => {
+    const s = L.sectionsOf(L.parseMarkdown("a\n\n## B c\n\nd\n\n### E\n\nf"));
+    assert.deepEqual(s.map((x) => x.heading?.slug ?? null), [null, "b-c", "e"]);
+    assert.equal(s[1].text, "B c d");
+  });
+});
+
 describe("search", () => {
   it("ranks the title and keywords above mentions in the text", () => {
     assert.equal(top("battery")[0], "battery-replacement");
@@ -214,15 +243,17 @@ describe("the articles in docs/kb", () => {
     const root = fs.readFileSync(path.resolve(KB, "../../README.md"), "utf8");
     assert.ok(root.includes("](docs/kb/README.md)"));
   });
-  it("the hardware articles say what is verified", () => {
-    for (const id of ["storage-upgrade", "storage-alternatives", "battery-replacement", "pm-controls-tour"]) {
-      const a = articles.find((x) => x.id === id);
-      assert.ok(/verified/i.test(a.body), id);
-    }
+  it("the hardware articles keep their safety lines and the tested parts", () => {
     const bat = articles.find((x) => x.id === "battery-replacement").body;
-    assert.ok(/not known/i.test(bat) && /polarity/i.test(bat) && /multimeter/i.test(bat));
+    assert.ok(/polarity/i.test(bat) && /multimeter/i.test(bat));
     const up = articles.find((x) => x.id === "storage-upgrade").body;
-    assert.ok(/What we used/.test(up) && /What works/.test(up) && /What to avoid/.test(up) && /Sintech/.test(up) && /U3/.test(up));
+    assert.ok(/^## Tested parts$/m.test(up) && /^## What works$/m.test(up) && /^## What to avoid$/m.test(up) && /Sintech/.test(up) && /U3/.test(up));
+  });
+  it("reference style: no test-status chatter or project planning in the articles", () => {
+    for (const [f, raw] of raws) {
+      const m = /\b(has not been tested|not been tested|is untested|we tested|we used|what we used|the project owner|planned for|not yet supported|in a future)\b/i.exec(raw);
+      assert.ok(!m, `${f}: "${m?.[0]}"`);
+    }
   });
   it("this is a public repository: no e-mail address, serial number or personal path", () => {
     for (const [f, raw] of [...raws, ["README.md", readme]]) {

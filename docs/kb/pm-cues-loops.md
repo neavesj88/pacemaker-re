@@ -4,40 +4,50 @@ title: Cues, loops and reverse
 topic: Using the Pacemaker
 order: 6
 keywords: cue, cue point, dj pause, autocue, loop, loop in, loop out, split loop, double loop, reverse, beat jump, fixed loop length, snap loops, vinyl mode, loop travel
-summary: Setting and using a cue point, making and adjusting a loop, and playing in reverse on the Pacemaker.
+summary: Set a cue point, make and adjust a loop, and play in reverse on the Pacemaker.
 ---
 
 # Cues, loops and reverse
 
-Source: the official User's Manual v2.0 and the firmware's settings. See [Controls tour](pm-controls-tour.md) for what "verified" means.
-
 ## Cue
 
-There is **one user cue point per track**. Loading another track clears it. **Autocue** (on by default) cues the track at its first beat when it loads. Cue points set in the Editor transfer to the Pacemaker. The app can set a track's cue from the beat grid editor ([The beat grid editor](grid-editor.md)); the unit of a cue written by the app has not been checked on a real Pacemaker.
+Each track has one cue point. Loading another track clears it. **Autocue** (default on) cues a track at its first beat on load. Cue points set in the Editor transfer to the Pacemaker. You can also set one in the [beat grid editor](grid-editor.md).
 
-1. With a track playing, press **Play** to **DJ-pause**: it stutters at the current position and the play and cue buttons blink. (Verified)
-2. Move to the right spot with **Forward** or **Rewind** (hold), or by stroking the touchpad rim.
-3. Press **Cue** to set the cue point. (Verified)
+### Set a cue point
 
-After that, **Cue** returns a playing track to the cue point. **Hold Cue** to play from it, and the track returns when you let go. (Verified)
+1. Press **Play** during playback to DJ-pause.
+2. Move to the position with **Forward** or **Rewind** (hold), or stroke the touchpad rim.
+3. Press **Cue**.
+
+### Use the cue point
+
+- Press **Cue** to return to the cue point.
+- Hold **Cue** to play from it. The track returns when you release.
 
 ## Loops
 
-1. **Hold the P-switch up.**
-2. Press **Rewind** to set the **loop in point** and **Forward** to set the **end point**. Then release the P-switch. (Verified)
-3. Setting a loop fails if you release the P-switch, reverse, or change tempo before setting the end point. (Verified)
+Each track keeps one loop. A new loop overwrites it.
 
-With the P-switch up, **Cue** exits the loop, and pressing Cue again re-enters it. Cueing, fast-forwarding or rewinding inside a loop also exits it. (Verified)
+### Make a loop
 
-- **One loop per track** is stored, and a new loop overwrites it. It is saved permanently. (Verified)
-- **Adjust:** hold the P-switch up, press Rewind (in) or Forward (end) and stroke the rim. (Verified)
-- **Split or double:** hold the P-switch up, hold one of Rewind or Forward and tap the other. A split loop can only be doubled back up to its original length. (Verified)
-- **Loop travel** is a setting (on by default) under **Settings, Mix control**, with Time stretch and Vinyl mode (the manual calls it "Vinyl pause"). The sources used here name them but do not say exactly what Loop travel changes. (Unverified)
+1. Hold the P-switch up.
+2. Press **Rewind** to set the in point.
+3. Press **Forward** to set the end point.
+4. Release the P-switch.
 
-The firmware also has **Fixed loop length**, **Snap loops** and **Beat jump length** settings that are **not in the manual**. How they are triggered, and what exactly they change, was not traced. (Unverified)
+Releasing the P-switch, reversing or changing tempo before the end point cancels the loop.
+
+### Exit and re-enter
+
+With the P-switch up, press **Cue** to exit the loop and again to re-enter. Cue, fast-forward or rewind inside a loop also exits it.
+
+### Adjust a loop
+
+| Action | Steps |
+|---|---|
+| Move the in or end point | Hold the P-switch up, press **Rewind** (in) or **Forward** (end), stroke the rim |
+| Split or double a loop | Hold the P-switch up, hold **Rewind** or **Forward**, tap the other. A split loop doubles back only to its original length. |
 
 ## Reverse
 
-**Hold the P-switch up and press Play** to reverse playback. Press again to go forward. (Verified)
-
-The app's own preview player (at the bottom of the window) also has a Cue button and a 4-beat loop button. That is the app, not the Pacemaker.
+Hold the P-switch up and press **Play**. Press again to play forward.

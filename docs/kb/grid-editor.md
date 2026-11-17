@@ -4,57 +4,59 @@ title: The beat grid editor
 topic: Analysis and grids
 order: 2
 keywords: beat grid, grid editor, beats, downbeat, nudge, halve, double, set bpm, undo, redo, save, cue point, metronome, tap tempo, drag beats, str file, re-analyse, offset, tempo map, split
-summary: Check and correct a track's beat grid: nudge it, halve or double the tempo, set the downbeat and the cue point, undo, and save.
+summary: Check and correct a track's beat grid by nudging beats, halving or doubling the tempo, setting the downbeat and cue point, then saving.
 ---
 
 # The beat grid editor
 
-The beat grid tells the Pacemaker where every beat of a track falls, so sync and beatmatching lock to the music. The editor (**Beat grid editor** under Tools, or Edit grid on a track) lets you check one track's grid against its waveform and correct it.
+The beat grid marks every beat of a track. Nothing is written until you save.
 
-The grid is stored in the track's `.str` file, the same file the Pacemaker reads. Nothing is written until you save.
+## Open a track
 
-## Opening a track
+- Pick a track from the list at the top, or
+- Click **Edit grid** in the Inspector or right-click menu, or open **Beat grid editor** under Tools.
 
-Choose a track from the list at the top, or press **Edit grid** in the Inspector or the right-click menu. If a track has no usable grid, the editor says so. Use **Re-analyse** to build one from the audio, then **Save**.
+If a track has no usable grid, click **Re-analyse**, then **Save**.
 
-## Looking at the grid
+## Read the grid
 
-The big waveform shows beat lines, with bar lines (downbeats) stronger. Under it a strip shows tempo changes along the track, and an overview shows where you are. The grid card shows the BPM, the offset of the first beat, the number of beats and the tempo map.
+The waveform shows beat lines and stronger bar lines (downbeats).
 
-- Space plays or pauses. The wheel zooms; Shift and wheel (or dragging) scrolls. **Fit** shows the whole track and **Follow** scrolls with the playhead, smoothly by default (or a page at a time: Settings > Mixes > Following the playhead). Scrolling or zooming yourself switches Follow off (tick it again, or stop and play, to bring it back).
-- **Metronome** clicks on every beat while you play, with a higher click on bar lines. There is a nudge control for the click if your output is late or early.
+- Space plays or pauses.
+- Wheel zooms. Shift+wheel or dragging scrolls.
+- **Fit** shows the whole track.
+- **Follow** scrolls with the playhead (Settings > Mixes > Following the playhead). Scrolling or zooming switches it off. Tick it again to resume.
+- **Metronome** clicks every beat, higher on bar lines. Its nudge control offsets the click.
 
-## Correcting the grid
+## Correct the grid
 
-| Tool | What it does |
+| Tool | Action |
 |---|---|
 | Nudge -20, -5, -1, +1, +5, +20 ms | Moves every beat earlier or later |
-| beat left and right | Moves the beat lines one whole beat earlier or later |
+| beat left and right | Moves the beat lines one whole beat |
 | Set downbeat | Makes the beat nearest the playhead a bar line |
-| Drag beats | Lets you grab single beat lines on the waveform and drag them (hold Alt to move all later beats too) |
+| Drag beats | Drag single beat lines. Hold Alt to move all later beats too |
 | half BPM | Keeps every second beat |
 | double BPM | Adds a beat between every two |
-| Set BPM | Rebuilds a constant grid at the number you type, from the first beat |
-| Re-analyse | Replaces the grid with a fresh analysis (nothing is saved yet) |
+| Set BPM | Rebuilds a constant grid at the typed number, from the first beat |
+| Re-analyse | Replaces the grid with a fresh analysis (not saved yet) |
 | Set cue, Clear cue | Uses the playhead as the track's single cue point |
 
-Further down, the tempo tools handle harder tracks:
+## Tempo tools
 
-- **Split at playhead** cuts the grid into sections that each have their own tempo, for tracks that speed up or slow down. Each section can be rebuilt at a tempo or spaced evenly.
-- **Tap tempo** works out a tempo from your taps (press T). It averages the taps and can apply the result to a section.
+- **Split at playhead** cuts the grid into sections with their own tempo, for tracks that speed up or slow down. Each section can be rebuilt at a tempo or spaced evenly.
+- **Tap tempo** (press T) averages your taps and can apply the result to a section.
 - **Beat lines** adds a beat at the playhead, removes the selected one or nudges it.
-- **Check against the audio** compares the beat lines with the attacks in the audio, lists runs where the grid drifts, and can move the lines onto the audio there.
+- **Check against the audio** lists runs where the grid drifts and can move the lines onto the audio.
 
 ## Undo and save
 
-- Ctrl+Z undoes and Ctrl+Shift+Z redoes (Ctrl+Y works too).
-- **Save...** shows what will change: the new grid (beats, BPM, how far the first beat moved) and the cue point. Confirm to write it.
-- If mixes use the track, the dialog lists them. A mix clip keeps the tempo the track had when the mix was made, so those mixes may drift and need beatmatching again. You tick a box to save anyway.
-- The cue point is written as a position in sample frames. The unit is **not verified against a real Pacemaker**, so the dialog asks you to tick Write the cue anyway.
-- The previous grid cannot be restored from the editor. A copy of the database is made before the first write of each session: see [The Device page](device-page.md).
+- Ctrl+Z undoes. Ctrl+Shift+Z or Ctrl+Y redoes.
+- **Save...** lists the changes (new grid, cue point). Confirm to write. Tick Write the cue anyway to save a cue point.
+- If mixes use the track, the dialog lists them. Those mixes may need beatmatching again. Tick the box to save anyway.
+- Saving cannot be undone from the editor. A database copy is made before the first write of each session ([The Device page](device-page.md)).
+- Leaving with unsaved changes asks whether to keep editing or discard.
 
-Leaving the editor with unsaved changes asks whether to keep editing or discard them.
+## Fix many tracks
 
-## Many tracks at once
-
-Right-click tracks and choose **Beat grid tools (preview)** to see suggested fixes for many tracks, each with its old and new BPM, before anything is written. The **Suspect** filter in [the Tracks view](tracks-view.md) finds tracks whose grid looks wrong for their genre. For the half and double rule, see [BPM, keys and waveforms](bpm-keys-waveforms.md).
+Right-click tracks and choose **Beat grid tools (preview)** to see suggested fixes with old and new BPM before anything is written. The **Suspect** filter in [the Tracks view](tracks-view.md) finds tracks whose grid looks wrong for their genre. For half and double tempo, see [BPM, keys and waveforms](bpm-keys-waveforms.md).

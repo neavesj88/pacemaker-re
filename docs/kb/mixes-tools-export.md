@@ -4,76 +4,83 @@ title: Mix tools and audio export
 topic: Mixes
 order: 3
 keywords: tools, tool, reverb, echo, roll, wah, vocal, crush, filter, eq, trans, loop, reverse, ignore, effects in mix, vocal filter, export, export audio, render, ogg, mp3, flac, wav, loudness, lufs, target, tags, cue sheet, track list, partial export
-summary: Add effects, loops and reverse regions to a clip (including the Vocal tool), then render the mix to an audio file with loudness, format and tags.
+summary: Add effects, loops and reverse regions to a clip, then export the mix as an audio file.
 ---
 
 # Mix tools and audio export
 
-## Tools on a clip
+## Add a tool to a clip
 
-A **tool** is an effect, loop or region applied to part of one clip. Select a clip and press **+ Tool** in its panel: the tool is added at the playhead. Tools show as blocks in a thin strip under the mix bar, at the same place as the clip. Drag a block to move it inside its clip and drag its edge to resize it. The tool's curves stretch with it.
+1. Select a clip.
+2. Press **+ Tool** in the clip panel. The tool is added at the playhead.
+3. Drag the block under the mix bar to move it. Drag its edge to resize it.
 
-| Tool | What it does |
+## Tool types
+
+| Tool | Controls |
 |---|---|
-| Reverb | Adds room. Controls: Time and Wet/Dry |
-| Echo | Repeating echoes. Controls: Time, Beat division and Wet/Dry |
-| Roll | A beat-repeat roll. Controls: Time, Beat division and Wet/Dry |
-| Wah | A swept band filter. Control: Cut-off from -100 to +100 (0 is off) |
-| **Vocal** | The Revival vocal filter: see below |
-| Crush | A bit-crush effect. Control: Crush |
-| Filter | A high-pass or low-pass sweep. Control: Cut-off from -100 to +100 |
-| EQ | High, Mid and Low |
-| Trans | Chops the clip on and off in eighth notes from the start of the block, at a gate tempo you set (0 follows the clip's tempo). It has no curves. Not offered until you tick "Offer the Trans tool when adding a tool" in the mix panel, because its file layout has **not been checked on a real Pacemaker** |
-| Loop | Repeats a piece of the clip. You set Repeats, and "repeat again". The Loop out and Loop cut transition recipes make loops like this for you (Crossfades, tempo and Match all) |
+| Reverb | Time, Wet/Dry |
+| Echo | Time, Beat division, Wet/Dry |
+| Roll | Time, Beat division, Wet/Dry |
+| Wah | Cut-off -100 to +100 (0 is off) |
+| Vocal | Vocal filter. See Vocal tool below |
+| Crush | Crush |
+| Filter | High-pass or low-pass sweep. Cut-off -100 to +100 |
+| EQ | High, Mid, Low |
+| Trans | Gate tempo (0 follows the clip tempo). No curves. Tick "Offer the Trans tool when adding a tool" in the mix panel to show it |
+| Loop | Repeats, "repeat again". Created by the Loop out and Loop cut transitions |
 | Reverse | Plays the region backwards |
-| Ignore | Marks a region to be skipped |
+| Ignore | Skips the region |
 
-Every effect parameter has a curve. Click the curve to add a node, drag to move it, right-click a node (or select it and press Delete) to remove it. The first and last node stay at the ends of the block. **Reset** returns a curve to its neutral value, and the **muted/on** box switches the tool off without deleting it.
+## Edit curves
 
-Two tools of the same kind cannot overlap on one clip (saving is refused until you fix it). In the preview and the audio export a loop's joins are softened over about a millisecond and a half so a repeat does not click; the saved file is not changed by that.
+- Click a curve to add a node. Drag a node to move it.
+- Right-click a node, or select it and press Delete, to remove it.
+- **Reset** returns a curve to neutral.
+- The **muted/on** box switches a tool off without deleting it.
 
-### The Vocal tool
+Two tools of the same kind cannot overlap on one clip.
 
-Vocal and Wah are the **same tool in the mix file** (Wah with a Cut-off). The mix file has no Vocal tool, so the app remembers which of your Wah tools you made as Vocal: choose **Vocal** from the + Tool menu, or tick "use as the vocal filter" in a Wah tool's panel.
+## Vocal tool
 
-- In the app, mix previews and audio exports play Vocal tools as the vocal filter and Wah tools as Wah.
-- On a Pacemaker, the tool plays as the vocal filter **only with Revival firmware 180096073 or later and the Vocal filter switched on** in the Device page (see [The Device page](device-page.md)). Otherwise the Pacemaker plays it as an ordinary Wah.
-- The mark is kept in this app, not in the mix. A copy of a Vocal tool is a Wah tool until you mark it. Save as and Duplicate keep the marks.
-- The filter works on the centre of the stereo picture, where most vocals sit. Wide or doubled vocals are only partly affected. See [Effects on the Pacemaker](pm-effects.md).
+Choose **Vocal** from the + Tool menu, or tick "use as the vocal filter" in a Wah tool panel.
 
-## Exporting the audio
+Plays as the vocal filter on a Pacemaker only with firmware 180096073 or later and the Vocal filter switched on in the Device page ([The Device page](device-page.md)). Otherwise it plays as Wah. See [Effects on the Pacemaker](pm-effects.md).
 
-Press **Export audio...** in the mix toolbar. Nothing in your library changes.
+A copied Vocal tool becomes Wah until you tick "use as the vocal filter". Save as and Duplicate keep it.
 
-### Part of the mix
+## Export audio
 
-Export **the whole mix**, **a time range** (From and to), or **from one track to another** (from a track to the end of another). A part starts and ends cleanly: effects start fresh at the cut, so a reverb tail from before the start is not in this part, and a tool already running at the start begins from its start. **Preview this part** plays it as the export will make it.
+Press **Export audio...** in the mix toolbar.
+
+1. Choose the range: whole mix, a time range (From, to), or from one track to another. **Preview this part** plays it.
+2. Set loudness and format (below).
+3. Press **Choose file and export...** and name the file.
+
+**Cancel export** stops it and keeps no file.
 
 ### Loudness
 
-- **Target loudness**: Off (keep the level the mix has), Streaming (-14 LUFS), Club (-9 LUFS) or Custom (any value from -60 to 0 LUFS).
-- **Level the tracks**: no, to the median loudness of the tracks, or to a fixed loudness.
-- **Measure loudness** reads the mix and finds the gains the export will use. Nothing is written. A measurement goes out of date if the mix, the range or the settings change.
-- The gain is applied before a master limiter, which keeps peaks under -0.2 dBFS. A target the limiter would have to fight for is missed, and the result says by how much. **More settings** has the limits (how far the gain may raise or lower the mix, a true-peak ceiling, the fade at a cut).
-- "Play the editor's preview at the export level" makes the live preview match.
+| Setting | Options |
+|---|---|
+| Target loudness | Off, Streaming (-14 LUFS), Club (-9 LUFS), Custom (-60 to 0 LUFS) |
+| Level the tracks | No, to the median loudness, or to a fixed loudness |
 
-### File and tags
+- **Measure loudness** previews the gains without writing a file.
+- **More settings**: gain limits, true-peak ceiling, fade at a cut.
+- "Play the editor's preview at the export level" matches the live preview to the export.
+
+### Format
 
 | Format | Notes |
 |---|---|
-| Ogg Vorbis | Small lossy files, what the original Editor wrote. Quality from smallest to best |
-| MP3 | Lossy, plays everywhere. Constant or variable bitrate, joint or plain stereo, encoder effort |
-| FLAC | Lossless, usually half to two thirds the size of a WAV |
+| Ogg Vorbis | Small lossy files. Quality setting |
+| MP3 | Constant or variable bitrate, joint or plain stereo, encoder effort |
+| FLAC | Lossless |
 | WAV (16-bit) | Uncompressed |
 
-The dialog shows an estimate of the file size. You choose the file name in the save window, and a name ending in another format's extension uses that format. Tags (title, artist, cover and so on) are written into the exported file only.
+The dialog shows the estimated file size. Tags (title, artist, cover) go into the exported file.
 
-Press **Choose file and export...**. The export measures first if loudness is on, then renders. **Cancel export** stops it and keeps no file.
+## Track list and CUE sheet
 
-### Track list and CUE sheet
-
-**Track list** gives each track's start time as text, CSV, YouTube chapters or a CUE sheet. The Settings page says where a track's start time falls, how seconds are rounded, how close tracks are joined for YouTube, and whether a CUE sheet is written next to every audio export (Settings, Mixes, Track list and CUE sheet).
-
-## Defaults live in Settings
-
-Tools, tempo matching, audio export and the track list all have settings with defaults under **Settings, Mixes**: see [The Settings page](settings-page.md).
+**Track list** gives each track's start time as text, CSV, YouTube chapters or a CUE sheet. Options are in Settings, Mixes, Track list and CUE sheet. Other tool and export defaults are under **Settings, Mixes** ([The Settings page](settings-page.md)).

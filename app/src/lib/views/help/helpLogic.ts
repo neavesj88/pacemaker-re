@@ -414,7 +414,29 @@ export type Entry = {
   /** The whole body as one line of text. */
   text: string;
   textL: string;
+  /** The body cut at its headings: the chapters a search hit can point into. The text before the first heading has none. */
+  sections: Section[];
 };
+
+export type Section = { heading: { text: string; slug: string } | null; text: string; textL: string; headingL: string };
+
+/** The blocks cut at every heading: each piece's heading and its plain text (the heading included). */
+export function sectionsOf(blocks: Block[]): Section[] {
+  const out: Section[] = [];
+  let cur: { heading: Section["heading"]; blocks: Block[] } = { heading: null, blocks: [] };
+  const flush = () => {
+    const text = blocksText(cur.blocks);
+    if (text || cur.heading) out.push({ heading: cur.heading, text, textL: text.toLowerCase(), headingL: cur.heading ? cur.heading.text.toLowerCase() : "" });
+  };
+  for (const b of blocks) {
+    if (b.t === "h") {
+      flush();
+      cur = { heading: { text: b.text, slug: b.slug }, blocks: [b] };
+    } else cur.blocks.push(b);
+  }
+  flush();
+  return out;
+}
 
 export type HelpIndex = {
   entries: Entry[];
@@ -442,6 +464,7 @@ export function buildIndex(articles: readonly Article[]): HelpIndex {
       summaryL: article.summary.toLowerCase(),
       text,
       textL: text.toLowerCase(),
+      sections: sectionsOf(blocks),
     };
   });
   const vocab = new Set<string>();
@@ -493,6 +516,8 @@ export type Hit = {
   snippet: Seg[] | null;
   /** Where the best match was. */
   where: "title" | "keyword" | "heading" | "summary" | "body";
+  /** The chapter (heading) of the article that matches best, the one the snippet is from; null when the match is not inside a chapter. */
+  chapter: { text: Seg[]; slug: string } | null;
 };
 
 /** The other spelling of a word: colo(u)r, analy(s/z)e, organi(s/z)e. The articles use either, a searcher may type the other. */
@@ -672,14 +697,37 @@ export function search(index: HelpIndex, query: string, limit = 50, opts: Search
         if (e.keywordsL.includes(phrase)) score += 100; // the question is itself one of the article's keywords
         if (e.textL.includes(phrase)) score += 10;
       }
-      const snippet = snippetFor(e, marks);
-      hits.push({ article: e.article, score, partial: !needAll, title: highlight(e.article.title, marks), snippet: snippet ? highlight(snippet, marks) : null, where: best });
+      const sec = bestSection(e, forms);
+      const snippet = (sec && snippetAround(sec.text, marks)) ?? snippetFor(e, marks);
+      const chapter = sec?.heading ? { text: highlight(sec.heading.text, marks), slug: sec.heading.slug } : null;
+      hits.push({ article: e.article, score, partial: !needAll, title: highlight(e.article.title, marks), snippet: snippet ? highlight(snippet, marks) : null, where: best, chapter });
     }
     hits.sort((a, b) => b.score - a.score || a.article.order - b.article.order || a.article.title.localeCompare(b.article.title));
     return hits.slice(0, limit);
   };
   const all = run(true);
   return all.length > 0 || words.length < 2 || opts.partial === false ? all : run(false);
+}
+
+/**
+ * The chapter holding most of the searched words (each word counted once, in any of its forms), a word in the
+ * chapter's heading counting double; the earlier chapter on a tie. Null when no chapter has any of them.
+ */
+export function bestSection(e: Entry, forms: readonly (readonly string[])[]): Section | null {
+  let best: Section | null = null;
+  let bestScore = 0;
+  for (const s of e.sections) {
+    let score = 0;
+    for (const fs of forms) {
+      if (fs.some((f) => s.headingL.includes(f))) score += 2;
+      else if (fs.some((f) => s.textL.includes(f))) score += 1;
+    }
+    if (score > bestScore) {
+      best = s;
+      bestScore = score;
+    }
+  }
+  return best;
 }
 
 function snippetFor(e: Entry, words: readonly string[]): string | null {

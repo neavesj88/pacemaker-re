@@ -4,28 +4,61 @@ title: Set builder
 topic: Library tools
 order: 1
 keywords: set builder, set, order, harmonic, camelot, key moves, energy curve, lock, leave out, solve, order the set, save as case, create mix, target length
-summary: Puts tracks in a good running order by key, tempo and (optionally) an energy curve, then saves the result as a case or lays it out as a mix.
+summary: Orders tracks by key, tempo and an optional energy curve, then saves the result as a case or a mix.
 ---
 
 # Set builder
 
-**Set builder** (under Tools) orders a pile of tracks into a set. It never changes the case you start from.
+**Set builder** (under Tools) orders tracks into a set. The source case is not changed.
 
-## Steps
+## Build a set
 
-1. Choose a source at the top: a case, or **Selected tracks** (select tracks in the Tracks view first, or right-click and choose Build a set). A case also has a **Build a set** button.
-2. Press **Order the set**. The tracks are put in an order that moves smoothly between keys and tempos. Press **Re-solve** to try again after you change the settings.
-3. Adjust by hand. You can drag tracks (or press Alt+Up and Alt+Down), **lock** a track so ordering leaves it where it is (Lock all and Unlock all), or **leave out** tracks you do not want. Left-out tracks are listed below and can be added back.
-4. **Save as case...** makes a new case from the order. **Create mix...** lays the tracks out as a mix with the beat-match and transition tools.
+1. Choose a source: a case, or **Selected tracks** (select in Tracks, right-click, Build a set). A case also has a **Build a set** button.
+2. Press **Order the set**. Press **Re-solve** after changing settings.
+3. Adjust the order.
+4. Press **Save as case...** or **Create mix...** ([Building a mix](mixes-building.md)).
 
-**Undo** (Ctrl+Z) steps back through your edits and **Original order** returns to the order the tracks came in. **Reload** reads the source again and drops locks and edits (you are asked first).
+## Adjust the order
 
-## The settings beside the list
+- Drag tracks, or press Alt+Up and Alt+Down.
+- **Lock** keeps a track in place. **Lock all** and **Unlock all** apply to every track.
+- **Leave out** removes a track from the set. Left-out tracks are listed below and can be added back.
+- **Undo** (Ctrl+Z) steps back.
+- **Original order** restores the source order.
+- **Reload** re-reads the source and drops locks and edits.
 
-- **Key moves that count as good**: same key, relative major or minor (8A to 8B), one step round the wheel (8A to 7A or 9A), two steps, diagonal (8A to 9B or 7B) and a semitone up or down. A pair no ticked move covers is a clash. A track with no key counts as neutral.
-- **Tempo**: the largest jump between neighbours (a percentage), and whether half and double time count as matching (70 BPM after 140). A slider decides how much key counts against tempo.
-- **Energy curve**: None, or Warm-up, peak, cool-down; where the peak falls and how strictly it is followed. It needs tracks with an energy under the Energy source setting: see [BPM, keys and waveforms](bpm-keys-waveforms.md). With none, the curve changes nothing and the panel says so.
-- **Target length**: with a target, the tracks that fit least are left out until the total is as close as it can be. It is the sum of play times; a mix made from the set comes out a little shorter because the transitions overlap.
-- Order the set as soon as tracks are loaded, and a size limit for automatic ordering (a bigger source loads in its own order and waits for Re-solve).
+## Settings
 
-All of these are saved, and the Settings page has the same entry: see [The Settings page](settings-page.md). Mixes are covered in [Building a mix](mixes-building.md).
+All settings also appear on the Settings page ([The Settings page](settings-page.md)).
+
+### Key moves
+
+Tick the moves that count as good. Any other pair is a clash. A track with no key is neutral.
+
+- Same key
+- Relative major or minor (8A to 8B)
+- One step round the wheel (8A to 7A or 9A)
+- Two steps
+- Diagonal (8A to 9B or 7B)
+- Semitone up or down
+
+### Tempo
+
+- Largest jump between neighbours, as a percentage.
+- Half and double time count as matching.
+- Slider: how much key counts against tempo.
+
+### Energy curve
+
+- None, or Warm-up, peak, cool-down.
+- Peak position and strictness.
+- Needs track energy; without it the curve has no effect ([BPM, keys and waveforms](bpm-keys-waveforms.md)).
+
+### Target length
+
+Tracks that fit least are left out until the total is closest to the target. A mix made from the set is slightly shorter because transitions overlap.
+
+### Automatic ordering
+
+- Order the set as soon as tracks are loaded.
+- Size limit: a bigger source waits for Re-solve.

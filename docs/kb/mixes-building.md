@@ -4,77 +4,114 @@ title: Building a mix
 topic: Mixes
 order: 1
 keywords: view menu, clip height, whole mix strip, overview, shrink, mix, mixes, mix editor, timeline, clip, track table, add tracks, drag, playhead, snap, zoom, follow, scroll, double-click, cue, play, preview, live play, save, save as, undo, pmk, import, setlist, track list, cue sheet, mix tempo, unsaved
-summary: Make a mix from the track table under the timeline, move and trim clips, play it live, and save it.
+summary: Build a mix from the track table, arrange and trim clips on the timeline, play it live and save it.
 ---
 
 # Building a mix
 
-A **mix** is a set of tracks laid out on a timeline with crossfades and tools, saved in a file the Pacemaker can play. **Mixes** in the sidebar lists them. The Mix editor is where you build one. The small **?** beside the mix name opens this article.
+Open **Mixes** in the sidebar to list mixes.
 
 ## The mix list
 
-- **New mix** starts an empty one. **Open**, **Rename**, **Duplicate** and **Delete** work on the picked mixes.
-- **Import .pmk** brings in a mix file made with the original Tonium Editor or the Pacemaker. **Export .pmk** writes saved mixes as .pmk files.
-- **Setlist** makes a printable list of a mix. **Tags and colour** labels mixes (kept by this app only).
-- The search box finds mixes by name (and, if you turn it on, genre, producer, remixer and comments).
+| Control | Action |
+|---|---|
+| **New mix** | Start an empty mix |
+| **Open**, **Rename**, **Duplicate**, **Delete** | Act on the picked mixes |
+| **Import .pmk** | Import a mix file from the original Tonium Editor or the Pacemaker |
+| **Export .pmk** | Write saved mixes as .pmk files |
+| **Setlist** | Print a list of a mix |
+| Search box | Find mixes by name; optionally genre, producer, remixer, comments |
+| **Tags and colour** | Label mixes |
 
-## Putting tracks in
+With nothing selected, the right panel edits the mix: name, mix tempo, genre, comments.
 
-Open a mix and press **Tracks** in the toolbar to show the track table under the timeline. It is the real Tracks table, with its own search box, filters (including the case filter), columns and sort, remembered separately from the Tracks view. Drag the grip on its top edge to make it taller or shorter.
+## Add tracks
 
-Add tracks any of these ways:
+Press **Tracks** in the toolbar to show the track table under the timeline. Drag its top edge to resize it.
 
-- Drag rows from the table onto the mix bar.
+- Drag rows onto the mix bar.
 - Double-click a row, or press Enter, to add it at the playhead.
 - Select rows and press **Add at playhead** or **Add to end**.
-- From anywhere, press **Add to mix** on a track in [the Tracks view](tracks-view.md).
+- Press **Add to mix** on a track in [the Tracks view](tracks-view.md).
 
-Tracks are matched to the mix tempo as they are added if that setting is on: see [Crossfades, tempo and Match all](mixes-crossfades-tempo.md).
+Tempo on add: [Crossfades, tempo and Match all](mixes-crossfades-tempo.md).
 
-## Moving a clip that has a transition
+## Move and trim clips
 
-Drag, nudge, trim, Beat-align or retime a clip and the crossfade on its overlap follows it, together with the EQ, filter, echo and roll tools that the transition placed. The crossfade and its tools are re-fitted to the new overlap in the editor, in what you hear, in the saved file and in an audio export. It is one Undo step per move. Details and the rules are in [Crossfades, tempo and Match all](mixes-crossfades-tempo.md); to turn it off, use Settings, Mixes, Auto transitions, **When a clip moves**.
+- Drag a clip by its name to move it. Drag a clip edge to trim it.
+- In an overlap, a click selects the later clip. Select the earlier one with Tab.
+- Crossfades and transition tools follow a clip you move, trim, Beat-align or retime. Setting: **Settings > Mixes > Auto transitions > When a clip moves** ([details](mixes-crossfades-tempo.md)).
+- **Delete** removes the selected clips after a prompt.
+- **Ctrl+Z** and **Ctrl+Y** undo and redo any mix edit.
 
-## Moving around the timeline
+## Snap
 
-- Clips sit on one bar in their own colours. Drag a clip by its name to move it. Drag a clip edge to trim it. Where two clips overlap they are drawn over each other, each in its own colour and see-through, with the crossfade lines over both. A click in the overlap takes the clip that comes in last; reach the earlier one on its own part, by its edge, or with Tab.
-- **Snap** (tick box, on by default) lines a clip up with its neighbour's beat grid when you drag it over, or up against, another clip: downbeat on downbeat for Bar, phrase start on phrase start for Phrase, any beat for Beat. The box next to it chooses Beat, Bar (the default), Phrase (8 bars) or Section (where detected sections begin). Hold **Alt** while dragging to move freely. Both choices are remembered. A green line shows the beat it lined up on.
-- **Beat-align** (toolbar, the clip panel, and the right-click menu) does the same in one step for the selected clip, or for the incoming clip of a selected crossfade, and Undo puts it back. It moves the clip to the nearest place where the grids agree and does not change its tempo, so use **Match all** first when the tempos differ. A clip whose track has no beat grid is not moved; the message says so.
-- **Zoom** and **Fit** change the scale. Ctrl and the wheel zooms at the pointer; zooming never leaves a clip without its waveform. Shift and the wheel scrolls sideways.
-- **View** (toolbar) holds how the timeline looks. Each choice is changed live and remembered, and is also in **Settings > Mixes > Mix editor view**:
-  - **Clip height**: *Shrinks as you zoom out* (the default) makes the clips as tall as the window allows when zoomed in and shorter as you zoom out, down to a height where the name, the section labels and the crossfades can still be read; the room it frees goes to the track table under the mix, which grows as the clips shrink (with the table closed, the tools strip takes it). The whole-mix strip is paid for by the track table, not the clips, so zoomed in the clips are as tall as they were without it. The waveform is drawn the same way, just shorter. *Always full height* keeps the zoomed-in height at every zoom.
-  - **Whole-mix strip** (on by default): a thin strip above the ruler that always shows the whole mix, with every clip in its colour, the overlaps and the playhead, and a box over the part shown below. Click in the strip to centre the view there; drag the box to scroll; the box gets narrower as you zoom in. Using it counts as scrolling yourself, so it pauses following (see below). Turn it off to give its height back to the track table.
-  - **Sections on the clips**: draws the detected sections on the clips.
-  - **Follow the playhead while playing**, and whether it follows *Smoothly* or *A page at a time* (the same as the tick in the transport and Settings > Mixes > Following the playhead).
-  Snap, Curves and Beat-align stay in the toolbar, because they change the mix rather than the view.
-- **Curves** (Gain, Tempo, Key) draw one kind of envelope over the bar so you can edit it: click on the selected clip to add a node, drag to move it, right-click to remove it.
-- Click a clip, a crossfade or a tool block to see its panel on the right. With nothing selected, the panel is the mix itself: name, mix tempo, genre and comments.
+The **Snap** tick box (on by default) lines a dragged clip up with its neighbour's beat grid. The box beside it sets the unit:
 
-Delete removes the selected clips after asking, and Ctrl+Z brings them back until you save and close. Ctrl+Z and Ctrl+Y undo and redo anything in the mix.
+| Unit | Lines up |
+|---|---|
+| Beat | Any beat |
+| Bar (default) | Downbeat on downbeat |
+| Phrase | Phrase start on phrase start (8 bars) |
+| Section | Section starts |
 
-## Playing the mix
+Hold **Alt** while dragging to move freely.
 
-The transport at the bottom of the editor plays the mix live from the computer.
+## Beat-align
 
-- **Play** or the Space bar plays and pauses. The first and last buttons jump to the start and the end.
-- **Double-click** the ruler, a clip or an empty part of the timeline to move the playhead there. If the mix is playing it carries on from the new place; if it is stopped, only the playhead moves. With **Snap** on, the playhead goes to the nearest snap point the Snap setting names, if one is close; hold **Alt** while double-clicking to put it exactly under the pointer. A double-click never moves a clip: dragging does. A double-click right on a clip's edge handle, a crossfade or a button does nothing to the playhead, because those have their own jobs; double-click a little way in. Space always plays and pauses (a button you reached with the Tab key keeps Space for itself).
-- **follow playhead** scrolls the timeline with the playhead while the mix plays. By default it scrolls smoothly: the view stays put until the playhead has reached a spot 40 % in from the left, then moves a little at a time so the playhead stays there, and stops when the end of the mix reaches the right edge. Zooming while it follows keeps the playhead where it is on screen and carries on following. If you scroll the timeline yourself, or zoom while it is not following, it stops following so it does not fight you, and **Follow again** (next to the tick) or Play, or a click on the ruler, brings it back; the view then slides back to the playhead over about half a second instead of jumping. Untick it to stop following altogether. How it scrolls (smoothly, or a page at a time when the playhead reaches the edge) and where the playhead sits are in **Settings > Mixes > Following the playhead**.
-- **Master** is the preview volume only (it is not saved in the mix).
-- The preview plays the crossfades, tools and tempo changes of the mix. When you have set loudness for the export, the preview plays at the level the last analysis found, and says "export level".
-- A long mix reads the tracks nearest the playhead first. How much decoded audio is kept in memory is the Playback memory setting: by default the computer decides (an eighth of its memory, from 256 to 1024 MB, so a small computer keeps fewer tracks decoded), and you can type your own number instead.
+**Beat-align** (toolbar, clip panel, right-click menu) moves the selected clip, or the incoming clip of a selected crossfade, to the nearest place where the beat grids agree. Tempo is unchanged; use **Match all** first when tempos differ.
 
-## Saving
+## Zoom and scroll
 
-- **Save** (Ctrl+S) writes the mix to the library. The button is greyed until something changed.
-- **Save as** (Ctrl+Shift+S) saves a new mix under another name and leaves this one as last saved.
-- A coloured dot beside the name means unsaved changes. Leaving with unsaved changes asks whether to save, discard or keep editing.
-- If the toolbar says "N problems blocking save", hover it for the list. Typical problems are two tools of the same kind overlapping on one clip.
-- If a restore or Sync changed the mix in the library while you had it open, you can Reload (drop your edits) or Keep my edits.
+**Zoom** and **Fit** set the scale. **Ctrl** + wheel zooms at the pointer; **Shift** + wheel scrolls sideways.
 
-> The **mix tempo** is not stored in the mix file. When a mix is opened again it starts at its first track's tempo, and the toolbar says so.
+## Timeline view
 
-## Getting the mix out
+**View** (toolbar) options are also in **Settings > Mixes > Mix editor view**.
 
-- **Track list** gives the start times of the tracks as text, CSV, YouTube chapters or a CUE sheet.
-- **Export audio** renders the mix to a file: see [Mix tools and audio export](mixes-tools-export.md).
-- **Setlist** prints a list.
+| Option | Effect |
+|---|---|
+| Clip height: *Shrinks as you zoom out* (default) | Clips shrink as you zoom out; the track table gets the room |
+| Clip height: *Always full height* | Zoomed-in height at every zoom |
+| Whole-mix strip (on by default) | Strip above the ruler showing the whole mix. Click to centre the view; drag the box to scroll |
+| Sections on the clips | Show detected sections |
+| Follow the playhead while playing | *Smoothly* or *A page at a time* (also **Settings > Mixes > Following the playhead**) |
+
+## Curves
+
+**Curves** (Gain, Tempo, Key) draws one envelope kind over the bar. Click the selected clip to add a node, drag to move it, right-click to remove it.
+
+## Play the mix
+
+The transport at the bottom plays the mix live.
+
+| Control | Action |
+|---|---|
+| **Play** / Space | Play and pause |
+| First / last buttons | Jump to start / end |
+| Double-click ruler, clip or empty timeline | Move the playhead there (to the nearest snap point when Snap is on) |
+| **Alt** + double-click | Put the playhead exactly under the pointer |
+| **follow playhead** | Scroll the timeline with the playhead |
+| **Follow again** | Resume following after you scrolled |
+| **Master** | Preview volume |
+
+- **Playback memory** setting: decoded audio held in memory. Default: an eighth of the computer's memory, 256 to 1024 MB; type a number to override.
+
+## Save
+
+| Action | Shortcut | Result |
+|---|---|---|
+| **Save** | Ctrl+S | Write the mix to the library |
+| **Save as** | Ctrl+Shift+S | Save under another name |
+
+- A dot beside the name marks unsaved changes. Closing asks whether to save, discard or keep editing.
+- "N problems blocking save": hover for the list (usually two tools of one kind overlapping on a clip).
+- If the mix changed in the library while open (restore or Sync), choose **Reload** or **Keep my edits**.
+
+> The mix tempo is not saved. A reopened mix starts at its first track's tempo.
+
+## Get the mix out
+
+- **Track list**: track start times as text, CSV, YouTube chapters or a CUE sheet.
+- **Export audio**: see [Mix tools and audio export](mixes-tools-export.md).
+- **Setlist**: print a list.

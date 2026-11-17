@@ -4,66 +4,90 @@ title: The Device page
 topic: Device page
 order: 1
 keywords: device page, backup, verify backup, library health, missing audio, find files, fix, clean up, unused files, restore snapshot, edit history, undo, device settings, settings.dat, presets, eject, storage, firmware, vocal filter, safety, snapshot
-summary: Every card on the Device page: storage, library health, firmware, vocal filter, backup, restore, undo, safety and the Pacemaker's own settings, and how to eject.
+summary: The Device page shows storage, library health, firmware, backup, restore, undo and settings for a connected Pacemaker, and ejects it safely.
 ---
 
 # The Device page
 
-**Device** (under Tools) is the control room for a Pacemaker that is open in the app. For a library on this computer the page is called **This library** and shows only the cards that are about the library itself: Library health, Restore from a snapshot, Edit history and Safety settings. The cards for storage, firmware, the vocal filter, settings.dat and eject need a real Pacemaker.
+**Device** (under Tools) manages the connected Pacemaker. For a library on this computer it is called **This library** and shows only Library health, Restore from a snapshot, Edit history and Safety settings.
 
 ## Eject
 
-The **Eject** button at the top asks Windows to eject the Pacemaker safely. Always eject before unplugging, and wait for "Do not disconnect" on the Pacemaker's screen to clear. After an eject the page says the drive was ejected and it is safe to unplug. Jobs that write wait for each other, so eject is unavailable while one is running.
+1. Press **Eject**.
+2. Wait for "Do not disconnect" to clear on the Pacemaker's screen.
+3. Unplug when the page says it is safe.
 
-## The cards
+## Storage
 
-### Storage
+- **Clean up N unused files...** reviews files under Music that no track uses.
+- **Free up space...** opens [Free space](free-space.md).
 
-A bar shows how much space music, grids and mixes, and other files take, and how much is free. Below it are the number of tracks, mixes and cases. **Clean up N unused files...** reviews files under Music that no track uses, and **Free up space...** opens [Free space](free-space.md). To get a bigger store inside the Pacemaker, see [Upgrading the storage to a microSD card](storage-upgrade.md).
+For a bigger store see [Upgrading the storage to a microSD card](storage-upgrade.md).
 
-### Library health
+## Library health
 
-Four checks, each with a tick or a cross:
+| Check | Action when it fails |
+| --- | --- |
+| Database matches what the Pacemaker requires | Library is read-only until fixed |
+| Every track has its audio file | **Show tracks**; **Find files...** searches elsewhere; **Fix...** removes rows with no audio |
+| Every track has a usable beat grid | **Analyse...** or **Fix...** |
+| No unused files under Music | **Review...** lists every file |
 
-- The database matches what the Pacemaker requires. If not, the library stays read-only until fixed.
-- Every track has its audio file. If some do not, **Show tracks**, **Find files...** (looks for the files elsewhere, optionally matching by tags and length) or **Fix...** (removes rows with no audio; rows a mix uses are kept).
-- Every track has a usable beat grid. If not, **Analyse...** or **Fix...**.
-- No unused files under Music. If there are, **Review...** lists every one by name. Beat grids of removed tracks are ticked, audio and other files are your call, and only ticked files are deleted after you confirm. Deleting audio is permanent.
+In **Review...** only ticked files are deleted, after you confirm. Deleting audio is permanent.
 
-### Firmware
+## Firmware
 
-Shows the firmware, software and bootloader numbers and the masked serial number. **Install firmware...** copies a firmware file to the Pacemaker. See [Installing firmware with the app](install-firmware.md). The small **?** on this card opens that article.
+Shows the firmware, software and bootloader numbers. **Install firmware...** copies a firmware file to the Pacemaker. See [Installing firmware with the app](install-firmware.md).
 
-### Vocal filter
+## Vocal filter
 
-Three choices for the Wah effect: **Off** (stock Wah), **Vocal** (Wah pad right keeps the vocals, left cuts them) and **Vocal inverted** (the other way round). It needs Revival firmware 180096073 or later and takes effect at the next Pacemaker start. If a file named `revival-no-preload` is on the card, the Pacemaker plays stock Wah whatever you choose, and the card says so. See [Effects on the Pacemaker](pm-effects.md).
+Sets the Wah effect. Needs Revival firmware 180096073 or later; applies at the next Pacemaker start. See [Effects on the Pacemaker](pm-effects.md).
 
-### Backup
+| Choice | Effect |
+| --- | --- |
+| **Off** | Stock Wah |
+| **Vocal** | Wah pad right keeps vocals, left cuts them |
+| **Vocal inverted** | Reverse of Vocal |
 
-**Back up...** makes a snapshot of the library in a new folder called pacemaker-backup and the date, inside a folder you choose: the database (tracks, mixes, cases), the Pacemaker settings, the system file and every beat grid. Audio is left out unless you tick **Include the audio files**. Each file is compared with its source right after writing, and a SHA-256 list is saved beside the copy. Nothing on the Pacemaker is changed.
+A file named `revival-no-preload` on the card forces stock Wah; the card says so.
 
-**Verify a backup...** re-reads every file of a backup folder against its SHA-256 list, so you can trust a backup before you need it. The system may answer the first check from its cache, so run Verify again later to read from the disk. **Back up before you change storage, install firmware or sync with removals.**
+## Backup
 
-### Restore from a snapshot
+- **Back up...** copies the database, settings and beat grids into a new dated folder you choose. Tick **Include the audio files** to copy audio.
+- **Verify a backup...** checks every file of a backup folder.
 
-Before the first change to a library in each session, the app copies the database (music.db) to its own data folder (never onto the Pacemaker) and keeps the last 10. If the copy fails, nothing is written. **Restore** puts one back: tracks, cases and mixes return to how they were then. Audio files, beat grids and the Pacemaker settings are not touched, so a bulk tempo or grid edit is not undone by it. This is **not** the Pacemaker's own "Restore hard drive" function.
+Back up before changing storage, installing firmware or syncing with removals.
 
-### Edit history
+## Restore from a snapshot
 
-Lists your recent edits (a rating, a tag, a heart) so you can undo back to one. Keeps the last N edits (a safety setting), and **Clear** empties it. A short Undo prompt also appears after an edit.
+The app keeps the last 10 library snapshots, taken before the first change in each session. **Restore** returns tracks, cases and mixes to the chosen snapshot. Audio, beat grids and Pacemaker settings are not changed.
 
-### Safety settings
+> This is not the Pacemaker's own "Restore hard drive" function.
 
-How many edits are kept to undo (0 switches the history off), how long the undo prompt stays, and an extra check that refuses a fix that would remove more than a set percentage of tracks. Saved on this computer.
+## Edit history
 
-### Device settings
+Lists recent edits (rating, tag, heart) so you can undo back to one. **Clear** empties the list.
 
-Reads the Pacemaker's `settings.dat` and lets you edit its settings (the same ones as in [The settings menu](pm-settings-menu.md)) here, grouped by folder. Changed values are marked "changed". **Write N changes...** shows each change before rewriting the file. Levels and EQ are raw engine values, so they are shown but not editable. If the card says the drive has no settings file, the Pacemaker creates it the first time it is shut down. Do not write while the Pacemaker is running: eject, then power it on. A new firmware number deletes this file, so settings reset: see [Installing firmware with the app](install-firmware.md).
+## Safety settings
 
-### Settings presets
+- Number of edits kept for undo. 0 switches history off.
+- How long the Undo prompt stays.
+- A check that refuses a fix removing more than a set percentage of tracks.
 
-Saves the current settings under a name, applies a saved preset to a Pacemaker, and imports or exports preset files. Handy after a firmware install resets the settings.
+## Device settings
 
-## If something is wrong
+Edits the Pacemaker's `settings.dat`. The settings match [The settings menu](pm-settings-menu.md).
 
-See [Troubleshooting and FAQ](troubleshooting.md).
+1. Change values.
+2. Press **Write N changes...**. Each change is shown before the file is rewritten.
+
+- Levels and EQ are read-only.
+- Eject and power on the Pacemaker before writing. Do not write while it runs.
+- If there is no settings file, the Pacemaker creates it at its first shutdown.
+- A new firmware number deletes it. See [Installing firmware with the app](install-firmware.md).
+
+## Settings presets
+
+Save the current settings under a name, apply a saved preset to a Pacemaker, and import or export preset files.
+
+See also [Troubleshooting and FAQ](troubleshooting.md).

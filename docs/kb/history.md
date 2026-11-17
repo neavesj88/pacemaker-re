@@ -4,33 +4,39 @@ title: History and the play log
 topic: Library tools
 order: 2
 keywords: history, play history, recently played, most played, never played, sessions, play log, play counter, plays, save as case, delete log
-summary: What was played and when, built from the Pacemaker's play counters, with tabs for sessions, most played, never played, cases and mixes, and the play log.
+summary: Shows what was played and when: sessions, most played, never played, cases and mixes, and a play log.
 ---
 
 # History and the play log
 
-**History** (in the sidebar) shows what has been played. It reads the play counters the Pacemaker keeps.
+**History** (in the sidebar) shows what has been played, from the play counters on the Pacemaker. Bring counters into the library with [Sync](sync.md).
 
-The Pacemaker stores only each track's most recent play time and a count, not a log. The app rebuilds sessions from those times. A library on this computer gets its counters from a Pacemaker through [Sync](sync.md).
+## Tabs
 
-## The tabs
-
-| Tab | What it shows |
+| Tab | Shows |
 |---|---|
-| Recently played | Sessions, newest first. A pause longer than the **gap** you choose (1, 2, 4, 8 or 12 hours, and so on) starts a new session. A track played on several nights shows only in the latest |
-| Most played | Tracks ordered by play count |
-| Never played | Tracks with a count of zero. A long list is shown in pages: Show more or Show all |
+| Recently played | Sessions, newest first. A pause longer than the **gap** (1, 2, 4, 8 or 12 hours, and so on) starts a new session |
+| Most played | Tracks by play count |
+| Never played | Tracks with a count of zero. Use Show more or Show all |
 | Cases and mixes | Which cases and mixes have been played |
-| Play log | See below |
+| Play log | See Play log below |
 
-Each row has **Play**, **Edit** (the metadata editor) and **Find** (jump to the track in the Tracks view; if filters hide it, they are cleared, which is a setting). Each session and list has a button to **save it as a case**, which asks for a name first.
+## Row actions
 
-## The play log
+- **Play**
+- **Edit**: opens the metadata editor.
+- **Find**: jumps to the track in the Tracks view.
 
-The app can keep its own log of counter changes, so you get real sessions by date instead of rebuilt ones. It is kept by this app for each library and is not on the Pacemaker.
+To keep a session or list, press **save it as a case** and enter a name.
 
-- The first time, choose what to do with the log: keep this library's, continue another drive's log, or start a new one.
-- Pick a period (or a from and to date), the session gap and how many to show. There is a ranking of the most played tracks in the period, and a history of one track.
-- Plays appear after the library is opened again following a Sync that brought in new plays, or a session on the Pacemaker.
-- **Log settings** has the gap that starts a new session, how long the log is kept and how it identifies a track.
-- **Delete log...** removes the log this app keeps for the library, after asking. It does not touch the library itself.
+## Play log
+
+The play log records counter changes per library, giving real sessions by date.
+
+New plays appear after you [Sync](sync.md) and reopen the library.
+
+1. On first use, choose: keep this library's log, continue another drive's log, or start a new one.
+2. Pick a period (or a from and to date), the session gap and how many sessions to show.
+3. Read the ranking of most played tracks, or the history of one track.
+
+**Log settings** sets the session gap, how long the log is kept and how a track is identified. **Delete log...** removes the library's log after asking.

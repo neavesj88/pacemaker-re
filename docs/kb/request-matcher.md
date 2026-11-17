@@ -9,16 +9,27 @@ summary: Paste or open a list of wanted tracks and see which you already own, wh
 
 # Request list matcher
 
-**Track matcher** (under Tools) compares a list of wanted tracks with the library. Nothing leaves your computer: the list is compared here.
+**Track matcher** (under Tools) compares a list of wanted tracks with the library.
 
-## Steps
+## Match a list
 
-1. Paste lines like `Artist - Title` into the box, or press **Open file...** for a text, CSV, TSV or M3U file. A Spotify, Beatport or YouTube playlist saved as text or CSV works the same way. Lines with only a title also work.
-2. Press **Match**. A progress figure shows while it works.
-3. Look through the lines. Each is **owned**, **to check** or **missing**, and you can filter the list by those. Lines that could not be read are listed under "lines skipped".
-4. Fix any line by hand: **Use best** takes the best suggestion, **Find...** or **Change...** picks a track yourself, **Not owned** marks it missing and **Undo** goes back to the automatic answer.
-5. Take the missing list away: **Copy list**, **Save .txt** or **Save .csv**. It holds exactly the lines the Missing filter shows (and the lines to check, if you include them), as `Artist - Title`.
+1. Paste lines such as `Artist - Title`, or press **Open file...** for a text, CSV, TSV or M3U file. Spotify, Beatport and YouTube playlists saved as text or CSV work too.
+2. Press **Match**.
+3. Each line is **owned**, **to check** or **missing**. Filter by these. Unreadable lines are listed under "lines skipped".
 
-## Settings
+## Correct a line
 
-Settings, Import and export, **Request list matcher**: how plain lines are read, the scores that count as owned, to check and missing, how mix names such as "(Extended Mix)" count, and how many suggestions a line gets.
+| Button | Action |
+|---|---|
+| **Use best** | Takes the best suggestion |
+| **Find...** / **Change...** | Pick a track yourself |
+| **Not owned** | Marks the line missing |
+| **Undo** | Returns to the automatic answer |
+
+## Export the missing list
+
+**Copy list**, **Save .txt** or **Save .csv** output the lines the Missing filter shows (plus lines to check, if included) as `Artist - Title`.
+
+## Options
+
+Settings, Import and export, **Request list matcher**: how plain lines are read, the scores for owned, to check and missing, how mix names such as "(Extended Mix)" count, and how many suggestions a line gets.

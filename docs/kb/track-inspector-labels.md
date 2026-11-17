@@ -4,48 +4,45 @@ title: The Inspector, tags, ratings and colours
 topic: Tracks
 order: 3
 keywords: inspector, details panel, tags, colour, color label, rating, stars, energy, favourite, metadata, edit metadata, matching tracks, labels, key, bpm, edit
-summary: The panel on the right of the Tracks view, and how to tag, colour, rate and set the energy of tracks. Tags, colours and energy stay in this app.
+summary: The Inspector panel shows a selected track and sets its BPM, key, rating, tags, colour and energy.
 ---
 
 # The Inspector, tags, ratings and colours
 
-Click a track in [the Tracks view](tracks-view.md) and the Inspector on the right shows it. With several tracks selected it shows the last one you clicked, and the buttons act on all of them.
+Click a track in [the Tracks view](tracks-view.md) to show it in the Inspector. With several tracks selected, the buttons act on all of them.
 
-## What the Inspector shows
+## Inspector contents
 
-- The waveform overview. If the track is loaded in the player, click it to seek.
-- **BPM**, with **Edit** (type a BPM; the beat grid is rewritten with it), **Double BPM** and **Halve BPM**. You see each track's old and new BPM before anything is written. A **needs analysis** or **suspect grid** badge appears when the grid is missing or looks wrong. See [BPM, keys and waveforms](bpm-keys-waveforms.md).
-- **Key**, as a Camelot code and a musical name, with **Edit** to set it by hand.
-- **Rating**: click a star. Click the same star again to clear it.
-- **Labels**: the colour, energy bar and tags.
-- Played count, genre, length, file format and size, and the cases that hold the track.
-- **Matching tracks**: tracks with a compatible key and a BPM within 4 percent, so you can pick the next track. Needs a known key and BPM.
+- Waveform overview. Click it to seek when the track is in the player.
+- **BPM** with **Edit**, **Double BPM** and **Halve BPM**. Old and new BPM show before anything is written. A **needs analysis** or **suspect grid** badge marks a missing or wrong grid. See [BPM, keys and waveforms](bpm-keys-waveforms.md).
+- **Key** as Camelot code and musical name, with **Edit**.
+- **Rating**: click a star. Click the same star to clear.
+- **Labels**: colour, energy bar, tags.
+- **Matching tracks**: compatible key and BPM within 4 percent.
 
-## Buttons
-
-Play, Edit metadata, Tags colour and energy, Edit grid, Favourite, Add to case, Add to mix, Show in Explorer and Re-analyse. Edit grid opens [the beat grid editor](grid-editor.md).
+Buttons: Play, Edit metadata, Tags colour and energy, Edit grid ([The beat grid editor](grid-editor.md)), Favourite, Add to case, Add to mix, Show in Explorer, Re-analyse.
 
 ## Tags, colour and energy
 
-Press **Tags, colour, energy...** (or right-click a track and choose it). In the editor you can:
+Press **Tags, colour, energy...** or right-click a track.
 
-- Add tags: type one and press Enter, or type several separated by commas. A tag can be up to 40 characters and a track can have up to 32.
-- Pick one of eight colours: red, orange, yellow, green, teal, blue, purple, pink.
-- Set an energy from 1 to 10 for how intense the track is.
-- Manage tags across the whole library: rename, merge or delete a tag.
+| Setting | Values |
+|---|---|
+| Tags | Type and press Enter, or separate with commas. Up to 40 characters per tag, 32 per track |
+| Colour | red, orange, yellow, green, teal, blue, purple, pink |
+| Energy | 1 to 10 |
 
-With several tracks selected, the editor changes them together.
+Rename, merge or delete a tag library-wide. Cases and mixes can be tagged and coloured from their own lists.
 
-Tags, colours and energy are **kept by this app only**. They are not stored on the Pacemaker, and the Pacemaker cannot show them. Sync can carry them to a library on this computer: see [Sync](sync.md).
+Tags, colour and energy are not stored on the Pacemaker and the unit cannot show them. [Sync](sync.md) carries them to a library on this computer.
+
+Search them with `tag:peak`, `colour:red`, `energy:7-9`. See [Search syntax](search-syntax.md).
 
 ## Ratings and favourites
 
-Ratings are 0 to 5 stars and are written to the library, so the Pacemaker sees them. A favourite is a track in a case called Favourites; the heart in the table and the Favourite button add it or remove it.
+- Rating: 0 to 5 stars. Written to the library, so the Pacemaker shows it.
+- Favourite: adds the track to the Favourites case. The table heart and the Favourite button toggle it.
 
-## Metadata
+## Edit metadata
 
-**Edit metadata...** opens the title, artist, album, genre and other text fields. To fix many tracks at once with recipes, use [Tidy metadata](tidy-metadata.md).
-
-## Using labels
-
-Colours and tags show in the table, and you can search for them: `tag:peak`, `colour:red`, `energy:7-9` (see [Search syntax](search-syntax.md)). Cases and mixes can be tagged and coloured too, from their own lists.
+**Edit metadata...** opens title, artist, album, genre and other text fields. For many tracks use [Tidy metadata](tidy-metadata.md).

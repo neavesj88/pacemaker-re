@@ -114,7 +114,7 @@
       <h3 id="area-Help">Help</h3>
       {#each helpHits as h (h.article.id)}
         <article class="entry">
-          <button type="button" class="hit" onclick={() => openHelp(h.article.id)}>
+          <button type="button" class="hit" onclick={() => openHelp(h.article.id, { anchor: h.chapter?.slug ?? null })}>
             <span class="name">{#each h.title as s, si (si)}{#if s.hit}<mark>{s.text}</mark>{:else}{s.text}{/if}{/each}</span>
             <span class="help muted">
               {#if h.snippet}{#each h.snippet as s, si (si)}{#if s.hit}<mark>{s.text}</mark>{:else}{s.text}{/if}{/each}{:else}{h.article.summary}{/if}

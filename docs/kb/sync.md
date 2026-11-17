@@ -9,35 +9,38 @@ summary: Copy tracks, mixes and cases from one library to the other, either way,
 
 # Sync
 
-**Sync** copies tracks, mixes and cases between your library on this computer and a Pacemaker (or another library). It is in the sidebar once there is a library on this computer.
+**Sync** (in the sidebar) copies tracks, mixes and cases in one direction between the library on this computer and a Pacemaker or another library.
 
-## Steps
+## Run a sync
 
-1. Connect the Pacemaker (or put its storage in a card reader) and press **Rescan** if it is not listed. If its library is in a folder, use **Open folder...**.
-2. Choose **From** and **To**. The arrows button swaps them. The shortcuts **Send to Pacemaker** and **Get from Pacemaker** set the pair for you.
-3. Press **Check what would change**. Nothing is written yet.
-4. Read the plan. It is grouped into **Tracks**, **Mixes**, **Cases** and (only if you turned it on) **Removals**. Each item says what will be done to it. Untick any you do not want, with **Tick all** or **Leave all out** per group.
-5. Press the Sync button. A progress card shows the work, and the result says what happened and whether anything failed.
+1. Connect the Pacemaker (or put its storage in a card reader) and press **Rescan** if it is not listed. For a library in a folder, use **Open folder...**.
+2. Choose **From** and **To**. The arrows button swaps them. **Send to Pacemaker** and **Get from Pacemaker** set the pair.
+3. Press **Check what would change**. Nothing is written.
+4. Read the plan, grouped into **Tracks**, **Mixes**, **Cases** and **Removals** (only if enabled). Untick unwanted items, or use **Tick all** / **Leave all out** per group.
+5. Press the Sync button.
 
-If the plan was made before something changed (another job ran, or a key was written), Sync says it is out of date and asks you to check again. It never applies a stale plan.
+If the plan is reported out of date, check again.
 
-## What happens to things on both sides
+## Sync settings
 
-The **Sync settings** (a section on the Sync page, and under Settings, Library) decide:
+In the **Sync settings** section of the Sync page, and in Settings, Library.
 
 | Situation | Choices |
 |---|---|
-| A track is on both sides | Take the sending library's details when they are newer (default), always take the sending library's details, or leave both |
-| A mix has the same name | Replace it when the sending library's is newer, always replace it, keep both (the new one gets a different name), or leave the one that is there |
-| A case has the same name | Merge (keep its order and add the tracks it lacks), replace it, or leave the one that is there |
-| Play counts | Keep the higher count and the later date, or leave them |
-| Tags, colour labels and energy | Travel with the copied tracks (on or off) |
-| Removals | **Off by default: nothing is ever removed.** When on, items the receiving library has and the sending library lacks are listed under Removals, each named, and removed only if you leave them ticked and confirm |
+| Track on both sides | Take the sending library's details when newer (default); always take them; leave both |
+| Mix with the same name | Replace when the sending library's is newer; always replace; keep both (the new one is renamed); leave the existing one |
+| Case with the same name | Merge (keep its order, add missing tracks); replace; leave the existing one |
+| Play counts | Keep the higher count and later date; or leave them |
+| Tags, colour labels, energy | Travel with copied tracks (on or off) |
+| Removals | Off by default. When on, items missing from the sending library are listed under Removals and removed only if left ticked and confirmed |
 
-**Back up first** if you turn removals on: see [The Device page](device-page.md).
+Back up before enabling removals: see [The Device page](device-page.md).
 
-## Tips
+## Bring plays into the computer library
 
-- Sync is a copy from one side to the other, not a merge of both. To bring plays from a Pacemaker into your library on this computer, choose Get from Pacemaker: [History](history.md) uses them.
-- Background analysis waits while a Sync plan is on screen, so a key written meanwhile cannot make the plan out of date. See [Background analysis](background-analysis.md).
-- To copy a few items by hand with drag and drop, use [Libraries](libraries.md).
+Choose **Get from Pacemaker**. [History](history.md) uses the plays.
+
+## Related
+
+- [Background analysis](background-analysis.md) pauses while a plan is on screen.
+- To copy a few items by drag and drop, use [Libraries](libraries.md).

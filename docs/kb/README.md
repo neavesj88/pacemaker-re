@@ -1,45 +1,43 @@
 # Pacemaker Revival knowledge base
 
-These are the help articles of Pacemaker Revival, written for a DJ rather than a developer. They are plain Markdown, so you can read them here on GitHub. The app **bundles these very files** at build time and shows them in its **Help** view (press F1), where they are searchable offline. There is one copy: edit the article here and the app picks it up on the next build.
+The help articles of Pacemaker Revival. The app bundles these files and shows them in its **Help** view (F1), searchable offline, with search hits that open at the matching chapter.
 
-If you are new, start with [Getting started](getting-started.md). If something is wrong, try [Troubleshooting and FAQ](troubleshooting.md).
-
-Articles about hardware and the Pacemaker itself say how sure each statement is: **verified** (read from the manual or the firmware, or tested on a unit), **likely**, or **unverified**.
+New: [Getting started](getting-started.md). Problems: [Troubleshooting and FAQ](troubleshooting.md).
 
 ## Start here
 
-- [Getting started](getting-started.md): The two kinds of library, what the Welcome screen offers, how to add tracks and what the app does with them in the background.
-- [Using the Help](using-help.md): How to search the help, the keyboard shortcuts, and where the same articles can be read on GitHub.
-- [The Settings page](settings-page.md): One page for every setting of the app, grouped by area, with its own search that also finds help articles.
+- [Getting started](getting-started.md): Open or create a library, add tracks, and send the result to the Pacemaker.
+- [Using the Help](using-help.md): Search the built-in help, use its keyboard shortcuts, and read the same articles on GitHub.
+- [The Settings page](settings-page.md): One page holding every setting of the app, grouped by area, with a search that also finds help articles.
 
 ## Tracks
 
-- [The Tracks view](tracks-view.md): The table of every track in the open library, its columns, filters, sorting, saved filters and the right-click menu.
-- [Search syntax](search-syntax.md): Everything the search box understands, with an example for each: words, phrases, fields, ranges, comparisons, keys, tags, dates, flags, not and or.
-- [The Inspector, tags, ratings and colours](track-inspector-labels.md): The panel on the right of the Tracks view, and how to tag, colour, rate and set the energy of tracks. Tags, colours and energy stay in this app.
+- [The Tracks view](tracks-view.md): Lists every track in the open library with sortable columns, filters, saved filters, a right-click menu and a player bar.
+- [Search syntax](search-syntax.md): Reference for the search box query language: words, phrases, fields, ranges, comparisons, keys, tags, dates, flags, not and or.
+- [The Inspector, tags, ratings and colours](track-inspector-labels.md): The Inspector panel shows a selected track and sets its BPM, key, rating, tags, colour and energy.
 
 ## Analysis and grids
 
-- [BPM, keys and waveforms](bpm-keys-waveforms.md): How the app reads tempo (and the BPM range setting that decides half or double time), how keys and Camelot codes work, and what the waveform pictures and colours are.
-- [The beat grid editor](grid-editor.md): Check and correct a track's beat grid: nudge it, halve or double the tempo, set the downbeat and the cue point, undo, and save.
-- [Background analysis](background-analysis.md): What the app analyses by itself, when it pauses, why a key can be held back, and what the couldn't-analyse list means.
+- [BPM, keys and waveforms](bpm-keys-waveforms.md): Set the BPM range that decides half or double time, detect and set Camelot keys, choose waveform colours, and read energy and sections.
+- [The beat grid editor](grid-editor.md): Check and correct a track's beat grid by nudging beats, halving or doubling the tempo, setting the downbeat and cue point, then saving.
+- [Background analysis](background-analysis.md): Fills in missing waveforms, keys, energy and sections for every track in the open library while you work, with pause rules and a retry list.
 
 ## Cases
 
-- [Cases and smart cases](cases.md): Cases are the Pacemaker's playlists. Make them by hand, or let a smart case fill itself from rules.
+- [Cases and smart cases](cases.md): Cases are the Pacemaker's playlists, made by hand or filled automatically by smart case rules.
 
 ## Mixes
 
-- [Building a mix](mixes-building.md): Make a mix from the track table under the timeline, move and trim clips, play it live, and save it.
-- [Crossfades, tempo and Match all](mixes-crossfades-tempo.md): How crossfades work, the eight transition recipes, beat-matching, matching every track to the mix tempo (half and double time aware), and fine BPM steps.
-- [Mix tools and audio export](mixes-tools-export.md): Add effects, loops and reverse regions to a clip (including the Vocal tool), then render the mix to an audio file with loudness, format and tags.
+- [Building a mix](mixes-building.md): Build a mix from the track table, arrange and trim clips on the timeline, play it live and save it.
+- [Crossfades, tempo and Match all](mixes-crossfades-tempo.md): Set crossfades, build transitions from eight recipes, beat-match clips, and match every track to the mix tempo.
+- [Mix tools and audio export](mixes-tools-export.md): Add effects, loops and reverse regions to a clip, then export the mix as an audio file.
 
 ## Library tools
 
-- [Set builder](set-builder.md): Puts tracks in a good running order by key, tempo and (optionally) an energy curve, then saves the result as a case or lays it out as a mix.
-- [History and the play log](history.md): What was played and when, built from the Pacemaker's play counters, with tabs for sessions, most played, never played, cases and mixes, and the play log.
-- [Duplicates](duplicates.md): Finds tracks that are the same recording, shows how the copies differ and merges them, with removing and deleting files as separate choices.
-- [Library gap map](gap-map.md): A picture of how your library spreads over tempo, key, genre and energy, with the thin spots called out.
+- [Set builder](set-builder.md): Orders tracks by key, tempo and an optional energy curve, then saves the result as a case or a mix.
+- [History and the play log](history.md): Shows what was played and when: sessions, most played, never played, cases and mixes, and a play log.
+- [Duplicates](duplicates.md): Finds tracks that are the same recording and merges them into one.
+- [Library gap map](gap-map.md): Shows how the library spreads over tempo, key, genre and energy, with thin spots marked.
 - [Import and export](import-export.md): Bring tracks and playlists in from files and other DJ software, watch folders for new music, and send cases, mixes and the library out as lists.
 - [Request list matcher](request-matcher.md): Paste or open a list of wanted tracks and see which you already own, which to check and which are missing.
 - [Stems (vocals and instrumentals)](stems.md): Make vocal and instrumental versions of tracks on this computer, saved in a folder you choose.
@@ -53,32 +51,32 @@ Articles about hardware and the Pacemaker itself say how sure each statement is:
 
 ## Device page
 
-- [The Device page](device-page.md): Every card on the Device page: storage, library health, firmware, vocal filter, backup, restore, undo, safety and the Pacemaker's own settings, and how to eject.
+- [The Device page](device-page.md): The Device page shows storage, library health, firmware, backup, restore, undo and settings for a connected Pacemaker, and ejects it safely.
 
 ## Firmware and hardware
 
-- [Installing firmware with the app](install-firmware.md): Step by step with the Firmware card on the Device page. The card in a PC reader is the reliable way, the Pacemaker boots with USB unplugged, and a new firmware number resets the settings.
-- [Upgrading the storage to a microSD card](storage-upgrade.md): Replace the Pacemaker's 1.8-inch hard drive with a microSD card on a ZIF adapter. What to buy (in general terms), what we used, what works, what to avoid, and why firmware decides how much of the card you can use.
-- [Other ways to upgrade the storage](storage-alternatives.md): A comparison of the ways to replace the 1.8-inch hard drive (microSD adapters, iFlash boards, CompactFlash, mSATA, a ZIF SSD, another hard drive), with what is verified and what is only reported.
-- [Ways to install firmware](firmware-methods.md): Five ways to get a firmware file onto the Pacemaker: the app, copying by hand, the restore-library script, the Pacemaker's own USB, and DFU recovery. Each as short steps, with what is verified.
-- [Replacing the battery](battery-replacement.md): What people have fitted in the Pacemaker, what is and is not known about the battery and its connector, and how to measure the old cell and choose a replacement without guessing. Li-ion safety first.
+- [Installing firmware with the app](install-firmware.md): The Firmware card on the Device page checks a .pfw file, copies it to the Pacemaker and shows the steps to finish the install.
+- [Upgrading the storage to a microSD card](storage-upgrade.md): Replace the Pacemaker's 1.8-inch hard drive with a microSD card on a ZIF adapter, including parts, card requirements and install steps.
+- [Other ways to upgrade the storage](storage-alternatives.md): Compares the ways to replace the 1.8-inch hard drive: microSD adapters, iFlash boards, CompactFlash, mSATA, ZIF SSD and another hard drive.
+- [Ways to install firmware](firmware-methods.md): Five ways to put a firmware file on the Pacemaker or recover a unit that will not start: the app, manual copy, restore-library.py, USB and DFU.
+- [Replacing the battery](battery-replacement.md): Replace the Pacemaker's single lithium-polymer cell: specification, cells that fit, and the removal and soldering steps.
 
 ## Using the Pacemaker
 
-- [Controls tour](pm-controls-tour.md): What every control on the Pacemaker does: the display, the touchpad, the P-switch, the crossfader and the buttons. Start here for the player's guide.
-- [Power and charging](pm-power-charging.md): How to switch the Pacemaker on and off, charge it from USB or the adapter, and how long a charge lasts.
+- [Controls tour](pm-controls-tour.md): Every control on the Pacemaker and what it does.
+- [Power and charging](pm-power-charging.md): Switch the Pacemaker on and off, charge it from USB or the power adapter, and check how long a charge lasts.
 - [Browsing and loading tracks](pm-browsing-loading.md): Open the track list, move through it, filter by genre, BPM and more, and load a track onto a channel.
-- [Mixing and beatmatching](pm-mixing.md): How to cue a track in your headphones, match its tempo by hand or with one press, blend with the crossfader and use the EQ.
-- [Effects, EQ and the Vocal filter](pm-effects.md): The effects the Pacemaker has, how to use them from the touchpad, how to change which effect is on which pad slot, and the Revival Vocal filter.
-- [Cues, loops and reverse](pm-cues-loops.md): Setting and using a cue point, making and adjusting a loop, and playing in reverse on the Pacemaker.
-- [Recording mixes and making cases](pm-recording.md): How to record a live mix on the Pacemaker, what Halt does, and how to make and edit cases (playlists) on the unit.
-- [The settings menu](pm-settings-menu.md): One table of every setting in the Pacemaker's settings menu, with its options and default, and how to change them from the app.
-- [Connecting to a computer](pm-computer-connection.md): How the Pacemaker looks to a computer, how to connect and disconnect safely, and what the original Editor and this app do with it.
-- [Button combinations and recovery](pm-button-combos-recovery.md): The key combinations held at power-on (DFU, debug menu, diagnostics), what each one does, and which can wipe your library.
+- [Mixing and beatmatching](pm-mixing.md): Cue a track in the headphones, match its tempo by hand or with one press, blend with the crossfader and adjust EQ and gain.
+- [Effects, EQ and the Vocal filter](pm-effects.md): Use the Pacemaker's effects from the touchpad, change the pad layout and enable the Revival Vocal filter.
+- [Cues, loops and reverse](pm-cues-loops.md): Set a cue point, make and adjust a loop, and play in reverse on the Pacemaker.
+- [Recording mixes and making cases](pm-recording.md): Record a live mix on the Pacemaker and make and edit cases (playlists) on the unit.
+- [The settings menu](pm-settings-menu.md): Every setting in the Pacemaker's settings menu with its options and default, and how to change them from the app.
+- [Connecting to a computer](pm-computer-connection.md): Connect the Pacemaker to a computer over USB, disconnect safely, and copy music and playlists to it.
+- [Button combinations and recovery](pm-button-combos-recovery.md): The key combinations held at power-on (DFU, debug menu, diagnostics), what each does, and which can erase the library.
 
 ## Problems and answers
 
-- [Troubleshooting and FAQ](troubleshooting.md): Fixes for the common problems: the Pacemaker not seen, firmware not installing, "hard drive needs checking", slow loading on an SD card, a half-tempo BPM, and missing keys on drum tracks.
+- [Troubleshooting and FAQ](troubleshooting.md): Fixes for a Pacemaker not detected, failed firmware installs, the hard drive check message, slow SD card loading, wrong BPM octave and missing keys.
 
 ## Writing an article
 
@@ -96,5 +94,7 @@ summary: One sentence for the list and the search results.
 ```
 
 Then `# Title` and the text. Link to another article with a normal relative link such as `[text](storage-upgrade.md)` or `[text](storage-upgrade.md#what-works)`: it works on GitHub and in the app. Add every new article to this index. The tests (`npm test` in `app`) check the front matter, the links and this index.
+
+Style: a reference, not a conversation. Per feature: what it is in one line, how to use it (numbered steps), its options in a table with labels, ranges and defaults. Use `##` chapters named after tasks; search hits open at them. Leave out how it works inside, why, test status, and project plans. Keep a one-line warning only where a step can lose data or harm the hardware.
 
 Keep names, serial numbers and personal library details out of the articles: this repository is public.

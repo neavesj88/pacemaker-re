@@ -4,42 +4,38 @@ title: Using the Help
 topic: Start here
 order: 2
 keywords: help, search, f1, ctrl, shortcut, knowledge base, articles, offline, question mark
-summary: How to search the help, the keyboard shortcuts, and where the same articles can be read on GitHub.
+summary: Search the built-in help, use its keyboard shortcuts, and read the same articles on GitHub.
 ---
 
 # Using the Help
 
-The help is a set of short articles inside the app. It works without an internet connection.
+The help works offline.
 
-## Messages
+## Search
 
-Messages that pop up at the bottom of the window are one short sentence: what happened and one number. When there is more to say (every name, the full error, every warning) the message has a **Details** button. Some messages have a button of their own, such as **Undo** after a transition, Beat-match, Beat-align or Match all; it works only while that is still your latest edit, otherwise use Ctrl+Z. A message stays while the pointer is on it. How long a failure stays up is in Settings, Appearance.
+1. Press **F1** or click **Help** in the sidebar.
+2. Type words, for example `battery`, `sd card`, `crossfader` or `bpm:`.
+3. Up and Down move, Enter opens, Esc clears.
 
-## Finding an article
-
-1. Press **F1** anywhere in the app, or click **Help** in the sidebar. The cursor is in the search box.
-2. Type a few words, for example `battery`, `sd card`, `crossfader` or `bpm:`. Results appear as you type.
-3. Use the Up and Down arrow keys to move through the results and press Enter to open one. Esc clears the search.
-
-The search looks in titles, keywords, headings and the text of every article. Matches in the title or keywords come first, and each result shows a short piece of text around the match with the match marked. Every word you type must be found, so adding a word narrows the list.
-
-With no search, the list on the left groups every article by topic.
+Search covers titles, keywords, headings and text. Every word must match. Without a search, articles are grouped by topic.
 
 ## Shortcuts
 
-| Keys | What they do |
+| Keys | Action |
 |---|---|
-| F1 | Open Help from anywhere (Back returns you to where you were) |
+| F1 | Open Help from anywhere |
 | Ctrl+/ | Open Help with the cursor in the search box |
-| Up, Down, Enter | Walk through the list and open an article |
+| Up, Down, Enter | Move and open |
 | Esc | Clear the search |
 
-## The small question marks
+## Question-mark links
 
-Some places in the app have a small **?** beside them: the Settings page, the Mix editor, and the Firmware and Storage cards on the Device page. They open the article that explains that part.
+A **?** opens the matching article. It appears on the Settings page, the Mix editor, and the Firmware and Storage cards of the Device page.
 
-## Reading the articles on GitHub
+## Messages
 
-The articles are plain Markdown files in the project's `docs/kb` folder, and the app uses those same files. Their links between articles work on GitHub too. The index is `docs/kb/README.md`.
+**Details** shows names, the full error and warnings. **Undo** on a message (after a transition, Beat-match, Beat-align or Match all) works only while it is the latest edit; otherwise use Ctrl+Z. Failure display time: Settings, Appearance.
 
-Searching the Settings page also lists matching help articles under a Help heading: see [The Settings page](settings-page.md).
+## Read on GitHub
+
+The articles are in `docs/kb`; the index is `docs/kb/README.md`.

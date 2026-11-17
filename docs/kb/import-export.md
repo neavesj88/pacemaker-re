@@ -9,37 +9,40 @@ summary: Bring tracks and playlists in from files and other DJ software, watch f
 
 # Import and export
 
-**Import** (under Tools) is the one place for getting music and lists in and out. Everything shows you a preview before it writes.
+**Import** (under Tools) brings music and lists in and out. Every operation shows a preview first.
 
-## Music files
+## Add music files
 
-**Add tracks...** (also at the top of every view) picks files. You can also drop files or folders anywhere in the window. Each is analysed, copied into the library and added with its beat grid. Adding is unavailable while another job runs, while the library is read-only, or after a Pacemaker was ejected.
+Press **Add tracks...** or drop files or folders anywhere in the window. Each file is analysed and added with its beat grid.
+
+Adding is unavailable while another job runs, while the library is read-only, or after a Pacemaker was ejected.
 
 ## Watch folders
 
-Folders on this computer the app checks for new music. Under Settings you choose how often it looks, how old a file must be before it counts (so a file still being copied is not picked up half-written) and whether it adds tracks by itself or waits for you. Results are listed below the folder list.
+The app checks watch folders for new music. Settings: how often it looks, how old a file must be, and whether new tracks are added automatically or wait for you.
 
-## Other DJ software
+## Import from other DJ software
 
-| Source | What comes in | What does not |
+| Source | Imported | Not imported |
 |---|---|---|
-| rekordbox (XML) | Ratings, playlists and the first memory cue become ratings, cases and (if you choose) cue points. Export writes tracks with their tempo grids, ratings, keys and cases | Beat grids are not imported |
-| iTunes / Music (Library.xml) | Ratings (0 to 100 become 0 to 5 stars) and playlists, as cases | |
-| Serato | Crates become cases. Pick the `_Serato_` folder to read every crate in it, or a single `.crate` file. A crate holds only file paths, so tracks are matched to the library by path | |
-| Traktor (collection.nml) | Ratings, playlists and the first cue of each track, as ratings, cases and (if you choose) cue points | Colours and beat grids |
+| rekordbox (XML) | Ratings, playlists (as cases), first memory cue (optional) | Beat grids |
+| iTunes / Music (Library.xml) | Ratings (0 to 100 become 0 to 5 stars), playlists as cases | |
+| Serato | Crates, as cases | |
+| Traktor (collection.nml) | Ratings, playlists (as cases), first cue of each track (optional) | Colours, beat grids |
 
-Each import shows a plan first, and you can leave items out.
+- Serato: pick the `_Serato_` folder for every crate, or one `.crate` file.
+- Untick plan items to leave them out.
+- **Import playlist** reads an M3U or M3U8 playlist as a case.
 
-## Playlists and lists
+## Export
 
-- **Import playlist** reads an M3U or M3U8 playlist as a case (relative and absolute paths, and `#EXTINF` titles).
-- Export a case, a smart case, a mix or the whole library as an **M3U8** playlist or a **CSV** list.
+- Export a case, smart case, mix or the whole library as an **M3U8** playlist or **CSV** list. Playlist files can include copies of the audio.
+- On the case page, **Export this case**. On the case list, **Export all**. See [Cases and smart cases](cases.md).
+- rekordbox export writes tracks with tempo grids, ratings, keys and cases.
+- VirtualDJ: exports a case or mix as a VirtualDJ list, optionally with audio copies. Naming and placement are in Settings.
+- Print a setlist of a case or mix. Columns, time and key styles, paper size and text size are in Settings.
 
-## Other exports
+## Related
 
-- **Cases:** Export this case on the case page, or **Export all** on the case list, for playlist files with the audio copied alongside if you like. See [Cases and smart cases](cases.md).
-- **VirtualDJ:** exports a case or a mix as a VirtualDJ list, with copies of the audio if you want them, named and placed as you choose in the settings.
-- **Setlist:** a printable list of a case or a mix, with columns, time and key styles, paper and text size set under Settings.
-- **Mix audio and track lists:** see [Mix tools and audio export](mixes-tools-export.md).
-
-To match a list of wanted tracks against what you own, see [Request list matcher](request-matcher.md).
+- [Mix tools and audio export](mixes-tools-export.md)
+- [Request list matcher](request-matcher.md)

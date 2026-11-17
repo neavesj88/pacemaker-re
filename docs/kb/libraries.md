@@ -9,22 +9,28 @@ summary: See two libraries side by side and drag tracks, mixes or cases from one
 
 # Libraries (two panes)
 
-**Libraries** (in the sidebar) shows the open library on the left and another library on the right, like the original Editor's two panes. It is offered once there is a library on this computer, or another library to put beside the open one.
+**Libraries** (in the sidebar) shows the open library on the left and another library on the right.
 
-## Using the panes
+## Panes
 
-- Each pane has a library picker, **Tracks**, **Mixes** and **Cases** tabs and a search box. Long lists scroll smoothly.
+Each pane has a library picker, **Tracks**, **Mixes** and **Cases** tabs, and a search box.
+
 - Click to pick a row, Shift-click for a range, Ctrl-click to add or remove one.
-- **Drag** the picked rows to the other pane to copy them there. The **Copy to ...** button and the row menu do the same by clicking.
-- Drop tracks on a case row of the Cases tab and they go into that case. **Into case...** lets you choose a case first.
-- The arrows button in the middle swaps the two libraries: the one on the right becomes the open library.
+- The arrows button swaps the libraries.
 
-## What a drag does
+## Copy items
 
-A drag **copies**. Before anything is written, a dialog names every item and what will be done to it, and you can leave items out. A copy only adds: nothing on the target is removed or overwritten (the settings for removals and replacements in [Sync](sync.md) are clamped for it). If the copy does not fit on the target, the dialog says so and asks you to free space or pick fewer tracks.
+1. Pick rows.
+2. Drag them to the other pane, or use **Copy to ...** or the row menu.
+3. Review the dialog. Untick items to leave them out.
+4. Confirm.
 
-The result line at the top of the page says what was copied.
+A copy only adds. Nothing on the target is removed or overwritten. If the copy does not fit, free space or pick fewer tracks.
 
-## When to use Sync instead
+## Copy tracks into a case
 
-Use [Sync](sync.md) when you want to compare whole libraries, bring plays across, or choose what happens to items that exist on both sides.
+Drop tracks on a case row in the **Cases** tab, or use **Into case...** and choose a case.
+
+## Compare whole libraries
+
+To compare whole libraries, bring plays across, or choose what happens to items on both sides, use [Sync](sync.md).

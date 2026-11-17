@@ -9,18 +9,20 @@ summary: Fix titles, artists, genres and other text across many tracks with reci
 
 # Tidy metadata
 
-**Tidy metadata** (under Tools) cleans up text fields across many tracks at once. Nothing is written until you have seen every change.
+**Tidy metadata** (under Tools) cleans text fields across many tracks.
 
-## Clean-up recipes
+## Clean up with recipes
 
-1. Choose the recipes to use: spacing, letter case, "feat." forms, promo text, replacement lists and similar. Lists can be edited.
-2. The **Preview** shows every change as a before and after, highlighted. Leave out any you do not want.
-3. Apply. The changes go into the library like any other metadata edit, and show in the edit history so they can be undone: see [The Device page](device-page.md).
+1. Choose recipes: spacing, letter case, "feat." forms, promo text, replacement lists and similar.
+2. Check the **Preview**. Leave out any change you do not want.
+3. Apply. Changes can be undone: see [The Device page](device-page.md).
 
-The recipes are set up under Settings, Library, **Metadata clean-up recipes**.
+Set up recipes in Settings, Library, **Metadata clean-up recipes**.
 
 ## Write tags to files
 
-The second tab, **Write tags to files**, writes the library's tag fields into the audio files' own tags, so other software sees them. Nothing is written until you confirm the list of files, and you choose which fields are written (Settings, Library, **Write tags to files**).
+The **Write tags to files** tab writes the library's tag fields into the audio files. Confirm the file list first. Choose the fields in Settings, Library, **Write tags to files**.
 
-For one track, use **Edit metadata...** in the Inspector: see [The Inspector, tags, ratings and colours](track-inspector-labels.md).
+## Edit one track
+
+Use **Edit metadata...** in the Inspector: see [The Inspector, tags, ratings and colours](track-inspector-labels.md).

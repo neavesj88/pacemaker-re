@@ -84,7 +84,7 @@
       const a = visible[cursor];
       if (a) {
         e.preventDefault();
-        openArticle(a.id);
+        openArticle(a.id, searching ? (hits[cursor]?.chapter?.slug ?? null) : null);
       }
     } else if (e.key === "Escape" && help.query) {
       e.preventDefault();
@@ -136,10 +136,13 @@
                   class="row"
                   class:on={help.articleId === h.article.id}
                   class:cur={cursor === i}
-                  onclick={() => openArticle(h.article.id)}
+                  onclick={() => openArticle(h.article.id, h.chapter?.slug ?? null)}
                 >
                   <span class="t">{#each h.title as s, si (si)}{#if s.hit}<mark>{s.text}</mark>{:else}{s.text}{/if}{/each}</span>
                   <span class="topic">{h.article.topic}</span>
+                  {#if h.chapter}
+                    <span class="chap">› {#each h.chapter.text as s, si (si)}{#if s.hit}<mark>{s.text}</mark>{:else}{s.text}{/if}{/each}</span>
+                  {/if}
                   {#if h.snippet}
                     <span class="snip">{#each h.snippet as s, si (si)}{#if s.hit}<mark>{s.text}</mark>{:else}{s.text}{/if}{/each}</span>
                   {:else}
@@ -294,6 +297,12 @@
     font-size: 11px;
     color: var(--muted);
     margin: 1px 0 2px;
+  }
+  .chap {
+    display: block;
+    font-size: 12px;
+    font-weight: 600;
+    margin: 0 0 2px;
   }
   .snip {
     display: block;
