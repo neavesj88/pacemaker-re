@@ -17,6 +17,7 @@
     onsort,
     rowClass,
     onrowclick,
+    onrowdblclick,
   }: {
     columns: Column[];
     rows: T[];
@@ -28,6 +29,8 @@
     onsort?: (key: string) => void;
     rowClass?: (row: T) => string;
     onrowclick?: (row: T) => void;
+    /** A double-click on a row (e.g. open it, where a single click only picks it). */
+    onrowdblclick?: (row: T) => void;
   } = $props();
 </script>
 
@@ -43,7 +46,7 @@
   </thead>
   <tbody>
     {#each rows as row (rowKey(row))}
-      <tr class={rowClass?.(row)} class:click={!!onrowclick} onclick={() => onrowclick?.(row)}>
+      <tr class={rowClass?.(row)} class:click={!!onrowclick || !!onrowdblclick} onclick={() => onrowclick?.(row)} ondblclick={() => onrowdblclick?.(row)}>
         {#each columns as c (c.key)}
           <td class:num={c.num}>
             {#if cell}{@render cell(row, c)}{:else}{(row as Record<string, unknown>)[c.key]}{/if}

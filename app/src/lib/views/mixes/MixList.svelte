@@ -258,6 +258,7 @@
         onsort={sort}
         rowClass={(m) => (selected.has(m.id) ? "picked" : "")}
         onrowclick={pickRow}
+        onrowdblclick={(m) => openMix(m.id)}
       >
         {#snippet cell(m, col)}
           {#if col.key === "sel"}
