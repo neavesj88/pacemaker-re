@@ -30,6 +30,7 @@ A microSD card on a 1.8-inch 40-pin ZIF adapter replaces the hard drive. Other o
 | Small flat tool (flat screwdriver or spudger) | ZIF latches |
 | ESD wrist strap | Protects the board |
 | PC card reader | Checking the card and, if needed, partitioning |
+| Kapton tape, foam or card | Insulating the adapter and packing it so it cannot move |
 
 The T6 size for the screws is taken from the [bergq.se guide](storage-upgrade.md#other-guides), written for the P211.
 
@@ -65,7 +66,7 @@ You also need a Revival firmware file (`.pfw`): see [Installing firmware with th
    - Drive side (second): with the drive and ribbon out, lift the latch on the drive's own connector and slide the ribbon out of the drive.
 5. Fit the ribbon to the adapter. Push it fully into the adapter's ZIF connector and close the latch: the white line on the ribbon must not be visible.
 6. Lay the adapter where the drive was, feed the ribbon end into the main board connector the same way and close the main board latch.
-7. Insert the microSD card into slot 1 of the adapter, with the second slot empty. Refit the shock-protection holder over the adapter, the same way up as before, seated in the holes in the main board. Check the ribbon is not trapped under the holder.
+7. Insert the microSD card into slot 1 (TF1), with the second slot empty. Cover the adapter and the ribbon with Kapton tape so no contact can touch the board or the case, then pack the space the drive left (foam, or folded card wrapped in Kapton) so the adapter and ribbon cannot move or rattle. The drive's shock-protection holder is not needed.
 8. Fit the back half straight down onto both connectors and refit the six screws.
 9. Switch on. On a blank card the unit shows "Sorry friend... hard drive needs checking": press **Continue**, then **Restore** at "Restore hard drive?". Wait for the restart and "Hard drive restored. Please upgrade firmware." If "hard drive needs checking" comes back, reseat the ribbon and card.
 10. Install Revival firmware 180096073 or later with the app, following [Installing firmware with the app](install-firmware.md). Docked over USB works: copy the file, eject, then unplug the USB cable before the Pacemaker powers on. The install resets the settings.
