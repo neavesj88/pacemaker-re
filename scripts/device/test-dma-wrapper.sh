@@ -42,7 +42,7 @@ cur() { awk '$1=="using_dma"{print $2}' $F/ide/settings; }
 case "$1" in
   -d) if [ "$2" = 1 ]; then
         if [ -f $F/refuse ]; then echo "HDIO_SET_DMA failed: Operation not permitted"; exit 1; fi
-        set_dma 1; [ -f $F/errd1 ] && echo "hda: dma_intr: status=0x51 { DriveReady SeekComplete Error }" >> $F/dmesg
+        set_dma 1; echo "<6>hda: enabling UDMA2 mode" >> $F/dmesg; [ -f $F/errd1 ] && echo "hda: dma_intr: status=0x51 { DriveReady SeekComplete Error }" >> $F/dmesg
       else set_dma 0; fi ;;
   -X) [ -f $F/hang ] && exec sleep 1000
       case "$2" in udma[3-5]) [ -f $F/warn ] && echo "hda: Speed warnings UDMA 3/4/5 is not functional." >> $F/dmesg ;; esac ;;
@@ -173,7 +173,7 @@ done_
 
 echo "12. level above udma2 dropped by the kernel (Speed warnings)"
 setup a; echo udma5 > "$REVIVAL_P/revival-dma"; touch "$F/warn"; run
-ck "reported as udma3" "diag | grep -q 'kernel ignored -X udma5' && diag | grep -q 'DMA ok (udma3)' && diag | grep -q 'DMA (udma3)'"
+ck "reported as the udma2 that -d 1 set" "diag | grep -q 'kernel ignored -X udma5' && diag | grep -q 'DMA ok (udma2)' && diag | grep -q 'DMA (udma2)'"
 pkill -f "$F" 2>/dev/null; done_
 
 echo "13. hdparm-boot.sh"

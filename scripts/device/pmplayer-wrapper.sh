@@ -43,6 +43,8 @@ IMG=${REVIVAL_IMG:-/mnt/private/active_sw_file}
 ERRPAT='dma_intr|DMA timeout|BadCRC|lost interrupt|ide0: reset|resetting ATA|unexpected interrupt|fifo_fill|hda: .*(error|timeout)|status=0x[0-9a-f]+ \{.*Error|I/O error'
 
 sval() { awk -v k="$1" '$1==k{print $2; exit}' $H/settings 2>/dev/null; }
+# the mode mxc_ide_dma_on set, from its own kernel line ("enabling UDMA2 mode" from 180096075, UDMA3 before)
+dma_on_level() { m=`dmesg | sed -n 's/.*enabling UDMA\([0-9]\) mode.*/\1/p' | tail -1`; echo udma${m:-2}; }
 # IDE error signature: line count plus the last matching line, so a ring-buffer wrap that evicts an old
 # line while a new one arrives still changes it
 esig() { dmesg | grep -i -E "$ERRPAT" > $T/revival-esig; wc -l < $T/revival-esig; tail -1 $T/revival-esig; }
@@ -140,13 +142,14 @@ try_dma() {  # try_dma <1 = first start of this boot>
     rm -f $TRY
     return 1
   fi
-  # -d 1 programmed host and drive for UDMA3 (hard-coded in mxc_ide_dma_on); nothing touches the disk until -X
+  # -d 1 programmed host and drive for UDMA2 (hard-coded in mxc_ide_dma_on: 0x42 from 180096075, 0x43 = UDMA3
+  # before, scripts/patch-mxc-udma2.py); nothing touches the disk until -X
   hdparm -X $lvl /dev/hda 2>&1
   sleep 1
   eff=$lvl
   if [ "`warns`" -gt "$w0" ]; then
-    eff=udma3
-    echo "kernel ignored -X $lvl (80-wire check, 'Speed warnings'): host and drive stay at the UDMA3 that -d 1 set"
+    eff=`dma_on_level`
+    echo "kernel ignored -X $lvl (80-wire check, 'Speed warnings'): host and drive stay at the $eff that -d 1 set"
   fi
   why=
   got=`sample`

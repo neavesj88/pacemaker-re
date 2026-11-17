@@ -224,4 +224,32 @@ kernel's UDMA3 re-enable after an error (above).
 2. Word 53 and 93 of IDENTIFY, `hdparm -I` output, and whether the kernel log has "Speed warnings UDMA 3/4/5".
 3. The PIO `hdparm -tT` figures and the CPU split. If PIO 4 already gives 10+ MB/s with low CPU, DMA is not the
    cause and `unmaskirq` / `multcount` are next.
-4. With `revival-dma`: the verdict line, the DMA figures, and the "enabling UDMA3 mode" message.
+4. With `revival-dma`: the verdict line, the DMA figures, and the "enabling UDMA3 mode" message (UDMA2 from 075, section 7).
+
+## 7. 180096075: DMA at UDMA2 (`scripts/patch-mxc-udma2.py`)
+
+Reported on 074 (18 Nov 2026, DMA off): playback stutters while the browser scrolls and while other tracks load.
+074 changes nothing on that path against 073 [V]: wrapper, `ide-core.ko`, `ide-disk.ko`, `mxc_ide.ko` and
+`libvocalfx.so` are the same files; the 14 plugin libraries and the two input modules differ only in description
+or author strings (`.modinfo` / `.rodata`), and the player only in the About strings and six model pool words. The
+stutter is the PIO load of section 3: every sector is copied by the CPU, so a track load or a burst of `music.db`
+reads takes the core.
+
+Correction to the 073 reading of the diag [V, code]: `drive->current_speed` is written only by
+`ide_config_drive_speed` (the one in `mxc_ide_dma_on`); `hdparm -X` reaches the host through
+`ide_set_xfer_rate` -> `mxc_ide_set_speed`, which does not store it. So "current_speed 67" after the 073 attempt
+proves only that the adapter accepted SET FEATURES UDMA3 from `-d 1`; whether the following `-X udma2` moved host
+and drive to UDMA2 is not known. UDMA3 for a while (and for good, when the adapter refuses `-X`) is still the
+likeliest cause of the slow loads and the later "Hard drive needs checking" [H].
+
+The patch: `mxc_ide_dma_on` .text+0xb80 and +0xb98, `mov r1, #0x43` -> `mov r1, #0x42` (host timing and SET
+FEATURES), and its printk now says "enabling UDMA2 mode". 3 bytes; sections, symbols and relocations identical
+(objdump/readelf diff). `mxc_ide_set_speed` takes 0x42 on its UDMA path (index 2). Nothing enables DMA by itself:
+the adapter still needs the `revival-dma` flag, and a drive that reports DMA gets UDMA2 from `-d 1` and then the
+boot-time `-X udma5` as before. The wrapper reads the mode `-d 1` set from that kernel line (`dma_on_level`) instead
+of assuming UDMA3. Image diff 075 vs 074: `system.xml` (x2, FWVERSION), the wrapper, `mxc_ide.ko`; nothing else.
+
+To test on the device: back up the library, put an empty `revival-dma` in `.Pacemaker`, boot on battery with USB
+unplugged, play a track while scrolling and loading others, then read `revival-diag.txt`: the verdict line, the DMA
+`hdparm -t` figure, "enabling UDMA2 mode", and no IDE error lines. If it fails the wrapper writes
+`revival-dma-failed` and the card stays in PIO.
