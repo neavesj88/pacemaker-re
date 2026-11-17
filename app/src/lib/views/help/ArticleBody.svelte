@@ -140,7 +140,7 @@
   }
   img {
     display: block;
-    max-width: min(100%, 520px);
+    max-width: 100%;
     height: auto;
     border-radius: 6px;
   }

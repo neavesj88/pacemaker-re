@@ -6,6 +6,10 @@ SVG, so they stay sharp in the app's Help and on GitHub. Run with any Python 3:
 """
 import math
 import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from figures import case_outline  # noqa: E402  the traced case outline (see its docstring)
 
 OUT = os.path.join(os.path.dirname(__file__), "..", "docs", "kb", "images")
 MAGENTA = "#e0109a"
@@ -59,19 +63,14 @@ class Device:
             "display": (c, t + 72), "rew": (c - 44, t + 140), "fwd": (c + 44, t + 140),
             "ch1": (c - 26, t + 155), "ch2": (c + 26, t + 155), "xfader": (c + 30, t + 175),
             "play": (c - 44, t + 196), "cue": (c + 44, t + 196), "touchpad": (c + 18, t + 250),
-            "pswitch": (c - 64, t + 112),
+            "pswitch": (c - CASE_HW, t + 112),
         }
 
     def draw(self):
         c, t = self.cx, self.top
         o = []
-        # the body: a long rounded slab drawn with a double line, like the case and its rim
-        o.append(f'<rect x="{c - 64}" y="{t}" width="128" height="322" rx="56" {line_style(1.8)}/>')
-        o.append(f'<rect x="{c - 59}" y="{t + 5}" width="118" height="312" rx="51" {line_style(1)}/>')
-        # strap slots at both ends
-        for y in (t + 13, t + 309):
-            for dx in (-15, 15):
-                o.append(f'<rect x="{c + dx - 8}" y="{y - 3}" width="16" height="6" rx="3" {line_style(1.2)}/>')
+        # the body: the traced case outline (outer edge, the lip inside it, the four strap slots)
+        o.extend(case_body(c, t + 161))
         # display
         o.append(f'<circle cx="{c}" cy="{t + 72}" r="50" {line_style(1.6)}/>')
         o.append(f'<circle cx="{c}" cy="{t + 72}" r="41" {line_style(1.1)}/>')
@@ -91,14 +90,33 @@ class Device:
         o.append(f'<circle cx="{c}" cy="{t + 252}" r="50" {line_style(1.6)}/>')
         o.append(f'<circle cx="{c}" cy="{t + 252}" r="41" {line_style(1.1)}/>')
         # P-switch on the left edge
-        o.append(f'<rect x="{c - 67}" y="{t + 101}" width="4" height="22" rx="1.5" fill="{INK}"/>')
+        o.append(f'<rect x="{c - CASE_HW - 3}" y="{t + 101}" width="4" height="22" rx="1.5" fill="{INK}"/>')
         return "\n".join(o)
+
+
+CASE_H = 322                       # drawn length of the case, px
+CASE_K = CASE_H / case_outline.L   # px per mm of the traced outline
+CASE_HW = round(case_outline.W / 2 * CASE_K)   # half the width of the case
+
+
+def case_body(cx, cy):
+    """The case outline centred on cx, cy: outer edge, the lip inside it and the strap slots, as svg."""
+    base = case_outline.catmull(case_outline.outline_points())
+
+    def poly(pts):
+        return "M" + " L".join(f"{cx + x * CASE_K:.1f} {cy + y * CASE_K:.1f}" for x, y in pts) + " Z"
+    o = [f'<path d="{poly(base)}" {line_style(1.8)}/>',
+         f'<path d="{poly(case_outline.inset(base, case_outline.RIM))}" {line_style(1)}/>']
+    for x, y, ln, w, ang in case_outline.slots():
+        d = case_outline.slot_d(cx + x * CASE_K, cy + y * CASE_K, ln * CASE_K, w * CASE_K, ang)
+        o.append(f'<path d="{d}" {line_style(1.2)}/>')
+    return o
 
 
 def end_view(cx, y, kind):
     """The top or bottom edge seen end-on: three buttons (top) or three sockets (bottom). Returns svg and points."""
-    o = [f'<rect x="{cx - 64}" y="{y - 13}" width="128" height="26" rx="13" {line_style(1.6)}/>',
-         f'<rect x="{cx - 52}" y="{y - 9}" width="104" height="18" rx="9" {line_style(1)}/>']
+    o = [f'<rect x="{cx - CASE_HW}" y="{y - 13}" width="{2 * CASE_HW}" height="26" rx="13" {line_style(1.6)}/>',
+         f'<rect x="{cx - CASE_HW + 12}" y="{y - 9}" width="{2 * CASE_HW - 24}" height="18" rx="9" {line_style(1)}/>']
     pts = {}
     if kind == "top":
         o.append(f'<rect x="{cx - 34}" y="{y - 4}" width="18" height="8" rx="4" {line_style(1.3)}/>')
@@ -177,7 +195,7 @@ def pswitch(up):
                 (3, "Crossfader", "headphone blend ch1 / ch2"), (4, "Touchpad", "headphone volume")]
         title = "P-switch held down"
     body = "\n".join([dev.draw()] + [callout(*c) for c in calls] + [legend(330, 60, rows, title)])
-    return svg(600, 380, body)
+    return svg(600 if up else 680, 380, body)
 
 
 def play_screen():

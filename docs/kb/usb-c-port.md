@@ -9,7 +9,7 @@ summary: Three ways to give the Pacemaker a USB-C port: a Mini-USB to USB-C adap
 
 # Replacing the USB port with USB-C
 
-The Mini-B port sits on a small board in the back cover, at the end with the Settings and Kill-all buttons. The board is about 35 mm long, held by two screws, carries the two button switches, and plugs into the main board through a 2 x 5 pin header.
+The Mini-B port sits on a small board in the back cover, at the end with the Settings and Kill-all buttons. The board is about 38 mm long, held by two screws, carries the two button switches, and plugs into the main board through a 2 x 5 pin header.
 
 ![The USB board in the back cover, both sides](images/usb-board.svg)
 

@@ -1,59 +1,126 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 730 480" width="730" height="480" font-family="Helvetica, Arial, sans-serif">
-<defs><marker id="ar" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L8 4 L0 8 Z" fill="#666"/></marker></defs>
-<rect width="730" height="480" rx="10" fill="#fff"/>
-<text x="20" y="26" font-size="13" font-weight="700" fill="#1a1a1a">Plan view: battery bay, back cover off</text>
-<path d="M30 62 H250 V110 H120 V360 H30 Z" fill="#f5f5f5" stroke="#1a1a1a" stroke-width="1.4" stroke-linejoin="round"/>
-<text x="40" y="84" font-size="11" fill="#666">Main board</text>
-<circle cx="112" cy="121" r="4" fill="none" stroke="#1a1a1a" stroke-width="1.2"/>
-<circle cx="112" cy="349" r="4" fill="none" stroke="#1a1a1a" stroke-width="1.2"/>
-<rect x="268" y="136" width="62" height="198" rx="2" fill="#f5f5f5" stroke="#1a1a1a" stroke-width="1.4"/>
-<rect x="273" y="195" width="30" height="73" rx="1.5" fill="#ececec" stroke="#1a1a1a" stroke-width="1.4"/>
-<g fill="#1a1a1a"><circle cx="280" cy="203" r="1.5"/><circle cx="296" cy="203" r="1.5"/><circle cx="280" cy="217" r="1.5"/><circle cx="296" cy="217" r="1.5"/><circle cx="280" cy="231" r="1.5"/><circle cx="296" cy="231" r="1.5"/><circle cx="280" cy="245" r="1.5"/><circle cx="296" cy="245" r="1.5"/><circle cx="280" cy="259" r="1.5"/><circle cx="296" cy="259" r="1.5"/></g>
-<rect x="306" y="222" width="17" height="22" rx="1.5" fill="none" stroke="#1a1a1a" stroke-width="1.3"/>
-<rect x="120" y="110" width="150" height="240" rx="4" fill="#ececec" stroke="#1a1a1a" stroke-width="1.8" stroke-linejoin="round"/>
-<path d="M120 124 H270" stroke="#1a1a1a" stroke-width="1"/>
-<rect x="155" y="192" width="77" height="105" rx="1" fill="#f5f5f5" stroke="#1a1a1a" stroke-width="1.3"/>
-<rect x="206" y="95" width="13" height="11" rx="1.5" fill="#fff" stroke="#1a1a1a" stroke-width="1.4"/>
-<path d="M219 99 C232 96 238 104 236 118" fill="none" stroke="#1a1a1a" stroke-width="1.8"/>
-<path d="M209 106 C206 116 222 120 230 116" fill="none" stroke="#1a1a1a" stroke-width="1.8"/>
-<path d="M120 374 H270" stroke="#666" stroke-width="1" marker-start="url(#ar)" marker-end="url(#ar)"/>
-<path d="M120 352 V380 M270 352 V380" stroke="#666" stroke-width="0.8"/>
-<text x="195" y="391" text-anchor="middle" font-size="11.5" fill="#666">about 30 mm</text>
-<path d="M346 110 V350" stroke="#666" stroke-width="1" marker-start="url(#ar)" marker-end="url(#ar)"/>
-<path d="M270 110 H352 M270 350 H352" stroke="#666" stroke-width="0.8" stroke-dasharray="3 3"/>
-<text transform="translate(362 230) rotate(-90)" text-anchor="middle" font-size="11.5" fill="#666">about 48 mm (cell spec)</text>
-<line x1="62" y1="320" x2="140" y2="320" stroke="#e0109a" stroke-width="1.2"/><circle cx="140" cy="320" r="1.8" fill="#e0109a"/><circle cx="62" cy="320" r="10" fill="#e0109a"/><text x="62" y="324" text-anchor="middle" font-size="11" font-weight="700" fill="#fff">1</text>
-<line x1="62" y1="250" x2="165" y2="250" stroke="#e0109a" stroke-width="1.2"/><circle cx="165" cy="250" r="1.8" fill="#e0109a"/><circle cx="62" cy="250" r="10" fill="#e0109a"/><text x="62" y="254" text-anchor="middle" font-size="11" font-weight="700" fill="#fff">2</text>
-<line x1="238" y1="44" x2="212" y2="101" stroke="#e0109a" stroke-width="1.2"/><circle cx="212" cy="101" r="1.8" fill="#e0109a"/><circle cx="238" cy="44" r="10" fill="#e0109a"/><text x="238" y="48" text-anchor="middle" font-size="11" font-weight="700" fill="#fff">3</text>
-<line x1="272" y1="44" x2="236" y2="106" stroke="#e0109a" stroke-width="1.2"/><circle cx="236" cy="106" r="1.8" fill="#e0109a"/><circle cx="272" cy="44" r="10" fill="#e0109a"/><text x="272" y="48" text-anchor="middle" font-size="11" font-weight="700" fill="#fff">4</text>
-<line x1="306" y1="44" x2="300" y2="150" stroke="#e0109a" stroke-width="1.2"/><circle cx="300" cy="150" r="1.8" fill="#e0109a"/><circle cx="306" cy="44" r="10" fill="#e0109a"/><text x="306" y="48" text-anchor="middle" font-size="11" font-weight="700" fill="#fff">5</text>
-<line x1="300" y1="410" x2="292" y2="264" stroke="#e0109a" stroke-width="1.2"/><circle cx="292" cy="264" r="1.8" fill="#e0109a"/><circle cx="300" cy="410" r="10" fill="#e0109a"/><text x="300" y="414" text-anchor="middle" font-size="11" font-weight="700" fill="#fff">6</text>
-<line x1="338" y1="44" x2="316" y2="226" stroke="#e0109a" stroke-width="1.2"/><circle cx="316" cy="226" r="1.8" fill="#e0109a"/><circle cx="338" cy="44" r="10" fill="#e0109a"/><text x="338" y="48" text-anchor="middle" font-size="11" font-weight="700" fill="#fff">7</text>
-<circle cx="32" cy="440" r="10" fill="#e0109a"/><text x="32" y="444" text-anchor="middle" font-size="11" font-weight="700" fill="#fff">3</text>
-<text x="50" y="437" font-size="12" fill="#1a1a1a">2-pin plug: measure the pitch (PH 2.0 / ZH 1.5 /</text>
-<text x="50" y="453" font-size="12" fill="#1a1a1a">SH 1.0 mm) and the polarity</text>
-<text x="395" y="44" font-size="13" font-weight="700" fill="#1a1a1a">Side view, same scale</text>
-<text x="395" y="70" font-size="11.5" fill="#1a1a1a">Original: about 48 x 30 x 7.2 mm, 1100 mAh</text>
-<rect x="395" y="80" width="240" height="36" rx="3" fill="#ececec" stroke="#1a1a1a" stroke-width="1.6"/>
-<path d="M625 80 V116" stroke="#1a1a1a" stroke-width="1"/>
-<text x="510" y="103" text-anchor="middle" font-size="11" fill="#1a1a1a">7.2 mm</text>
-<path d="M390 116 H645" stroke="#1a1a1a" stroke-width="1"/>
-<text x="395" y="150" font-size="11.5" fill="#1a1a1a">HXJNLDC 103048: 48.5 x 30 x 10 mm, 1600 mAh</text>
-<rect x="395" y="160" width="242.5" height="50" rx="3" fill="#ececec" stroke="#1a1a1a" stroke-width="1.6"/>
-<path d="M627 160 V210" stroke="#1a1a1a" stroke-width="1"/>
-<path d="M390 210 H645" stroke="#1a1a1a" stroke-width="1"/>
-<path d="M390 174 H652" stroke="#1a1a1a" stroke-width="1.2" stroke-dasharray="5 3"/>
-<text x="402" y="188" font-size="10.5" fill="#666">7.2 mm (original)</text>
-<text x="515" y="200" text-anchor="middle" font-size="11" fill="#1a1a1a">10 mm</text>
-<path d="M660 160 V174" stroke="#666" stroke-width="1" marker-start="url(#ar)" marker-end="url(#ar)"/>
-<text x="667" y="171" font-size="11" fill="#666">+2.8 mm</text>
-<text x="395" y="252" font-size="12" font-weight="700" fill="#1a1a1a">Check the back closes without pressing on the cell</text>
-<text x="395" y="300" font-size="13" font-weight="700" fill="#1a1a1a">Battery bay</text>
-<text x="395" y="322" font-size="12.5" fill="#1a1a1a"><tspan font-weight="700" fill="#e0109a">1</tspan><tspan dx="8" font-weight="700">Cell</tspan><tspan dx="5">pouch, about 30 mm wide</tspan></text>
-<text x="395" y="341" font-size="12.5" fill="#1a1a1a"><tspan font-weight="700" fill="#e0109a">2</tspan><tspan dx="8" font-weight="700">Foam pad</tspan><tspan dx="5">on the cell</tspan></text>
-<text x="395" y="360" font-size="12.5" fill="#1a1a1a"><tspan font-weight="700" fill="#e0109a">3</tspan><tspan dx="8" font-weight="700">2-pin plug</tspan><tspan dx="5">at the board edge</tspan></text>
-<text x="395" y="379" font-size="12.5" fill="#1a1a1a"><tspan font-weight="700" fill="#e0109a">4</tspan><tspan dx="8" font-weight="700">Wires</tspan><tspan dx="5">red / black, at the cell end</tspan></text>
-<text x="395" y="398" font-size="12.5" fill="#1a1a1a"><tspan font-weight="700" fill="#e0109a">5</tspan><tspan dx="8" font-weight="700">Small board</tspan><tspan dx="5">right of the cell</tspan></text>
-<text x="395" y="417" font-size="12.5" fill="#1a1a1a"><tspan font-weight="700" fill="#e0109a">6</tspan><tspan dx="8" font-weight="700">2x5 socket</tspan><tspan dx="5">on the small board</tspan></text>
-<text x="395" y="436" font-size="12.5" fill="#1a1a1a"><tspan font-weight="700" fill="#e0109a">7</tspan><tspan dx="8" font-weight="700">Gold contact</tspan><tspan dx="5">on the small board</tspan></text>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1010 1055" width="1010" height="1055" font-family="Helvetica, Arial, sans-serif">
+<rect width="1010" height="1055" rx="10" fill="#fff"/>
+<text x="94" y="30" font-size="15" font-weight="700" fill="#1a1a1a">Battery fit</text>
+<g transform="translate(94 56) scale(8.5)">
+<path d="M1.8000000000000007 6.0 L34.2 6.0 Q35.6 6.0 35.6 7.4 L35.6 11.5" fill="none" stroke="#1a1a1a" stroke-width="0.212" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="21.1" cy="5.6" r="3.0" fill="#fff" stroke="#1a1a1a" stroke-width="0.165" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="21.1" cy="5.6" r="0.95" fill="#e8d9a8" stroke="#1a1a1a" stroke-width="0.141" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="21.1" cy="5.6" r="0.4" fill="#fff" stroke="#1a1a1a" stroke-width="0.094" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="40.2" y="16.0" width="11.6" height="37.0" rx="1.4" fill="#f2f2f2" stroke="#1a1a1a" stroke-width="0.212" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="41.2" y="27.9" width="4.8" height="10.2" rx="0" fill="#fff" stroke="#1a1a1a" stroke-width="0.153" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="42.1" y="28.5" width="1.0" height="1.0" rx="0" fill="#1a1a1a" stroke="#1a1a1a" stroke-width="0.094" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="44.1" y="28.5" width="1.0" height="1.0" rx="0" fill="#1a1a1a" stroke="#1a1a1a" stroke-width="0.094" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="42.1" y="30.5" width="1.0" height="1.0" rx="0" fill="#1a1a1a" stroke="#1a1a1a" stroke-width="0.094" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="44.1" y="30.5" width="1.0" height="1.0" rx="0" fill="#1a1a1a" stroke="#1a1a1a" stroke-width="0.094" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="42.1" y="32.5" width="1.0" height="1.0" rx="0" fill="#1a1a1a" stroke="#1a1a1a" stroke-width="0.094" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="44.1" y="32.5" width="1.0" height="1.0" rx="0" fill="#1a1a1a" stroke="#1a1a1a" stroke-width="0.094" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="42.1" y="34.5" width="1.0" height="1.0" rx="0" fill="#1a1a1a" stroke="#1a1a1a" stroke-width="0.094" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="44.1" y="34.5" width="1.0" height="1.0" rx="0" fill="#1a1a1a" stroke="#1a1a1a" stroke-width="0.094" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="42.1" y="36.5" width="1.0" height="1.0" rx="0" fill="#1a1a1a" stroke="#1a1a1a" stroke-width="0.094" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="44.1" y="36.5" width="1.0" height="1.0" rx="0" fill="#1a1a1a" stroke="#1a1a1a" stroke-width="0.094" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="48.1" y="31.4" width="3.4" height="4.8" rx="0.3" fill="#e8d9a8" stroke="#1a1a1a" stroke-width="0.165" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="48.7" y="32.0" width="2.2" height="3.6" rx="0.2" fill="#f6edcb" stroke="#1a1a1a" stroke-width="0.094" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="55.5" cy="13.3" r="1.7" fill="#fff" stroke="#1a1a1a" stroke-width="0.153" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="55.5" cy="13.3" r="0.7" fill="#e8d9a8" stroke="#1a1a1a" stroke-width="0.118" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="55.5" cy="55.4" r="1.7" fill="#fff" stroke="#1a1a1a" stroke-width="0.153" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="55.5" cy="55.4" r="0.7" fill="#e8d9a8" stroke="#1a1a1a" stroke-width="0.118" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M29.5 8.8 Q29.6 10.0 31.6 10.1" fill="none" stroke="#2a2a2a" stroke-width="0.529" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M30.9 8.8 L33.4 9.2 Q34.4 8.6 35.0 8.0 Q36.5 7.3 38.1 7.8 Q39.5 8.4 39.5 10.4" fill="none" stroke="#1a1a1a" stroke-width="0.812" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M30.9 8.8 L33.4 9.2 Q34.4 8.6 35.0 8.0 Q36.5 7.3 38.1 7.8 Q39.5 8.4 39.5 10.4" fill="none" stroke="#c8281e" stroke-width="0.529" stroke-linecap="round" stroke-linejoin="round"/>
+<rect x="11.1" y="11.1" width="29.8" height="47.9" rx="0.9" fill="#f2f2f2" stroke="#1a1a1a" stroke-width="0.212" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="17.7" y="26.5" width="15.6" height="20.0" rx="0" fill="#d6d6d6" stroke="#1a1a1a" stroke-width="0.153" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="28.0" y="7.9" width="4.2" height="2.2" rx="0.2" fill="#fff" stroke="#1a1a1a" stroke-width="0.165" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="29.2" y="8.5" width="0.6" height="0.9" rx="0" fill="#1a1a1a" stroke="#1a1a1a" stroke-width="0.094" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="30.599999999999998" y="8.5" width="0.6" height="0.9" rx="0" fill="#1a1a1a" stroke="#1a1a1a" stroke-width="0.094" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M29.5 9.3 L29.5 10.0" fill="none" stroke="#2a2a2a" stroke-width="0.529" stroke-linecap="round" stroke-linejoin="round"/>
+<circle cx="9.25" cy="12.3" r="2.1" fill="#e8d9a8" stroke="#1a1a1a" stroke-width="0.141" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="9.25" cy="12.3" r="1.3" fill="#fff" stroke="#1a1a1a" stroke-width="0.141" stroke-linejoin="round" stroke-linecap="round"/>
+<line x1="8.45" y1="12.3" x2="10.05" y2="12.3" stroke="#1a1a1a" stroke-width="0.118"/>
+<line x1="9.25" y1="11.5" x2="9.25" y2="13.100000000000001" stroke="#1a1a1a" stroke-width="0.118"/>
+<circle cx="9.25" cy="56.3" r="2.1" fill="#e8d9a8" stroke="#1a1a1a" stroke-width="0.141" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="9.25" cy="56.3" r="1.3" fill="#fff" stroke="#1a1a1a" stroke-width="0.141" stroke-linejoin="round" stroke-linecap="round"/>
+<line x1="8.45" y1="56.3" x2="10.05" y2="56.3" stroke="#1a1a1a" stroke-width="0.118"/>
+<line x1="9.25" y1="55.5" x2="9.25" y2="57.099999999999994" stroke="#1a1a1a" stroke-width="0.118"/>
+<circle cx="4.4" cy="12.8" r="1.0" fill="#fff" stroke="#1a1a1a" stroke-width="0.141" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="4.4" cy="55.4" r="1.0" fill="#fff" stroke="#1a1a1a" stroke-width="0.141" stroke-linejoin="round" stroke-linecap="round"/>
+<line x1="11.1" y1="61.2" x2="40.900000000000006" y2="61.2" stroke="#6b6b6b" stroke-width="0.118"/>
+<path d="M11.1 61.2 L12.16 61.68 L12.16 60.72 Z" fill="#6b6b6b"/>
+<path d="M40.900000000000006 61.2 L39.84 60.72 L39.84 61.68 Z" fill="#6b6b6b"/>
+<rect x="4.0" y="76.8" width="48.0" height="7.2" rx="1.0" fill="#f2f2f2" stroke="#1a1a1a" stroke-width="0.188" stroke-linejoin="round" stroke-linecap="round"/>
+<line x1="1.5" y1="76.8" x2="1.5" y2="84.0" stroke="#6b6b6b" stroke-width="0.118"/>
+<path d="M1.5 76.8 L1.02 77.86 L1.98 77.86 Z" fill="#6b6b6b"/>
+<path d="M1.5 84.0 L1.98 82.94 L1.02 82.94 Z" fill="#6b6b6b"/>
+<rect x="4.0" y="93.0" width="48.5" height="10.0" rx="1.0" fill="#f2f2f2" stroke="#1a1a1a" stroke-width="0.188" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="4.4" y="93.4" width="47.7" height="2.4" rx="0.6" fill="#f6c9e4" stroke="#1a1a1a" stroke-width="0.000" stroke-linejoin="round" stroke-linecap="round"/>
+<line x1="2.5" y1="95.8" x2="54.0" y2="95.8" stroke="#6b6b6b" stroke-width="0.165" stroke-dasharray="2 1.2"/>
+<rect x="4.0" y="93.0" width="48.5" height="10.0" rx="1.0" fill="none" stroke="#1a1a1a" stroke-width="0.188" stroke-linejoin="round" stroke-linecap="round"/>
+<line x1="1.5" y1="93.0" x2="1.5" y2="103.0" stroke="#6b6b6b" stroke-width="0.118"/>
+<path d="M1.5 93.0 L1.02 94.06 L1.98 94.06 Z" fill="#6b6b6b"/>
+<path d="M1.5 103.0 L1.98 101.94 L1.02 101.94 Z" fill="#6b6b6b"/>
+<line x1="55.0" y1="93.0" x2="55.0" y2="95.8" stroke="#6b6b6b" stroke-width="0.118"/>
+<path d="M55.0 93.0 L54.52 94.06 L55.48 94.06 Z" fill="#6b6b6b"/>
+<path d="M55.0 95.8 L55.48 94.74 L54.52 94.74 Z" fill="#6b6b6b"/>
+</g>
+<text x="489.2" y="299.9" font-size="10" fill="#6b6b6b" text-anchor="start" font-weight="400">6</text>
+<text x="489.2" y="384.1" font-size="10" fill="#6b6b6b" text-anchor="start" font-weight="400">10</text>
+<text x="315.0" y="585.2" font-size="11" fill="#6b6b6b" text-anchor="middle">30 mm</text>
+<text x="111.0" y="618.7" font-size="11" fill="#6b6b6b" text-anchor="start" font-weight="400">Plan: the battery end, back cover off</text>
+<text x="111.0" y="637.4" font-size="11" fill="#6b6b6b" text-anchor="start" font-weight="400">(terminal end of the cell at the top)</text>
+<text x="99.8" y="739.4" font-size="11" fill="#6b6b6b" text-anchor="middle" transform="rotate(-90 99.8 739.4)">7.2 mm</text>
+<text x="128.0" y="809.1" font-size="11" fill="#6b6b6b" text-anchor="start" font-weight="400">Original: about 48 x 30 x 7.2 mm, 1100 mAh</text>
+<text x="99.8" y="889.0" font-size="11" fill="#6b6b6b" text-anchor="middle" transform="rotate(-90 99.8 889.0)">10 mm</text>
+<text x="555.5" y="858.4" font-size="11" fill="#6b6b6b" text-anchor="middle" transform="rotate(-90 555.5 858.4)"></text>
+<text x="570.9" y="865.2" font-size="11" fill="#b00b7c" text-anchor="start" font-weight="700">+2.8 mm</text>
+<text x="570.9" y="886.5" font-size="10" fill="#6b6b6b" text-anchor="start" font-weight="400">original top</text>
+<text x="128.0" y="970.6" font-size="11" fill="#6b6b6b" text-anchor="start" font-weight="400">HXJNLDC 103048: 48.5 x 30 x 10 mm, 1600 mAh</text>
+<path d="M40 234.5 L213.0 234.5" stroke="#e0109a" stroke-width="1.2" fill="none"/>
+<circle cx="213.0" cy="234.5" r="2" fill="#e0109a"/>
+<circle cx="30" cy="234.5" r="10" fill="#e0109a"/>
+<text x="30" y="238.5" font-size="11" font-weight="700" fill="#fff" text-anchor="middle">1</text>
+<path d="M40 336.5 L255.5 336.5" stroke="#e0109a" stroke-width="1.2" fill="none"/>
+<circle cx="255.5" cy="336.5" r="2" fill="#e0109a"/>
+<circle cx="30" cy="336.5" r="10" fill="#e0109a"/>
+<text x="30" y="340.5" font-size="11" font-weight="700" fill="#fff" text-anchor="middle">2</text>
+<path d="M40 133.3 L332.0 133.3" stroke="#e0109a" stroke-width="1.2" fill="none"/>
+<circle cx="332.0" cy="133.3" r="2" fill="#e0109a"/>
+<circle cx="30" cy="133.3" r="10" fill="#e0109a"/>
+<text x="30" y="137.3" font-size="11" font-weight="700" fill="#fff" text-anchor="middle">3</text>
+<path d="M658.0 135.9 L429.8 135.9" stroke="#e0109a" stroke-width="1.2" fill="none"/>
+<circle cx="429.8" cy="135.9" r="2" fill="#e0109a"/>
+<circle cx="668.0" cy="135.9" r="10" fill="#e0109a"/>
+<text x="668.0" y="139.9" font-size="11" font-weight="700" fill="#fff" text-anchor="middle">4</text>
+<path d="M658.0 226.0 L512.2 226.0" stroke="#e0109a" stroke-width="1.2" fill="none"/>
+<circle cx="512.2" cy="226.0" r="2" fill="#e0109a"/>
+<circle cx="668.0" cy="226.0" r="10" fill="#e0109a"/>
+<text x="668.0" y="230.0" font-size="11" font-weight="700" fill="#fff" text-anchor="middle">5</text>
+<path d="M658.0 307.6 L483.3 307.6" stroke="#e0109a" stroke-width="1.2" fill="none"/>
+<circle cx="483.3" cy="307.6" r="2" fill="#e0109a"/>
+<circle cx="668.0" cy="307.6" r="10" fill="#e0109a"/>
+<text x="668.0" y="311.6" font-size="11" font-weight="700" fill="#fff" text-anchor="middle">6</text>
+<path d="M658.0 345.0 L531.8 345.0" stroke="#e0109a" stroke-width="1.2" fill="none"/>
+<circle cx="531.8" cy="345.0" r="2" fill="#e0109a"/>
+<circle cx="668.0" cy="345.0" r="10" fill="#e0109a"/>
+<text x="668.0" y="349.0" font-size="11" font-weight="700" fill="#fff" text-anchor="middle">7</text>
+<text x="704.0" y="60" font-size="13" font-weight="700" fill="#1a1a1a">Battery end</text>
+<text x="704.0" y="86" font-size="12.5" fill="#1a1a1a"><tspan font-weight="700" fill="#e0109a">1</tspan><tspan x="726.0" font-weight="700">Cell</tspan></text>
+<text x="726.0" y="103" font-size="12" fill="#6b6b6b">original, 1100 mAh, about 48 x 30 mm</text>
+<text x="704.0" y="125" font-size="12.5" fill="#1a1a1a"><tspan font-weight="700" fill="#e0109a">2</tspan><tspan x="726.0" font-weight="700">Foam pad</tspan></text>
+<text x="726.0" y="142" font-size="12" fill="#6b6b6b">between the cell and the back</text>
+<text x="704.0" y="164" font-size="12.5" fill="#1a1a1a"><tspan font-weight="700" fill="#e0109a">3</tspan><tspan x="726.0" font-weight="700">2-pin plug</tspan></text>
+<text x="726.0" y="181" font-size="12" fill="#6b6b6b">white, at the cell's terminal end</text>
+<text x="704.0" y="203" font-size="12.5" fill="#1a1a1a"><tspan font-weight="700" fill="#e0109a">4</tspan><tspan x="726.0" font-weight="700">Cell wires</tspan></text>
+<text x="726.0" y="220" font-size="12" fill="#6b6b6b">red and black, run in under the foil</text>
+<text x="704.0" y="242" font-size="12.5" fill="#1a1a1a"><tspan font-weight="700" fill="#e0109a">5</tspan><tspan x="726.0" font-weight="700">Small board</tspan></text>
+<text x="726.0" y="259" font-size="12" fill="#6b6b6b">right of the cell</text>
+<text x="704.0" y="281" font-size="12.5" fill="#1a1a1a"><tspan font-weight="700" fill="#e0109a">6</tspan><tspan x="726.0" font-weight="700">2 x 5 socket</tspan></text>
+<text x="726.0" y="298" font-size="12" fill="#6b6b6b">2.0 mm pitch, pins 6 and 10 marked</text>
+<text x="704.0" y="320" font-size="12.5" fill="#1a1a1a"><tspan font-weight="700" fill="#e0109a">7</tspan><tspan x="726.0" font-weight="700">Gold contact</tspan></text>
+<text x="726.0" y="337" font-size="12" fill="#6b6b6b">on the small board</text>
+<text x="704.0" y="359" font-size="12" fill="#6b6b6b"></text>
+<text x="704.0" y="377" font-size="12" fill="#6b6b6b">Check the back closes without</text>
+<text x="704.0" y="395" font-size="12" fill="#6b6b6b">pressing on the cell.</text>
+<text x="704.0" y="413" font-size="12" fill="#6b6b6b"></text>
+<text x="704.0" y="431" font-size="12" fill="#6b6b6b">2-pin plug: measure the pitch</text>
+<text x="704.0" y="449" font-size="12" fill="#6b6b6b">(PH 2.0 / ZH 1.5 / SH 1.0 mm)</text>
+<text x="704.0" y="467" font-size="12" fill="#6b6b6b">and the polarity</text>
 </svg>
