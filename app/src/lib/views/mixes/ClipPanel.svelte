@@ -34,6 +34,11 @@
   const grid = $derived(E.hasGrid(clip));
   const offBeat = $derived(E.cueOffBeat(clip));
   const cueGrain = $derived(editPrefs.cueSnap === "bar" ? "bar" : "beat");
+  /** The cue already sits on a line of the snap grain (Snap has nothing to do). */
+  const onGrain = $derived.by(() => {
+    const d = E.cueOffBeat(clip, cueGrain);
+    return d !== null && Math.abs(d) <= SR * 0.002;
+  });
   function openGrid(e: MouseEvent) {
     e.preventDefault();
     void editGrid(clip.trackId);
@@ -237,7 +242,7 @@
 <div class="buttons">
   <button disabled={!grid} onclick={() => mixes.stepCue(clip.id, -1)} title="Cue one {cueGrain} earlier">◀ {cueGrain}</button>
   <button disabled={!grid} onclick={() => mixes.stepCue(clip.id, 1)} title="Cue one {cueGrain} later">{cueGrain} ▶</button>
-  <button disabled={!grid || (offBeat !== null && Math.abs(offBeat) <= SR * 0.002)} onclick={() => mixes.snapCue(clip.id)} title="Cue to the nearest {cueGrain}">Snap to {cueGrain}</button>
+  <button disabled={!grid || onGrain} onclick={() => mixes.snapCue(clip.id)} title="Cue to the nearest {cueGrain}">Snap to {cueGrain}</button>
   <select aria-label="Cue snap" title="Dragging the start edge snaps the cue to" value={editPrefs.cueSnap} onchange={(e) => editPrefs.setCueSnap(e.currentTarget.value as E.CueSnap)}>
     <option value="beat">Snap: beat</option>
     <option value="bar">Snap: bar</option>

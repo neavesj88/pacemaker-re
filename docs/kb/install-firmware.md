@@ -38,8 +38,8 @@ The Firmware card always has a button for the included file:
 
 | Pacemaker has | Button |
 |---|---|
-| A lower number | **Update to** followed by the number, with "Update available. Settings reset after updating." |
-| The same number | **Firmware warning...** (shows the warning; copying changes nothing) |
+| A lower number | **Update to** followed by the number, with "Update available. Settings reset after updating." (**Install** with Offer the included firmware off) |
+| The same number | **Reinstall** followed by the number |
 | A higher or unreadable number | **Install** followed by the number |
 
 A file that cannot be installed shows its problems instead of the warning.
@@ -64,8 +64,8 @@ The dialog also notes that it works best with the microSD storage upgrade ([Upgr
 ## Before you install
 
 - The firmware and bootloader numbers must be above 12837.
-- A new firmware number resets settings to defaults. Save them first as a preset (Settings presets card) and apply them after. See [The settings menu](pm-settings-menu.md).
-- A file with the same firmware number as installed changes nothing.
+- Every install resets settings to defaults. Save them first as a preset (Settings presets card) and apply them after. See [The settings menu](pm-settings-menu.md).
+- The same firmware number replaces only the app image: the kernel and system are not rewritten. The bootloader is rewritten only when the file's bootloader number differs.
 
 ## Firmware versions
 

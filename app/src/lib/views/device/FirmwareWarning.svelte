@@ -21,7 +21,7 @@
 
 <Modal title="Install firmware {fwVersion}?" onclose={oncancel}>
   <p class="muted file">{fileName}</p>
-  {#if same}<p class="muted file">Same number as installed: nothing is flashed.</p>{/if}
+  <p class="muted file">Settings reset to defaults.{#if same} Same number: only the app image is replaced.{/if}</p>
 
   <label class="check">
     <input type="checkbox" bind:checked={backup} />

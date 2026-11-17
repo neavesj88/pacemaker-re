@@ -23,9 +23,9 @@ summary: Fixes for a Pacemaker not detected, failed firmware installs, the hard 
 |---|---|
 | USB connected when the install started | Unplug, switch off, switch on: [Installing firmware with the app](install-firmware.md). |
 | File has problems | Fix what the Firmware card check lists. A checksum that "does not match" means a damaged file. |
-| Same firmware number as installed | Nothing is flashed. |
+| Same firmware number as installed | Only the app image is replaced. Settings still reset. |
 | File in the wrong place | Put it directly in the `.Pacemaker` folder of the FAT32 volume, not a subfolder. |
-| Settings gone after install | A new firmware number resets settings. Re-apply a preset: [The Device page](device-page.md). |
+| Settings gone after install | Every install resets settings. Re-apply a preset: [The Device page](device-page.md). |
 | "FW Upgrade is NOT OK" | Firmware number and root system do not match. Use a matching build. |
 
 If a Revival firmware installed but the unit will not start, put `.Pacemaker/revival-no-preload` on the card (Device page, Firmware card, **Add recovery file**): [Button combinations and recovery](pm-button-combos-recovery.md).

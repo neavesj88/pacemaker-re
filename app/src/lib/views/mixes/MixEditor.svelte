@@ -32,6 +32,8 @@
   const doc = $derived(mixes.doc!);
   // Space plays the mix here; the player bar's own Space shortcut stands aside while a mix is open
   onMount(() => claimSpace(() => !!mixes.doc));
+  // back from another view (the grid editor, Fix the beat grid…): the clips read their tracks' current grids
+  onMount(() => void mixes.refreshTracks());
   let saving = $state(false);
   tracklist.ensureLoaded();
   mixExport.ensureLoaded();

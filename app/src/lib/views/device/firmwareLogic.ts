@@ -36,11 +36,11 @@ export function offerUpdate(bundled: number | null, installed: string | null | u
 }
 
 /** The label of the included-firmware button, which is always there when the app ships a file (so its
- * warning can be read at any time): an update when it is newer, the warning alone when it is already installed, else an install. */
+ * warning can be read at any time): an update when it is newer, a reinstall when it is the same number, else an install. */
 export function bundledLabel(bundled: number, installed: string | null | undefined, offered: boolean): string {
   if (offered) return `Update to ${bundled}`;
-  // equal: the bootloader skips a file with the installed number, so there is nothing to install, only the warning to read
-  return fwNumber(installed) === bundled ? "Firmware warning…" : `Install ${bundled}…`;
+  // equal: the kernel and system are not rewritten, but the app image is replaced (notes/ssd-swap.md)
+  return fwNumber(installed) === bundled ? `Reinstall ${bundled}…` : `Install ${bundled}…`;
 }
 
 /** The warning dialog's "Copy firmware" button needs both boxes. */

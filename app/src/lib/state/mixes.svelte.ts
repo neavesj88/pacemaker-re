@@ -21,6 +21,7 @@ import {
   mixOpen,
   mixSave,
   mixSaveAs,
+  mixTrackInfo,
   mixValidate,
   type BeatmatchSuggestion,
   type Clip,
@@ -315,6 +316,46 @@ class Mixes {
     this.#gestureEdited = false;
     this.#pruneOrphans();
     this.#scheduleCheck();
+  }
+
+  /** Re-reads the library facts of every clip's track (title, availability, beat grid), e.g. after the
+   * grid was fixed in the grid editor. Not an edit: the open document, the saved copy and the undo
+   * history all take the new facts, so nothing turns dirty and Undo does not bring an old grid back. */
+  async refreshTracks() {
+    const root = this.root;
+    const doc = this.doc;
+    if (!root || !doc || doc.clips.length === 0) return;
+    let list;
+    try {
+      list = await mixTrackInfo(root, [...new Set(doc.clips.map((c) => c.trackId))]);
+    } catch (e) {
+      toast.error("Couldn't re-read the tracks in this mix.", e);
+      return;
+    }
+    if (this.doc?.id !== doc.id) return; // another mix was opened meanwhile
+    const by = new Map(list.map((t) => [t.trackId, t]));
+    // one new object per old one, so the document and its saved copy stay the same object when they were
+    const done = new Map<MixDoc, MixDoc>();
+    const fix = (d: MixDoc): MixDoc => {
+      const hit = done.get(d);
+      if (hit) return hit;
+      let changed = false;
+      const clips = d.clips.map((c) => {
+        const t = by.get(c.trackId);
+        if (!t || JSON.stringify(t) === JSON.stringify(c.track)) return c;
+        changed = true;
+        return { ...c, track: t };
+      });
+      const out = changed ? E.refresh({ ...d, clips }) : d;
+      done.set(d, out);
+      return out;
+    };
+    const cur = this.doc;
+    const next = fix(cur);
+    if (this.#savedDoc) this.#savedDoc = fix(this.#savedDoc);
+    this.#undo = this.#undo.map((s) => ({ ...s, doc: fix(s.doc) }));
+    this.#redo = this.#redo.map((s) => ({ ...s, doc: fix(s.doc) }));
+    if (next !== cur) this.doc = next;
   }
 
   undo() {

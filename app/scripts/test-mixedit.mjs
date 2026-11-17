@@ -2333,6 +2333,8 @@ test("cue: snaps to the track's own beats, steps by beat or bar, and Alt-free tr
   const s1 = E.setCue(d, "a", at, "beat").clips[0];
   assert.equal(s1.visibleStart, c0.start + first + 3 * beat);
   assert.equal(E.cueOffBeat(s1), 0);
+  // on beat 3 is still 1 beat from the nearest bar line (beat 4): Snap to bar has work to do
+  assert.equal(E.cueOffBeat(s1, "bar"), -beat);
   // bar grain: nearest downbeat (beat 4), not beat 3
   const s2 = E.setCue(d, "a", c0.start + first + 3.4 * beat, "bar").clips[0];
   assert.equal(s2.visibleStart, c0.start + first + 4 * beat);

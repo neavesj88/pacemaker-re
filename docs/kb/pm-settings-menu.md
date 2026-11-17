@@ -17,7 +17,7 @@ summary: Every setting in the Pacemaker's settings menu with its exact options a
 4. For sliders (volume, EQ, volume limit), swipe right to select them, then stroke the rim to the level you want. For **Phones EQ** and **Lineout EQ**, first swipe right on **Treble**, **Mid** or **Bass** to pick the register, then stroke the rim to set its level.
 5. To check the unit, open About, Status.
 
-Settings that depend on the mode say so below. A new firmware number resets all settings to default: see [Installing firmware with the app](install-firmware.md).
+Settings that depend on the mode say so below. Every firmware install resets all settings to default: see [Installing firmware with the app](install-firmware.md).
 
 ## Edit settings from the app
 

@@ -184,7 +184,7 @@
         <li>Unplug the USB cable. The install does not run while it is plugged in.</li>
         <li>Power it on and leave it until it restarts.</li>
       </ol>
-      <p class="muted">A new firmware number resets the device settings.</p>
+      <p class="muted">Settings reset after the install.</p>
       <Button
         disabled={device.blocked || !session.library}
         title={jobs.busy ? "Another job is still running" : undefined}
@@ -217,11 +217,11 @@
     {:else}
       {#if sameVersion}
         <p class="muted">
-          Same firmware number as installed. Nothing is flashed.
+          Same number: only the app image is replaced.
         </p>
       {/if}
       <p class="muted">
-        Installs after eject, unplug and power on. A new firmware resets the settings.
+        Installs after eject, unplug and power on. Settings reset.
       </p>
     {/if}
     {#if i.warnings.length}

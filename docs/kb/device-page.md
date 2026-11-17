@@ -101,7 +101,7 @@ Edits the Pacemaker's `settings.dat`. The settings match [The settings menu](pm-
 - Levels and EQ are read-only.
 - Eject and power on the Pacemaker before writing. Do not write while it runs.
 - If there is no settings file, the Pacemaker creates it at its first shutdown.
-- A new firmware number deletes it. See [Installing firmware with the app](install-firmware.md).
+- Every firmware install deletes it. See [Installing firmware with the app](install-firmware.md).
 
 ## Settings presets
 

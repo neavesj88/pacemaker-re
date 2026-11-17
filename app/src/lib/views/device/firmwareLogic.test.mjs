@@ -30,9 +30,9 @@ test("the update is offered only for a higher number and with the setting on", (
   assert.equal(offerUpdate(99, "180096069", true), false, "numeric compare, not text");
 });
 
-test("the included-firmware button: update when newer, the warning when equal, install otherwise", () => {
+test("the included-firmware button: update when newer, reinstall when equal, install otherwise", () => {
   assert.equal(bundledLabel(180096074, "180096069", true), "Update to 180096074");
-  assert.equal(bundledLabel(180096074, "180096074", false), "Firmware warning…");
+  assert.equal(bundledLabel(180096074, "180096074", false), "Reinstall 180096074…");
   assert.equal(bundledLabel(180096074, "180096075", false), "Install 180096074…");
   assert.equal(bundledLabel(180096074, null, false), "Install 180096074…");
   assert.equal(bundledLabel(180096074, "180096069", false), "Install 180096074…", "offer setting off");

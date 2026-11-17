@@ -591,9 +591,10 @@ export function setCue(doc: MixDoc, id: string, pos: number, grain: CueSnap): Mi
   return v === c.visibleStart ? doc : replaceClip(doc, id, (x) => ({ ...x, trimStart: v - x.start }));
 }
 
-/** How far the cue is from the nearest beat of the track (samples, + = after it); null without a grid. */
-export function cueOffBeat(c: Clip): number | null {
-  const t = cueTargets(c, "beat");
+/** How far the cue is from the nearest beat (bar line for "bar") of the track (samples, + = after it);
+ * null without a grid. */
+export function cueOffBeat(c: Clip, grain: Exclude<CueSnap, "off"> = "beat"): number | null {
+  const t = cueTargets(c, grain);
   const i = nearestIndex(t, c.visibleStart);
   return i < 0 ? null : c.visibleStart - t[i];
 }
