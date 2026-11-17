@@ -28,7 +28,14 @@
 </div>
 <div class="field">
   <span class="lbl">New tracks</span>
-  <label class="check"><input type="checkbox" checked={p.matchOnAdd} onchange={(e) => tempoPrefs.set({ matchOnAdd: e.currentTarget.checked })} /> match to the mix tempo when added</label>
+  <label class="check"><input type="checkbox" checked={p.matchOnAdd} onchange={(e) => tempoPrefs.set({ matchOnAdd: e.currentTarget.checked })} /> match the tempo when added</label>
+</div>
+<div class="field">
+  <label for="ts-to">Match to</label>
+  <select id="ts-to" value={p.matchTo} disabled={!p.matchOnAdd} onchange={(e) => tempoPrefs.set({ matchTo: e.currentTarget.value as "previous" | "mix" })}>
+    <option value="previous">The track before it</option>
+    <option value="mix">The mix tempo</option>
+  </select>
 </div>
 <div class="field">
   <label for="ts-over">Over the limit</label>

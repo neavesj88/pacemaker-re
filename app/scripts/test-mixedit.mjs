@@ -2118,6 +2118,17 @@ test("follow: no overlap keeps everything, dragging back restores it exactly, th
   assert.deepEqual(eqOf(viaEarly, "b").map((p) => [p.start, p.length]), eqOf(direct, "b").map((p) => [p.start, p.length]));
 });
 
+test("precedingBpm: an added track matches the clip it follows, at that clip's tempo where it ends", () => {
+  const a = clip("a", 0, 64 * BAR, 180, 1, grid(180, 0, 800, 0));
+  const b = clip("b", 48 * BAR, 64 * BAR, 172, 1, grid(172, 0, 800, 0), { channel: 1 });
+  const d = doc([a, b]);
+  close(E.precedingBpm(d, d.length), 172, 0.01, "after the end: the last clip");
+  close(E.precedingBpm(d, 20 * BAR), 180, 0.01, "inside the first clip: that clip");
+  assert.equal(E.precedingBpm(d, 0), null, "nothing before the start");
+  const sped = E.setClipBpm(d, "b", 175);
+  close(E.precedingBpm(sped, sped.length), 175, 0.01, "the tempo it plays at, not its own");
+});
+
 test("prune: clips pulled apart lose their crossfade and its tools; overlapping ones and other tools stay", () => {
   const d = followDoc(48);
   const toolsOf = (x, id) => x.clips.find((c) => c.id === id).processes.filter((p) => p.kind === "tool").length;

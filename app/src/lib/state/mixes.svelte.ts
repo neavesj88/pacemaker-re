@@ -437,16 +437,17 @@ class Mixes {
   }
 
   /** Fetches a clip for a library track and adds it with its audible start at `at` (samples;
-   * default: right after the last clip). Selects it. With a mix tempo and the setting "match to
-   * the mix tempo when added" on, the clip plays at the mix tempo or at double or half of it,
-   * whichever stretches the track least; when even that is more than the setting's stretch limit
-   * the clip keeps its own tempo (the other choice of that setting matches it anyway). */
+   * default: right after the last clip). Selects it. With "match the tempo when added" on, the clip
+   * plays at the tempo of the track it follows (or the mix tempo, by the "Match to" setting), or at
+   * double or half of it, whichever stretches the track least; when even that is more than the
+   * setting's stretch limit the clip keeps its own tempo (the other choice of that setting matches
+   * it anyway). */
   async addTrack(trackId: number, at?: number, channel?: number): Promise<{ choice: TempoChoice | null; matched: boolean }> {
     const root = this.root;
     if (!root || !this.doc) return { choice: null, matched: false };
     let clip = await mixMakeClip(root, trackId, null);
-    const target = this.doc.tempoBpm;
     const prefs = tempoPrefs.value;
+    const target = prefs.matchTo === "mix" ? this.doc.tempoBpm : (E.precedingBpm(this.doc, at ?? Math.max(0, this.doc.length)) ?? this.doc.tempoBpm);
     const choice = target && prefs.matchOnAdd ? chooseTempo(clip.bpm, target) : null;
     const matched = !!choice && (!exceeds(choice.speed, prefs.warnPct) || prefs.overOnAdd === "match");
     if (choice && matched) clip = E.retempoClip(clip, [{ pos: 0, speed: choice.speed }]);

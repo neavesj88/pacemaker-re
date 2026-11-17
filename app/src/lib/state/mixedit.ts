@@ -975,6 +975,21 @@ export const MAX_SPEED = 4;
 /** The tempo (BPM) a clip plays at where its audible part starts. */
 export const clipPlaysAt = (c: Clip): number => effectiveBpm(c, c.trimStart);
 
+/** The tempo a track added with its audible start at `at` mixes out of: the clip heard just before
+ * `at` (the one whose audible start is the latest before it), at its last audible moment before
+ * `at`. Null when nothing plays before `at`. */
+export function precedingBpm(doc: MixDoc, at: number): number | null {
+  let prev: Clip | null = null;
+  for (const c of doc.clips) {
+    if (c.clipBypassed || !(c.visibleEnd > c.visibleStart)) continue;
+    if (c.visibleStart < at && (!prev || c.visibleStart > prev.visibleStart)) prev = c;
+  }
+  if (!prev) return null;
+  const until = Math.min(prev.visibleEnd, at) - 1;
+  const bpm = effectiveBpm(prev, Math.max(0, until - prev.start));
+  return bpm > 0 && Number.isFinite(bpm) ? bpm : null;
+}
+
 /** Speed of a clip against its track's own tempo where its audible part starts (1 = unstretched). */
 export const clipSpeed = (c: Clip): number => (c.bpm > 0 ? clipPlaysAt(c) / c.bpm : 1);
 

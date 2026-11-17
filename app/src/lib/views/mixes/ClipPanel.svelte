@@ -4,7 +4,7 @@
   import type { Clip } from "$lib/api/mixes";
   import * as E from "$lib/state/mixedit";
   import { mixes } from "$lib/state/mixes.svelte";
-  import { exceeds, stretchText, type TempoChoice } from "$lib/state/tempoMatch";
+  import { chooseTempo, exceeds, stretchText, type TempoChoice } from "$lib/state/tempoMatch";
   import ContextMenu, { type MenuItem } from "$lib/ui/ContextMenu.svelte";
   import { addProcessTo, autoTransition, beatAlign, beatmatch, clipTitle, duplicateSelection, neighbours, toolChoices } from "./actions";
   import BpmField from "./BpmField.svelte";
@@ -33,6 +33,12 @@
   const tooMuch = $derived(exceeds(speed, warnPct));
   /** The tempo of the clip before this one where it ends: what "Sync to previous clip" matches. */
   const prevBpm = $derived(nb.prev ? E.effectiveBpm(nb.prev, nb.prev.length - nb.prev.trimEnd) : null);
+  /** This clip is off the previous clip's tempo (half and double time count as matched). */
+  const offPrev = $derived.by(() => {
+    if (!prevBpm || !(eff > 0)) return false;
+    const c = chooseTempo(eff, prevBpm);
+    return !!c && Math.abs(c.speed - 1) > 0.0005;
+  });
 
   /** A match that was held back for stretching too much, with what it would do. */
   let held = $state<{ what: string; target: number; choice: TempoChoice } | null>(null);
@@ -111,6 +117,12 @@
 {/if}
 
 <h4>Tempo</h4>
+{#if offPrev && prevBpm}
+  <div class="mismatch">
+    <span>Previous track plays at {prevBpm.toFixed(1)}, this one at {eff.toFixed(1)}.</span>
+    <button class="primary" onclick={() => void beatmatch(clip.id)} title="Match tempo and beats to the previous clip">Beat-match to {prevBpm.toFixed(1)}</button>
+  </div>
+{/if}
 <div class="field"><span class="lbl">Track BPM</span><span class="val">{clip.bpm.toFixed(2)}</span></div>
 <div class="field">
   <label for="cp-bpm">Plays at</label>
@@ -217,7 +229,7 @@
 <h4>Actions</h4>
 <div class="buttons">
   <button onclick={toolMenu} title="Add a tool at the playhead">+ Tool ▾</button>
-  <button disabled={!nb.prev} onclick={() => void beatmatch(clip.id)} title={nb.prev ? "Match tempo and beats to the previous clip" : "There is no earlier clip"}>Beat-match</button>
+  <button disabled={!nb.prev} onclick={() => void beatmatch(clip.id)} title={nb.prev ? "Match tempo and beats to the previous clip" : "There is no earlier clip"}>Beat-match{prevBpm ? ` to ${prevBpm.toFixed(1)}` : ""}</button>
   <button onclick={() => beatAlign(clip.id)} title="Move this clip, tempo unchanged, to line its beat grid up with its neighbour's. Clips without a grid stay.">Beat-align</button>
   <button disabled={!nb.next} onclick={() => nb.next && void autoTransition(clip.id, nb.next.id)} title="Transition into the next clip">Auto transition</button>
 </div>
@@ -246,6 +258,23 @@
 {/if}
 
 <style>
+  .mismatch {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 8px 10px;
+    margin-bottom: 8px;
+    border-left: 3px solid var(--accent);
+    background: var(--accent-soft);
+    border-radius: 0 4px 4px 0;
+    font-size: 12px;
+  }
+  .mismatch .primary {
+    align-self: flex-start;
+    background: var(--accent);
+    color: var(--on-accent, #fff);
+    border-color: var(--accent);
+  }
   .defaults {
     margin-top: 6px;
     font-size: 12px;
