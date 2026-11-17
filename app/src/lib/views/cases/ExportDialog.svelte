@@ -78,7 +78,7 @@
                     <span class="nm">{c.name}</span>
                     <span class="muted">{plural(c.track_count, "track")}</span>
                   </label>
-                  {#if sc && ex.caseIds.has(c.id) && ex.smartIds.has(sc.id)}<div class="sub muted">{smartCopyName(session.library?.kind)} of the smart case “{sc.name}”, which is ticked too: this one will not be written again.</div>{/if}
+                  {#if sc && ex.caseIds.has(c.id) && ex.smartIds.has(sc.id)}<div class="sub muted">{smartCopyName(session.library?.kind)} of the ticked smart case “{sc.name}”; not written again.</div>{/if}
                 </li>
               {:else}
                 <li class="muted">No cases.</li>
@@ -104,7 +104,7 @@
                 <li class="muted">No smart cases.</li>
               {/each}
             </ul>
-            <p class="muted small">A smart case is written as the tracks it matches right now; the file cannot keep the rules.</p>
+            <p class="muted small">Smart cases export their current tracks, not the rules.</p>
           </div>
         </div>
 
@@ -155,7 +155,7 @@
                 </tbody>
               </table>
             </div>
-            <p class="muted small">{plural(plan.lists.length, "playlist file")}{plan.audio.length > 0 ? ` and ${plural(plan.audio.length, "audio file")} (${fmtBytes(plan.copy_bytes)} to copy)` : ""}. Disk space is not checked beforehand; a copy that fails is reported and its partial file removed.</p>
+            <p class="muted small">{plural(plan.lists.length, "playlist file")}{plan.audio.length > 0 ? ` and ${plural(plan.audio.length, "audio file")} (${fmtBytes(plan.copy_bytes)} to copy). Disk space is not checked` : ""}.</p>
           {:else if ex.planning}
             <p class="muted">Working it out…</p>
           {/if}
@@ -173,7 +173,7 @@
         {#if ex.failures.length > 0}
           <ul class="fails">{#each ex.failures as f}<li><b>{f.label}</b>: {f.error}</li>{/each}</ul>
         {/if}
-        <p class="muted small">Files already written stay in the folder if you stop. A copy in progress is removed.</p>
+        <p class="muted small">Files already written stay if you stop; a copy in progress is removed.</p>
         <div class="actions">
           <Button onclick={() => ex.close()}>Hide</Button>
           <Button variant="primary" disabled={ex.cancelling} onclick={() => ex.cancel()}>{ex.cancelling ? "Stopping…" : "Stop"}</Button>

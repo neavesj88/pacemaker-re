@@ -57,27 +57,23 @@
   <WideModal title={runTitle(conf.plan, conf.mode)} onclose={() => space.closeConfirm()} width={760}>
     {#if flags.archive}
       <p>
-        Each audio file{space.settings.include_grids ? " and beat grid" : ""} is copied to a new folder inside
-        <code class="path">{space.settings.archive_dir}</code>, read back and compared with the original, and listed with its
-        SHA-256 in <code>MANIFEST.sha256</code> and its tags in <code>ARCHIVE.csv</code>. The Backup card's "Check a backup"
-        can verify the folder later; adding the files to a Pacemaker again restores the tracks.
+        Each audio file{space.settings.include_grids ? " and beat grid" : ""} is copied, read back and compared in
+        <code class="path">{space.settings.archive_dir}</code>.
         {#if conf.plan.archive_free_bytes !== null}
-          The archive needs {bytesText(conf.plan.archive_bytes)}; that drive has {bytesText(conf.plan.archive_free_bytes)} free.
+          Needs {bytesText(conf.plan.archive_bytes)}; {bytesText(conf.plan.archive_free_bytes)} free.
         {:else}
-          The archive needs {bytesText(conf.plan.archive_bytes)}.
+          Needs {bytesText(conf.plan.archive_bytes)}.
         {/if}
       </p>
     {/if}
     {#if flags.remove}
       <p class="danger">
         {#if flags.archive}
-          Tracks are removed from the card only after their archive copy was checked. A track whose copy fails stays.
+          Removed only after its copy is verified; a failed copy stays.
         {:else}
           <b>No copy is made.</b>
         {/if}
-        Removing deletes the audio file and the beat grid from the card for good (there is no recycle bin on the device) and
-        takes the track out of its cases. A copy of <code>music.db</code> is saved first, so Restore can bring the rows
-        back, but not the audio.
+        Deletes the audio and beat grid from the card for good. Restore brings back the rows, not the audio.
       </p>
     {/if}
 
@@ -144,9 +140,6 @@
     border-radius: 4px;
     background: var(--bad-bg);
     color: var(--bad-text);
-  }
-  .danger code {
-    color: inherit;
   }
   .problems {
     margin: 0 0 10px;

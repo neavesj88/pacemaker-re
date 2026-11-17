@@ -8,6 +8,7 @@
   import { jobs } from "$lib/state/jobs.svelte";
   import { selection } from "$lib/state/selection.svelte";
   import { session } from "$lib/state/session.svelte";
+  import HelpLink from "../help/HelpLink.svelte";
   import { smartRefresh } from "$lib/state/smartRefresh.svelte";
   import { smartSettings } from "$lib/state/smartSettings.svelte";
   import { toast } from "$lib/state/toast.svelte";
@@ -209,21 +210,22 @@
     Merge{picked.size > 1 ? ` ${picked.size}` : ""}…
   </Button>
   <Button disabled={!jobs.canWrite || picked.size === 0} onclick={() => (deleting = pickedCases)}>Delete{picked.size > 0 ? ` ${picked.size}` : ""}…</Button>
-  <Button disabled={pickedShown.length === 0} onclick={() => thingEditor.edit("case", pickedShown.map((c) => c.id))} title="Tags and a colour label for the ticked cases. Kept by this app only; nothing is written to the library files.">Tags and colour{pickedShown.length > 0 ? ` (${pickedShown.length})` : ""}…</Button>
+  <Button disabled={pickedShown.length === 0} onclick={() => thingEditor.edit("case", pickedShown.map((c) => c.id))} title="Tags and colour for the ticked cases. Kept by this app only.">Tags and colour{pickedShown.length > 0 ? ` (${pickedShown.length})` : ""}…</Button>
   {#if cases.smart.some((s) => s.on_device)}
     <Button
       disabled={!jobs.canWrite || smartRefresh.checking || smartRefresh.applying}
       onclick={() => smartRefresh.review()}
-      title="Show what rewriting the {smartCopyName(session.library?.kind)} of every smart case that is switched on would change, then do it if you agree"
+      title="Preview rewriting the {smartCopyName(session.library?.kind)} of every smart case that is on"
     >Refresh smart cases…</Button>
   {/if}
   <Button
     disabled={cases.infos.length === 0 && cases.smart.length === 0}
     onclick={exportMany}
-    title="Save several cases as playlist files in a folder, one file per case, with the audio copied alongside if you like"
+    title="Save cases as playlist files, one per case"
   >Export{picked.size > 0 ? ` ${picked.size} ticked` : " all"}…</Button>
-  <Button onclick={() => (settingsOpen = true)} title="Whether the {session.isComputer ? '★ cases' : 'Pacemaker copies'} of smart cases refresh by themselves, and how smart cases are exported">Smart case settings…</Button>
-  <span class="muted">Cases are {session.isComputer ? 'playlists kept in your library' : "the Pacemaker's own playlists"}; the order here is the order {session.isComputer ? 'in the library' : 'on the device'}.</span>
+  <Button onclick={() => (settingsOpen = true)} title="Smart case refresh and export">Smart case settings…</Button>
+  <HelpLink id="cases" />
+  <span class="muted">Order here is the order {session.place.on}.</span>
 </div>
 {#if cases.infos.length > 0}
   <div class="pickbar filterbar">
@@ -237,7 +239,7 @@
     {#if picked.size > 0}{plural(picked.size, "case")} ticked ·{/if}
     <Button small variant="link" onclick={() => (picked = new Set(rows.map((c) => c.id)))}>Tick all {rows.length === cases.infos.length ? "" : "shown "}</Button>
     {#if picked.size > 0}<Button small variant="link" onclick={() => (picked = new Set())}>Clear ticks</Button>{/if}
-    · Drag tracks from the Tracks view onto a case to add them, or use Add to case… there (not onto a smart case's copy: its rules rewrite it)
+    · Drag tracks from Tracks onto a case to add them (not onto a smart case's copy).
   </div>
 {/if}
 
@@ -279,7 +281,7 @@
 {#if !cases.loaded}
   <p class="empty">Loading cases…</p>
 {:else if rows.length === 0}
-  <p class="empty">{filters.query || labelFilterActive(labelFilter) ? `No cases match${filters.query ? " the search" : ""}${filters.query && labelFilterActive(labelFilter) ? " and" : ""}${labelFilterActive(labelFilter) ? ` the label filter (${describeLabelFilter(labelFilter)})` : ""}.` : `No cases ${session.place.on} yet. Use New case, or the heart on a track for Favourites.`}</p>
+  <p class="empty">{filters.query || labelFilterActive(labelFilter) ? `No cases match${filters.query ? " the search" : ""}${filters.query && labelFilterActive(labelFilter) ? " and" : ""}${labelFilterActive(labelFilter) ? ` the label filter (${describeLabelFilter(labelFilter)})` : ""}.` : `No cases ${session.place.on} yet. Use New case.`}</p>
 {/if}
 
 {#if menu}

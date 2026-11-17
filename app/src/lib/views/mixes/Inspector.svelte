@@ -29,7 +29,7 @@
       <button onclick={() => mixes.copy()}>Copy</button>
       <button class="danger" onclick={ondelete}>Delete…</button>
     </div>
-    <p class="note">Drag any selected clip to move them together. Shift- or Ctrl-click adds to the selection.</p>
+    <p class="note">Drag to move the selection. Shift- or Ctrl-click adds.</p>
   {:else if found?.kind === "clip"}
     {#key found.clip.id}<ClipPanel clip={found.clip} {ondelete} />{/key}
   {:else if found?.kind === "process"}

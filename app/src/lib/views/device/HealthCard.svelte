@@ -3,6 +3,7 @@
   import { nav } from "$lib/state/nav.svelte";
   import { session } from "$lib/state/session.svelte";
   import Button from "$lib/ui/Button.svelte";
+  import HelpLink from "../help/HelpLink.svelte";
   import Card from "./Card.svelte";
   import { device } from "./device.svelte";
   import { bytes, plural } from "./format";
@@ -39,6 +40,7 @@
     >
       {device.scanning ? "Scanning…" : "Scan again"}
     </Button>
+    <HelpLink id="device-page" anchor="library-health" />
   {/snippet}
 
   {#if !h}

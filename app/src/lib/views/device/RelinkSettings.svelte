@@ -10,7 +10,7 @@
 <RelinkOptionsFields />
 <div class="actions">
   <Button variant="primary" disabled={!relink.settings} onclick={() => void relink.saveSettings()}>Save</Button>
-  <span class="muted">Saved on this computer, not on the Pacemaker. The search dialog saves them too when a search starts.</span>
+  <span class="muted">Saved on this computer.</span>
 </div>
 
 <style>

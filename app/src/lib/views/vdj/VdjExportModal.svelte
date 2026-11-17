@@ -6,6 +6,7 @@
   import { session } from "$lib/state/session.svelte";
   import Button from "$lib/ui/Button.svelte";
   import { focusFirst } from "$lib/ui/focus";
+  import HelpLink from "../help/HelpLink.svelte";
   import VdjOptionsFields from "./VdjOptionsFields.svelte";
   import { vdj } from "./vdj.svelte";
   import { buildRequest, entryWords, formatBytes, planLine, selectedInCase, startGate, startLabel, suggestListName } from "./vdjLogic";
@@ -146,6 +147,7 @@
   <div class="dlg" role="dialog" aria-modal="true" aria-label="Export to VirtualDJ" tabindex="-1" use:focusFirst onclick={(e) => e.stopPropagation()}>
     <header>
       <h2>Export to VirtualDJ</h2>
+      <HelpLink id="import-export" />
       <span class="muted">case · {caseName}</span>
       <span class="grow"></span>
       <Button small onclick={onclose}>Close</Button>
@@ -156,8 +158,7 @@
         <p class="bad empty">{loadFailed}</p>
       {:else}
         <p class="muted intro">
-          Writes a VirtualDJ list (VirtualDJ 2024 or later) of this case into a folder you choose, and can copy the audio next to it. Nothing {session.place.on}
-          is changed or deleted. Afterwards put the <code>.xml</code> file into VirtualDJ's <i>My Lists</i> folder.
+          Needs VirtualDJ 2024 or later. Put the <code>.xml</code> file in VirtualDJ's <i>My Lists</i> folder.
         </p>
 
         <fieldset disabled={vdj.running}>

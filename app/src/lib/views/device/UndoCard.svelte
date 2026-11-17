@@ -4,6 +4,7 @@
   import { toast } from "$lib/state/toast.svelte";
   import { undo } from "$lib/state/undo.svelte";
   import Button from "$lib/ui/Button.svelte";
+  import HelpLink from "../help/HelpLink.svelte";
   import Card from "./Card.svelte";
   import { device } from "./device.svelte";
   import { plural } from "./format";
@@ -37,16 +38,15 @@
 <Card title="Edit history">
   {#snippet aside()}
     {#if undo.entries.length > 0}<Button small variant="ghost" onclick={clearAll}>Clear</Button>{/if}
+    <HelpLink id="device-page" anchor="edit-history" />
   {/snippet}
   <p class="muted">
-    Ratings, tag edits and favourites made in this session can be put back. Only a field that still holds the value the
-    edit gave it is reverted; anything changed again since is left alone and named first. The history is kept in memory
-    for this library and is dropped when {session.isComputer ? 'the library is closed' : 'the card is ejected'} or restored.
+    Ratings, tags and hearts of this session. Fields changed since are left alone. Cleared when {session.isComputer ? 'the library is closed' : 'the card is ejected'} or restored.
   </p>
   {#if undo.settings.undo_limit === 0}
     <p class="muted">The edit history is switched off (see Safety settings).</p>
   {:else if undo.entries.length === 0}
-    <p class="muted">Nothing to undo yet. Rate a track, edit its tags or tap a heart and it appears here.</p>
+    <p class="muted">Nothing to undo yet.</p>
   {:else}
     <ul class="rows" aria-label="Edit history">
       {#each undo.entries as e, i (e.id)}

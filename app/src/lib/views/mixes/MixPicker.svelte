@@ -114,7 +114,7 @@
   <div class="foot">
     <button class="primary" disabled={chosen.length === 0} onclick={() => addSelected(mv.playhead)}>Add at playhead</button>
     <button disabled={chosen.length === 0} onclick={() => addSelected()}>Add to end</button>
-    <span class="muted">{chosen.length > 0 ? `${chosen.length} selected` : "Select tracks, then add them"}<span class="hint"> · drag rows onto the bar · double-click or Enter adds at the playhead</span></span>
+    <span class="muted">{chosen.length > 0 ? `${chosen.length} selected` : "Select tracks, then add them"}<span class="hint"> · drag rows onto the bar · double-click adds</span></span>
   </div>
 </section>
 

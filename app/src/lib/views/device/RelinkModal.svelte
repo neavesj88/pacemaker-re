@@ -56,10 +56,7 @@
   {#if relink.stage === "choose"}
     <p>
       {plural(missing, "track")} {missing === 1 ? "is" : "are"} listed in the library without an audio file in {session.place.card}.
-      Choose a folder that may hold them, on this PC{session.isComputer ? '' : ' or on the card'}. The files are matched by name and size, and, when
-      you allow it, by the title, artist and length in their tags (a file whose length cannot be read, such as an MP3
-      without a length header, can then only match by its name or be picked by hand). Nothing changes until you have
-      looked at the matches and confirmed.
+      Choose a folder to search, on this PC{session.isComputer ? '' : ' or on the card'}. Nothing changes until you confirm.
     </p>
     {#if s}
       <div class="folder">
@@ -166,9 +163,7 @@
     {/if}
   {:else if relink.stage === "confirm"}
     <p>
-      Relink {plural(chosen.length, "track")}? Nothing is deleted or overwritten. A copy of music.db is saved first, so
-      Restore from a snapshot puts the library rows back; files copied onto {session.place.card} stay and then show up under unused
-      files. A track's format and length are updated where the file it now uses differs; its bit rate and sample rate stay as recorded.
+      Relink {plural(chosen.length, "track")}? Nothing is deleted or overwritten. music.db is saved first. Copied files stay on {session.place.card}; a snapshot restores the rows.
     </p>
     <p class="sum">{totalsLine(tot, session.library?.kind)}</p>
     {#if oddPaths}<p class="note">{oddPaths}</p>{/if}

@@ -58,7 +58,7 @@
   {/snippet}
 </Table>
 {#if rows.length > SHOWN}
-  <p class="muted more">The first {SHOWN} of {rows.length} matching tracks are listed; the case holds all {rows.length}.</p>
+  <p class="muted more">Showing the first {SHOWN} of {rows.length}.</p>
 {/if}
 
 <style>

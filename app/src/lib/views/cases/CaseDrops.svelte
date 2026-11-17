@@ -33,7 +33,7 @@
   <div class="strip" role="group" aria-label="Drop the tracks on a case">
     <div class="head">Drop {trackDrag.count > 0 ? plural(trackDrag.count, "track") : "tracks"} on a case</div>
     {#if !jobs.canWrite}
-      <p class="muted pad">Cases can't be changed right now (a job is running or the library is read-only).</p>
+      <p class="muted pad">Cases are locked (job running or library read-only).</p>
     {:else}
       <div class="list">
         <div class="item new" use:trackDropTarget={{ accept: canDrop, ondrop: (ids) => drop(ids, "new") }}>+ New case…</div>

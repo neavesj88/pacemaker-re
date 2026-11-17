@@ -83,15 +83,14 @@
     <div class="steps" role="region" aria-label="Finish the firmware install">
       <b>Waiting on the device: {pending.join(", ")}</b>
       <p class="muted">
-        The file is on the Pacemaker but not installed yet. The device installs it when it next starts with USB
-        unplugged.
+        Not installed yet. It installs at the next start, USB unplugged.
       </p>
       <ol>
-        <li>Eject the Pacemaker here, or with the Windows eject, so nothing is writing to it.</li>
-        <li>Unplug the USB cable. With the cable in, the install did not run on the unit tested.</li>
-        <li>Power the Pacemaker on and leave it alone until it restarts. The screen says a firmware upgrade is in progress.</li>
+        <li>Eject the Pacemaker.</li>
+        <li>Unplug the USB cable. The install does not run while it is plugged in.</li>
+        <li>Power it on and leave it until it restarts.</li>
       </ol>
-      <p class="muted">A new firmware number also resets the device settings. An equal one flashes nothing.</p>
+      <p class="muted">A new firmware number resets the device settings.</p>
       <Button
         disabled={device.blocked || !session.library}
         title={jobs.busy ? "Another job is still running" : undefined}
@@ -124,13 +123,11 @@
     {:else}
       {#if sameVersion}
         <p class="muted">
-          This is the firmware number already installed. The device accepts the file but flashes nothing.
+          Same firmware number as installed. Nothing is flashed.
         </p>
       {/if}
       <p class="muted">
-        The file is copied into the device's .Pacemaker folder and read back to check it. Nothing else on the device
-        changes. It installs when you eject, unplug USB and power on, and the device settings are reset by a new
-        firmware.
+        Installs after eject, unplug and power on. A new firmware resets the settings.
       </p>
     {/if}
     {#if i.warnings.length}

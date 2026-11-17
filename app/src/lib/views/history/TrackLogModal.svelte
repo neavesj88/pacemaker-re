@@ -37,13 +37,12 @@
   {:else if !loaded}
     <p class="muted">Reading the log...</p>
   {:else if !log}
-    <p class="muted">There is no play log for this library, or this track is not in it.</p>
+    <p class="muted">No log entry for this track.</p>
   {:else}
     <dl>
       <dt>Before the log</dt>
       <dd>
         {log.before_plays} play{log.before_plays === 1 ? "" : "s"}{log.before_last > 0 ? `, last played ${when(log.before_last)}` : ""}.
-        <span class="muted">When the earlier plays happened is not known.</span>
       </dd>
       <dt>In the log</dt>
       <dd>{log.logged_plays} play{log.logged_plays === 1 ? "" : "s"}</dd>
@@ -64,7 +63,7 @@
         </tbody>
       </table>
     {:else}
-      <p class="muted">No plays of this track have been logged since logging began.</p>
+      <p class="muted">No plays logged.</p>
     {/if}
   {/if}
   {#snippet actions()}

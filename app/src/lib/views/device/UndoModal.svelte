@@ -47,7 +47,7 @@
 </script>
 
 <WideModal title={`Undo ${plural(count, "edit")}?`} {onclose} width={640}>
-  <p class="muted">The edits below are reversed, newest first. Nothing else in {session.place.card} changes.</p>
+  <p class="muted">Reverses the edits below, newest first.</p>
   <ol class="edits" aria-label="Edits to undo">
     {#each covered as e (e.id)}<li>{e.summary}</li>{/each}
   </ol>

@@ -106,7 +106,7 @@
     <div class="foot">
       <div class="what" aria-live="polite">
         {#if chosen.length === 0}
-          <span class="muted">Select tracks, then add them. Double-click or Enter adds one at once. Tracks already in the case are marked and skipped.</span>
+          <span class="muted">Double-click or Enter adds one. Tracks already in the case are skipped.</span>
         {:else if plan.fresh.length === 0}
           <span class="muted">All {noun(chosen.length)} selected {chosen.length === 1 ? "is" : "are"} already in “{caseName}”.</span>
         {:else}

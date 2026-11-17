@@ -229,7 +229,7 @@
         {#each picker as o (o.value)}<option value={o.value} title={o.title}>{o.label}</option>{/each}
         <option value="__folder__">Open folder…</option>
       </select>
-      <Button small variant="ghost" title="Look for a connected Pacemaker. What was read of the other library is forgotten" disabled={libs.busy} onclick={() => libs.rescan()}>Rescan</Button>
+      <Button small variant="ghost" title="Look for a connected Pacemaker" disabled={libs.busy} onclick={() => libs.rescan()}>Rescan</Button>
       {#if data}
         <Button small variant="ghost" title={`Read ${chosen?.label ?? "the library"} again`} disabled={libs.busy || !!libs.reading} onclick={() => libs.read(libs.rightRoot)}>Read again</Button>
       {/if}
@@ -246,7 +246,7 @@
       {:else if !libs.rightRoot && picker.length > 0}
         <p>Choose a library above to see it here.</p>
       {:else if !libs.rightRoot}
-        <p>There is no other library to show. Plug the Pacemaker into this computer (it appears as a drive) and press Rescan, or open a folder that holds a library.</p>
+        <p>No other library. Plug in the Pacemaker and press Rescan, or open a folder.</p>
         <div class="row-actions">
           <Button variant="primary" onclick={() => libs.rescan()}>Rescan</Button>
           <Button onclick={pickFolder}>Open folder…</Button>
@@ -258,8 +258,7 @@
         <Button onclick={() => libs.read(libs.rightRoot)}>Try again</Button>
       {:else}
         <p>
-          {chosen?.label ?? "This library"} is read only when you ask. Reading lists its tracks, mixes and cases from its database; no audio
-          is touched. Drops on this side wait until it is read.
+          {chosen?.label ?? "This library"} is read when you ask. Drops wait until it is read.
         </p>
         <Button variant="primary" onclick={() => libs.read(libs.rightRoot)}>{readButtonText(libs.rightRoot)}</Button>
       {/if}

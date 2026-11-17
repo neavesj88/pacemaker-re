@@ -64,7 +64,7 @@
       </Table>
     </div>
     {#if rows.length > shown.length}
-      <p class="muted more">Showing the first {shown.length} by BPM. Show these in Tracks to see all {rows.length}.</p>
+      <p class="muted more">Showing the first {shown.length} of {rows.length} by BPM.</p>
     {/if}
   {/if}
 </section>

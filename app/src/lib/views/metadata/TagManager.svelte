@@ -108,8 +108,7 @@
     <div class="confirm" role="alertdialog" aria-label={pending.kind === "delete" ? "Delete tag" : pending.kind === "merge" ? "Merge tags" : "Forget labels of removed tracks"}>
       {#if pending.kind === "delete"}
         <p>
-          Delete the tag <b>“{pending.tag}”</b> from {noun(pending.ids.length)}{pending.gone.length ? ` and from ${goneNoun(pending.gone.length)}` : ""}? The
-          tracks, their other tags, colours and energy stay as they are. This cannot be undone.
+          Delete the tag <b>“{pending.tag}”</b> from {noun(pending.ids.length)}{pending.gone.length ? ` and from ${goneNoun(pending.gone.length)}` : ""}? This cannot be undone.
         </p>
       {:else if pending.kind === "merge"}
         <p>
@@ -121,7 +120,7 @@
       {:else}
         <p>
           Forget the labels of {pending.gone.length} track{pending.gone.length === 1 ? "" : "s"} that are no longer {session.isComputer ? "in this library" : "on this card"}? Their tags, colours and
-          energy are removed from the tag file. Tracks {session.isComputer ? "in this library" : "on this card"} are not touched. This cannot be undone.
+          energy are removed. Tracks are not touched. This cannot be undone.
         </p>
       {/if}
       {#if pending.kind !== "forget"}
@@ -156,7 +155,7 @@
       </div>
     </div>
   {:else}
-    <p class="sub">Tags are kept by this app and do not appear on the Pacemaker. Renaming a tag to one that exists merges them.</p>
+    <p class="sub">Kept by this app, not on the Pacemaker. Renaming to an existing tag merges them.</p>
     <input class="find" type="search" aria-label="Find a tag" placeholder="Find a tag" bind:value={query} />
     <ul class="tags" aria-label="Tags in this library">
       {#each shown as v (tagKey(v.tag))}
@@ -188,7 +187,7 @@
     {#if labels.orphans > 0}
       <p class="muted foot">
         The tag file also holds labels for {labels.orphans} track{labels.orphans === 1 ? "" : "s"} that are not {session.isComputer ? "in this library" : "on this card"}
-        (removed or added again). They are kept and hidden, and Delete and Merge change them too.
+        They are hidden; Delete and Merge change them too.
         <Button small onclick={askForget}>Forget labels of removed tracks…</Button>
       </p>
     {/if}

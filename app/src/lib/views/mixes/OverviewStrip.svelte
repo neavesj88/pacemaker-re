@@ -189,11 +189,11 @@
     bind:this={area}
     role="slider"
     tabindex="0"
-    aria-label="Whole mix: the box is the part shown below. Click to centre the view, drag the box, or use the arrow keys."
+    aria-label="Whole mix. Click to centre the view, drag the box."
     aria-valuemin="0"
     aria-valuemax={Math.round(maxPx())}
     aria-valuenow={Math.round(mv.scrollLeft)}
-    title="The whole mix. The box is the part shown below: drag it, or click to centre the view there."
+    title="Whole mix. Click to centre the view, drag the box."
     class:grab={overBox}
     onpointerdown={down}
     onpointermove={hover}

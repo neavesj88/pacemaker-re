@@ -20,8 +20,7 @@
   <Modal title={`Refresh smart cases ${session.place.on}?`} onclose={() => smartRefresh.dismiss()}>
     {#if todo.length > 0}
       <p>
-        The {session.isComputer ? 'case' : 'Pacemaker copy'} of {plural(todo.length, "smart case")} no longer matches {todo.length === 1 ? "its" : "their"} rules. Each copy is rewritten
-        to hold exactly what the rules match now, in the order of the rules. Nothing else {session.place.on} is changed.
+        The {session.isComputer ? 'case' : 'Pacemaker copy'} of {plural(todo.length, "smart case")} no longer matches {todo.length === 1 ? "its" : "their"} rules. Each is rewritten to match them. Nothing else {session.place.on} is changed.
       </p>
       <ul class="items">
         {#each todo as i (i.id)}

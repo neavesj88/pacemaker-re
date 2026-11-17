@@ -52,17 +52,17 @@
     <input data-autofocus bind:value={name} maxlength="255" aria-label="Case name" placeholder="Case name" />
   </form>
   <p>
-    A new case with {ids.length} track{ids.length === 1 ? "" : "s"} ({clock(secs)}), in the order shown. It is written to the library like any case.
+    A new case with {ids.length} track{ids.length === 1 ? "" : "s"} ({clock(secs)}).
     {#if setBuilder.source?.kind === "case"}The case “{setBuilder.source.name}” is not changed.{/if}
   </p>
   {#if setBuilder.out.length > 0}
     <p class="muted">{setBuilder.out.length} left-out track{setBuilder.out.length === 1 ? " is" : "s are"} not included.</p>
   {/if}
   {#if capNote}
-    <p class="muted">A case holds whole tracks: the “longest a track plays” limit only applies when a mix is made.</p>
+    <p class="muted">Cases hold whole tracks. The play limit applies to mixes only.</p>
   {/if}
   {#if clash}
-    <p class="warn" role="status">A case with this name already exists. Two cases with the same name are hard to tell apart.</p>
+    <p class="warn" role="status">This case name exists.</p>
   {/if}
   {#snippet actions()}
     <Button onclick={onclose}>Cancel</Button>

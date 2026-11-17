@@ -32,17 +32,7 @@
 </script>
 
 <div class="intro">
-  <p class="muted">
-    The Pacemaker reads the tags in its library, not in the audio files. This writes the library’s values into each file’s own
-    tags so other software (a tag editor, a media player, another DJ program) sees the same names. It changes the files in the
-    library, so it asks first and lists every file. A blank value in the library never erases a tag in the file.
-  </p>
-  <p class="muted">
-    Only the fields you tick are replaced. Everything else in the file’s tag stays as it is: ratings and play counts, cover art,
-    iTunes Sound Check and gapless data, private and custom frames, other credits. A comment is written to the plain comment only.
-    An ID3v2.3 tag stays 2.3 (an old ID3v2.2 tag is upgraded to 2.4, and the list says so). After every write the copy is checked
-    (same audio bytes, same tag version, untouched items still there) before it replaces the file.
-  </p>
+  <p class="muted">Writes library tags into the audio files. Asks first; lists every file. Blank values never erase file tags.</p>
   <p class="muted">
     <Button variant="link" onclick={() => (showFormats = !showFormats)}>{showFormats ? "Hide" : "Show"} the file types it can write</Button>
     {#if showFormats}
@@ -53,7 +43,7 @@
       {:else}
         <span>Loading…</span>
       {/if}
-      Files of any other type are listed as not supported and left alone.
+      Other types are skipped.
     {/if}
   </p>
 </div>

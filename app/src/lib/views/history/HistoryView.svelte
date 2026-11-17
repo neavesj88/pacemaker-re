@@ -10,6 +10,7 @@
   import { session } from "$lib/state/session.svelte";
   import { toast } from "$lib/state/toast.svelte";
   import Button from "$lib/ui/Button.svelte";
+  import HelpLink from "../help/HelpLink.svelte";
   import Table, { type Column } from "$lib/ui/Table.svelte";
   import BpmKey from "./BpmKey.svelte";
   import PlayLog from "./PlayLog.svelte";
@@ -186,7 +187,8 @@
 
 <div class="bar">
   <h2>History</h2>
-  <span class="muted">{session.isComputer ? "Play counts come from the Pacemaker (brought here with Sync), not from this app" : "What the Pacemaker played, read back from its library"}</span>
+  <HelpLink id="history" />
+  <span class="muted">{session.isComputer ? "Play counts come from the Pacemaker via Sync" : "What the Pacemaker played"}</span>
   {#if data?.any_plays}
     <span class="chip">{data.total_plays} plays</span>
     <span class="chip">{data.tracks_played} of {data.tracks_total} tracks played</span>
@@ -202,14 +204,10 @@
     <div class="none" role="status">
       {#if session.isComputer}
         <b>No plays are recorded in this library yet.</b>
-        Plays are counted on the Pacemaker, not by this app. Use Get from Pacemaker in Sync to bring them here (the setting for play
-        counts decides how they are merged). Until then everything is listed as never played.
+        Plays are counted on the Pacemaker. Bring them here with Get from Pacemaker in Sync.
       {:else}
       <b>The device has not recorded any plays yet.</b>
-      Every play counter in this library is zero: no track, case or mix has ever been played on it, or it was reset. The
-      Pacemaker counts a play on the device itself when it plays something; those counters are read back here each time you open
-      the library. Play something on the device, reconnect it and open it again, and this page fills in. Tracks you have only
-      played in this app are not counted. Until then everything is listed as never played.
+      Every play counter in this library is zero. Plays in this app are not counted.
       {/if}
     </div>
   {/if}
@@ -237,11 +235,11 @@
     {#if loading}<div class="updating" role="status">Updating...</div>{/if}
     {#if tab === "sessions"}
       <div class="note">
-        {session.isComputer ? "This library stores" : "The device stores"} only each track's most recent play, not a log. Sessions are rebuilt from those times: a pause longer than
+        Only each track's latest play is stored. A pause longer than
         <select bind:value={gap} aria-label="Pause that ends a session">
           {#each GAPS as g (g.min)}<option value={g.min}>{g.label}</option>{/each}
         </select>
-        starts a new one. A track played on several nights shows only in the latest.
+        starts a new session.
       </div>
       {#each sessions as s (s.start)}
         <section class="card">
@@ -271,7 +269,7 @@
     {:else if tab === "most"}
       <div class="head pad">
         <span class="muted">
-          Highest play count first. Showing {mostRows.length}{missing > 0 ? ` (${missing} no longer in the library)` : ""}.
+          Showing {mostRows.length}{missing > 0 ? ` (${missing} no longer in the library)` : ""}.
         </span>
         <span class="grow"></span>
         <Button small disabled={mostRows.length === 0} onclick={() => ask("Most played", mostRows.map((r) => r.track.track_id), "the most played list")}>

@@ -10,6 +10,7 @@
   import { session } from "$lib/state/session.svelte";
   import Button from "$lib/ui/Button.svelte";
   import DupGroupCard from "./DupGroupCard.svelte";
+  import HelpLink from "../help/HelpLink.svelte";
   import DupSettingsDialog from "./DupSettingsDialog.svelte";
   import MergeDialog from "./MergeDialog.svelte";
 
@@ -56,6 +57,7 @@
 <div class="page">
   <header class="bar">
     <h2>Duplicates</h2>
+    <HelpLink id="duplicates" />
     <fieldset class="ways" aria-label="Ways of finding copies">
       <label title="Same artist and title (ignoring case, punctuation and “feat.”), and about the same length"
         ><input type="checkbox" checked={s.by_tags} onchange={(e) => toggle("by_tags", e.currentTarget.checked)} /> Artist and title</label
@@ -73,7 +75,7 @@
   </header>
 
   <p class="muted line">
-    {waysLine(s)}. Finding changes nothing; you choose what to merge and confirm it first.
+    {waysLine(s)}.
     {#if d.stale}<b class="stale"> The ways changed since the last search: find again to update the sets.</b>{/if}
   </p>
 
@@ -92,7 +94,7 @@
           <Button small disabled={fp.cancelling} onclick={() => d.cancelFingerprinting()}>{fp.cancelling ? "Stopping…" : "Cancel"}</Button>
         </div>
         <progress max={fp.total || 1} value={fp.done}></progress>
-        <p class="muted small">{pct}% · each file is read once; the result is kept, so a second search is quick. Cancel keeps what is done.</p>
+        <p class="muted small">{pct}% · Cancel keeps what is done.</p>
       {:else}
         <div class="row">
           <b>Fingerprinting finished:</b>
@@ -110,7 +112,7 @@
     <div class="panel" role="status">
       <div class="row">
         <span>
-          The sound check needs <b>{plural(pending, "track")}</b> fingerprinted first. Only tracks with another track of about the same length are read.
+          The sound check needs <b>{plural(pending, "track")}</b> fingerprinted first.
         </span>
         <span class="grow"></span>
         <Button variant="primary" disabled={jobs.busy} onclick={() => d.startFingerprinting()}>Fingerprint {plural(pending, "track")}</Button>
@@ -124,7 +126,7 @@
     <p class="empty">Open a library to look for duplicates.</p>
   {:else if !result && !d.finding}
     <p class="empty">
-      Press <b>Find duplicates</b>. Sets of copies appear here, each showing every field that differs, so you can pick the one to keep.
+      Press <b>Find duplicates</b>. Sets of copies appear here.
     </p>
   {:else if result && groups.length === 0}
     <p class="empty">

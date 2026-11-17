@@ -79,7 +79,7 @@
       {/if}
     </span>
   </div>
-  <label class="check"><input type="checkbox" bind:checked={X.prefs.chapters} onchange={changed} /> Put the track list in the file as chapters (the same list and times as the CUE sheet)</label>
+  <label class="check"><input type="checkbox" bind:checked={X.prefs.chapters} onchange={changed} /> Write the track list as chapters</label>
   {#if coverProblem}<div class="note-warn" role="alert">{coverProblem}</div>{/if}
   <div class="muted small">{tagNote(X.prefs.format)}</div>
 {/if}

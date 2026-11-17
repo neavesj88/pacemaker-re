@@ -158,7 +158,7 @@
     <Button
       onclick={exportMenu}
       disabled={dirty || !!ruleError || !!fieldError || preview.ids.length === 0}
-      title={dirty ? "Save your changes first: the export uses the saved rules" : "Save the tracks this smart case matches right now as a list for other software"}
+      title={dirty ? "Save your changes first" : "Export the matching tracks as a playlist"}
     >Export…</Button>
     <Button onclick={() => ((alsoDevice = false), (deleting = true))}>Delete…</Button>
   {/if}
@@ -187,7 +187,7 @@
     <div class="order">
       <label class="check"><input type="checkbox" bind:checked={limitOn} /> Only the first</label>
       <input type="number" min="1" max={MAX_LIMIT} step="1" bind:value={limitN} disabled={!limitOn} aria-label="How many tracks" />
-      <span class="muted">tracks, after ordering{limitOn ? "" : " (off: every match)"}</span>
+      <span class="muted">tracks{limitOn ? "" : " (off: every match)"}</span>
     </div>
 
     {#if summary}<p class="summary muted">{summary}</p>{/if}
@@ -223,18 +223,18 @@
         {#if id === 0}
           Save the smart case first.
         {:else if dirty}
-          Save your changes first: the {session.isComputer ? 'case' : 'Pacemaker copy'} is made from the saved rules.
+          Save your changes first.
         {:else if sc?.on_device}
           {session.isComputer ? 'This library has' : 'The Pacemaker has'} a case called “{deviceName(sc.name)}” with these tracks{draft.sort ? ", in this order" : ""}.
           {#if smartSettings.value.refresh_mode === "auto"}
-            It is refreshed automatically when the library changes (Cases › Smart case settings).
+            Refreshed automatically (Smart case settings).
           {:else if smartSettings.value.refresh_mode === "ask"}
-            When the library changes you are asked whether to refresh it (Cases › Smart case settings).
+            Asks before refreshing (Smart case settings).
           {:else}
-            It does not change by itself: refresh it after the library changes.
+            Refresh it manually (Smart case settings).
           {/if}
         {:else}
-          Off: this smart case exists only in this app. Switch it on to write a normal case called “{deviceName(draft.name)}” to {session.isComputer ? 'the library' : 'the Pacemaker'}.
+          Off: exists only in this app. Switch it on to write a normal case.
         {/if}
       </p>
       {#if sc?.on_device && !dirty}
@@ -258,7 +258,7 @@
   {@const proceed = leaving}
   <ConfirmDialog
     title="Discard unsaved changes?"
-    message={`The smart case “${draft.name.trim() || "New smart case"}” has changes that are not saved. Leaving now discards them.${mixKeptNote(mixes.doc?.name ?? null, mixes.dirty)}`}
+    message={`The smart case “${draft.name.trim() || "New smart case"}” has unsaved changes. Leaving discards them.${mixKeptNote(mixes.doc?.name ?? null, mixes.dirty)}`}
     confirmLabel="Discard changes"
     onconfirm={() => proceed()}
     onclose={() => (leaving = null)}
@@ -268,7 +268,7 @@
 {#if takingOff && sc}
   <ConfirmDialog
     title={`Remove from ${session.place.the}?`}
-    message={`Delete the case “${deviceName(sc.name)}” from ${session.place.the}? The smart case stays in this app and no track is deleted; you can put it back at any time.`}
+    message={`Delete the case “${deviceName(sc.name)}” from ${session.place.the}? The smart case and all tracks stay.`}
     confirmLabel={session.isComputer ? "Delete ★ case" : "Delete device case"}
     onconfirm={() => cases.setSmartOnDevice(id, false)}
     onclose={() => (takingOff = false)}
@@ -287,7 +287,7 @@
       {#if sc.on_device}
         <label class="also">
           <input type="checkbox" bind:checked={alsoDevice} />
-          Also delete the case “{deviceName(sc.name)}” from {session.place.the} (otherwise it stays there as an ordinary case)
+          Also delete the case “{deviceName(sc.name)}” from {session.place.the} (otherwise it stays as an ordinary case)
         </label>
       {/if}
     {/snippet}

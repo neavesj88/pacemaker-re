@@ -67,7 +67,7 @@
   {#if session.library && session.isComputer && session.volumes.length > 0}
     <Button
       onclick={() => nav.go("sync", { direction: "send", other: session.volumes[0] })}
-      title="Copy tracks, mixes and cases from this computer to the Pacemaker. You see what would change first."
+      title="Copy tracks, mixes and cases to the Pacemaker. Shows changes first."
     >Send to Pacemaker</Button>
   {/if}
   {#if session.library}
@@ -77,14 +77,14 @@
       disabled={!jobs.canWrite}
       title={jobs.canWrite
         ? session.isComputer
-          ? "Analyse audio files and copy them into the library on this computer"
+          ? "Analyse audio files and add them to this library"
           : "Analyse audio files and copy them to the Pacemaker"
-        : "Unavailable while a job runs, the library is not compatible with a Pacemaker or the Pacemaker was ejected"}
+        : "Unavailable: a job is running, the library is incompatible or the Pacemaker was ejected"}
     >Add tracks…</Button>
     <input
       class="search"
       placeholder="Search, or bpm:120-128 key:~8A tag:peak"
-      title="Words match the title, artist, album, genre, key, comments, label, remixer, composer, year and tags. Fields, ranges, -not and OR work too: see the ? in the Tracks toolbar."
+      title="Fields, ranges, -not and OR work. See the ? in the Tracks toolbar."
       value={filters.query}
       oninput={search}
     />

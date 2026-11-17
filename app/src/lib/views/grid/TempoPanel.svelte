@@ -92,9 +92,7 @@
       <span class="chip" class:g={vtempo.sections.length <= 1}>{vtempo.sections.length <= 1 ? "one tempo" : `${vtempo.sections.length} sections`}</span>
     </h4>
     <p class="note first">
-      The .str file stores a position and a tempo for every beat, so a tempo that changes is saved exactly as you edit it.
-      That the Pacemaker plays each beat where the file puts it (rather than smoothing the tempo) has not been tested on
-      a real Pacemaker.
+      Tempo changes are saved per beat. Untested on a real Pacemaker.
     </p>
     {#if vtempo.sectionsError}<p class="err">{vtempo.sectionsError}</p>{/if}
     {#if vtempo.sections.length > 0}
@@ -131,13 +129,13 @@
                     small
                     disabled={!canEdit || drafts[draftKey(s)] === undefined || Math.abs(Number(drafts[draftKey(s)].replace(',', '.')) - s.bpm) < 0.005}
                     onclick={() => applySection(s)}
-                    title="Rebuild this section's beats at this tempo, starting on its first beat. The next section does not move."
+                    title="Rebuild this section's beats at this tempo."
                   >Set</Button>
                   <Button
                     small
                     disabled={!canEdit || !evenRange(s, n)}
                     onclick={() => vtempo.evenSection(s)}
-                    title="Space this section's beats evenly between its first beat and the next section's first beat"
+                    title="Space this section's beats evenly"
                   >Even</Button>
                   {#if s.forced}
                     <Button small onclick={() => editor.removeSplit(splitAtFrame(s))} title="Remove the cut (the tempo is not changed)">Unsplit</Button>
@@ -150,16 +148,15 @@
       </div>
       {#if vtempo.sections.length > listMax}
         <p class="note">
-          Showing the first {listMax} of {vtempo.sections.length} sections. A grid with this many tempo changes follows
-          a wandering beat: raise the section tolerance in the settings below to group them.
+          Showing the first {listMax} of {vtempo.sections.length} sections. Raise the section tolerance below to group them.
         </p>
       {/if}
     {:else}
       <p class="muted">No beat grid to show.</p>
     {/if}
     <div class="row">
-      <Button small disabled={!canEdit} onclick={() => vtempo.splitAt(head)} title="Cut the grid into a new section at the beat nearest the playhead, then give that section its own tempo">Split at playhead</Button>
-      <span class="muted">Splitting changes nothing by itself; set the tempo of the new section in the table.</span>
+      <Button small disabled={!canEdit} onclick={() => vtempo.splitAt(head)} title="Cut a new section at the beat nearest the playhead">Split at playhead</Button>
+      <span class="muted">Then set the new section's tempo in the table.</span>
     </div>
   </div>
 
@@ -193,8 +190,7 @@
       </Button>
     </div>
     <p class="note">
-      The section under the playhead takes the tempo. Press <kbd>T</kbd> to tap from the keyboard. The tap count restarts
-      after a pause (settings below).
+      The section under the playhead takes the tempo. <kbd>T</kbd> taps.
     </p>
   </div>
 
@@ -222,8 +218,7 @@
       <Button small disabled={!canEdit || sel === null || n < 2} onclick={() => vtempo.removeSelected()} title="Delete the selected beat line">Remove</Button>
     </div>
     <p class="note">
-      Drag a line to move just that one. Alt+drag moves it and every later beat together. A line stays clear of its
-      neighbours by the shortest beat the Pacemaker allows (400 BPM).
+      Drag a line to move it. Alt+drag moves every later beat too.
     </p>
   </div>
 
@@ -237,7 +232,7 @@
       {/if}
     </h4>
     <div class="row">
-      <Button small disabled={!editor.doc || vtempo.onsetsLoading} onclick={() => vtempo.checkAudio()} title="Reads the audio file and compares its attacks with the beat lines (a few seconds)">
+      <Button small disabled={!editor.doc || vtempo.onsetsLoading} onclick={() => vtempo.checkAudio()} title="Compare the audio's attacks with the beat lines">
         {vtempo.onsetsLoading ? "Reading the audio…" : vtempo.onsets ? "Read the audio again" : "Check against the audio"}
       </Button>
       <Button
@@ -274,10 +269,7 @@
         <p class="muted">No run of {vtempo.settings.drift_min_run} or more beats is off by more than {vtempo.settings.drift_threshold_ms} ms.</p>
       {/if}
     {:else if !vtempo.onsetsLoading}
-      <p class="muted">
-        Reads the audio file and shows where its attacks fall against each beat line, so a grid that slowly slips off the
-        music stands out. Nothing is changed until you choose to follow the audio, and that is undoable.
-      </p>
+      <p class="muted">Compares the audio's attacks with each beat line. Nothing changes until you follow the audio.</p>
     {/if}
   </div>
 

@@ -39,7 +39,7 @@
         <span>{m.label} <span class="muted">{m.hint}</span></span>
       </label>
     {/each}
-    <p class="note muted">Keys are read as Camelot codes. A pair no ticked move covers is a clash. A track with no key is treated as neutral.</p>
+    <p class="note muted">Camelot keys. Unticked moves are clashes. No key counts as neutral.</p>
   </fieldset>
 
   <fieldset>
@@ -79,7 +79,7 @@
       </label>
     {/if}
     {#if !hasEnergy}
-      <p class="note muted">None of these tracks has an energy under the Energy source setting (1 to 10), so the curve has nothing to follow and changes nothing. Rate tracks (Tracks, Tags, colour, energy), run Energy (auto) on them, or change the source above.</p>
+      <p class="note muted">No track has an energy under this source. The curve does nothing.</p>
     {/if}
   </fieldset>
 
@@ -93,18 +93,18 @@
       <span>Aim for a set of (minutes)</span>
       <input type="number" min="1" max="1440" step="1" placeholder="use every track" value={p.targetMins ?? ""} onchange={(e) => typed(e, "targetMins", true)} />
     </label>
-    <p class="note muted">With a target, the tracks that fit the set least are left out until the total is as close to it as it can get. It is the sum of the play times; the transitions overlap tracks, so a mix made from the set comes out a little shorter.</p>
+    <p class="note muted">The worst-fitting tracks are left out. A mix comes out a little shorter.</p>
   </fieldset>
 
   <fieldset>
     <legend>Behaviour</legend>
     <label class="check"><input type="checkbox" checked={p.solveOnLoad} onchange={(e) => patch({ solveOnLoad: e.currentTarget.checked })} /><span>Order the set as soon as tracks are loaded</span></label>
-    <label class="row" title="Ordering compares every pair of tracks and runs while the window waits; a bigger source is loaded in its own order and waits for Re-solve.">
+    <label class="row" title="Larger sources wait for Re-solve.">
       <span>...if it has at most this many tracks</span>
       <input type="number" min="50" max="2500" step="50" disabled={!p.solveOnLoad} value={p.solveLimit} onchange={(e) => typed(e, "solveLimit")} />
     </label>
-    <label class="check" title="Needs sections: Tracks, Sections panel. Only a tie-breaker between hops that are otherwise alike; tracks without sections are not penalised."><input type="checkbox" checked={p.preferSections} onchange={(e) => patch({ preferSections: e.currentTarget.checked })} /><span>Prefer leaving a track on its outro and arriving on an intro, where sections are detected</span></label>
-    <label class="row" title="Only counts with the preference above: how long an intro or outro must be to count as something to mix over.">
+    <label class="check" title="Needs sections. Tie-breaker only."><input type="checkbox" checked={p.preferSections} onchange={(e) => patch({ preferSections: e.currentTarget.checked })} /><span>Prefer leaving on an outro, arriving on an intro</span></label>
+    <label class="row" title="Used with the preference above.">
       <span>Shortest intro or outro that counts (bars)</span>
       <input type="number" min="4" max="64" step="4" disabled={!p.preferSections} value={p.sectionMinBars} onchange={(e) => typed(e, "sectionMinBars")} />
     </label>
@@ -122,7 +122,7 @@
       <span>Do not beat-match a hop bigger than (%)</span>
       <input type="number" min="0" max="50" step="0.5" placeholder="the largest tempo jump ({p.maxBpmJumpPct} %)" disabled={!p.beatmatch} value={p.blendJumpPct ?? ""} onchange={(e) => typed(e, "blendJumpPct", true)} />
     </label>
-    <p class="note muted">A bigger hop is not stretched: that track starts when the one before it ends.</p>
+    <p class="note muted">Bigger hops are not stretched.</p>
     <label class="row">
       <span>Most a blend may overlap (% of the shorter track)</span>
       <input type="number" min="5" max="50" step="1" value={p.overlapCapPct} onchange={(e) => typed(e, "overlapCapPct")} />
@@ -134,7 +134,7 @@
         <option value="replace">Replace the earlier tool</option>
       </select>
     </label>
-    <p class="note muted">Transitions use the Mixes view's auto-transition recipe and length: {transitionWords(recipePrefs.value)}. Its “when a tool is in the way” setting does not apply here (a new mix holds none of your own tools, only ones this build places); the choice above does.</p>
+    <p class="note muted">Transitions follow the Mixes view's auto-transition: {transitionWords(recipePrefs.value)}.</p>
   </fieldset>
 
   <button class="reset" onclick={() => (setPrefs.reset(), setBuilder.settingsChanged())}>Reset these settings</button>

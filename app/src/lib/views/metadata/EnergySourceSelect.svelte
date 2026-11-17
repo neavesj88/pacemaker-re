@@ -29,7 +29,7 @@
   </select>
 </label>
 {#if !compact}
-  <p class="help muted">{help} Applies to the search box, the energy filter, smart cases, the gap map, the set builder and the printable setlist; the Tracks table always shows both columns.</p>
+  <p class="help muted">{help}</p>
 {/if}
 {#if energySource.problem}<p class="warn" role="alert">{energySource.problem}</p>{/if}
 

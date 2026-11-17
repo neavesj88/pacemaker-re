@@ -217,7 +217,7 @@
   {#if mv.sectionMarkers && sections.showMarkers}<ClipSections {clip} pps={mv.pps} />{/if}
   <span class="title" style:top="{titleTop}px" style:max-width="{Math.max(0, width - 8)}px">{title}{#if height >= 70}<em>{tempoText}</em>{/if}</span>
   {#if stretchBadge}
-    <span class="stretch" style:top="{titleTop + 16}px" title="This track plays {Math.abs(speed * 100 - 100).toFixed(1)} % {speed > 1 ? 'faster' : 'slower'} than its own tempo, more than the stretch limit in the settings. The clip's panel offers to keep its own tempo.">{stretchBadge}</span>
+    <span class="stretch" style:top="{titleTop + 16}px" title="Plays {Math.abs(speed * 100 - 100).toFixed(1)} % {speed > 1 ? 'faster' : 'slower'} than its own tempo, over the stretch limit.">{stretchBadge}</span>
   {/if}
   {#if broken}<span class="warn" title={clip.track?.problem ?? "track unavailable"}>{clip.track?.problem ?? "track unavailable"}</span>{/if}
   {#if clip.trimStart > SR * 0.05}<span class="cue" title="Cue point: audio before it is hidden"></span>{/if}

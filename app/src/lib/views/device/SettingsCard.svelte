@@ -6,6 +6,7 @@
   import { toast } from "$lib/state/toast.svelte";
   import Button from "$lib/ui/Button.svelte";
   import Modal from "$lib/ui/Modal.svelte";
+  import HelpLink from "../help/HelpLink.svelte";
   import Card from "./Card.svelte";
   import { device } from "./device.svelte";
   import { plural } from "./format";
@@ -73,11 +74,12 @@
 </script>
 
 <Card title="Device settings">
+  {#snippet aside()}<HelpLink id="device-page" anchor="device-settings" />{/snippet}
   {#if view === undefined}
     <p class="muted">Reading the drive…</p>
   {:else if view === null}
     <p class="muted">
-      This drive has no settings file yet. The Pacemaker creates it the first time it is shut down.
+      No settings file yet. The Pacemaker creates it at first shutdown.
     </p>
   {:else}
     {#each groups as [group, list] (group)}
@@ -104,9 +106,7 @@
       </details>
     {/each}
     <div class="note">
-      Edits the Pacemaker's settings.dat directly. {#if absent}{plural(absent, "setting")} the file does not hold yet
-        (the device adds them when it saves) cannot be edited here.{/if}
-      Levels and EQ are raw engine values with unknown ranges, so they are shown but not editable.
+      {#if absent}{plural(absent, "setting")} missing from the file cannot be edited. {/if}Levels and EQ are read-only.
     </div>
     <div class="actions">
       <Button
@@ -130,9 +130,7 @@
       {/each}
     </ul>
     <p class="muted">
-      This rewrites .Pacemaker/settings.dat on {session.library?.root}. Only the values above change; the rest of the
-      file is written back exactly as it was. Back up first if you want a way back. Do not write while the device is
-      running: eject, then power it on.
+      Rewrites settings.dat on {session.library?.root}. Only these values change. Back up first to keep a way back. Not while the device runs.
     </p>
     {#snippet actions()}
       <Button data-autofocus onclick={() => (confirming = false)}>Cancel</Button>

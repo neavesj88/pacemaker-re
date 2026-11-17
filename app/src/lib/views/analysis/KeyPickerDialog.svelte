@@ -79,13 +79,13 @@
       onkeydown={(e) => e.key === "Enter" && apply()}
     />
   </label>
-  {#if typedBad}<p class="err" role="alert">Not a musical key. Use a note and major or minor, such as Am, F#m or Bb. Camelot codes like 8A are picked above.</p>{/if}
+  {#if typedBad}<p class="err" role="alert">Not a key. Use a note and major or minor, such as Am or F#m.</p>{/if}
 
   <p class="what">
     {#if chosen}
-      Sets the key to <strong>{chosen.name}</strong> ({chosen.camelot}) on {tracks.length === 1 ? "this track" : `these ${tracks.length} tracks`}. Only the key field of the library changes.
+      Sets the key to <strong>{chosen.name}</strong> ({chosen.camelot}) on {tracks.length === 1 ? "this track" : `these ${tracks.length} tracks`}.
     {:else}
-      Choose a key. Only the key field of the library changes; the audio and the beat grid are not touched.
+      Choose a key.
     {/if}
   </p>
   <ul class="names" aria-label="Tracks that will change">

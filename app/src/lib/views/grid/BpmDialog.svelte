@@ -51,11 +51,9 @@
       </span>
     </label>
     {#if touched && error}<p class="err" role="alert">{error}</p>{/if}
-    {#if same}<p class="muted">That is the tempo it has now. If its tempo varies, this still makes the grid even; if the grid is already like that, nothing is changed.</p>{/if}
+    {#if same}<p class="muted">Same as the current tempo. The grid is still made even.</p>{/if}
     <p class="muted">
-      The beat grid is replaced by an even grid at this tempo, starting at the track's first beat, and the BPM is stored with
-      it. Tempo changes inside the track are lost. To halve or double a track and keep its own beat lines, use Halve BPM or
-      Double BPM instead.
+      Replaces the beat grid with an even one at this tempo. Tempo changes inside the track are lost. To keep them, use Halve BPM or Double BPM.
     </p>
   {/if}
   {#snippet actions()}

@@ -63,7 +63,7 @@
   {/each}
   <label class="check">
     <input type="checkbox" bind:checked={draft.auto_check} />
-    <span>Check the grid against the audio when a track opens (reads the file, a few seconds)</span>
+    <span>Check the grid against the audio when a track opens</span>
   </label>
 </div>
 {#if settingsError}<p class="err">{settingsError}</p>{/if}

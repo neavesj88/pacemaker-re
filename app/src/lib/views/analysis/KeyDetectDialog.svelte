@@ -17,10 +17,7 @@
 </script>
 
 <Modal title={ids.length === 1 ? "Detect the key" : `Detect the keys of ${ids.length} tracks`} onclose={() => analysis.closeDialog()}>
-  <p class="muted">
-    The key is worked out from the audio of each track and written to the library's key field. These settings are
-    remembered for the next run.
-  </p>
+  <p class="muted">Written to the library's key field.</p>
 
   <KeySettingsFields {withKey} />
 

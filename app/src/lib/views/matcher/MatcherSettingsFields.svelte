@@ -5,7 +5,7 @@
   import type { VersionMode } from "./matchLogic";
 
   const VERSION_HELP: Record<VersionMode, string> = {
-    strict: "A different or missing mix name (Extended Mix, Radio Edit...) costs enough score that, with the default accept score, those matches are asked about.",
+    strict: "A different or missing mix name is asked about.",
     lenient: "A different mix name costs a little score.",
     ignore: "Mix names are not compared.",
   };
@@ -57,9 +57,8 @@
   The missing list also holds the lines still waiting for your decision
 </label>
 <p class="muted">
-  Score is 0-100. At or above the first number a single clear match counts as owned; between the two numbers you are asked; below the second it is missing.
-  {VERSION_HELP[matcher.options.versionMode]} A line with no artist (or a library track with none) is always asked about unless the accept score is set to 80 or lower.
-  These settings are remembered on this computer.
+  Score is 0-100: owned at or above the first number, asked between, missing below.
+  {VERSION_HELP[matcher.options.versionMode]}
 </p>
 
 <style>

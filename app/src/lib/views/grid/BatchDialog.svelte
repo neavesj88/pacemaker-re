@@ -93,7 +93,7 @@
     </section>
 
     {#if gridBatch.phase === "setup"}
-      <p class="empty">Choose what to do, then Preview. Nothing is changed {session.place.on} until you have seen the result for every track and confirmed.</p>
+      <p class="empty">Choose what to do, then Preview. Nothing is changed {session.place.on} until you confirm.</p>
     {:else if gridBatch.phase === "working"}
       <div class="working" role="status">
         <div class="bar" aria-label="Analysis progress"><i style:width="{progressPct}%"></i></div>
@@ -101,7 +101,7 @@
           Analysing {gridBatch.progress?.done ?? 0} of {gridBatch.progress?.total ?? gridBatch.ids.length}
           {#if gridBatch.progress?.label}<span class="muted">· {gridBatch.progress.label}</span>{/if}
         </p>
-        <p class="muted">Reading the audio only; nothing is written. Stop keeps the tracks analysed so far.</p>
+        <p class="muted">Nothing is written. Stop keeps the tracks analysed so far.</p>
       </div>
     {:else}
       <div class="summary" aria-live="polite">

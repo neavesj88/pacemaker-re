@@ -10,6 +10,7 @@
   import { session } from "$lib/state/session.svelte";
   import { toast } from "$lib/state/toast.svelte";
   import Button from "$lib/ui/Button.svelte";
+  import HelpLink from "../help/HelpLink.svelte";
   import { parseKey } from "../tracks/trackLogic";
   import { tracksState } from "../tracks/tracksState.svelte";
   import CellPanel from "./CellPanel.svelte";
@@ -91,7 +92,8 @@
 <div class="gap">
 <div class="bar">
   <h2>Library gap map</h2>
-  <span class="muted">Where the collection is thick and where it is thin. Worked out here from the tracks in the library; nothing is written.</span>
+  <HelpLink id="gap-map" />
+  <span class="muted">Where the collection is thick and thin.</span>
   <span class="grow"></span>
   <Button small active={settingsOpen} aria-expanded={settingsOpen} onclick={() => (settingsOpen = !settingsOpen)}>Settings</Button>
 </div>
@@ -103,7 +105,7 @@
 {#if !library}
   <p class="empty">Open a library to see its gap map.</p>
 {:else if tracks.length === 0}
-  <p class="empty">This library has no tracks yet, so there is nothing to map.</p>
+  <p class="empty">No tracks to map.</p>
 {:else}
   <div class="tabs" role="tablist" aria-label="Gap map grids">
     {#each tabs as id (id)}
@@ -113,7 +115,7 @@
     {/each}
     {#if !hasEnergy}
       <span class="hint muted">
-        Key × Energy appears once tracks have an energy rating or an estimate.
+        Key × Energy needs track energy.
         <button type="button" class="linkish" onclick={() => energy.openPanel()}>Analyse energy…</button>
       </span>
     {/if}
@@ -133,8 +135,8 @@
       </div>
       {#if matrix.total === 0}
         <p class="empty">
-          {#if active === "key-energy"}No track has both a key and an energy (a rating or an estimate, under the Energy source setting) yet.
-          {:else}No track has a BPM, {active === "bpm-key" ? "a key" : "a genre"} and a BPM inside {gap.settings.bpmMin}–{gap.settings.bpmMax}. Tracks that still need analysis have no BPM here.
+          {#if active === "key-energy"}No track has both a key and an energy.
+          {:else}No track has a BPM, {active === "bpm-key" ? "a key" : "a genre"} and a BPM inside {gap.settings.bpmMin}–{gap.settings.bpmMax}.
           {/if}
         </p>
       {:else}

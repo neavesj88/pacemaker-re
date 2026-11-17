@@ -53,8 +53,7 @@
 
 <Modal title="Save owned tracks as a case" {onclose}>
   <p>
-    Creates a new case {place.kind === "computer" ? "in" : "on"} <b>{place.label}</b> holding <b>{trackCount}</b> track{trackCount === 1 ? "" : "s"}, in the order of the request list.
-    This is a write to the library; no audio is added, changed or deleted.
+    Creates a new case {place.kind === "computer" ? "in" : "on"} <b>{place.label}</b> with <b>{trackCount}</b> track{trackCount === 1 ? "" : "s"}, in request order.
   </p>
   <form
     onsubmit={(e) => {
@@ -64,7 +63,7 @@
   >
     <input bind:value={name} maxlength="255" aria-label="Case name" placeholder="Case name" />
   </form>
-  {#if clash}<p class="warn" role="status">A case with this name already exists. Two cases with the same name are hard to tell apart.</p>{/if}
+  {#if clash}<p class="warn" role="status">A case with this name already exists.</p>{/if}
   <ol>
     {#each entries as e (e.line)}
       <li>

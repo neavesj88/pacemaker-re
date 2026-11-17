@@ -9,6 +9,7 @@
   import { session } from "$lib/state/session.svelte";
   import Button from "$lib/ui/Button.svelte";
   import ConfirmDialog from "$lib/views/cases/ConfirmDialog.svelte";
+  import HelpLink from "../help/HelpLink.svelte";
   import { keyColour, parseKey } from "$lib/views/tracks/trackLogic";
   import CreateMixDialog from "./CreateMixDialog.svelte";
   import SaveCaseDialog from "./SaveCaseDialog.svelte";
@@ -200,8 +201,9 @@
         </select>
       </label>
       {#if setBuilder.source}
-        <Button onclick={() => requestLoad("reload")} title="Read the source again. Locks, tracks you left out and your edits are dropped (you are asked first)" disabled={setBuilder.loading}>Reload</Button>
+        <Button onclick={() => requestLoad("reload")} title="Read the source again. Locks, left-out tracks and edits are dropped." disabled={setBuilder.loading}>Reload</Button>
       {/if}
+      <HelpLink id="set-builder" />
       <span class="sp"></span>
       {#if setBuilder.solving}
         <span class="muted" role="status">Ordering the set…</span>
@@ -212,7 +214,7 @@
         </Button>
       {/if}
       <Button onclick={() => setBuilder.undo()} disabled={!setBuilder.canUndo || setBuilder.solving} title={setBuilder.canUndo ? `Undo: ${setBuilder.undoLabel} (Ctrl+Z)` : "Nothing to undo"}>Undo</Button>
-      <Button onclick={() => setBuilder.restoreSourceOrder()} disabled={!setBuilder.source || setBuilder.solving} title="Back to the order the tracks came in; left-out tracks come back and locks are cleared">Original order</Button>
+      <Button onclick={() => setBuilder.restoreSourceOrder()} disabled={!setBuilder.source || setBuilder.solving} title="Back to the source order. Left-out tracks return, locks clear.">Original order</Button>
       <Button onclick={() => (savingCase = true)} disabled={!canAct}>Save as case…</Button>
       <Button onclick={() => (creatingMix = true)} disabled={!canAct}>Create mix…</Button>
     </div>
@@ -220,13 +222,12 @@
     {#if !setBuilder.source}
       <div class="empty">
         <p>Pick a case, or select tracks in the Tracks view, to build a set from.</p>
-        <p class="muted">The builder orders them by key and tempo, lets you lock, reorder and leave tracks out, then saves the result as a new case or lays it out as a mix with the beat-match and transition tools. It never changes the case you start from.</p>
       </div>
     {:else}
       <div class="sum" role="status">
         <b>{setBuilder.source.name}</b>
         <span>{rows.length} track{rows.length === 1 ? "" : "s"}</span>
-        <span title="Sum of the play times (capped per track). A mix made from it is shorter by the transition overlaps.">{lengthLine(sum.secs, o, setBuilder.short)}</span>
+        <span title="Sum of play times. A mix is shorter by the overlaps.">{lengthLine(sum.secs, o, setBuilder.short)}</span>
         {#if sum.avgScore !== null}
           <span>average transition <b class={scoreClass(sum.avgScore)}>{Math.round(sum.avgScore)}</b></span>
           {#if sum.minScore !== null && sum.minAt !== null}
@@ -234,7 +235,7 @@
           {/if}
           <span class:bad={sum.violations > 0}>{sum.violations === 0 ? "no limit broken" : `${sum.violations} transition${sum.violations === 1 ? "" : "s"} break a limit`}</span>
         {/if}
-        {#if setBuilder.edited}<span class="tag" title="You changed the set or the settings since it was last solved">changed since solve</span>{/if}
+        {#if setBuilder.edited}<span class="tag" title="Edited since the last solve">changed since solve</span>{/if}
         {#if setBuilder.pinned.size > 0}<span class="muted">{setBuilder.pinned.size} locked</span>{/if}
       </div>
 
@@ -253,7 +254,7 @@
       {/if}
 
       <div class="hintbar muted">
-        <span>Drag rows to reorder (Alt+Up / Down moves the selection). L locks a track where it is; Delete leaves it out. A locked track keeps its position when the set is solved again.</span>
+        <span>Drag rows to reorder (Alt+Up / Down). L locks a track, Delete leaves it out.</span>
         {#if rows.length > 0}
           <Button small variant="ghost" onclick={() => setBuilder.lockAll(setBuilder.pinned.size < rows.length)}>{setBuilder.pinned.size < rows.length ? "Lock all" : "Unlock all"}</Button>
           <Button small variant="ghost" onclick={() => setBuilder.leaveOut(sel)} disabled={sel.length === 0}>Leave out{sel.length ? ` ${sel.length}` : ""}</Button>
@@ -344,7 +345,7 @@
               {#each setBuilder.out as x (x.id)}
                 <tr>
                   <td class="title">{labelOf(x.id)}</td>
-                  <td class="muted">{x.why === "you" ? "left out by you" : "dropped to get closer to the target length"}</td>
+                  <td class="muted">{x.why === "you" ? "left out by you" : "dropped for the target length"}</td>
                   <td class="num">{clock(setBuilder.byId.get(x.id) ? playSecs(setBuilder.byId.get(x.id)!, o) : 0)}</td>
                   <td class="act"><Button small onclick={() => setBuilder.addBack(x.id)}>Add back</Button></td>
                 </tr>
@@ -362,7 +363,7 @@
 {#if confirmLoad !== null}
   <ConfirmDialog
     title={confirmLoad === "reload" ? "Read the source again?" : "Load other tracks?"}
-    message={confirmLoad === "reload" ? "The set is read from its source again and ordered afresh. This would be lost:" : "The set is replaced by the tracks you picked. This would be lost:"}
+    message={confirmLoad === "reload" ? "The set is read again and re-ordered. This would be lost:" : "The set is replaced. This would be lost:"}
     items={setBuilder.lostByLoading()}
     confirmLabel={confirmLoad === "reload" ? "Read again" : "Replace the set"}
     onconfirm={() => runLoad(confirmLoad!)}

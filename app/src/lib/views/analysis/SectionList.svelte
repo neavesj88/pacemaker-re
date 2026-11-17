@@ -16,7 +16,7 @@
     {#if entry}
       <div class="head">
         <b>Sections</b>
-        <span class="muted">estimated from the audio and this beat grid. {phraseText(entry)}</span>
+        <span class="muted">estimated. {phraseText(entry)}</span>
         <Button small variant="ghost" onclick={() => sections.openPanel()}>Settings…</Button>
       </div>
       <div class="chips">
@@ -32,7 +32,7 @@
     {:else}
       <div class="head">
         <b>Sections</b>
-        <span class="muted">none for this track: not analysed yet, no first downbeat, too short, or no clear structure at this sensitivity.</span>
+        <span class="muted">none for this track.</span>
         <Button small onclick={() => sections.askAnalyse([trackId])} disabled={!jobs.canWrite}>Detect sections…</Button>
         <Button small variant="ghost" onclick={() => sections.openPanel()}>Settings…</Button>
       </div>

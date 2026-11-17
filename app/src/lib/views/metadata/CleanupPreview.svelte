@@ -52,7 +52,7 @@
 </script>
 
 {#if cleanup.ids.length === 0}
-  <p class="empty">No tracks to look at. Choose which tracks above: highlight some in the Tracks view, pick a case, or take the whole library.</p>
+  <p class="empty">No tracks chosen. Pick tracks above.</p>
 {:else if !preview}
   <p class="empty">{cleanup.busy ? "Looking through the tracks…" : "Nothing to show yet."}</p>
 {:else if flat.length === 0}
@@ -116,7 +116,7 @@
   </div>
 
   <div class="foot">
-    <span class="muted">Applying writes to the library {session.isComputer ? 'on this computer' : `on the device (${libraryLabel('pacemaker', session.library?.root ?? '')})`}; a copy of music.db is kept first. Audio files are not touched.</span>
+    <span class="muted">Writes to the library {session.isComputer ? 'on this computer' : `on the device (${libraryLabel('pacemaker', session.library?.root ?? '')})`}. music.db is copied first.</span>
     <span class="sp"></span>
     <Button
       variant="primary"
@@ -132,8 +132,7 @@
 {#if confirming}
   <Modal title={`Apply ${plural(accepted.length, "change")} to ${plural(t.tracks, "track")}?`} onclose={() => (confirming = false)}>
     <p class="muted">
-      These replace the values in the library on {session.library?.root}. A safety copy of music.db is taken first. Nothing else
-      changes{cleanup.settings?.write_back ? "; audio files are only touched later, after a second list you confirm" : ": audio files are not touched"}.
+      Replaces these values in the library on {session.library?.root}. music.db is copied first{cleanup.settings?.write_back ? "; audio files follow after a second list you confirm" : "; audio files are not touched"}.
     </p>
     <ul class="names">
       {#each accepted as a (a.track_id + ":" + a.field)}

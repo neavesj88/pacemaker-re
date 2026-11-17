@@ -38,9 +38,9 @@
     {#if query.trim()}
       {options.length === 100 ? "The first 100 tracks that contain every word." : `${options.length} track${options.length === 1 ? "" : "s"} contain every word.`}
     {:else if options.length}
-      The closest tracks the matcher found, best first. Type to search the whole library.
+      Closest matches first. Type to search the library.
     {:else}
-      The matcher found nothing close. Type to search the whole library.
+      No close match. Type to search the library.
     {/if}
   </p>
   <ul>

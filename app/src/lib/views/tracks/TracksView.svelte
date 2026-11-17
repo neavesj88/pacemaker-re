@@ -127,17 +127,17 @@
       {#if rows.length === 0}
         <p class="empty">
           {#if all.length === 0}
-            No tracks {session.place.on} yet. Use Add tracks… or drop audio files here.
+            No tracks {session.place.on} yet. Add tracks… or drop audio files here.
           {:else if filters.query}
-            No tracks match the search. Clear the search box (or use Clear filters above) to see them all.
+            No tracks match the search.
           {:else if tracksState.onlySuspect && suspects.checking}
             Checking the beat grids…
           {:else if tracksState.onlySuspect && suspects.error}
             Could not check the beat grids: {suspects.error}
           {:else if tracksState.onlySuspect && !filters.query && !tracksState.genre && !tracksState.bpmMin && !tracksState.bpmMax && !tracksState.keyFilter && !tracksState.onlyAnalysed && !filters.onlyNeeds}
-            No suspect grids under the current rules. The Rules… button changes the genre windows and the confidence floor.
+            No suspect grids under the current rules.
           {:else if filtersActive}
-            No tracks match the filters. Use Clear filters above to see them all.
+            No tracks match the filters.
           {/if}
         </p>
       {/if}

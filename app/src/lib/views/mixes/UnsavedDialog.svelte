@@ -37,8 +37,7 @@
   <Modal title="Unsaved changes" onclose={() => (unsaved.next = null)}>
     <p>
       “{mixes.doc.name}” has {mixes.undoDepth} unsaved edit{mixes.undoDepth === 1 ? "" : "s"}. Save them before
-      continuing? Rating, genre and comments are written to the library as you change them, so Discard does not
-      undo those.
+      continuing? Rating, genre and comments are already saved; Discard does not undo them.
     </p>
     {#snippet actions()}
       <Button onclick={() => (unsaved.next = null)} data-autofocus>Cancel</Button>

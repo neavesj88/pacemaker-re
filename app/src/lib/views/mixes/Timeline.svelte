@@ -451,7 +451,7 @@
           <span class="muted">{bpm.toFixed(2)} BPM</span>
         </div>
         <!-- svelte-ignore a11y_no_static_element_interactions -->
-        <div class="track" style:width="{contentW}px" onpointerdown={scrub} ondblclick={cueDbl} title="Click or drag to place the playhead. Double-click puts it on the nearest snap point (Alt = exactly here). Shift-drag marks a stretch to export (Shift-click clears it).">
+        <div class="track" style:width="{contentW}px" onpointerdown={scrub} ondblclick={cueDbl} title="Click or drag to place the playhead. Shift-drag marks an export range.">
           {#each ticks.beats as s (s)}<i class="beat" style:left="{s * mv.pps}px"></i>{/each}
           {#each ticks.bars as b (b.bar)}
             <i class="bar" style:left="{b.sec * mv.pps}px"></i>
@@ -470,7 +470,7 @@
           <b>Mix</b>
           <span class="muted">{doc.clips.length} track{doc.clips.length === 1 ? "" : "s"}, {doc.transitions.length} crossfade{doc.transitions.length === 1 ? "" : "s"}</span>
           {#if gaps.length > 0}
-            <span class="gaphint" title="Clips that overlap do not crossfade by themselves: press + crossfade (or Auto) on the overlap to add one.">{gaps.length} overlap{gaps.length === 1 ? "" : "s"} not crossfaded: + adds one</span>
+            <span class="gaphint" title="Add a crossfade with + or Auto">{gaps.length} overlap{gaps.length === 1 ? "" : "s"} not crossfaded: + adds one</span>
           {/if}
           <ul class="legend" aria-label="Clip colours">
             {#each doc.clips.slice(0, 8) as c (c.id)}
@@ -505,7 +505,7 @@
                       title="Add a crossfade over the overlap of “{clipTitle(g.from)}” and “{clipTitle(g.to)}”"
                       onclick={() => mixes.addTransition(g.from.id, g.to.id, g.start, g.end - g.start)}>{gw < 110 ? "+" : "+ crossfade"}</button
                     >
-                    <button title="Build a transition here with the recipe and length set in the Auto transition settings (select a crossfade or a clip to change them)" onclick={() => void autoTransition(g.from.id, g.to.id)}>{gw < 110 ? "A" : "Auto"}</button>
+                    <button title="Build a transition with the Auto transition settings" onclick={() => void autoTransition(g.from.id, g.to.id)}>{gw < 110 ? "A" : "Auto"}</button>
                   </div>
                 </div>
               {/if}
@@ -579,7 +579,7 @@
             {#if mixes.alignCue !== null}<div class="aligncue" style:left="{mv.x(mixes.alignCue)}px" aria-hidden="true"></div>{/if}
             {#if dropAt !== null}<div class="dropline" style:left="{mv.x(dropAt)}px" aria-hidden="true"><span>{mmss(dropAt / SR)}</span></div>{/if}
             {#if doc.clips.length === 0}
-              <div class="hint">Drag tracks here from the table below, or select one and press “Add at playhead”.</div>
+              <div class="hint">Drag tracks here from the table below.</div>
             {/if}
           </div>
         </div>
@@ -589,7 +589,7 @@
       <div class="row fxrow" style:height="{fxLaneH}px">
         <div class="hd">
           <span class="hrow"><b>Tools</b></span>
-          <button class="mini" onclick={toolButton} title="Add a tool, loop, reverse or ignore to the selected clip (or the one under the playhead)">+ Tool ▾</button>
+          <button class="mini" onclick={toolButton} title="Add a tool to the selected clip">+ Tool ▾</button>
         </div>
         <!-- svelte-ignore a11y_no_static_element_interactions -->
         <div class="track" style:width="{contentW}px" onpointerdown={bgDown} ondblclick={cueDbl} oncontextmenu={trackMenu}>
@@ -598,7 +598,7 @@
               <ToolBlock clip={it.clip} process={it.p} top={4 + it.row * (FX_ROW + 2)} height={FX_ROW} conflict={conflicts.has(it.p.id)} accent={colourOf(it.clip.id)} oncontext={processMenu} />
             {/if}
           {/each}
-          {#if fx.items.length === 0}<div class="hint" style:top="12px">Right-click a clip, or use + Tool, to add Reverb, Echo, Vocal, EQ, a loop and more. They appear here under the clip they belong to.</div>{/if}
+          {#if fx.items.length === 0}<div class="hint" style:top="12px">Right-click a clip or use + Tool to add effects.</div>{/if}
         </div>
       </div>
 

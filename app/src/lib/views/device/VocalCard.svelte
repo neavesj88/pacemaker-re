@@ -4,6 +4,7 @@
   import { session } from "$lib/state/session.svelte";
   import { toast } from "$lib/state/toast.svelte";
   import { vocal } from "$lib/state/vocal.svelte";
+  import HelpLink from "../help/HelpLink.svelte";
   import Card from "./Card.svelte";
   import { device } from "./device.svelte";
 
@@ -45,12 +46,13 @@
 </script>
 
 <Card title="Vocal filter">
+  {#snippet aside()}<HelpLink id="device-page" anchor="vocal-filter" />{/snippet}
   {#if vocal.state === null && !vocal.error}
     <p class="muted">Reading the drive…</p>
   {:else}
     {#if vocal.error}
       <div class="warn" role="status">
-        Could not read the setting: {vocal.error} Choosing an option below writes the file again.
+        Could not read the setting: {vocal.error} Choosing an option rewrites the file.
         <Button small onclick={() => vocal.reload()}>Try again</Button>
       </div>
     {/if}
@@ -66,20 +68,16 @@
     </fieldset>
     {#if vocal.state?.kill_switch}
       <div class="warn" role="status">
-        The file revival-no-preload is on this card, so the Pacemaker plays its stock Wah whatever is chosen here, and
-        mix previews and exports in this app do too. This app never changes that file.
+        revival-no-preload is on this card: stock Wah plays on the device and in mix previews.
       </div>
     {/if}
     {#if vocal.state?.firmware_too_old}
       <div class="warn" role="status">
-        This Pacemaker's firmware is older than {MIN_FIRMWARE}, which the filter needs, so it plays its stock Wah whatever is
-        chosen here, and mix previews and exports in this app do too until the firmware is updated.
+        Firmware is older than {MIN_FIRMWARE}: stock Wah plays on the device and in mix previews until updated.
       </div>
     {/if}
     <div class="note">
-      Needs Revival firmware {MIN_FIRMWARE} or later. Takes effect at the next Pacemaker boot. It works on the centre of the stereo
-      image, where most vocals sit; wide or doubled vocals are only partly affected. The mix editor shows the Wah tool as
-      "Vocal" while this is on, and previews and exports of mixes use the same filter.
+      Needs Revival firmware {MIN_FIRMWARE} or later. Applies at the next boot.
     </div>
   {/if}
 </Card>

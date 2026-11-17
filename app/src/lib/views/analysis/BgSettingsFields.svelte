@@ -6,6 +6,7 @@
   import { bg } from "$lib/state/bganalysis.svelte";
   import { session } from "$lib/state/session.svelte";
   import Button from "$lib/ui/Button.svelte";
+  import HelpLink from "../help/HelpLink.svelte";
   import { clampPct, failureRows, heldBackRows, noResultRows, pauseAction, statusLine } from "./bgLogic";
 
   const s = $derived(bg.settings);
@@ -27,30 +28,27 @@
 <label class="opt">
   <input type="checkbox" checked={s.enabled} onchange={(e) => bg.save({ enabled: e.currentTarget.checked })} />
   <span>
-    Analyse in the background
-    <small class="muted">
-      Makes the waveform, key, energy and sections of every track in the library on this computer while you do something
-      else, in any view, and carries on after a restart. A Pacemaker is never read by itself: use Run now below.
-    </small>
+    Analyse in the background <HelpLink id="background-analysis" />
+    <small class="muted">A Pacemaker is only analysed with Run now.</small>
   </span>
 </label>
 
 <div class="kinds" class:off={!s.enabled}>
   <label class="opt">
     <input type="checkbox" checked={s.waveforms} disabled={!s.enabled} onchange={(e) => bg.save({ waveforms: e.currentTarget.checked })} />
-    <span>Waveforms <small class="muted">First, because they are the quickest.</small></span>
+    <span>Waveforms <small class="muted">Quickest, so first.</small></span>
   </label>
   <label class="opt">
     <input type="checkbox" checked={s.keys} disabled={!s.enabled} onchange={(e) => bg.save({ keys: e.currentTarget.checked })} />
-    <span>Keys <small class="muted">Written to the library's key column, for tracks that have none. A key you set is never replaced.</small></span>
+    <span>Keys <small class="muted">Only for tracks with no key. Never replaces yours.</small></span>
   </label>
   <label class="opt">
     <input type="checkbox" checked={s.energy} disabled={!s.enabled} onchange={(e) => bg.save({ energy: e.currentTarget.checked })} />
-    <span>Energy <small class="muted">Kept by this app, not written into the library.</small></span>
+    <span>Energy</span>
   </label>
   <label class="opt">
     <input type="checkbox" checked={s.sections} disabled={!s.enabled} onchange={(e) => bg.save({ sections: e.currentTarget.checked })} />
-    <span>Sections <small class="muted">Kept by this app, not written into the library. Needs the track's beat grid.</small></span>
+    <span>Sections <small class="muted">Needs the beat grid.</small></span>
   </label>
 </div>
 
@@ -58,7 +56,7 @@
   <input type="checkbox" checked={s.pause_during_playback} onchange={(e) => bg.save({ pause_during_playback: e.currentTarget.checked })} />
   <span>
     Wait while a track or mix preview plays
-    <small class="muted">Keeps the analysis from competing with playback for the processor. It carries on when playback stops.</small>
+    <small class="muted">Resumes when playback stops.</small>
   </span>
 </label>
 
@@ -66,7 +64,7 @@
   <input type="checkbox" checked={s.low_priority} onchange={(e) => bg.save({ low_priority: e.currentTarget.checked })} />
   <span>
     Analyse at low priority
-    <small class="muted">Everything else on this computer gets the processor first, so the app stays quick on a small machine. Results are the same; analysis is slower while the computer is busy. On by default for computers with four processors or fewer.</small>
+    <small class="muted">Slower, same results. On by default with four processors or fewer.</small>
   </span>
 </label>
 
@@ -78,7 +76,7 @@
       <option value="slow">Slow down (low priority)</option>
       <option value="pause">Wait until it is plugged in</option>
     </select>
-    <small class="muted">A big library takes hours of processor time, which is battery. Slowing down also applies to analysis you start yourself (energy, sections, duplicates, grids, Add tracks) while on battery. Waiting picks the work up again as soon as the computer is plugged in. A computer with no battery is never affected.</small>
+    <small class="muted">Also slows analysis you start. No effect without a battery.</small>
   </span>
 </div>
 
@@ -86,7 +84,7 @@
   <input type="checkbox" checked={s.hold_during_sync_plan} onchange={(e) => bg.save({ hold_during_sync_plan: e.currentTarget.checked })} />
   <span>
     Wait while a Sync plan is on screen
-    <small class="muted">A key written now would change a row the plan was made from, and Sync would refuse the plan as out of date. It carries on when the plan is applied or cleared.</small>
+    <small class="muted">A key write would outdate the plan. Resumes when applied or cleared.</small>
   </span>
 </label>
 
@@ -94,10 +92,7 @@
   <input type="number" min="0" max="100" step="5" value={s.key_min_confidence_pct} onchange={saveFloor} aria-label="Confidence floor for background keys, per cent" />
   <span>
     Confidence floor for background keys, per cent
-    <small class="muted">
-      Applies to background analysis only; the manual Key detection section has its own floor. A key found below this is not written; the track is listed below as a
-      key held back by the confidence floor instead, and is looked at again as soon as you change the floor. 0 writes every result.
-    </small>
+    <small class="muted">Background analysis only. 0 writes every result.</small>
   </span>
 </label>
 
@@ -114,16 +109,13 @@
   {/if}
 </div>
 {#if pacemaker}
-  <p class="muted small">
-    Run now reads the audio of the tracks that lack a result from the device. Waveforms, energy and sections are kept on this computer; keys it finds are written to the
-    Pacemaker's library. Nothing runs on the device until you press it.
-  </p>
+  <p class="muted small">Run now reads the audio from the device. Keys are written to its library.</p>
 {/if}
 
 <div class="fail">
   <b>Couldn't be analysed</b>
   {#if rows.length === 0}
-    <p class="muted small">None. A file that fails once is listed here and not tried again until it changes or you ask.</p>
+    <p class="muted small">None. Failed files are not retried until they change.</p>
   {:else}
     <ul>
       {#each rows as r (r.track_id)}<li><b>{r.label}</b> ({r.kinds}): {r.reasons}</li>{/each}
@@ -133,7 +125,7 @@
   {#if heldBack.length > 0}
     <details class="nokey" data-testid="bg-held-back">
       <summary>{heldBack.length} {heldBack.length === 1 ? "track has" : "tracks have"} a key held back by the confidence floor</summary>
-      <p class="muted small">A key was found but it is under the floor set here, so it was not written. Lower the floor to write it.</p>
+      <p class="muted small">Under the floor, so not written. Lower the floor to write them.</p>
       <ul>
         {#each heldBack as r (r.track_id)}<li><b>{r.label}</b> ({r.kinds}): {r.reasons}</li>{/each}
       </ul>
@@ -142,7 +134,7 @@
   {#if noResult.length > 0}
     <details class="nokey" data-testid="bg-no-result">
       <summary>{noResult.length} {noResult.length === 1 ? "track has" : "tracks have"} no key to write (nothing to try again)</summary>
-      <p class="muted small">These were read fine. A drum-only, silent or atonal track has no key in it, so there is nothing to try again.</p>
+      <p class="muted small">Read fine, but no key in the audio.</p>
       <ul>
         {#each noResult as r (r.track_id)}<li><b>{r.label}</b> ({r.kinds}): {r.reasons}</li>{/each}
       </ul>

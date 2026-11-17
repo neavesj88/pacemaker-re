@@ -81,10 +81,6 @@
         % of it free
       </label>
     {/if}
-    <p class="hint muted">
-      Free space uses the GB the Storage card shows. A card is counted as it is sold (1 GB = 1,000,000,000 bytes); the
-      library is what it would have to hold: music, beat grids and the database.
-    </p>
   </section>
 
   <section>
@@ -95,8 +91,7 @@
     </label>
     {#if space.plan?.no_play_history && (r.never_played || isOn(r.stale_months))}
       <p class="hint warn">
-        No track in this library has a play count or date (the Pacemaker may not record plays), so "never played" matches
-        every track and "not played for" can never match.
+        No track has play data: "never played" matches all, "not played for" none.
         {#if r.never_played}<button class="link" onclick={() => space.update((x) => (x.rules.never_played = false))}>Turn "never played" off</button>{/if}
       </p>
     {/if}
@@ -151,10 +146,6 @@
       <input type="checkbox" checked={r.duplicates} onchange={(e) => space.update((x) => (x.rules.duplicates = e.currentTarget.checked))} />
       repeat the audio of another track
     </label>
-    <p class="hint muted">
-      Duplicates are found by content, not by name. Of each group the copy in a mix, then in more cases, then rated and
-      played most is kept. Looking for them reads files that share a size, which takes a moment on a big card.
-    </p>
     <label class="line">
       A track needs at least
       <input
@@ -180,9 +171,7 @@
       <input type="checkbox" checked={r.only_no_mix} onchange={(e) => space.update((x) => (x.rules.only_no_mix = e.currentTarget.checked))} />
       in no mix
     </label>
-    <p class="hint muted">
-      A track in a mix is never removed, whatever is set here; with this off it is listed so it can still be archived.
-    </p>
+    <p class="hint muted">A track in a mix is never removed.</p>
   </section>
 
   <section>
@@ -241,9 +230,6 @@
       <option value="certain">Clearest cases first</option>
       <option value="largest">Biggest files first (fewest tracks)</option>
     </select>
-    <p class="hint muted">
-      The ticks start with the first tracks in this order that reach the target.
-    </p>
   </section>
 
   <section>
@@ -260,10 +246,7 @@
       <input type="checkbox" checked={s.require_archive} onchange={(e) => space.update((x) => (x.require_archive = e.currentTarget.checked))} />
       archive before removing
     </label>
-    <p class="hint muted">
-      A track is removed only after its archive copy was written and read back correctly. With this off, "Remove"
-      deletes from the card with no copy.
-    </p>
+    <p class="hint muted">Removal waits for a verified copy. Off: "Remove" deletes with no copy.</p>
   </section>
 
   {#if space.settingsWarning}<p class="warn">{space.settingsWarning}</p>{/if}

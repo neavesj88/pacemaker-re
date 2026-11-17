@@ -52,8 +52,7 @@
     <Button small disabled={appearance.scale === SCALE_DEFAULT} onclick={() => appearance.reset()}>Reset to {SCALE_DEFAULT} %</Button>
   </div>
   <p class="muted note">
-    {SCALE_MIN} % to {SCALE_MAX} %. Ctrl and + make it bigger, Ctrl and - smaller, Ctrl and 0 back to {SCALE_DEFAULT} %. The window
-    needs room for the size you pick: if things no longer fit, choose a smaller one.
+    {SCALE_MIN} % to {SCALE_MAX} %. Ctrl and + larger, Ctrl and - smaller, Ctrl and 0 back to {SCALE_DEFAULT} %.
   </p>
   {#if appearance.zoomProblem}
     <p class="warn" role="alert">The window could not be resized: {appearance.zoomProblem}</p>
@@ -75,27 +74,21 @@
       {#each DONE_SECS_CHOICES as s (s)}<option value={s}>{secsText(s)}</option>{/each}
     </select>
   </div>
-  <p class="muted note">The note after an add or an analysis went well (for example "Add finished"). One with failures in it stays until you close it.</p>
+  <p class="muted note">Notes with failures stay until closed.</p>
   <div class="row">
     <label for="grid-min" class="k">Beat grid on the player</label>
     <select id="grid-min" value={appearance.gridMinBarPx} onchange={(e) => appearance.setGridMinBarPx(Number(e.currentTarget.value))}>
       {#each GRID_MIN_CHOICES as g (g)}<option value={g}>{gridText(g)}</option>{/each}
     </select>
   </div>
-  <p class="muted note">
-    Bar lines on the player's waveform stop being drawn when a bar gets narrower than this, so a long track on a narrow window
-    is not covered in lines. A lower number keeps the grid on longer tracks.
-  </p>
+  <p class="muted note">Bar lines are hidden when a bar is narrower than this.</p>
   <div class="row">
     <label for="playhead-fps" class="k">Playhead smoothness</label>
     <select id="playhead-fps" value={appearance.playheadFps} onchange={(e) => appearance.setPlayheadFps(Number(e.currentTarget.value))}>
       {#each PLAYHEAD_FPS_CHOICES as f (f)}<option value={f}>{f === 0 ? "Every refresh of the screen" : f === 60 ? "Up to 60 a second" : `Up to ${f} a second`}</option>{/each}
     </select>
   </div>
-  <p class="muted note">
-    How often the line that moves along the waveform is redrawn while a track plays. On a 144 Hz screen "up to 60" uses
-    about half the processor time of redrawing at every refresh and looks the same. Fewer is easier on an older computer or a laptop on battery. The sound is not affected.
-  </p>
+  <p class="muted note">Fewer redraws use less processor time. Sound is not affected.</p>
   <div class="row" role="radiogroup" aria-label="Waveform colours">
     <span class="k">Waveform colours</span>
     {#each WAVE_THEMES as t (t)}
@@ -108,8 +101,7 @@
       </label>
     {/each}
   </div>
-  <p class="muted note">The player, the track pictures and the grid editor. The clips of a mix keep their own colours, so you can tell them apart. Calm keeps the waveforms in the app's own green; Neon uses bright pink, lilac and green.</p>
-  <p class="muted note">Other messages (saved, copied) disappear by themselves after a few seconds. Any message has a × to close it.</p>
+  <p class="muted note">Mix clips keep their own colours.</p>
 </div>
 
 <style>

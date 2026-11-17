@@ -217,7 +217,7 @@
     style:width="{width}px"
     style:height="{height}px"
     role="img"
-    aria-label="Tempo of the beat grid over time, and how far each beat line is from the audio's onsets. Click to place the playhead."
+    aria-label="Tempo over time and beat-line drift from the audio. Click to place the playhead."
     onclick={click}
   ></canvas>
 </div>

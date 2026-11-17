@@ -108,9 +108,7 @@
       </section>
     {/each}
     <p class="muted note">
-      This rewrites .Pacemaker/settings.dat on {session.library?.root}. Only the ticked values change; every other item
-      in the file is written back exactly as it was. The app keeps a safety copy of the card's music.db and settings.dat
-      before its first write of a session. Do not write while the device is running: eject, then power it on.
+      Rewrites settings.dat on {session.library?.root}. Only ticked values change. Back up first to keep a way back. Not while the device runs.
     </p>
   {/if}
   {#snippet actions()}

@@ -70,20 +70,17 @@
       <input class="n" inputmode="decimal" bind:value={fallbackMax} aria-label="General window, highest BPM" /> BPM
     </label>
     <label class="col">
-      Genre windows, one per line (a track's genre text only has to contain the name; the longest name wins)
+      Genre windows, one per line
       <textarea rows="8" spellcheck="false" bind:value={genresText} placeholder="house 115-132"></textarea>
     </label>
-    <p class="muted">When half or double the tempo fits the window, that is the suggested fix.</p>
+    <p class="muted">Half or double time that fits the window is suggested.</p>
   </fieldset>
 
   <fieldset>
     <legend>
       <label><input type="checkbox" bind:checked={qualityRule} /> Flag a grid that looks poorly analysed</label>
     </legend>
-    <p class="muted">
-      The analyser does not store a confidence, so one is worked out from the stored grid: how many gaps between beat lines are steady,
-      and how much of the track the grid covers.
-    </p>
+    <p class="muted">Confidence is worked out from steady gaps and grid coverage.</p>
     <label class="row">Flag below <input class="n" inputmode="decimal" bind:value={floor} aria-label="Confidence floor in per cent" /> % confidence</label>
     <label class="row">A gap is steady within <input class="n" inputmode="decimal" bind:value={tolerance} aria-label="Steady gap tolerance in per cent" /> % of the usual gap</label>
     <label class="row">The grid should cover <input class="n" inputmode="decimal" bind:value={coverage} aria-label="Coverage target in per cent" /> % of the track</label>

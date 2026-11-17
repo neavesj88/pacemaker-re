@@ -36,9 +36,9 @@
     <div class="grid">
       <label for="st-device">Run on</label>
       <select id="st-device" bind:value={d.device}>
-        <option value="auto">Automatic (graphics card if the engine can, else CPU)</option>
+        <option value="auto">Automatic (graphics card, else CPU)</option>
         <option value="cpu">CPU only</option>
-        <option value="gpu">Graphics card only (fails if the engine cannot)</option>
+        <option value="gpu">Graphics card only (fails if unsupported)</option>
       </select>
 
       <label for="st-threads">CPU threads</label>
@@ -49,7 +49,7 @@
 
       <label for="st-format">File format</label>
       <select id="st-format" bind:value={d.format}>
-        <option value="mp3">MP3 (the format the Pacemaker is known to play)</option>
+        <option value="mp3">MP3 (Pacemaker format)</option>
         <option value="ogg">Ogg Vorbis</option>
         <option value="wav">WAV, 16-bit (large)</option>
       </select>
@@ -60,7 +60,7 @@
           {#each [128, 160, 192, 224, 256, 320] as k (k)}<option value={k}>{k} kbps</option>{/each}
         </select>
         <span></span>
-        <label class="check"><input type="checkbox" bind:checked={d.mp3_align} /> Compensate for LAME's encoder delay (drops the first 1105 samples, about 25 ms, so the file lines up with the original in other players; how the Pacemaker treats it is untested)</label>
+        <label class="check"><input type="checkbox" bind:checked={d.mp3_align} /> Compensate for encoder delay (drops 1105 samples)</label>
       {:else if d.format === "ogg"}
         <label for="st-q">Ogg quality</label>
         <div class="inline">
@@ -72,19 +72,19 @@
       <label for="st-inst">Instrumental is</label>
       <select id="st-inst" bind:value={d.instrumental}>
         <option value="sum">The model's drums + bass + other</option>
-        <option value="minus">The original minus the vocals (keeps the original's character; vocal leftovers stay in)</option>
+        <option value="minus">The original minus the vocals</option>
       </select>
 
       <label for="st-overlap">Overlap between parts</label>
       <div class="inline">
         <input id="st-overlap" type="number" min="10" max="90" step="5" bind:value={d.overlap_percent} />
-        <span class="muted">% — more overlap is smoother and slower</span>
+        <span class="muted">% (more is smoother, slower)</span>
       </div>
 
       <label for="st-max">Longest track</label>
       <div class="inline">
         <input id="st-max" type="number" min="0" max="600" step="5" bind:value={d.max_minutes} />
-        <span class="muted">minutes, 0 = no limit (a track is held in memory while it is separated)</span>
+        <span class="muted">minutes, 0 = no limit</span>
       </div>
 
       <label for="st-vs">Acapella suffix</label>
@@ -95,7 +95,7 @@
       <label for="st-ex">Files that already exist</label>
       <select id="st-ex" bind:value={d.existing}>
         <option value="skip">Keep them and only make what is missing</option>
-        <option value="replace">Replace them (every file is listed and confirmed first)</option>
+        <option value="replace">Replace them (confirmed first)</option>
       </select>
 
       <label for="st-rt">Engine library</label>
@@ -105,7 +105,7 @@
       </div>
     </div>
     <p class="muted note">
-      A library chosen here is native code that runs inside this app, so choose only one you got from a source you trust: it must be a local file named onnxruntime… (.dll, .so or .dylib). The engine library is loaded once per run of the app: after a first run, changing it needs an app restart. The downloaded engine runs on the CPU. To use a graphics card, choose an onnxruntime library that was built with DirectML or CUDA. Which graphics cards a given library can use was not tested here.
+      Downloaded engine runs on CPU; a graphics card needs an onnxruntime build with DirectML or CUDA. Trust the library: it runs inside this app. Restart after changing.
     </p>
 
     {#if problem}<p class="warn" role="alert">{problem}</p>{/if}

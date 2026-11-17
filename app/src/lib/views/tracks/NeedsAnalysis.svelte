@@ -40,36 +40,36 @@
     small
     onclick={() => jobs.askReanalyse()}
     disabled={!jobs.canWrite}
-    title="Rewrite the beat grid (.str) of these tracks from their audio {session.isComputer ? 'in the library' : 'on the device'}"
+    title="Rewrite their beat grids from the audio"
   >Analyse {session.needs.size}…</Button>
 {:else if waiting}
-  <div class="stat warn" title="The rest of the analysis (waveforms, keys, energy) carries on by itself; see the strip under the views.">{waiting}</div>
+  <div class="stat warn" title="Other analysis continues in the background.">{waiting}</div>
 {:else}
   <div class="stat">All tracks analysed</div>
 {/if}
 {#if bpmRange.outside.length > 0}
   <div class="stat warn">{bpmRange.outside.length} read outside {rangeLabel(bpmRange.lo)} BPM</div>
-  <Button small onclick={() => bpmRange.openOffer()} title="These tracks were analysed with another BPM range or by the original Editor. See them and re-analyse them with the range in Settings.">
+  <Button small onclick={() => bpmRange.openOffer()} title="Analysed with another BPM range. Re-analyse with the Settings range.">
     Review {bpmRange.outside.length}…
   </Button>
 {/if}
 {#if energy.state && energy.state.total > 0}
-  <Button small onclick={() => energy.openPanel()} title="Estimate how intense each track is from its audio. Kept by this app only; nothing is written to the library files.">
+  <Button small onclick={() => energy.openPanel()} title="Estimate track intensity from the audio. Kept by this app only.">
     {analysisLabel("Energy", "Estimate energy", energy.state.ready, energy.state.total)}
   </Button>
 {/if}
 {#if sections.state && sections.state.total > 0}
-  <Button small onclick={() => sections.openPanel()} title="Find the intro, builds, drops, breakdowns and outro of each track and mark them on the waveforms. Kept by this app only; nothing is written to the library files.">
+  <Button small onclick={() => sections.openPanel()} title="Mark intro, drops and outro on the waveforms. Kept by this app only.">
     {analysisLabel("Sections", "Find sections", sections.state.ready, sections.state.total)}
   </Button>
 {/if}
 {#if analysis.offered.length > 0}
-  <Button small onclick={() => analysis.askDetectKeys()} disabled={!jobs.canWrite} title="Work out the key from the audio, only for tracks that have none">
+  <Button small onclick={() => analysis.askDetectKeys()} disabled={!jobs.canWrite} title="Detect keys for tracks without one">
     Detect {analysis.offered.length} key{analysis.offered.length === 1 ? "" : "s"}…
   </Button>
 {/if}
 {#if analysis.noKeyFound.length > 0}
-  <div class="stat" title="These were read and have no steady pitch (drum-only, silent or atonal), so detecting again would find nothing. Set a key by hand from the track menu.">
+  <div class="stat" title="No steady pitch found. Set a key by hand from the track menu.">
     {analysis.noKeyFound.length} track{analysis.noKeyFound.length === 1 ? " has" : "s have"} no key to find
   </div>
 {/if}

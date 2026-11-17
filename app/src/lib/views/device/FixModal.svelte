@@ -112,8 +112,7 @@
   {:else}
     {#if !plan.music_folder_ok}
       <p class="err">
-        The Music folder (.Pacemaker/Music) is missing or not a folder in {session.place.drive}, so no track can be judged dead.
-        Nothing is offered for removal.
+        The Music folder is missing in {session.place.drive}. Nothing is offered for removal.
       </p>
     {/if}
     {#if nothing}<p class="muted">Nothing to fix: every track has its audio and a usable beat grid.</p>{/if}
@@ -121,13 +120,10 @@
     {#if plan.dead_rows.length > 0}
       <h3>Library rows without an audio file ({plan.dead_rows.length})</h3>
       <p class="muted">
-        Ticked rows are removed from the library, and from the cases named beside them. The audio is already gone;
-        nothing in {session.place.drive} is deleted. A copy of music.db is saved first, so Restore from a snapshot brings the rows
-        back.
+        Ticked rows leave the library and the cases named. No files deleted.
       </p>
       <p class="muted">
-        If the files still exist somewhere (a backup, the folder they were added from), relinking is better than
-        removing the rows.
+        Files still exist? Relink them instead.
         <Button small variant="link" disabled={device.blocked} onclick={findFiles}>Look for the files…</Button>
       </p>
       {#if warning}<p class="err" role="alert">{warning}</p>{/if}
@@ -152,7 +148,7 @@
 
     {#if plan.kept_for_mixes.length > 0}
       <h3>Kept: used by a mix ({plan.kept_for_mixes.length})</h3>
-      <p class="muted">These have no audio file either, but removing them would leave a hole in a mix, so they stay.</p>
+      <p class="muted">No audio file, but a mix uses them. They stay.</p>
       <ul class="list" aria-label="Rows kept for mixes">
         {#each plan.kept_for_mixes as r (r.track_id)}
           <li class="row"><span class="name">{r.label}</span><span class="loc muted">in {r.in_mixes.join(", ")}</span></li>
@@ -163,8 +159,7 @@
     {#if plan.unchecked.length > 0}
       <h3>Not checked ({plan.unchecked.length})</h3>
       <p class="muted">
-        Their stored location is not a plain path under the Music folder, so the app does not look for them. Nothing is
-        offered for these.
+        Location is not a plain path under Music. Nothing is offered.
       </p>
       <ul class="list" aria-label="Tracks not checked">
         {#each plan.unchecked as r (r.track_id)}
@@ -176,8 +171,7 @@
     {#if plan.grids.length > 0}
       <h3>Audio without a usable beat grid ({plan.grids.length})</h3>
       <p class="muted">
-        Re-analysing writes a new .str and BPM for exactly these tracks from the audio in {session.place.drive}. You are asked to
-        confirm, with this list, before it starts.
+        Writes a new .str and BPM for these tracks. You confirm first.
       </p>
       <ul class="list" aria-label="Tracks to re-analyse">
         {#each plan.grids as g (g.track_id)}

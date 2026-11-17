@@ -408,14 +408,14 @@
 
     {#if smartCopy}
       <div class="notice">
-        This case is rewritten from the smart case “{smartCopy.name}”, so its tracks, their order and its name cannot be changed here.
+        This case is rewritten from the smart case “{smartCopy.name}”, so its tracks, order and name are locked.
         <Button small onclick={() => cases.leave(() => cases.openSmart(smartCopy.id))}>Open the smart case</Button>
       </div>
     {/if}
 
     {#if viewSorted}
       <div class="notice">
-        Showing the tracks sorted by {sortLabel || "a column"}{caseView.prefs.sortAsc ? "" : " (descending)"}; the case itself is unchanged and reordering is off.
+        Showing the tracks sorted by {sortLabel || "a column"}{caseView.prefs.sortAsc ? "" : " (descending)"}; the case is unchanged and reordering is off.
         <Button small onclick={() => caseView.useCaseOrder()}>Back to case order</Button>
         <Button small onclick={() => (savingOrder = true)} disabled={!canSaveOrder} title={canSaveOrder ? `Make this the case's order ${session.place.on}` : "Needs the whole case on screen with every track in the library"}>Save this order to the case…</Button>
       </div>
@@ -546,7 +546,7 @@
       {/if}
     </div>
     <div class="hintbar muted">
-      {#if !smartCopy}Drag the ≡ number to reorder (in case order) · drag{:else}Drag{/if} a row onto a case in the sidebar to copy it there · click a column to sort the view · the order is the order {session.place.on}
+      {#if !smartCopy}Drag the ≡ number to reorder (in case order) · drag{:else}Drag{/if} a row onto a case in the sidebar to copy it · click a column to sort
     </div>
   </div>
 

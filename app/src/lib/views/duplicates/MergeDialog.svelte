@@ -31,19 +31,18 @@
     <div class="modal" role="dialog" aria-modal="true" aria-label="Merge duplicates" tabindex="-1" bind:this={dialog} onclick={(e) => e.stopPropagation()}>
       <h2>Merge {plural(d.picked, "set")} of copies</h2>
       <p class="muted">
-        Each set is folded into the track you chose to keep: the case places of the other copies move to it, and it takes the best rating and play count
-        (as set in Settings). Nothing is written until you press the button at the bottom.
+        Each set merges into the track you keep. Nothing is written until you confirm.
       </p>
 
       <div class="choices">
         <label class:dis={!removalAllowed}>
           <input type="checkbox" checked={d.removeRows} disabled={!removalAllowed} onchange={(e) => d.setRemoveRows(e.currentTarget.checked)} />
           <span>
-            <b>Also remove the other copies from the library.</b> A copy that a mix uses stays, and is listed below.
+            <b>Also remove the other copies from the library.</b> Copies used by a mix stay.
             {#if removalAllowed}
-              <span class="muted small">Deleting rows from the library has not been tried on a real Pacemaker yet; the app copies <code>music.db</code> first.</span>
+              <span class="muted small">Untested on a real Pacemaker; <code>music.db</code> is copied first.</span>
             {:else}
-              <span class="muted small">Switched off in Settings (“Allow removing copies from the library”): deleting rows has not been tried on a real Pacemaker yet.</span>
+              <span class="muted small">Off in Settings (“Allow removing copies from the library”).</span>
             {/if}
           </span>
         </label>

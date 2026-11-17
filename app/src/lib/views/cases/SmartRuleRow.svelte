@@ -139,10 +139,10 @@
       {#each offered as c (c.id)}<option value={c.id}>{c.name}</option>{/each}
     </select>
     {#if offered.length === 0}<span class="muted">there are no other cases yet: make one first</span>{/if}
-    {#if pointsAtOwnCopy}<span class="warn" role="status">This is the {smartCopyName(session.library?.kind)} of this smart case, which it cannot read. Pick another case.</span>{/if}
+    {#if pointsAtOwnCopy}<span class="warn" role="status">This is this smart case's own {smartCopyName(session.library?.kind)}. Pick another case.</span>{/if}
     {#if drift}
       <span class="warn" role="status">
-        Saved for a case called “{drift.saved}”; the case with this number is “{drift.now}” here (renamed, or the rule came from another {session.isComputer ? "library" : "card"}).
+        Saved for “{drift.saved}”; now “{drift.now}” here.
         <Button small variant="ghost" onclick={acceptName}>Keep “{drift.now}”</Button>
       </span>
     {/if}

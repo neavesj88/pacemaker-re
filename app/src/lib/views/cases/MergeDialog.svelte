@@ -102,7 +102,7 @@
       </label>
       {#if mode === "new"}
         <input class="text" bind:value={newName} maxlength="255" aria-label="Name of the new case" placeholder="Name of the new case" />
-        {#if nameTaken}<p class="warn" role="status">A case with this name already exists. Two cases with the same name are hard to tell apart.</p>{/if}
+        {#if nameTaken}<p class="warn" role="status">A case with this name already exists.</p>{/if}
       {/if}
       <label class="row">
         <input type="radio" name="dest" value="existing" bind:group={mode} />
@@ -113,7 +113,7 @@
           <option value={null}>Choose a case…</option>
           {#each destinations as c (c.id)}<option value={c.id}>{c.name} ({plural(c.track_count, "track")})</option>{/each}
         </select>
-        {#if intoItself}<p class="warn" role="status">A case cannot be merged into itself: untick it on the left or pick another case.</p>{/if}
+        {#if intoItself}<p class="warn" role="status">A case cannot be merged into itself.</p>{/if}
       {/if}
     </fieldset>
   </div>
@@ -128,13 +128,13 @@
       <ul>
         {#each picked as c (c.id)}
           <li>
-            “{c.name}” ({plural(c.track_count, "track")}){c.name === "Favourites" ? " – the case the heart on a track uses" : ""}{smartOf(c.id) ? ` – the ${smartCopyName(session.library?.kind)} of the smart case “${smartOf(c.id)?.name}”, which will be made again ${remakeWhen(smartSettings.value.refresh_mode)}` : ""}
+            “{c.name}” ({plural(c.track_count, "track")}){c.name === "Favourites" ? " – the case the heart on a track uses" : ""}{smartOf(c.id) ? ` – the ${smartCopyName(session.library?.kind)} of the smart case “${smartOf(c.id)?.name}”, made again ${remakeWhen(smartSettings.value.refresh_mode)}` : ""}
           </li>
         {/each}
       </ul>
       {#if smartUsing.length > 0}
         <p class="note">
-          {smartUsing.map((n) => `“${n}”`).join(", ")} {smartUsing.length === 1 ? "is a smart case that has" : "are smart cases that have"} a rule about {picked.length === 1 ? "this case" : "one of these cases"}; {smartUsing.length === 1 ? "it" : "they"} will report an error until you pick another case in the rule.
+          {smartUsing.map((n) => `“${n}”`).join(", ")} {smartUsing.length === 1 ? "is a smart case that has" : "are smart cases that have"} a rule about {picked.length === 1 ? "this case" : "one of these cases"}; {smartUsing.length === 1 ? "it" : "they"} will report an error until the rule is changed.
         </p>
       {/if}
     </div>

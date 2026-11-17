@@ -57,11 +57,11 @@
 <div class="field"><span class="lbl">Starts</span><span class="val">bar {barBeat(at.start, bpm).bar} · {clock(at.start / SR)}</span></div>
 <div class="field"><span class="lbl">Length</span><span class="val">{bars.toFixed(bars % 1 === 0 ? 0 : 1)} bars · {clock(at.length / SR)}</span></div>
 {#if !heard}
-  <div class="muted small">The two clips are not heard together inside this crossfade, so it does nothing in playback or export. Move a clip so they overlap, or delete it.</div>
+  <div class="muted small">The clips do not overlap here, so this crossfade does nothing. Move a clip or delete it.</div>
 {:else if at.clamped}
   <div class="muted small">
-    This crossfade reaches past the audio the two clips share (stored: {(t.length / SR).toFixed(1)} s). Playback, export and the drawing cut it to the overlap shown above.
-    <button onclick={() => mixes.edit("Fit crossfade to overlap", (d) => E.fitTransition(d, t.id))} title="Store the cut length, so the file says what is heard">Fit to overlap</button>
+    Reaches past the shared audio (stored: {(t.length / SR).toFixed(1)} s). Playback and export cut it to the overlap.
+    <button onclick={() => mixes.edit("Fit crossfade to overlap", (d) => E.fitTransition(d, t.id))} title="Store the cut length">Fit to overlap</button>
   </div>
 {/if}
 <div class="field">
@@ -95,7 +95,7 @@
     bind:selected={selNode}
   />
 </div>
-<div class="muted small">Low = only the earlier clip, high = only the later one. Click to add a node, right-click to remove.</div>
+<div class="muted small">Low = earlier clip, high = later clip.</div>
 
 <h4>Type</h4>
 <div class="field">
@@ -129,7 +129,7 @@
   {#each def.makes as m (m)}<li>{m}</li>{/each}
 </ul>
 <div class="buttons">
-  <button disabled={!from || !to} onclick={rebuild} title="Replaces this crossfade with the recipe. Tools of yours that are in the way are handled as the settings below say.">Rebuild as {def.label.toLowerCase()}</button>
+  <button disabled={!from || !to} onclick={rebuild} title="Replace this crossfade with the recipe">Rebuild as {def.label.toLowerCase()}</button>
 </div>
 <details class="defaults">
   <summary>Auto transition settings</summary>
@@ -138,7 +138,7 @@
 
 <div class="buttons">
   <button disabled={!to} onclick={() => to && void beatmatch(to.id)} title="Match the later clip's tempo and beats to the clip before it">Beat-match clips</button>
-  <button disabled={!from || !to} onclick={() => beatAlign()} title="Move the later clip, without changing its tempo, to the nearest place where its beat grid lines up with the earlier clip's (at the grain of the Snap setting)">Beat-align</button>
+  <button disabled={!from || !to} onclick={() => beatAlign()} title="Move the later clip, tempo unchanged, to line its beat grid up with the earlier clip's. Clips without a grid stay.">Beat-align</button>
   <button class="danger" onclick={ondelete}>Delete…</button>
 </div>
 

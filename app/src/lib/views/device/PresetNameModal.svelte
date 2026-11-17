@@ -86,13 +86,12 @@
 <WideModal title={mode === "save" ? "Save this card's settings as a preset" : "Add a preset from a file"} {onclose} width={560}>
   {#if mode === "save"}
     <p class="muted">
-      Saves the values of the {plural(cardCount, "editable setting")} in this card's settings.dat under a name. The read-only
-      engine levels are not saved. The preset is kept on this PC, not on the Pacemaker.
+      Saves {plural(cardCount, "editable setting")} on this PC.
     </p>
   {:else if file}
     <p class="muted">
       {path}: {presetMeta({ settings: file.settings.length, firmware: file.firmware }, file.saved_utc ? stampLabel(file.saved_utc) : "")}.
-      Adding it only stores it here; nothing is written to a card until you apply it.
+      Stored here only; nothing is written to a card.
     </p>
     <div class="box" aria-label="Settings in the file">
       {#each groups as g (g.group)}
@@ -116,14 +115,14 @@
   {#if problem}<p class="bad">{problem}</p>{/if}
   {#if confirmReplace && taken}
     <p class="warn" role="alert">
-      A preset called "{taken.name}" is already stored ({presetMeta(taken, taken.saved_utc ? stampLabel(taken.saved_utc) : "")}).
-      Replacing it deletes its settings; choose another name to keep both.
+      A preset called "{taken.name}" already exists ({presetMeta(taken, taken.saved_utc ? stampLabel(taken.saved_utc) : "")}).
+      Replacing it deletes its settings.
     </p>
   {:else if confirmReplace}
     <p class="warn" role="alert">
-      The file {conflictFile ? `"${conflictFile}"` : "that holds this name"} is already in this app's presets folder but cannot be read as a preset{damaged
+      {conflictFile ? `"${conflictFile}"` : "A file with this name"} is not a readable preset{damaged
         ? ` (${damaged.slice(conflictFile.length + 1).trim()})`
-        : ""}, so what it holds is unknown. Replacing it deletes that file; choose another name to keep it.
+        : ""}. Replacing it deletes that file.
     </p>
   {/if}
   {#snippet actions()}

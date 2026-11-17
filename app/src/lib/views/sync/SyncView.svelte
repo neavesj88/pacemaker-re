@@ -6,6 +6,7 @@
   import Button from "$lib/ui/Button.svelte";
   import { device } from "../device/device.svelte";
   import JobProgress from "../device/JobProgress.svelte";
+  import HelpLink from "../help/HelpLink.svelte";
   import WideModal from "../device/WideModal.svelte";
   import SyncSettingsFields from "./SyncSettingsFields.svelte";
   import { sync } from "./sync.svelte";
@@ -95,18 +96,14 @@
 </script>
 
 <div class="page">
-  <h2>Sync</h2>
-  <p class="muted lead">
-    Copy tracks, mixes and cases from one library to the other, either way. You see exactly what would change before anything is
-    written, and you can leave any item out.
-  </p>
+  <h2>Sync <HelpLink id="sync" /></h2>
+  <p class="muted lead">Copy tracks, mixes and cases between two libraries. You see the changes first.</p>
 
   {#if !hasPacemaker}
     <section class="card" aria-label="No Pacemaker found">
       <h3>No Pacemaker found</h3>
       <p>
-        Plug the Pacemaker into this computer over USB, or put its card in a card reader on this PC. It appears as a drive;
-        then press Rescan. If its library is in a folder, open that folder instead.
+        Plug in the Pacemaker, then press Rescan. Or open a library folder.
       </p>
       <div class="actions">
         <Button variant="primary" onclick={() => session.refreshVolumes()}>Rescan</Button>
@@ -203,7 +200,7 @@
       </div>
       {#each plan.notes as n (n)}<p class="muted note">{n}</p>{/each}
       {#if replacing.length > 0}<p class="muted note">Replaced on {inText(sync.planFor?.to ?? "")}: {replacing.join(", ")}.</p>{/if}
-      <p class="muted note">A copy of {inText(sync.planFor?.to ?? "")}'s database is saved before the first change, so Restore can bring the rows back. Copied audio files stay.</p>
+      <p class="muted note">The database of {inText(sync.planFor?.to ?? "")} is copied first, so Restore can bring back rows. Copied audio stays.</p>
       {#if !space.fits}<p class="warn">Leave some tracks out, or free space on {nameOf(sync.planFor?.to ?? "")}, to continue.</p>{/if}
 
       {#each GROUPS as g (g.id)}
@@ -225,8 +222,7 @@
             </div>
             {#if g.id === "removals"}
               <p class="warn">
-                These exist on {inText(sync.planFor?.to ?? "")} and not on {inText(sync.planFor?.from ?? "")}. A tick means
-                the item is deleted. You are asked to confirm the list before anything is.
+                On {inText(sync.planFor?.to ?? "")} only, not on {inText(sync.planFor?.from ?? "")}. A tick deletes the item.
               </p>
             {/if}
             <ul class="items">
@@ -279,13 +275,13 @@
 {#if confirming}
   <WideModal title={`Remove ${plural(removing.length, "item")} from ${nameOf(sync.planFor?.to ?? "")}?`} onclose={() => (confirming = false)} width={640}>
     <p class="warn">
-      These are deleted from {nameOf(sync.planFor?.to ?? "")} because {inText(sync.planFor?.from ?? "")} does not have them. A copy of
-      its database is saved first, so Restore can bring the rows back; deleted audio files are not kept.
+      Deleted from {nameOf(sync.planFor?.to ?? "")}: {inText(sync.planFor?.from ?? "")} does not have them. Restore brings back the
+      rows, not the audio files.
     </p>
     <ul class="confirm">
       {#each removing as r, n (n)}<li><span class="muted">{r.kind}</span> {r.label}</li>{/each}
     </ul>
-    <p class="muted">Everything else in the list is copied as you saw it.</p>
+    <p class="muted">Everything else is copied as listed.</p>
     {#snippet actions()}
       <Button data-autofocus onclick={() => (confirming = false)}>Cancel</Button>
       <Button variant="primary" onclick={confirmed}>Sync and remove {plural(removing.length, "item")}</Button>

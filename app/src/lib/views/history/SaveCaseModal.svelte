@@ -33,8 +33,7 @@
 
 <Modal title="Save as case" onclose={() => !busy && oncancel()}>
   <p>
-    This adds one new case to the library with the {count} track{count === 1 ? "" : "s"} from {source}, in the order shown.
-    No track, existing case or mix is changed.
+    Adds one new case with the {count} track{count === 1 ? "" : "s"} from {source}. Nothing else changes.
   </p>
   <label class="f">
     Case name

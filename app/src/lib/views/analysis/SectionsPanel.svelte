@@ -7,6 +7,7 @@
   import { session } from "$lib/state/session.svelte";
   import Button from "$lib/ui/Button.svelte";
   import Modal from "$lib/ui/Modal.svelte";
+  import HelpLink from "../help/HelpLink.svelte";
   import { clampSetting, coverageText, KIND_LABEL, KINDS, kindColor, LIMITATIONS, LIMITS, PHRASE_CHOICES, SENSITIVITY_NAMES, skipHint, type NumericSetting } from "./sectionLogic";
 
   const s = $derived(sections.state);
@@ -49,11 +50,7 @@
     {:else}
       <div class="body">
       <p class="lead">{coverageText(s)}</p>
-      <p class="muted small">
-        Finds the intro, builds, drops, breakdowns and outro of each track from its beat grid and its audio, and snaps them to
-        8, 16 or 32 bar phrases. They are shown as coloured markers on the waveforms and are kept by this app, per library:
-        they are not written into the library. Estimates, not facts.
-      </p>
+      <p class="muted small">Intro, drops and outro markers. Estimates, kept by this app. <HelpLink id="bpm-keys-waveforms" /></p>
       <p class="legend" aria-label="Marker colours">
         {#each KINDS as k (k)}<span><i style:background={kindColor(k)}></i>{KIND_LABEL[k]}</span>{/each}
       </p>
@@ -70,7 +67,7 @@
         <Button
           variant="primary"
           disabled={runDisabled || s.total === 0}
-          title="Tracks never analysed, whose file changed, or whose beat grid was edited since. You will be asked to confirm."
+          title="New or changed tracks only."
           onclick={() => {
             sections.closePanel();
             sections.askAnalyse();
@@ -78,7 +75,7 @@
         >Detect new or changed…</Button>
         <Button
           disabled={runDisabled || s.total === 0}
-          title="Measure every track again, even those that already have sections. You will be asked to confirm."
+          title="Measure every track again."
           onclick={() => {
             sections.closePanel();
             sections.askAnalyse(undefined, true);
@@ -86,7 +83,7 @@
         >Analyse all {s.total} again…</Button>
         {#if confirmForget}
           <span class="forget" role="alert">
-            Forget the {saved} saved results? The audio and the library are not touched; the markers disappear until you analyse again.
+            Forget the {saved} saved results? Audio and library are not touched.
             <Button small data-autofocus onclick={() => (confirmForget = false)}>Keep them</Button>
             <Button small variant="primary" onclick={forget}>Forget</Button>
           </span>
@@ -103,7 +100,7 @@
           <select value={s.settings.sensitivity} onchange={(e) => save({ sensitivity: Number(e.currentTarget.value) })}>
             {#each [1, 2, 3, 4, 5] as n (n)}<option value={n}>{n} - {SENSITIVITY_NAMES[n]}</option>{/each}
           </select>
-          <span class="muted">higher finds smaller changes (and more false ones)</span>
+          <span class="muted">higher finds smaller changes</span>
         </label>
         <label>
           Shortest section
@@ -120,11 +117,11 @@
           <legend>Phrases start</legend>
           <label class="radio">
             <input type="radio" name="sections-origin" checked={s.settings.origin === "first_downbeat"} onchange={() => save({ origin: "first_downbeat" })} />
-            <span><b>At the first downbeat</b><br /><span class="muted">the usual case for dance tracks that start on a phrase</span></span>
+            <span><b>At the first downbeat</b><br /><span class="muted">usual for tracks starting on a phrase</span></span>
           </label>
           <label class="radio">
             <input type="radio" name="sections-origin" checked={s.settings.origin === "best_fit"} onchange={() => save({ origin: "best_fit" })} />
-            <span><b>Where the track's boundaries fit best</b><br /><span class="muted">for tracks with a pickup or a few bars of lead-in; moves only for a clear gain</span></span>
+            <span><b>Where the track's boundaries fit best</b><br /><span class="muted">for tracks with a lead-in</span></span>
           </label>
         </fieldset>
         <label>
@@ -140,13 +137,13 @@
         <label>
           Tracks analysed at once
           <input type="number" min={LIMITS.threads.min} max={LIMITS.threads.max} step="1" value={s.settings.threads} onchange={(e) => saveNumber(e, "threads")} />
-          <span class="muted">(0 = decide by the computer; more is faster and uses more memory)</span>
+          <span class="muted">(0 = automatic)</span>
         </label>
         <label class="check">
           <input type="checkbox" checked={s.settings.show_markers} onchange={(e) => save({ show_markers: e.currentTarget.checked })} />
           Show section markers on waveforms
         </label>
-        <p class="muted small">Changing a setting re-reads the saved measurements at once; nothing is decoded again.</p>
+        <p class="muted small">Changing a setting re-reads saved results at once.</p>
       </div>
       <details>
         <summary>How reliable is this?</summary>

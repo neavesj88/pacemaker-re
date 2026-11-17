@@ -113,7 +113,7 @@
           <p class="muted hint">Adding is not possible right now ({jobs.busy ? "another job is running" : "the library is read-only or not open"}).</p>
         {/if}
         {#if scan.candidates_total > watch.candidates.length}
-          <p class="muted hint">Showing the newest {watch.candidates.length} of {scan.candidates_total}; scan again after adding to see the rest.</p>
+          <p class="muted hint">Showing the newest {watch.candidates.length} of {scan.candidates_total}.</p>
         {/if}
         <ul class="files">
           {#each watch.candidates as c (c.path)}
@@ -128,7 +128,7 @@
           {/each}
         </ul>
         <p class="muted hint">
-          "Ignore" only hides a file here; the file itself is never touched. Ignored files can be brought back below.
+          Ignore hides a file here; the file is not touched.
         </p>
       {:else}
         <p class="muted">Nothing new to add.</p>
@@ -138,8 +138,7 @@
         <details>
           <summary>Left out because a library track matches ({scan.matched_total})</summary>
           <p class="muted hint">
-            These were not offered because the name, tags or length say they are tracks the library already has. If that is wrong, add them with
-            "Add tracks…" above.
+            The library already has these (name, tags or length). Use "Add tracks…" to add anyway.
           </p>
           <ul class="rows">
             {#each scan.matched as m (m.path)}

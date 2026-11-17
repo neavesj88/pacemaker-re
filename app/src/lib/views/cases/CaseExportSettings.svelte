@@ -30,7 +30,7 @@
 <div class="actions">
   <Button variant="primary" disabled={!changed} onclick={() => void ex.saveChoices($state.snapshot(draft))}>Save</Button>
   <Button variant="ghost" disabled={!changed} onclick={() => (draft = startingPrefs(ex.saved))}>Revert</Button>
-  <span class="muted">Saved on this computer, not on the Pacemaker. Replacing a file is chosen for one export, never saved.</span>
+  <span class="muted">Saved on this computer. Replacing files is asked per export.</span>
 </div>
 
 <style>

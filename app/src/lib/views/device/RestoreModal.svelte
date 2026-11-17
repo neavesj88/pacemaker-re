@@ -72,12 +72,11 @@
   {:else}
     {#if diff.current_problem}
       <p class="err">
-        The library cannot be read now ({diff.current_problem}). Restoring replaces it entirely with the
-        snapshot's.
+        The library cannot be read now ({diff.current_problem}). Restoring replaces it.
       </p>
     {/if}
     {#if same}
-      <p class="muted">This snapshot holds the same library as {session.place.card} now. There is nothing to restore.</p>
+      <p class="muted">Same library as {session.place.card} now. Nothing to restore.</p>
     {:else if sentences.length}
       <p><b>What changes</b></p>
       <ul class="what">
@@ -99,12 +98,7 @@
       {/each}
     {/if}
     <p class="muted fine">
-      Only music.db is replaced. Audio files, beat grids and settings.dat stay as they are, so tracks added since the
-      snapshot keep their files (the health scan will list them as unused). Beat grids that a bulk tempo or grid edit
-      changed since then are not rolled back, so those tracks will show the snapshot's BPM next to the new grid; the
-      grids as they were before each bulk edit are in the grids-… folders next to the snapshots. Before anything changes, the current
-      music.db is saved as a new snapshot here, so this restore can itself be undone. The edit history of this session is
-      cleared.
+      Replaces music.db only; bulk beat-grid edits stay. Current music.db is snapshotted first. Edit history is cleared.
     </p>
   {/if}
 

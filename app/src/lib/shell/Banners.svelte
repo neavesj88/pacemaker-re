@@ -19,7 +19,7 @@
 
 {#if session.computer?.warning}
   <div class="banner bad" role="alert">
-    The settings for the library on this computer could not be read, so no library was opened by itself.
+    Library settings could not be read. Nothing was opened.
     <details class="detail">
       <summary>Details</summary>
       {session.computer.warning}
@@ -36,7 +36,7 @@
 
 {#if session.library}
   {#if session.isDetached}
-    <div class="banner warn">{label} · {session.library.root} · ejected: it is safe to unplug. Nothing can be written to it any more. To keep working, {session.computerOffer?.exists ? "open the library on this computer, " : ""}dock a Pacemaker and press Rescan, or open a folder.</div>
+    <div class="banner warn">{label} · {session.library.root} · ejected: safe to unplug. Nothing can be written to it. To keep working, {session.computerOffer?.exists ? "open the library on this computer, " : ""}dock a Pacemaker and press Rescan, or open a folder.</div>
   {:else if session.library.problems.length === 0}
     <div class="banner ok">{label} · {session.library.root} · music.db is {session.isComputer ? "compatible with a Pacemaker" : "device-compatible"}</div>
   {:else}

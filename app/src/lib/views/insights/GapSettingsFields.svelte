@@ -45,7 +45,6 @@
     tracks
   </label>
   <Button small variant="ghost" onclick={() => gap.resetSettings()}>Reset to defaults</Button>
-  <span class="muted note">Saved on this computer. The range is trimmed to a whole number of bands.</span>
   <span class="notice" role="status">{gap.notice}</span>
 </div>
 
@@ -64,7 +63,6 @@
   input {
     width: 64px;
   }
-  .note,
   .notice {
     font-size: 12px;
   }

@@ -5,6 +5,7 @@
   import { session } from "$lib/state/session.svelte";
   import Button from "$lib/ui/Button.svelte";
   import Modal from "$lib/ui/Modal.svelte";
+  import HelpLink from "../help/HelpLink.svelte";
   import { type Line, matcher } from "./matcher.svelte";
   import MatcherSettingsFields from "./MatcherSettingsFields.svelte";
   import PickTrackModal from "./PickTrackModal.svelte";
@@ -73,13 +74,12 @@
 
 <div class="matcher">
   {#if !lib}
-    <p class="muted pad">Open a library first: the matcher compares the list with the tracks in it.</p>
+    <p class="muted pad">Open a library first.</p>
   {:else}
     <section class="card">
-      <h3>Request list</h3>
+      <h3>Request list <HelpLink id="request-matcher" /></h3>
       <p class="muted">
-        Paste lines like <code>Artist - Title</code>, or open a text, CSV, TSV or M3U file (a Spotify, Beatport or YouTube playlist saved as text or CSV works the same way).
-        Nothing leaves this computer: the list is compared with the tracks in the library here.
+        Paste lines like <code>Artist - Title</code>, or open a text, CSV, TSV or M3U file.
       </p>
       <textarea
         bind:value={matcher.text}
@@ -196,7 +196,7 @@
               title={jobs.canWrite ? "" : "Writing to the library is not possible right now"}
               onclick={() => (saving = true)}>Save as case…</Button
             >
-            <span class="muted">{matcher.caseIds.length} track{matcher.caseIds.length === 1 ? "" : "s"} to add, you confirm the list first.</span>
+            <span class="muted">{matcher.caseIds.length} track{matcher.caseIds.length === 1 ? "" : "s"} to add; you confirm first.</span>
           </div>
           <div>
             <h4>Missing ({matcher.missing.length})</h4>
@@ -209,7 +209,7 @@
               <input type="checkbox" checked={matcher.includeUndecided} onchange={(e) => matcher.setIncludeUndecided(e.currentTarget.checked)} />
               Include the {matcher.undecided} line{matcher.undecided === 1 ? "" : "s"} still waiting for your decision
             </label>
-            <p class="muted note">The copied and saved list holds exactly the lines the Missing filter shows{matcher.includeUndecided ? ", plus the lines to check" : ""}, as <code>Artist - Title</code>.</p>
+            <p class="muted note">The list holds the missing lines{matcher.includeUndecided ? " and the lines to check" : ""}, as <code>Artist - Title</code>.</p>
           </div>
         </div>
       </section>
@@ -248,7 +248,7 @@
 
 {#if copyFallback}
   <Modal title="Copy the missing list" onclose={() => (copyFallback = false)}>
-    <p class="muted">The clipboard is not available here. Select the text below and copy it.</p>
+    <p class="muted">No clipboard here. Select the text and copy it.</p>
     <textarea class="plain" readonly rows="10" value={matcher.missingText} onfocus={(e) => e.currentTarget.select()}></textarea>
     {#snippet actions()}
       <Button onclick={() => (copyFallback = false)}>Close</Button>

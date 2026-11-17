@@ -30,7 +30,7 @@
   </select>
 </div>
 <div class="muted small">
-  {def.label} will be {lengthLabel(effective)}{p.bars != null && nearestLength(p.recipe, p.bars) !== p.bars ? ` (it offers ${def.lengths.map(lengthLabel).join(", ")}; the nearest is used)` : ""}. Never longer than the audio both clips share, and in whole bars.
+  {def.label} will be {lengthLabel(effective)}{p.bars != null && nearestLength(p.recipe, p.bars) !== p.bars ? ` (offers ${def.lengths.map(lengthLabel).join(", ")})` : ""}. Never longer than the shared audio.
 </div>
 <div class="field">
   <label for="rs-place">Crossfade sits</label>
@@ -40,7 +40,7 @@
   </select>
 </div>
 <div class="muted small">
-  {p.placeAt === "end" ? "The crossfade finishes at or just before the end of the outgoing clip's audio (up to a bar early, because it starts on a bar line of the incoming clip when that has a beat grid)." : "The crossfade begins on the incoming clip's first beat and runs for the length above, as far as the clips overlap."}
+  {p.placeAt === "end" ? "Ends at or just before the outgoing clip's end." : "Starts on the incoming clip's first beat."}
 </div>
 <div class="field">
   <label for="rs-cut">Hard cut falls</label>
@@ -63,7 +63,7 @@
   </select>
 </div>
 <div class="muted small">
-  Loop out repeats {loopLengthLabel(p.loopOutBeats)} of the outgoing track on its beat grid, from {p.loopOutStart === "start" ? "the start" : "the middle"} of the overlap until the crossfade has finished with it. A loop that does not fit twice is made shorter.
+  Loops {loopLengthLabel(p.loopOutBeats)} of the outgoing track from {p.loopOutStart === "start" ? "the start" : "the middle"} of the overlap.
 </div>
 <div class="field">
   <label for="rs-lc-len">Loop cut: first loop</label>
@@ -100,7 +100,7 @@
   </select>
 </div>
 <div class="muted small">
-  Loop cut plays {cutSteps.map(loopLengthLabel).join(", then ")}, {p.loopCutRepeats === 1 ? "once" : `${p.loopCutRepeats} times`} each, one straight after the other, so the last one ends where the incoming track drops in. Each loop starts on the outgoing track's beat grid. If they do not all fit in the overlap, the longest are left out.
+  Loop cut plays {cutSteps.map(loopLengthLabel).join(", then ")}, {p.loopCutRepeats === 1 ? "once" : `${p.loopCutRepeats} times`} each. Longest are dropped if they do not fit.
 </div>
 <div class="field">
   <label for="rs-way">Tools in the way</label>
@@ -136,7 +136,7 @@
     />
   </div>
   <div class="muted small">
-    The transition {sectionEdgeWords(p.sectionEdge)} (of either clip) within {p.sectionReachBars} bar{p.sectionReachBars === 1 ? "" : "s"} of where it would otherwise {p.sectionEdge === "end" ? "end" : "start"}, so its length can change. Only for clips whose tracks have detected sections (Sections panel); the notes after building say what moved. Without sections it builds exactly as above.
+    The transition {sectionEdgeWords(p.sectionEdge)} within {p.sectionReachBars} bar{p.sectionReachBars === 1 ? "" : "s"}. Needs detected sections.
   </div>
 {/if}
 <div class="field">
@@ -148,10 +148,10 @@
 </div>
 <div class="muted small">
   {p.onMove === "follow"
-    ? "Drag, nudge, trim, Beat-align or change the tempo of a clip and the crossfade on its overlap, with the EQ and other tools the transition placed, re-fit the new overlap. A crossfade that filled the overlap fills the new one; one that ended with the outgoing clip keeps its length and keeps ending there; one you placed by hand stays put. Tools you added yourself in the middle of a fade ride with their clip. Undo puts it all back in one step."
-    : "A crossfade stays where it was made when a clip moves, and only the tools on the moved clip go with it. Where the fade no longer sits on the overlap it is cut to what both clips share when played; Fit to overlap saves that."}
+    ? "Moving a clip re-fits its crossfade and the tools the transition placed. Hand-placed crossfades stay put."
+    : "Crossfades stay put when a clip moves. Fit to overlap saves the cut length."}
 </div>
-<div class="muted small">These apply to every Auto button and menu entry in this editor. The result is always ordinary tools and a crossfade curve you can edit.</div>
+<div class="muted small">Applies to every Auto button and menu entry.</div>
 
 <style>
   .small {

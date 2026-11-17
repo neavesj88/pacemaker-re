@@ -24,8 +24,7 @@
   {/each}{/key}
 </fieldset>
 <p class="muted note">
-  Applies to tracks analysed from now on: adding tracks, Re-analyse, the grid editor's Re-analyse and the grid batch.
-  The Pacemaker syncs by BPM, so tracks the original Editor analysed (drum &amp; bass at about 87) and tracks analysed here (about 174) can disagree.
+  Applies to new analysis. Tracks analysed in the original Editor may read at half or double tempo, which breaks sync.
 </p>
 <div class="offer">
   {#if n > 0}

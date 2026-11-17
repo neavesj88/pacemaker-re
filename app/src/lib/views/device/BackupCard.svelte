@@ -12,6 +12,7 @@
   import { toast } from "$lib/state/toast.svelte";
   import Button from "$lib/ui/Button.svelte";
   import Modal from "$lib/ui/Modal.svelte";
+  import HelpLink from "../help/HelpLink.svelte";
   import Card from "./Card.svelte";
   import { device } from "./device.svelte";
   import JobProgress from "./JobProgress.svelte";
@@ -55,11 +56,9 @@
 </script>
 
 <Card title="Backup">
+  {#snippet aside()}<HelpLink id="device-page" anchor="backup" />{/snippet}
   <p class="muted">
-    A snapshot of the library: the database (tracks, mixes, cases), the device settings, the system file and every
-    beat grid. Audio is left out unless you tick the box. Each file is compared with its source right after it is written (the system may
-    answer that from its cache, so run Check on the backup later to read it from the disk again), and a SHA-256 list is
-    saved beside the copy.
+    Database, settings, system file and beat grids.
   </p>
   <label class="check">
     <input type="checkbox" bind:checked={includeAudio} />
@@ -79,8 +78,7 @@
   <div class="auto">
     <h4>Check a backup</h4>
     <p class="muted">
-      Re-reads every file of a backup folder and checks it against the SHA-256 list saved beside it, so a backup can be
-      trusted before it is needed. The result is listed file by file. Nothing on the Pacemaker is read or changed.
+      Checks a backup folder against its SHA-256 list.
     </p>
     <div class="actions">
       <Button disabled={!lib || device.blocked} onclick={verify}>Verify a backup…</Button>
@@ -108,8 +106,7 @@
       </span>
     </div>
     <p class="muted">
-      A new folder named pacemaker-backup and the date is created inside the chosen folder. Nothing on the Pacemaker is
-      changed or deleted.
+      Creates a dated folder. The Pacemaker is not changed.
     </p>
     {#snippet actions()}
       <Button data-autofocus onclick={() => (dest = null)}>Cancel</Button>

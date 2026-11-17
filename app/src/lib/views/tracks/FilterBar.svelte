@@ -178,9 +178,9 @@
       small
       disabled={suspectIds.length === 0}
       onclick={() => gridBatch.open(suspectIds, "suggested")}
-      title="Preview the half / double fix for the {suspectIds.length} suspect tracks shown; nothing is changed until you confirm"
+      title="Preview the half / double fix for the {suspectIds.length} suspect tracks"
     >Review {suspectIds.length}…</Button>
-    <Button small variant="ghost" onclick={() => (suspects.editing = true)} title="The genre tempo windows and the confidence floor">Rules…</Button>
+    <Button small variant="ghost" onclick={() => (suspects.editing = true)} title="Genre tempo windows and confidence floor">Rules…</Button>
   {/if}
   {#if anyFilter}<Button small variant="link" onclick={clearAll}>Clear filters</Button>{/if}
   </div>
@@ -216,9 +216,9 @@
           </label>
         {/each}
         <div class="opts muted">Options</div>
-        <label title="On a wide window Title and Artist share the spare room; their widths are the least they get. A column you drag keeps the width you gave it (Reset columns undoes that). Off: every column keeps its width."><input type="checkbox" checked={table.prefs.fillWidth} onchange={(e) => table.setFillWidth(e.currentTarget.checked)} /> Title and Artist fill a wide window</label>
+        <label title="Title and Artist share the spare width"><input type="checkbox" checked={table.prefs.fillWidth} onchange={(e) => table.setFillWidth(e.currentTarget.checked)} /> Title and Artist fill a wide window</label>
         <label><input type="checkbox" checked={table.prefs.caseOrderOnPick} onchange={(e) => table.setCaseOrderOnPick(e.currentTarget.checked)} /> Choosing a case sorts by case order</label>
-        <p class="hint muted">Drag a column header to move it. Click a header to sort, shift-click to add a second key.</p>
+        <p class="hint muted">Drag headers to move. Click to sort, shift-click to add a key.</p>
         <Button small variant="link" onclick={() => table.resetColumns()}>Reset columns</Button>
       </div>
     {/if}

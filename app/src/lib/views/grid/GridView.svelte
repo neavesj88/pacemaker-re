@@ -13,6 +13,7 @@
   import { claimSpace } from "$lib/player/spaceClaim";
   import { Metronome } from "./metronome";
   import SectionList from "../analysis/SectionList.svelte";
+  import HelpLink from "../help/HelpLink.svelte";
   import Overview from "./Overview.svelte";
   import TempoPanel from "./TempoPanel.svelte";
   import TempoStrip from "./TempoStrip.svelte";
@@ -344,7 +345,7 @@
             active={vtempo.editBeats}
             disabled={!editor.doc}
             onclick={() => (vtempo.editBeats = !vtempo.editBeats)}
-            title="Grab single beat lines on the waveform and drag them (Alt: with every later beat). Tempo tools are below the waveform."
+            title="Drag single beat lines (Alt: with every later beat)"
           >Drag beats</Button>
         </div>
         <div class="grp" role="group" aria-label="Tempo">
@@ -393,7 +394,7 @@
       {/if}
       {#if !editor.doc}
         <p class="warn">
-          No usable beat grid ({editor.loaded.problem ?? "unknown"}). Use Re-analyse to build one from the audio, then Save.
+          No usable beat grid ({editor.loaded.problem ?? "unknown"}). Re-analyse, then Save.
         </p>
       {/if}
 
@@ -462,7 +463,7 @@
 
       <div class="cols">
         <div class="card">
-          <h4>Grid</h4>
+          <h4>Grid <HelpLink id="grid-editor" /></h4>
           <div class="field"><span class="lab">BPM</span><span class="num">{editor.doc ? editor.bpm.toFixed(2) : "-"}</span></div>
           <div class="field">
             <span class="lab">Offset</span>
@@ -470,7 +471,7 @@
           </div>
           <div class="field"><span class="lab">Beats</span><span class="num">{editor.doc?.beats.length ?? 0}</span></div>
           <div class="field"><span class="lab">Tempo map</span><span>{tempoMap(editor.doc)}</span></div>
-          <p class="note">Writes the same .str file the Pacemaker reads, so sync locks to these beats.</p>
+          <p class="note">Saved as the .str file the Pacemaker reads.</p>
         </div>
         <div class="card">
           <h4>Pacemaker cue</h4>
@@ -478,10 +479,7 @@
             <span class="lab">Cue point</span>
             <span class="num">{cueSecs === null ? "not set" : fmtTime(cueSecs)}{editor.cueDirty ? " (unsaved)" : ""}</span>
           </div>
-          <p class="note">
-            The Pacemaker holds one cue point per track. It is stored in the track's row with the grid, in source sample
-            frames. The unit of a set cue is unverified against a real Pacemaker.
-          </p>
+          <p class="note">One cue per track. Unit unverified on a real Pacemaker.</p>
         </div>
         <div class="card">
           <h4>Keys</h4>
@@ -507,7 +505,7 @@
           Replaces the beat grid of <strong>{label(editor.loaded)}</strong> ({strPath}): {editor.doc.beats.length} beats at
           {editor.bpm.toFixed(2)} BPM, first beat {signed(editor.offsetMs)} ms from the saved one.
           {#if vtempo.sections.length > 1}
-            The tempo changes along the track, and the file stores a position for every beat, so it is saved as it is:
+            The tempo changes along the track and is saved as it is:
             <ul class="sections">
               {#each sectionLines(vtempo.sections, editor.sampleRate) as line (line)}<li>{line}</li>{/each}
             </ul>
@@ -523,23 +521,19 @@
     </ul>
     {#if needsCueTick}
       <p class="warn-box">
-        Unit unverified: the cue is written as a position in source sample frames, which no cue written by a real Pacemaker has
-        confirmed. A wrong unit would put the cue at the wrong place on the Pacemaker.
+        Unit unverified: a wrong unit would put the cue in the wrong place on the Pacemaker.
       </p>
       <label class="tick"><input type="checkbox" bind:checked={cueOk} /> Write the cue anyway</label>
     {/if}
     {#if needsMixTick}
       <p class="warn-box">
         {usedByMixes.length === 1 ? "1 mix uses" : `${usedByMixes.length} mixes use`} this track:
-        <strong>{usedByMixes.join(", ")}</strong>. A mix clip keeps the tempo the track had when the mix was made, so
-        with the new grid {usedByMixes.length === 1 ? "that mix" : "those mixes"} will drift out of step and may need to
-        be beatmatched again.
+        <strong>{usedByMixes.join(", ")}</strong>. {usedByMixes.length === 1 ? "That mix" : "Those mixes"} may drift out of step.
       </p>
       <label class="tick"><input type="checkbox" bind:checked={mixesOk} /> Save the grid anyway</label>
     {/if}
     <p class="muted">
-      The previous grid cannot be restored from here. A copy of music.db is kept in the app's data folder before the
-      first write of each session ({session.isComputer ? "This library" : "Device"}, Backup).
+      The previous grid cannot be restored from here. music.db is copied first ({session.isComputer ? "This library" : "Device"}, Backup).
     </p>
     {#snippet actions()}
       <Button data-autofocus onclick={() => (confirmSave = false)}>Cancel</Button>

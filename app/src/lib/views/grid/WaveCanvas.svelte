@@ -397,7 +397,7 @@
     style:height="{height}px"
     tabindex="0"
     role="application"
-    aria-label="Waveform with beat grid. Click to place the playhead, drag to pan, scroll to zoom. Left and Right move the playhead by a beat, Shift by a bar, Up and Down zoom, Home and End jump to the ends."
+    aria-label="Waveform with beat grid. Click to place the playhead, drag to pan, scroll to zoom. Left and Right move a beat, Shift a bar. Up and Down zoom. Home and End jump to the ends."
     onkeydown={key}
     onpointerdown={down}
     onpointermove={move}

@@ -137,7 +137,7 @@
     {@const r = created.result}
     <p>
       Created <b>“{created.saved.name}”</b>: {r.clipIds.length} track{r.clipIds.length === 1 ? "" : "s"}, {clock(created.saved.playTimeSecs)}.
-      {#if r.toolsSkipped > 0}{r.toolsSkipped} transition tool{r.toolsSkipped === 1 ? " was" : "s were"} left out because another tool was in the way.{/if}
+      {#if r.toolsSkipped > 0}{r.toolsSkipped} transition tool{r.toolsSkipped === 1 ? "" : "s"} left out (overlap).{/if}
     </p>
     {#if r.notes.length > 0}
       <p class="lbl">Worth a look</p>
@@ -147,7 +147,7 @@
     {#if worst.id >= 0 && Math.abs(worst.pct) >= 0.05}
       <p class="muted">Largest tempo change: {sign(worst.pct)} on “{titleOf(pre?.usable[worst.id]?.id ?? 0)}”.</p>
     {/if}
-    <p class="muted">Open it in the Mixes view to listen and adjust. The mix is saved in the library like any other.</p>
+    <p class="muted">Saved in the library.</p>
   {:else}
     <form
       onsubmit={(e) => {
@@ -159,16 +159,16 @@
       <input data-autofocus bind:value={name} maxlength="255" aria-label="Mix name" placeholder="Mix name" disabled={phase === "building"} />
     </form>
     {#if name.trim() && taken.has(name.trim().toLowerCase())}
-      <p class="warn" role="status">A mix with this name already exists. Pick another name.</p>
+      <p class="warn" role="status">This mix name exists.</p>
     {/if}
 
     {#if phase === "loading"}
       <p class="muted">Checking the tracks…</p>
     {:else if pre && plan}
       <p>
-        {pre.usable.length} track{pre.usable.length === 1 ? "" : "s"}, about {clock(sumSecs)} before the transitions overlap them.
-        Transitions: {transitionWords(recipePrefs.value)} (the Mixes view's settings). A blend overlaps by at most {prefs.overlapCapPct} % of the shorter track; a tool that overlaps one an earlier transition placed is {prefs.onToolConflict === "replace" ? "replaced" : "left out"} (set in the builder's settings).
-        {#if o.maxTrackSecs != null}Each track is cut to at most {clock(o.maxTrackSecs)}, on a whole bar.{/if}
+        {pre.usable.length} track{pre.usable.length === 1 ? "" : "s"}, about {clock(sumSecs)} before overlaps.
+        Transitions: {transitionWords(recipePrefs.value)}. Blends overlap at most {prefs.overlapCapPct} %; clashing tools are {prefs.onToolConflict === "replace" ? "replaced" : "left out"}.
+        {#if o.maxTrackSecs != null}Tracks are cut to {clock(o.maxTrackSecs)} on a whole bar.{/if}
       </p>
 
       {#if pre.unusable.length > 0}
@@ -192,7 +192,7 @@
       {#if prefs.beatmatch && biggest && Math.abs(biggest.pct) >= 0.05}
         <p class="muted">{tempoSentence(plan, prefs.mixTempo == null)} Largest change: {sign(biggest.pct)} on “{titleOf(biggest.id)}”.</p>
       {:else if !prefs.beatmatch}
-        <p class="muted">Tracks keep their own tempo and are only overlapped and crossfaded, so the beats will not line up.</p>
+        <p class="muted">Tracks keep their own tempo. Beats will not line up.</p>
       {/if}
 
       {#if sequences.length > 0}

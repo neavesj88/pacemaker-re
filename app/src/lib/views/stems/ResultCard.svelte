@@ -61,7 +61,7 @@
           Add {noun(files.length, "file")} {session.isComputer ? 'to the library' : 'to the card'}…
         </Button>
       </div>
-      <p class="muted note">You are shown every file and asked before anything is copied. The library does not keep tags or a link to the original; they appear as ordinary tracks.</p>
+      <p class="muted note">Every file is listed before anything is copied.</p>
     {/if}
   </section>
 {/if}

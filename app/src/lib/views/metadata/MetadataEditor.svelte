@@ -289,7 +289,7 @@
     <h2>{multi ? "Multiple Item Information" : "Track information"}</h2>
     {#if multi}
       <p class="sub">
-        {startIds.length} tracks. Only the fields you change are written; the rest of each track stays as it is.
+        {startIds.length} tracks. Only changed fields are written.
       </p>
     {:else if detail}
       <p class="sub">

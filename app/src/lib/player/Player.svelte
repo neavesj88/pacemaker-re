@@ -175,7 +175,7 @@
       <div class="muted line">Mix preview</div>
     {:else}
       <b class="title muted">Nothing loaded</b>
-      <div class="muted line" title="Select a track and press Space to play it. Double-click the wave to move the cue flag there.">Select a track, press Space · double-click sets the cue</div>
+      <div class="muted line" title="Select a track, press Space. Double-click the wave to set the cue.">Select a track, press Space · double-click sets the cue</div>
     {/if}
     {#if status}<div class="line status" class:bad={status.bad} title={status.text}>{status.text}</div>
       {#if status.hint}<div class="line hint">{status.hint}</div>{/if}
@@ -201,14 +201,14 @@
     <Button
       small
       aria-label="Previous track"
-      title="Previous track (restarts the track after 3 seconds)"
+      title="Previous track (restarts after 3 s)"
       disabled={!track}
       onclick={() => playback.previous()}>⏮</Button
     >
     <Button
       small
       aria-label="Cue"
-      title="Cue: at the cue point, hold to preview; elsewhere, jump to the cue point. Shift-click sets the cue point here. Key: C"
+      title="Cue (C): jump to the cue, hold to preview. Shift-click sets it here."
       disabled={!track || !engine.ready}
       onpointerdown={cueDown}
       onkeydown={cueKeyDown}

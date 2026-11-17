@@ -15,8 +15,7 @@
 </script>
 
 <p class="muted">
-  Pacemaker Revival is free software under the GNU GPL v3 or later. It contains the open-source packages listed
-  below, each under its own licence.
+  Free software under the GNU GPL v3 or later, with the open-source packages below.
 </p>
 {#if error}
   <p class="bad" role="alert">{error}</p>

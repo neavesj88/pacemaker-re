@@ -5,6 +5,7 @@
   import { session } from "$lib/state/session.svelte";
   import { smartSettings } from "$lib/state/smartSettings.svelte";
   import Button from "$lib/ui/Button.svelte";
+  import HelpLink from "../help/HelpLink.svelte";
   import ImportPreview from "./ImportPreview.svelte";
   import WatchFolders from "./WatchFolders.svelte";
   import WatchResults from "./WatchResults.svelte";
@@ -55,8 +56,8 @@
 
 <div class="import">
   <section class="card">
-    <h3>Music files</h3>
-    <p class="muted">Drop files or folders anywhere in the window, or pick them. Each is analysed, copied {session.isComputer ? 'into the library' : 'to the device'} and added with its beat grid.</p>
+    <h3>Music files <HelpLink id="import-export" /></h3>
+    <p class="muted">Drop files or folders anywhere in the window, or pick them.</p>
     <Button variant="primary" onclick={() => jobs.pickFiles()} disabled={!jobs.canWrite}>Add tracks…</Button>
   </section>
 
@@ -65,7 +66,7 @@
 
   <section class="card">
     <h3>rekordbox</h3>
-    <p class="muted">rekordbox.xml: ratings, playlists and the first memory cue become ratings, cases and (if you choose) cue points, previewed first; beat grids are not imported. Export writes tracks with their tempo grids, ratings, keys and cases. Smart cases are written as ordinary playlists of the tracks they match now (rekordbox XML cannot hold rules).</p>
+    <p class="muted">rekordbox.xml: ratings, playlists and first memory cue. Beat grids are not imported.</p>
     <div class="row">
       <Button onclick={() => interop.pick("rekordbox")} disabled={!lib || interop.loading}>Import XML…</Button>
       <Button onclick={() => interop.export("rekordbox", { scope: "library" }, "rekordbox")} disabled={!lib || interop.exporting}>Export XML…</Button>
@@ -84,7 +85,7 @@
 
   <section class="card">
     <h3>Playlists and lists</h3>
-    <p class="muted">Import an M3U / M3U8 playlist as a case (relative and absolute paths, #EXTINF titles), or save a case, a smart case, a mix or the whole library as an M3U8 playlist or a CSV list.</p>
+    <p class="muted">Import an M3U / M3U8 playlist as a case, or export a case, mix or the library as M3U8 or CSV.</p>
     <div class="row">
       <Button onclick={() => interop.pick("m3u")} disabled={!lib || interop.loading}>Import playlist…</Button>
     </div>
@@ -114,7 +115,7 @@
 
   <section class="card">
     <h3>Serato</h3>
-    <p class="muted">Crates become cases. Pick the <code>_Serato_</code> folder (on your music drive, or in your Music folder) to read every crate in it, or a single <code>.crate</code> file. A crate holds file paths only, so tracks are matched by file name and size and the files must be reachable from this computer. Smart crates are not imported.</p>
+    <p class="muted">Crates become cases. Pick the <code>_Serato_</code> folder or one <code>.crate</code> file. Smart crates are not imported.</p>
     <div class="row">
       <Button onclick={() => interop.pick("serato-folder")} disabled={!lib || interop.loading}>Import _Serato_ folder…</Button>
       <Button onclick={() => interop.pick("serato-crate")} disabled={!lib || interop.loading}>Import .crate…</Button>
@@ -123,7 +124,7 @@
 
   <section class="card">
     <h3>Traktor</h3>
-    <p class="muted">collection.nml: ratings, playlists and the first cue of each track become ratings, cases and (if you choose) cue points, previewed first. Colours and beat grids are not imported.</p>
+    <p class="muted">collection.nml: ratings, playlists and first cue. Colours and beat grids are not imported.</p>
     <Button onclick={() => interop.pick("traktor")} disabled={!lib || interop.loading}>Import collection.nml…</Button>
   </section>
 

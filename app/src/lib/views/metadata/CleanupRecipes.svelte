@@ -55,14 +55,13 @@
     <section class="card">
       <label class="head"><input type="checkbox" bind:checked={s.trim} /> Trim and collapse white space</label>
       <p class="muted">
-        Removes spaces at the ends and turns runs of spaces into one, in every text field. A comment keeps its line breaks. Zero-width
-        spaces are removed; joiners used by Persian, Indic and emoji text are kept.
+        Removes extra spaces in every text field. Comments keep line breaks.
       </p>
     </section>
 
     <section class="card">
       <label class="head"><input type="checkbox" bind:checked={s.strip_number} /> Strip leading track numbers</label>
-      <p class="muted">“01 - Title”, “01. Title” and “1) Title” become “Title”. “2020 - Title” keeps its 2020: more digits than allowed.</p>
+      <p class="muted">“01 - Title” and “1) Title” become “Title”.</p>
       <label class="opt" class:off={!s.strip_number}>
         A track number has up to
         <input
@@ -82,23 +81,21 @@
       </label>
       <label class="opt" class:off={!s.strip_number}>
         <input type="checkbox" disabled={!s.strip_number} bind:checked={s.number_space_only} />
-        Also “01 Title” (a number and a space only). Off by default because a title can start with a number.
+        Also “01 Title” (number and space only)
       </label>
     </section>
 
     <section class="card">
       <label class="head"><input type="checkbox" bind:checked={s.strip_promo} /> Strip URLs and promo text</label>
       <p class="muted">
-        Removes web addresses and bracketed promo such as “[www.example.test]” or “(Free Download)”. A bare address like
-        “djsite.com” must be in lower case; “Dance.With.Me” and “Rock.It” are left alone. A result that would leave a title or
-        artist empty is listed as not applicable.
+        Removes web addresses and bracketed promo such as “(Free Download)”.
       </p>
       {@render fields("promo_fields", s.strip_promo)}
       <div class:off={!s.strip_promo}>
         <TextListField
           kind="list"
           label="Promo phrases (one per line)"
-          hint="A bracket is removed when its words contain one of these phrases. Brackets with other words are kept."
+          hint="Brackets with one of these phrases are removed."
           value={s.promo_phrases}
           onchange={(v) => (s!.promo_phrases = v)}
           rows={5}
@@ -108,7 +105,7 @@
 
     <section class="card">
       <label class="head"><input type="checkbox" bind:checked={s.feat_normalise} /> One form of “feat.”</label>
-      <p class="muted">Writes feat., ft. and featuring the same way in title, artist and album artist.</p>
+      <p class="muted">Writes feat., ft. and featuring the same way.</p>
       <label class="opt" class:off={!s.feat_normalise}>
         Write it as
         <select disabled={!s.feat_normalise} bind:value={s.feat_form}>
@@ -116,12 +113,12 @@
         </select>
       </label>
       <label class="head sub"><input type="checkbox" bind:checked={s.feat_to_artist} /> Move “feat. X” from the title to the artist</label>
-      <p class="muted">“Title (feat. X)” by “Artist” becomes “Title” by “Artist feat. X”. Skipped when the artist is empty.</p>
+      <p class="muted">“Title (feat. X)” becomes “Title” by “Artist feat. X”.</p>
     </section>
 
     <section class="card">
       <label class="head"><input type="checkbox" bind:checked={s.extract_remixer} /> Take the remixer from “(X Remix)”</label>
-      <p class="muted">Copies X into the Remixer field. The title keeps its “(X Remix)”.</p>
+      <p class="muted">Copies X to the Remixer field.</p>
       <label class="opt" class:off={!s.extract_remixer}>
         <input type="checkbox" disabled={!s.extract_remixer} bind:checked={s.overwrite_remixer} />
         Replace a remixer that is already filled in
@@ -134,13 +131,13 @@
 
     <section class="card">
       <label class="head"><input type="checkbox" bind:checked={s.title_case} /> Title Case</label>
-      <p class="muted">Capitalises each word; small words (of, the, and) stay lower case except at the start. Off by default: it cannot know every name.</p>
+      <p class="muted">Capitalises each word; small words stay lower case.</p>
       {@render fields("case_fields", s.title_case)}
       <div class:off={!s.title_case}>
         <TextListField
           kind="list"
           label="Always upper case (one per line)"
-          hint="Words written like this whatever the title says, ignoring case."
+          hint="Always written like this."
           value={s.keep_upper}
           onchange={(v) => (s!.keep_upper = v)}
           rows={4}
@@ -148,7 +145,7 @@
         <TextListField
           kind="list"
           label="Small words (one per line)"
-          hint="Kept in lower case inside a title; the first and last word and the word after a colon, dash or bracket are always capitalised."
+          hint="Lower case inside a title."
           value={s.small_words}
           onchange={(v) => (s!.small_words = v)}
           rows={5}
@@ -158,7 +155,7 @@
 
     <section class="card">
       <label class="head"><input type="checkbox" bind:checked={s.genre_map_on} /> Genre names</label>
-      <p class="muted">Replaces a genre that matches the left side (ignoring case) with the right side.</p>
+      <p class="muted">Replaces a genre matching the left side with the right.</p>
       <div class:off={!s.genre_map_on}>
         <TextListField kind="map" label="Genre map (from -> to)" hint="One per line, for example “Old name -> New name”." value={s.genre_map} onchange={(v) => (s!.genre_map = v)} rows={6} />
       </div>
@@ -166,13 +163,13 @@
 
     <section class="card">
       <label class="head"><input type="checkbox" bind:checked={s.artist_map_on} /> Artist names</label>
-      <p class="muted">Replaces an artist (or one name in “A & B”, “A, B”, “A feat. B”) that matches the left side.</p>
+      <p class="muted">Replaces an artist name matching the left side.</p>
       <div class:off={!s.artist_map_on}>
         <TextListField kind="map" label="Artist map (from -> to)" hint="One per line. Empty to start with." value={s.artist_map} onchange={(v) => (s!.artist_map = v)} rows={6} />
         <TextListField
           kind="list"
           label="Separators between names (one per line)"
-          hint="A comma goes straight after a name (“A, B”); every other separator has a space on both sides (“A & B”, “A feat. B”, “A x B”)."
+          hint="Splits “A & B”, “A, B”, “A feat. B”."
           value={s.artist_separators}
           onchange={(v) => (s!.artist_separators = v)}
           rows={4}
@@ -183,15 +180,13 @@
     <section class="card wide">
       <label class="head"><input type="checkbox" bind:checked={s.write_back} /> Then offer to write the changes into the audio files’ own tags</label>
       <p class="muted">
-        Off by default. When on, applying a clean-up also reads the audio files and shows what would change in their tags; nothing is
-        written to a file until you confirm the list of files on the “Write tags to files” page. The Pacemaker itself reads its own
-        library, not these tags.
+        Lists tag changes on the “Write tags to files” page. Nothing is written until you confirm.
       </p>
     </section>
   </div>
 
   <div class="foot">
-    <Button small onclick={() => (confirmReset = true)} title="Puts back the built-in recipes, lists and maps (your edits are replaced)">Reset to defaults</Button>
+    <Button small onclick={() => (confirmReset = true)} title="Restore the built-in recipes, lists and maps">Reset to defaults</Button>
     <span class="muted" role="status">
       {#if cleanup.saved === "saving"}Saving…{:else if cleanup.saved === "saved"}Saved on this computer{:else if cleanup.saved === "error"}Could not save: {cleanup.saveError}{:else}Saved automatically on this computer{/if}
     </span>
@@ -201,14 +196,13 @@
 {#if confirmReset}
   <Modal title="Reset the clean-up settings?" onclose={() => (confirmReset = false)}>
     <p class="warn">
-      This puts back every built-in recipe setting, list and map. What you have now is replaced and cannot be brought back (the new
-      settings are saved at once):
+      Replaces your recipe settings, lists and maps with the built-in ones. This cannot be undone:
     </p>
     <ul class="gone">
       {#each replaced as [name, n] (name)}
         <li>{name}: {n === 0 ? "empty now" : n === 1 ? "1 entry now" : `${n} entries now`}, replaced by the built-in list</li>
       {/each}
-      <li>Every tick box, the “feat.” form, the fields and the number of digits go back to their defaults</li>
+      <li>Tick boxes, “feat.” form, fields and digits go back to defaults</li>
     </ul>
     {#snippet actions()}
       <Button data-autofocus onclick={() => (confirmReset = false)}>Keep my settings</Button>

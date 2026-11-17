@@ -73,7 +73,7 @@
 <div class="muted">{p.kind === "tool" ? "tool" : "region"} on “{clipTitle(clip)}”</div>
 
 {#if clash}
-  <div class="warn">Another {name} overlaps this one on the same clip. Saving is refused until they are separate: move or shorten one.</div>
+  <div class="warn">Another {name} overlaps this one. Move or shorten one to save.</div>
 {/if}
 
 <div class="field">
@@ -133,8 +133,8 @@
       <span class="muted">BPM</span>
     </span>
   </div>
-  <p class="note">Chops the clip on and off in eighth notes from the start of this block, at the tempo above (0 follows the clip's tempo). It has no curves.</p>
-  <div class="warn">The file layout of a Trans tool has not been checked on a real Pacemaker or in the Tonium Editor (no mix with one has been seen). The preview and the audio export play it; if {session.isComputer ? "the Pacemaker" : "the device"} does not like it, delete the block and save again.</div>
+  <p class="note">Eighth-note gate at the tempo above (0 = clip tempo).</p>
+  <div class="warn">Trans is untested on a real Pacemaker. Delete the block if {session.isComputer ? "the Pacemaker" : "the device"} rejects it.</div>
 {/if}
 
 {#if tool && type === "Wah"}
@@ -144,9 +144,7 @@
     <label class="check"><input type="checkbox" checked={marked} onchange={(e) => mixes.doc && vocalTools.set(mixes.doc.id, p.id, e.currentTarget.checked)} /> use as the vocal filter</label>
   </div>
   <p class="note">
-    Vocal and Wah are the same tool in the mix file (Wah, cut-off). {session.isComputer ? "A mix sent to a Pacemaker" : "On the Pacemaker"} plays it as the vocal filter only with Revival firmware and the Vocal flag switched on ({session.isComputer ? "the Device view of the Pacemaker itself, once it is open" : "Device view"});
-    otherwise the Pacemaker plays it as Wah. This app remembers which tools you made as Vocal, for the names here, the live preview and audio exports, which play them as the vocal filter. The mark is kept in this
-    app, not in the mix, and a copy of the tool is a Wah tool until you mark it.
+    A copy of the tool is a Wah tool until marked. The Pacemaker plays this as Wah unless it has Revival firmware and the Vocal flag ({session.isComputer ? "Device view of the Pacemaker" : "Device view"}) is on.
   </p>
 {/if}
 
@@ -185,7 +183,7 @@
       </div>
     {/each}
   </div>
-  <p class="note">Click on a curve to add a node, drag to move, right-click a node (or select it and press Delete) to remove it. The first and last node stay at the ends of the block.</p>
+  <p class="note">Click to add a node, drag to move, right-click to remove.</p>
 {/if}
 
 <div class="buttons">

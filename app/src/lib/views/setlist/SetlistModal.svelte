@@ -10,6 +10,7 @@
   import { toast } from "$lib/state/toast.svelte";
   import { keyName, parseKey } from "$lib/views/tracks/trackLogic";
   import Button from "$lib/ui/Button.svelte";
+  import HelpLink from "../help/HelpLink.svelte";
   import SetlistOptions from "./SetlistOptions.svelte";
   import { setlist } from "./setlist.svelte";
   import {
@@ -200,6 +201,7 @@
   <div class="dlg" role="dialog" aria-modal="true" aria-label="Printable setlist" tabindex="-1" onclick={(e) => e.stopPropagation()}>
     <header>
       <h2>Printable setlist</h2>
+      <HelpLink id="import-export" />
       <span class="muted">{kind === "mix" ? "mix" : "case"} · {name || "…"}</span>
       <span class="grow"></span>
       <span class="status muted" role="status">
@@ -217,11 +219,11 @@
         <div class="side">
           {#if warning}<p class="warn" role="alert">{warning}</p>{/if}
           {#each built.notes as n (n)}<p class="note-line">{n}</p>{/each}
-          {#if unsavedMix}<p class="note-line">This mix has unsaved changes in the editor; the setlist shows them as they are on screen.</p>{/if}
+          {#if unsavedMix}<p class="note-line">Includes unsaved changes from the mix editor.</p>{/if}
 
           <section>
             <h3>Details</h3>
-            <p class="muted small">Kept in this app on this computer. They are not written to the Pacemaker.</p>
+            <p class="muted small">Kept in this app only.</p>
             <label>Heading<input bind:value={sheet.title} maxlength="200" placeholder={name} /></label>
             <label>Event<input bind:value={sheet.event} maxlength="200" /></label>
             <label>Venue<input bind:value={sheet.venue} maxlength="200" /></label>
@@ -238,7 +240,7 @@
             <label class:off={opts.timeMode !== "clock"}>Set starts at
               <input type="time" bind:value={sheet.start_clock} disabled={opts.timeMode !== "clock"} />
             </label>
-            {#if opts.timeMode === "clock" && !sheet.start_clock}<p class="small muted">Enter a start time; until then the page shows time since the start.</p>{/if}
+            {#if opts.timeMode === "clock" && !sheet.start_clock}<p class="small muted">Enter a start time; until then elapsed time is shown.</p>{/if}
           </section>
 
           <section>
@@ -254,7 +256,7 @@
           <section>
             <h3>Notes and energy</h3>
             <p class="muted small">
-              The energy column shows the track's energy from the library ({energySource.source === "mine" ? "your rating" : energySource.source === "auto" ? "the estimate from the audio" : "your rating, else the estimate from the audio"}; see the Energy source setting) unless you pick a 1 to {MAX_ENERGY} value here, which is for this setlist only. The Pacemaker has no energy field.
+              Energy comes from the library ({energySource.source === "mine" ? "your rating" : energySource.source === "auto" ? "the audio estimate" : "your rating, else the audio estimate"}) unless you pick 1 to {MAX_ENERGY} here, for this setlist only.
               {#if repeats > 0}A track used more than once shares one note and rating.{/if}
             </p>
             {#if built.rows.length === 0}
@@ -293,7 +295,7 @@
           <div class="bar">
             <Button variant="primary" onclick={print} disabled={built.rows.length === 0}>Print…</Button>
             <Button onclick={saveHtml} disabled={saving}>Save as HTML…</Button>
-            <span class="muted small">Print opens the system print dialog; choose “Save as PDF” as the printer for a PDF. If printing does nothing on this system, use Save as HTML and print that file from a browser.</span>
+            <span class="muted small">For a PDF, print to “Save as PDF”. If printing fails, use Save as HTML.</span>
           </div>
           <iframe bind:this={frame} title="Setlist preview" srcdoc={html} sandbox="allow-same-origin allow-modals"></iframe>
         </div>

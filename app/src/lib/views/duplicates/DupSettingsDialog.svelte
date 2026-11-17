@@ -53,7 +53,7 @@
 
     <fieldset>
       <legend>Sound</legend>
-      <label><input type="checkbox" bind:checked={draft.by_audio} /> Find copies by how they sound (reads every candidate file once; the result is cached)</label>
+      <label><input type="checkbox" bind:checked={draft.by_audio} /> Find copies by how they sound</label>
       <label class="fld">
         At least
         <input type="number" min="50" max="100" value={Math.round(draft.audio_threshold * 100)} onchange={(e) => (draft.audio_threshold = num(e, 50, 100, 90) / 100)} /> % alike
@@ -109,9 +109,9 @@
       <label>
         <input type="checkbox" bind:checked={draft.allow_row_removal} />
         Allow removing the other copies from the library when merging
-        <span class="muted">(off at first: deleting rows from <code>music.db</code> has not been tried on a real Pacemaker. The app copies <code>music.db</code> before the first write.)</span>
+        <span class="muted">(untested on a real Pacemaker; <code>music.db</code> is copied first)</span>
       </label>
-      <p class="muted small">Whether to remove the copies, and whether to delete their files, is still asked for each merge; this setting only lets the first of the two be chosen.</p>
+      <p class="muted small">Removal and file deletion are still asked for each merge.</p>
     </fieldset>
   </div>
 

@@ -24,7 +24,7 @@
     <input type="checkbox" bind:checked={prefs.copy_audio} />
     <span>
       <strong>Copy the audio files too</strong>
-      <span class="muted note">Copies each track's file from {session.isComputer ? 'the library' : 'the Pacemaker'} next to the playlists and points the lists at the copies. The files {session.place.on} are only read.</span>
+      <span class="muted note">Copies each file next to the playlists; originals are only read.</span>
     </span>
   </label>
   {#if prefs.copy_audio}

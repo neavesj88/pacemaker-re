@@ -140,7 +140,7 @@
           <div class="row indent">
             <Button small onclick={takeMarked} disabled={!mv.marked} title="Use the stretch marked by Shift-dragging the ruler">use the marked stretch</Button>
             <Button small onclick={takeSelected} disabled={!selectedSpan} title="Use the stretch from the start of the first selected track to the end of the last">use the selected tracks</Button>
-            <span class="muted small">close this window and Shift-drag on the ruler to mark a stretch, or select tracks in the editor</span>
+            <span class="muted small">Shift-drag the ruler or select tracks in the editor</span>
           </div>
         {/if}
         <label class="opt"><input type="radio" name="xr-mode" checked={X.mode === "clips"} onchange={() => pickMode("clips")} /> From one track to another</label>
@@ -167,7 +167,7 @@
             {:else}
               Exports {clockText(X.info.fromSecs)} to {clockText(X.info.toSecs)} of the mix ({durationText(X.info.durationSecs)}), {X.info.clipIds.length} track{X.info.clipIds.length === 1 ? "" : "s"} heard:
               {X.info.clipIds.map(titleOf).join(", ")}.
-              <div class="muted small">Effects start fresh at the cut: the tail of a reverb or echo from before the start is not in this part, and a tool already running at the start begins from its start.</div>
+              <div class="muted small">Effects start fresh at the cut.</div>
             {/if}
           </div>
         {/if}
@@ -177,8 +177,7 @@
         <legend>Loudness</legend>
         <ExportLoudnessFields />
         <div class="muted small">
-          The gain is applied before the master limiter, which still keeps the peaks under -0.2 dBFS. A target the limiter would have to fight for is missed, and the result says by how much.
-          Levelling measures each track as the mix plays it (tools and gain envelope included, crossfades not).
+          Gain is applied before the limiter, which keeps peaks under -0.2 dBFS.
         </div>
 
         <div class="row">
@@ -186,7 +185,7 @@
             <span class="busy">Measuring… {Math.round(X.analysePct * 100)}%</span>
             <Button small onclick={() => void exportCancel()}>Cancel</Button>
           {:else}
-            <Button onclick={() => void X.analyse()} disabled={blocked} title="Measure the loudness of this part of the mix, and find the gains the export will apply. Nothing is written.">
+            <Button onclick={() => void X.analyse()} disabled={blocked} title="Measure loudness. Nothing is written.">
               Measure loudness
             </Button>
             <span class="muted small">{X.active ? "finds the gains the export will use" : "just reads the level of the mix"}</span>
@@ -206,7 +205,7 @@
                 <tr><td>After the limiter</td><td class="n num">{lufsText(r.afterLimiter?.lufs)}</td><td class="n num">{peakText(r.afterLimiter?.truePeakDb)}</td></tr>
               </tbody>
             </table>
-            <div class="muted small">True peak is read at 4 times the sample rate and is accurate to about 0.3 dB.</div>
+            <div class="muted small">True peak is accurate to about 0.3 dB.</div>
             <div class="gain">
               {#if r.targetLufs !== null}
                 Master gain <b>{gainText(r.masterGainDb)}</b> to reach {lufsText(r.targetLufs)}.
@@ -248,14 +247,14 @@
         <ExportFileFields />
         <div class="muted small">
           {#if sizeGuess !== null}About {sizeText(sizeGuess)} for {durationText(X.info?.durationSecs ?? 0)} of audio. {/if}
-          The format is chosen again in the save window; a file name ending in another format's extension uses that format.
+          The save window sets the format.
         </div>
       </fieldset>
 
       <fieldset>
         <legend>Tags</legend>
         <ExportTagFields mixTitle={doc.name} />
-        <div class="muted small">Tags are written into the exported file only; nothing in your library is changed. These settings are kept on this computer.</div>
+        <div class="muted small">Tags go into the exported file only.</div>
       </fieldset>
 
       <label class="check">
@@ -263,13 +262,13 @@
         Play the editor's preview at the export level (needs a current measurement)
       </label>
       {#if X.previewBehind}
-        <div class="muted small">Loudness settings are on, but the preview plays without them until you measure again.</div>
+        <div class="muted small">Measure again to preview at export level.</div>
       {/if}
 
       <details class="settings">
         <summary>More settings</summary>
         <ExportLimitFields />
-        <div class="muted small">These settings are kept on this computer. They change how the audio file is made; nothing in your library is changed.</div>
+        <div class="muted small">Kept on this computer.</div>
       </details>
 
       {#if X.problem}<div class="bad" role="alert">{X.problem}</div>{/if}
@@ -277,11 +276,11 @@
       {#snippet actions()}
         <Button onclick={close} data-autofocus>Close</Button>
         {#if X.partial}
-          <Button disabled={!X.info || preview.status === "rendering"} onclick={() => void playRange()} title="Play this part as the export will make it, at the measured level when there is a current measurement">
+          <Button disabled={!X.info || preview.status === "rendering"} onclick={() => void playRange()} title="Play this part as exported">
             {preview.playing ? "Stop" : preview.status === "rendering" ? "Rendering…" : "Preview this part"}
           </Button>
         {/if}
-        <Button variant="primary" disabled={blocked} onclick={() => void exportNow()} title={X.active ? "Choose the file; the export measures first, then renders with the gains found" : "Choose the file and render"}>
+        <Button variant="primary" disabled={blocked} onclick={() => void exportNow()} title={X.active ? "Choose the file; measures first, then renders" : "Choose the file and render"}>
           Choose file and export…
         </Button>
       {/snippet}

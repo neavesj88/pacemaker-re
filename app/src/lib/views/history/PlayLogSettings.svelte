@@ -97,10 +97,6 @@
     <input type="checkbox" checked={playlog.settings.enabled} disabled={busy} onchange={(e) => commit({ enabled: e.currentTarget.checked })} />
     Record the play counters each time a library is opened
   </label>
-  <p class="hint">
-    On by default. Only changes are stored, in a file on this computer{session.isComputer ? ", apart from the library" : " (not on the Pacemaker)"}. Turning it off keeps the log you have; it
-    just stops growing.
-  </p>
 
   <label class="field">
     Days of changes to keep
@@ -114,13 +110,10 @@
     />
     <span class="muted">{retentionLabel(playlog.settings.retention_days)}; 0 keeps everything</span>
   </label>
-  <p class="hint">
-    Older changes are folded into the starting point: their play counts are kept but their individual dates are not. A new value is applied when
-    you change it, if a library is open and logging is on; otherwise the next time a library is opened.
-  </p>
+  <p class="hint">Older plays lose their dates; their counts stay.</p>
   {#if pendingDays !== null}
     <div class="ask" role="alertdialog" aria-label="Confirm a shorter retention">
-      Keep only {pendingDays} day{pendingDays === 1 ? "" : "s"}? Plays older than that lose their dates (their counts stay in the total) and this cannot be undone.
+      Keep only {pendingDays} day{pendingDays === 1 ? "" : "s"}? Older plays lose their dates. This cannot be undone.
       <span class="btns">
         <Button small data-autofocus onclick={cancelShorter}>Cancel</Button>
         <Button small variant="primary" onclick={confirmShorter}>Keep {pendingDays} days</Button>
@@ -138,12 +131,9 @@
       onchange={commitCap}
       onkeydown={(e) => e.key === "Enter" && commitCap()}
     />
-    <span class="muted">1000 to 2000000; each change is one track at one opening</span>
+    <span class="muted">1000 to 2000000</span>
   </label>
-  <p class="hint">
-    A guard against an ever growing file, so even "0 keeps everything" stops at this many changes: past it the oldest are folded into the starting
-    point exactly like the days above (counts kept, dates lost). The default, 400000, is years of use; a change is about 40 bytes on disk.
-  </p>
+  <p class="hint">Past this, the oldest plays lose their dates.</p>
 
   <label class="field">
     A pause ends a session after
@@ -167,10 +157,7 @@
     />
     <span class="muted">percent; 0 never refuses a library</span>
   </label>
-  <p class="hint">
-    The log belongs to {session.isComputer ? "a library folder" : "a drive or path"}. If fewer than this share of the played tracks it knows are in {session.place.thisCard}, it is taken for a different {session.isComputer ? "library" : "card"}
-    and nothing is logged until you choose "Keep this log and continue" or delete the log. Logs with fewer than five played tracks are never judged.
-  </p>
+  <p class="hint">Below this share, nothing is logged until you choose. Logs under five played tracks are never judged.</p>
 
   <label class="check">
     <input
@@ -181,10 +168,6 @@
     />
     Ask before starting a new log for {session.isComputer ? "a library" : "a card"} that matches the log of another {session.isComputer ? "folder" : "drive"}
   </label>
-  <p class="hint">
-    {session.isComputer ? "A library that turns up in a new folder" : "A card that turns up at a new drive letter"} has no log yet. With this on it is not logged until you choose between continuing the old {session.isComputer ? "folder's" : "drive's"}
-    log and starting a new one; off, a new log starts straight away.
-  </p>
   {#if err}<p class="err" role="alert">{err}</p>{/if}
 </div>
 

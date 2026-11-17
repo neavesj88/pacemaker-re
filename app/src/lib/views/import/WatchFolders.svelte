@@ -103,8 +103,7 @@
 <section class="card wide">
   <h3>Watch folders</h3>
   <p class="muted">
-    Folders on this computer that are searched for music the library does not have yet. Nothing is added unless you say so: by default new files are
-    listed here and go through the usual question. These settings are kept on this computer, not on the Pacemaker.
+    Folders searched for new music. Settings stay on this computer.
   </p>
 
   {#if watch.settingsProblem}<p class="err" role="alert">{watch.settingsProblem}</p>{/if}
@@ -144,12 +143,12 @@
     <legend>When new files turn up</legend>
     <label class="check">
       <input type="radio" name="watch-mode" checked={!auto} onchange={() => commit({ mode: "ask" })} />
-      <span><b>Ask me first</b> (default): they are listed below, and adding them opens the question that names every file.</span>
+      <span><b>Ask me first</b> (default): files are listed below; adding names every file.</span>
     </label>
     <label class="check">
       <input type="radio" name="watch-mode" checked={auto} onchange={() => commit({ mode: "auto" })} />
       <span>
-        <b>Add them automatically</b>: up to {watch.settings.auto_max_files} files at once go {session.isComputer ? 'into the library' : 'onto the Pacemaker'} without the question. You still see a notice, the progress and a log of what was added. A bigger find is left for you to review.
+        <b>Add them automatically</b>: up to {watch.settings.auto_max_files} files at once go {session.isComputer ? 'into the library' : 'onto the Pacemaker'} without the question. A bigger find waits for you.
       </span>
     </label>
   </fieldset>
@@ -170,7 +169,7 @@
         disabled={busy || auto}
         onchange={(e) => commit({ open_confirmation: e.currentTarget.checked })}
       />
-      Open the question straight away when new files are found (instead of a notice)
+      Open the question when new files are found
     </label>
   </div>
 
@@ -185,7 +184,7 @@
         onchange={() => commitNumber(interval, 0, 1440, "The interval", "interval_minutes")}
         onkeydown={(e) => e.key === "Enter" && commitNumber(interval, 0, 1440, "The interval", "interval_minutes")}
       />
-      <span class="muted">{intervalLabel(watch.settings.interval_minutes)}; only while this app is open; 0 = off</span>
+      <span class="muted">{intervalLabel(watch.settings.interval_minutes)}; 0 = off; only while the app is open</span>
     </label>
     <label class="field">
       Wait until a file is unchanged for (seconds)
@@ -197,7 +196,7 @@
         onchange={() => commitNumber(minAge, 0, 3600, "The waiting time", "min_age_secs")}
         onkeydown={(e) => e.key === "Enter" && commitNumber(minAge, 0, 3600, "The waiting time", "min_age_secs")}
       />
-      <span class="muted">so a file still downloading or copying is left for the next scan</span>
+      <span class="muted">skips files still being copied</span>
     </label>
     <label class="field" class:dim={!auto}>
       Most files added automatically at once
@@ -221,7 +220,7 @@
         onchange={commitTolerance}
         onkeydown={(e) => e.key === "Enter" && commitTolerance()}
       />
-      <span class="muted">used when a file's title and artist match a library track but the name does not; 0 = exactly the same length</span>
+      <span class="muted">used when title and artist match; 0 = exact</span>
     </label>
   </div>
 

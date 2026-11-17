@@ -60,7 +60,7 @@
       </label>
     {/if}
     {#if problem}<p class="warn" role="alert">{problem}</p>{/if}
-    <p class="muted note">Next you see the same list as after a drop: every track, what is done to it, and the room needed. Nothing is written until you press Copy there.</p>
+    <p class="muted note">Nothing is written until you press Copy on the next list.</p>
 
     {#snippet actions()}
       <Button onclick={() => libs.closeChooser()}>Cancel</Button>

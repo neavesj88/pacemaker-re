@@ -239,9 +239,9 @@
     toast.show(t.text, t.kind, { details: t.details, action: r.applied > 0 ? undoAction() : undefined });
   }
   const OVERLAYS: { id: EnvOverlay; label: string; tip: string }[] = [
-    { id: "gain", label: "Gain", tip: "Draw each clip's gain curve over the bar; select a clip to edit its curve (click adds a node, right-click removes it)" },
-    { id: "tempo", label: "Tempo", tip: "Draw each clip's tempo curve over the bar; select a clip and click to add a node for a tempo ramp" },
-    { id: "key", label: "Key", tip: "Draw each clip's key curve over the bar; select a clip to edit it" },
+    { id: "gain", label: "Gain", tip: "Show each clip's gain curve" },
+    { id: "tempo", label: "Tempo", tip: "Show each clip's tempo curve" },
+    { id: "key", label: "Key", tip: "Show each clip's key curve" },
   ];
 </script>
 
@@ -258,7 +258,7 @@
     <Button
       disabled={saving || mixes.busy}
       onclick={saveMixAs}
-      title={mixes.problems.length ? `Cannot save yet: ${mixes.problems[0]}` : "Save the mix as a new mix under another name; this one keeps its last saved content (Ctrl+Shift+S)"}>Save as…</Button
+      title={mixes.problems.length ? `Cannot save yet: ${mixes.problems[0]}` : "Save as a new mix (Ctrl+Shift+S)"}>Save as…</Button
     >
     <span class="sep"></span>
     <Button disabled={mixes.undoDepth === 0} onclick={() => mixes.undo()} title={mixes.undoLabel ? `Undo ${mixes.undoLabel} (Ctrl+Z)` : "Nothing to undo"} aria-label="Undo">↶</Button>
@@ -278,24 +278,24 @@
     </label>
     <Button small onclick={() => mv.fit(doc.length)} title="Show the whole mix">Fit</Button>
     <span class="sep"></span>
-    <span class="ctl" title="The tempo the mix is matched to: new tracks and the Match buttons play at this, or at double or half of it, whichever stretches the track least. Not stored in the mix file: when a mix is opened again it starts at its first track's tempo.">
+    <span class="ctl" title="Tempo new tracks and Match play at, or double or half of it. Not saved in the mix.">
       Mix tempo
       <BpmField value={mixTempo} onset={setMixTempo} label="Mix tempo" disabled={doc.clips.length === 0} />
     </span>
-    <Button small disabled={!mixTempo} onclick={matchAll} title="Play every track at the mix tempo (or double or half of it); a track that would need more stretch than the setting allows keeps its own tempo">Match all</Button>
+    <Button small disabled={!mixTempo} onclick={matchAll} title="Play every track at the mix tempo; a track needing too much stretch keeps its own">Match all</Button>
     <span class="sep"></span>
-    <label class="ctl follow" title="Snap on: a clip dragged over or up against another one is lined up with that clip's beat grid (downbeat on downbeat for Bar, phrase start on phrase start for Phrase), using the tracks' real grids. Hold Alt while dragging to move freely. Remembered.">
+    <label class="ctl follow" title="Line dragged clips up on beat grids. Alt = move freely.">
       <input type="checkbox" checked={snapPrefs.value.on} onchange={(e) => mixes.setSnap({ on: e.currentTarget.checked })} /> Snap
     </label>
     <span class="ctl">
-      <select value={snapPrefs.value.grain} disabled={!snapPrefs.value.on} onchange={(e) => mixes.setSnap({ grain: e.currentTarget.value as SnapGrain })} aria-label="Snap to" title="What a clip is lined up on. Section snaps to where detected sections begin (intro, build, drop, breakdown, outro; Tracks, Sections panel); a clip whose track has none snaps to its phrase lines instead.">
+      <select value={snapPrefs.value.grain} disabled={!snapPrefs.value.on} onchange={(e) => mixes.setSnap({ grain: e.currentTarget.value as SnapGrain })} aria-label="Snap to" title="What a clip snaps to">
         <option value="beat">Beat</option>
         <option value="bar">Bar</option>
         <option value="phrase">Phrase (8 bars)</option>
         <option value="section">Section</option>
       </select>
     </span>
-    <Button small disabled={doc.clips.length < 2} onclick={() => beatAlign()} title="Move the selected clip (or, with a crossfade selected, its incoming clip) to the nearest place where its beat grid lines up with the audible part of its neighbour's, at the grain chosen here (a phrase after the neighbour ends does not count). Its tempo does not change. A clip without a beat grid is not moved. Undo puts it back.">Beat-align</Button>
+    <Button small disabled={doc.clips.length < 2} onclick={() => beatAlign()} title="Move the selected clip, tempo unchanged, to line its beat grid up with its neighbour's. Clips without a grid stay.">Beat-align</Button>
     <span class="ctl">Curves
       <span class="segs">
         {#each OVERLAYS as o (o.id)}
@@ -309,12 +309,12 @@
       {#if mixes.problems.length > 0}
         <span class="problem" title={mixes.problems.join("\n")}>⚠ {mixes.problems.length} problem{mixes.problems.length === 1 ? "" : "s"} blocking save</span>
       {/if}
-      <Button disabled={doc.clips.length === 0} onclick={() => (tracklist.open = true)} title="Start times of the tracks as text, CSV, YouTube chapters or a CUE sheet. Its settings also say whether Export audio writes a .cue beside the audio.">Track list</Button>
+      <Button disabled={doc.clips.length === 0} onclick={() => (tracklist.open = true)} title="Track start times as text, CSV, chapters or CUE">Track list</Button>
       <Button disabled={doc.clips.length === 0} onclick={() => setlist.openMix(doc.id)} title="A printable setlist of this mix">Setlist…</Button>
       <Button
         disabled={mv.exporting || doc.clips.length === 0}
         onclick={openExport}
-        title="Render the mix, or part of it, to an audio file. Choose the part and a target loudness first."
+        title="Render the mix to an audio file"
       >
         {mv.exporting
           ? `${mv.exportPhase === "measuring" ? "Measuring" : "Exporting"}${mv.exportPct > 0 ? ` ${Math.round(mv.exportPct * 100)}%` : "…"}`
@@ -329,11 +329,11 @@
   {#if mixes.libraryChange}
     <div class="stale" role="alert">
       {#if mixes.libraryChange === "gone"}
-        <span>“{doc.name}” is no longer in the library: a restore or sync removed it. Your edits are still here; use Save as to keep them as a new mix.</span>
+        <span>“{doc.name}” is no longer in the library. Use Save as to keep your edits.</span>
       {:else}
-        <span>“{doc.name}” was changed in the library by a restore or sync after you opened it. Saving now would overwrite that version with the one on screen.</span>
-        <Button onclick={reloadChangedMix} title="Read the mix from the library and drop the edits made here">Reload (drop my edits)</Button>
-        <Button onclick={() => mixes.keepEdits()} title="Allow Save to replace the library's version with this one">Keep my edits</Button>
+        <span>“{doc.name}” changed in the library. Saving overwrites that version.</span>
+        <Button onclick={reloadChangedMix} title="Reload from the library, dropping your edits">Reload (drop my edits)</Button>
+        <Button onclick={() => mixes.keepEdits()} title="Let Save replace the library's version">Keep my edits</Button>
       {/if}
     </div>
   {/if}
@@ -358,20 +358,20 @@
         <span class="muted">/ {clock(doc.lengthSec)}</span>
         {#if busyLabel}<span class="muted">{busyLabel}</span>{/if}
         {#if preview.notice}<span class="notice" role="status">{preview.notice}</span>{/if}
-        {#if tempoUnsaved}<span class="tempo-note" title="The mix tempo is not stored in the mix file: when the mix is opened again it starts at its first track's tempo.">Mix tempo is not saved with the mix</span>{/if}
+        {#if tempoUnsaved}<span class="tempo-note" title="Reopening starts at the first track's tempo.">Mix tempo is not saved with the mix</span>{/if}
         {#if mixExport.previewGains()}
-          <span class="level" title="The preview plays at the level your last loudness analysis found for the export settings.">export level</span>
+          <span class="level" title="Preview plays at the analysed export level.">export level</span>
         {:else if mixExport.previewBehind}
-          <span class="stale" title="Loudness settings are on but the last analysis is about a different mix or settings. Analyse again in Export audio to hear the export level.">not at export level</span>
+          <span class="stale" title="Loudness analysis is out of date. Analyse again in Export audio.">not at export level</span>
         {/if}
         <label class="ctl" title="Preview volume only; it is not saved in the mix">Master
           <input type="range" min="0" max="1" step="0.01" bind:value={preview.volume} aria-label="Preview volume" />
         </label>
-        <label class="ctl follow" title="Scroll the timeline with the playhead while playing. How it scrolls is in Settings > Mixes."><input type="checkbox" bind:checked={mv.follow} onchange={() => mv.resumeFollow()} /> follow playhead</label>
+        <label class="ctl follow" title="Scroll the timeline with the playhead"><input type="checkbox" bind:checked={mv.follow} onchange={() => mv.resumeFollow()} /> follow playhead</label>
         {#if mv.follow && mv.followPaused && preview.playing}
-          <button class="again" onclick={() => mv.resumeFollow()} title="You scrolled or zoomed the timeline, so it stopped following. Click to bring the view back to the playhead and follow it again.">Follow again</button>
+          <button class="again" onclick={() => mv.resumeFollow()} title="Bring the view back to the playhead">Follow again</button>
         {/if}
-        <span class="legend">plays live as you edit · drag clips · click a block to edit it · Space plays from the playhead · double-click the timeline to move it</span>
+        <span class="legend">drag clips · click a block to edit · Space plays</span>
       </div>
       {#if mv.pickerOpen}<MixPicker />{/if}
     </div>

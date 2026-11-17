@@ -17,7 +17,7 @@
 {#if s}
   <label class="opt">
     <input type="checkbox" bind:checked={s.use_tags} />
-    Also match by title, artist and length (reads the tags of files whose name does not match)
+    Also match by title, artist and length
   </label>
   <label class="opt indent">
     Length may differ by

@@ -23,7 +23,7 @@
 <fieldset>
   <legend>Tags</legend>
   <ExportTagFields />
-  <div class="muted small">Tags are written into the exported file only; nothing in your library is changed. The title is the mix's name unless you type another in the export dialog.</div>
+  <div class="muted small">Tags go into the exported file only.</div>
 </fieldset>
 <fieldset>
   <legend>Range and limits</legend>

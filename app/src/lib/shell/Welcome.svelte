@@ -22,12 +22,10 @@
   {#if offer.unreadable}
     <h1>Your library settings could not be read</h1>
     <p>
-      Nothing was opened, because the file that says where your library is cannot be trusted. The message above has the details.
-      Open a folder or a Pacemaker below, or save the settings again to use the default location{session.computer?.default_path ? ` (${session.computer.default_path})` : ""}. A copy of the damaged file is
-      kept next to it, with <code>.bad</code> added to its name.
+      Nothing was opened. Open a folder or a Pacemaker below, or use the default location{session.computer?.default_path ? ` (${session.computer.default_path})` : ""}. The damaged file is kept as <code>.bad</code>.
     </p>
     <div class="actions">
-      <Button variant="primary" onclick={() => session.saveComputer({ path: "", open_at_start: true })} title="Replaces the damaged settings with the defaults (the Music folder, in a folder called Pacemaker Revival). Nothing is opened or made yet.">
+      <Button variant="primary" onclick={() => session.saveComputer({ path: "", open_at_start: true })} title="Replaces the damaged settings with the defaults.">
         Use the default location
       </Button>
       <Button onclick={() => session.chooseComputerFolder()}>Choose a folder for it…</Button>
@@ -35,16 +33,15 @@
   {:else if offer.start}
     {#if offer.emptyFolder}
       <h1>Welcome. Where should your library live?</h1>
-      <p>Your tracks, mixes and cases live in a library on this computer. You do not need the Pacemaker to work on them.</p>
+      <p>Your library lives on this computer. No Pacemaker needed.</p>
     {:else if offer.missingPath}
       <h1>Your library was not found</h1>
       <p class="where">
-        Your settings say the library is in <code>{offer.missingPath}</code>, but nothing is there. If it is on a drive or
-        folder that is not connected, connect it and press Rescan. Nothing was made.
+        Nothing is in <code>{offer.missingPath}</code>. If the drive is not connected, connect it and press Rescan.
       </p>
     {:else}
       <h1>Start your library</h1>
-      <p>Your tracks, mixes and cases live in a library on this computer. You do not need the Pacemaker to work on them.</p>
+      <p>Your library lives on this computer. No Pacemaker needed.</p>
     {/if}
     <div class="actions">
       {#if offer.emptyFolder}
@@ -52,12 +49,12 @@
         <Button onclick={() => session.chooseComputerFolder()} title="Pick a different folder for the library">Choose a different folder…</Button>
       {:else if offer.missingPath}
         <Button variant="primary" onclick={() => session.chooseComputerFolder()} title="Pick the folder your library is in, or the place to make a new one">Choose where the library is…</Button>
-        <Button onclick={() => session.startComputer()} title="Makes a new, empty library in {session.computer?.path}. Use it only if the first is gone.">Start a new, empty library in {session.computer?.path}</Button>
+        <Button onclick={() => session.startComputer()} title="Makes an empty library in {session.computer?.path}.">Start a new, empty library in {session.computer?.path}</Button>
       {:else}
         <Button variant="primary" onclick={() => session.startComputer()}>Start a library on this computer</Button>
       {/if}
       {#if offer.copyFrom}
-        <Button onclick={() => session.copyFromPacemaker(offer.copyFrom!)} title="Makes the library on this computer, then shows what would be copied from the Pacemaker before anything is">
+        <Button onclick={() => session.copyFromPacemaker(offer.copyFrom!)} title="Creates the library here, then shows what would be copied.">
           Copy my Pacemaker's library to this computer
         </Button>
       {/if}
@@ -68,7 +65,7 @@
     {#if offer.emptyFolder}
       <!-- the folder is named on the main button; nothing else to warn about -->
     {:else if offer.missingPath}
-      <p class="where">Starting a new library makes a second, empty one in that folder, so use it only if the first is gone.</p>
+      <p class="where">A new library is a second, empty one. Use it only if the first is gone.</p>
     {:else}
       <p class="where">
         It will be made in <code>{session.computer?.path}</code>

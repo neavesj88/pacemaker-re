@@ -32,12 +32,11 @@
 <section class="sum" aria-label="Thin areas">
   <h3>Thin areas</h3>
   <p class="muted rule">
-    A cell is thin when it holds fewer than {plural(settings.thinBelow, "track")}. Rows with fewer than {plural(settings.minRowTracks, "track")} are
-    not judged. Thin cells have a dashed edge on the grid.
+    Thin: fewer than {plural(settings.thinBelow, "track")}. Rows under {plural(settings.minRowTracks, "track")} are not judged.
   </p>
 
   {#if matrix.total === 0}
-    <p class="muted">Nothing to judge yet: no track has all the values this grid needs.</p>
+    <p class="muted">Nothing to judge yet.</p>
   {:else if nothing}
     <p class="good">No thin areas at these settings.</p>
   {/if}

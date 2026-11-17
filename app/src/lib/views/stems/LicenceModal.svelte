@@ -40,13 +40,13 @@
     <dt>SHA-256</dt>
     <dd><code class="hash">{part.sha256}</code></dd>
     <dt>Saved to</dt>
-    <dd>this app's own data folder ({stems.status?.data_dir ?? ""}); nothing is written to the Pacemaker</dd>
+    <dd>this app's data folder ({stems.status?.data_dir ?? ""})</dd>
   </dl>
-  <p class="muted small">The file is checked against the SHA-256 above while it downloads and is discarded if it does not match. You can remove it again here at any time.</p>
+  <p class="muted small">Checked against the SHA-256 while downloading; discarded if it differs.</p>
 
   <label class="tick"><input type="checkbox" bind:checked={read} data-autofocus /> I have read this notice and want to download this file.</label>
   {#if unclear}
-    <label class="tick"><input type="checkbox" bind:checked={agreed} /> I understand the licence of these weights is unclear and I use the results at my own risk.</label>
+    <label class="tick"><input type="checkbox" bind:checked={agreed} /> The licence is unclear; I use the results at my own risk.</label>
   {/if}
 
   {#snippet actions()}

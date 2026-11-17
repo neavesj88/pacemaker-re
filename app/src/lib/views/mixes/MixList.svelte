@@ -173,12 +173,12 @@
     <span class="sep"></span>
     <Button disabled={!one} onclick={() => one && openMix(one.id)}>Open</Button>
     <Button disabled={!one} onclick={() => one && renameMix(one)}>Rename…</Button>
-    <Button disabled={!one} onclick={() => one && duplicateMix(one, afterDuplicate)} title="Make a copy of the saved mix under a new name">Duplicate…</Button>
+    <Button disabled={!one} onclick={() => one && duplicateMix(one, afterDuplicate)} title="Copy the saved mix">Duplicate…</Button>
     <Button disabled={!one} onclick={() => one && setlist.openMix(one.id)} title="A printable setlist of the picked mix">Setlist…</Button>
     <Button disabled={chosen.length === 0} onclick={exportChosen} title="Write the saved mixes as .pmk files">
       {chosen.length > 1 ? `Export ${chosen.length}…` : "Export .pmk…"}
     </Button>
-    <Button disabled={chosen.length === 0} onclick={() => thingEditor.edit("mix", chosen.map((m) => m.id))} title="Tags and a colour label for the picked mixes. Kept by this app only; your library is not changed.">
+    <Button disabled={chosen.length === 0} onclick={() => thingEditor.edit("mix", chosen.map((m) => m.id))} title="Tags and colour label for the picked mixes">
       Tags and colour…
     </Button>
     <Button disabled={chosen.length === 0} onclick={() => deleteMixes(chosen)}>
@@ -236,7 +236,7 @@
         <option value="replace">Replace it (the confirmation says which)</option>
       </select>
     </div>
-    <div class="muted small">Sort and these options are remembered on this computer. They do not change your library.</div>
+    <div class="muted small">Kept on this computer.</div>
   </details>
 
   {#if mv.pending.length > 0}
@@ -290,7 +290,7 @@
     {:else if !loading}
       <div class="empty">
         <p>No mixes {session.place.on} yet.</p>
-        <p class="muted">Create one, or import a .pmk file made with the Tonium Editor or the Pacemaker.</p>
+        <p class="muted">Create one or import a .pmk file.</p>
         <Button variant="primary" onclick={newMix}>New mix</Button>
       </div>
     {/if}

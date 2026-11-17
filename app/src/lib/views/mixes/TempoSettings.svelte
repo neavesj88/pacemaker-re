@@ -24,8 +24,7 @@
   </span>
 </div>
 <div class="muted small">
-  A track is matched to the mix tempo, or to double or half of it, whichever stretches it least. A match that still changes the speed by more than this is not
-  applied silently: the clip gets a stretch badge and the inspector offers to keep its own tempo or match anyway.
+  A match over this limit is held back and the clip gets a stretch badge.
 </div>
 <div class="field">
   <span class="lbl">New tracks</span>
@@ -47,7 +46,7 @@
   </span>
 </div>
 <div class="muted small">
-  Decoded audio the live player keeps in memory (a 6-minute track takes about 140 MB). A longer mix reads the tracks nearest the playhead first. "Decide by the computer" uses an eighth of its memory, from 256 to 1024 MB. Applies the next time a mix is opened.
+  Decoded audio kept for live play (about 140 MB per 6-minute track). Applies the next time a mix is opened.
 </div>
 
 <style>

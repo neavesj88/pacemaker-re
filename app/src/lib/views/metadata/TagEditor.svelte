@@ -52,7 +52,7 @@
 
 <Modal title={startIds.length === 1 ? "Tags, colour and energy" : `Tags, colour and energy of ${startIds.length} tracks`} onclose={requestClose}>
   <p class="sub">
-    These labels are kept by this app on this computer. They do not appear on the Pacemaker.
+    Kept by this app, not on the Pacemaker.
   </p>
   {#if startIds.length === 1}
     <p class="one" title={name(startIds[0])}>{name(startIds[0])}</p>

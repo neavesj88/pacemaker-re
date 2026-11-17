@@ -105,9 +105,9 @@
 <div class="muted">{clip.track?.artist || clip.fuzzyId.artist || "Unknown artist"}</div>
 
 {#if clip.track && (!clip.track.available || clip.trackId < 0)}
-  <div class="warn">{clip.track.problem ?? "This track is unavailable."} It stays in the mix but cannot be played, and the mix cannot be saved until it is removed or restored.</div>
+  <div class="warn">{clip.track.problem ?? "This track is unavailable."} It cannot be played. Remove or restore it to save the mix.</div>
 {:else if clip.track && !clip.track.grid}
-  <div class="warn">No beat grid ({clip.track.gridProblem ?? "not analysed"}). Snapping, beat-match and auto transition need one: analyse the track first.</div>
+  <div class="warn">No beat grid ({clip.track.gridProblem ?? "not analysed"}). Analyse the track first.</div>
 {/if}
 
 <h4>Tempo</h4>
@@ -119,7 +119,7 @@
 <div class="field">
   <span class="lbl">Octave</span>
   <span class="inline">
-    <button class="nudge" disabled={!(clip.bpm > 0)} title="Half time: play at half the current tempo (the other octave, when the automatic match chose wrongly)" onclick={() => setBpm(eff / 2)}>×½ half time</button>
+    <button class="nudge" disabled={!(clip.bpm > 0)} title="Play at half the tempo" onclick={() => setBpm(eff / 2)}>×½ half time</button>
     <button class="nudge" disabled={!(clip.bpm > 0)} title="Double time: play at twice the current tempo" onclick={() => setBpm(eff * 2)}>×2 double time</button>
   </span>
 </div>
@@ -153,17 +153,17 @@
 </div>
 {#if tooMuch}
   <div class="warn">
-    This track plays {stretchText(pct)} of its own tempo ({clip.bpm.toFixed(1)} to {eff.toFixed(1)} BPM), more than the {warnPct} % limit in the settings.
+    Plays {stretchText(pct)} of its own tempo ({clip.bpm.toFixed(1)} to {eff.toFixed(1)} BPM), over the {warnPct} % limit.
     <div class="buttons"><button onclick={ownTempo}>Keep its own tempo</button></div>
   </div>
 {/if}
 <div class="buttons">
-  <button disabled={!doc.tempoBpm} onclick={() => sync(doc.tempoBpm, "the mix tempo")} title="Play this track at the mix tempo, or double or half of it, whichever stretches it least">Sync to mix tempo</button>
-  <button disabled={!prevBpm} onclick={() => sync(prevBpm, "the clip before")} title={nb.prev ? "Play this track at the tempo the clip before it ends on (or double or half of it)" : "There is no earlier clip"}>Sync to previous clip</button>
+  <button disabled={!doc.tempoBpm} onclick={() => sync(doc.tempoBpm, "the mix tempo")} title="Play at the mix tempo">Sync to mix tempo</button>
+  <button disabled={!prevBpm} onclick={() => sync(prevBpm, "the clip before")} title={nb.prev ? "Play at the previous clip's tempo" : "There is no earlier clip"}>Sync to previous clip</button>
 </div>
 {#if held}
   <div class="warn">
-    Matching to {held.what} ({held.target.toFixed(2)} BPM) would play this track at {held.choice.playsAt.toFixed(2)} BPM: {stretchText(held.choice.stretchPct)} stretch, more than the {warnPct} % limit
+    Matching to {held.what} ({held.target.toFixed(2)} BPM) plays at {held.choice.playsAt.toFixed(2)} BPM: {stretchText(held.choice.stretchPct)} stretch, over the {warnPct} % limit
     ({held.choice.factor === 1 ? "same time" : held.choice.factor === 2 ? "double time" : "half time"}). Nothing was changed.
     <div class="buttons"><button onclick={matchAnyway}>Match anyway</button><button onclick={ownTempo}>Keep its own tempo</button></div>
   </div>
@@ -176,8 +176,8 @@
   </select>
 </div>
 <div class="buttons">
-  <button onclick={addRampNode} title="Add a tempo node at the playhead and show the tempo curve: drag the node up or down for a ramp (linear between nodes)">Add ramp node at playhead</button>
-  {#if hasRamp}<button onclick={flattenTempo} title="Replace the tempo curve with one constant tempo (the one where the clip starts)">Flatten ramp</button>{/if}
+  <button onclick={addRampNode} title="Add a tempo node at the playhead">Add ramp node at playhead</button>
+  {#if hasRamp}<button onclick={flattenTempo} title="Replace the curve with the starting tempo">Flatten ramp</button>{/if}
 </div>
 
 <h4>Sound</h4>
@@ -210,16 +210,16 @@
 <div class="field"><span class="lbl">Audible</span><span class="val">{clock((clip.visibleEnd - clip.visibleStart) / SR)}</span></div>
 {#if clip.trimStart > 0 || clip.trimEnd > 0}
   <div class="muted small">
-    Trimmed: {clock(clip.trimStart / SR)} cue{clip.trimEnd > 0 ? `, ${clock(clip.trimEnd / SR)} cut from the end` : ""}. Drag the clip edges to change.
+    Trimmed: {clock(clip.trimStart / SR)} cue{clip.trimEnd > 0 ? `, ${clock(clip.trimEnd / SR)} cut from the end` : ""}.
   </div>
 {/if}
 
 <h4>Actions</h4>
 <div class="buttons">
-  <button onclick={toolMenu} title="Add a tool, loop, reverse or ignore to this clip at the playhead">+ Tool ▾</button>
-  <button disabled={!nb.prev} onclick={() => void beatmatch(clip.id)} title={nb.prev ? "Match tempo and beats to the previous clip (half or double time when that stretches this track less)" : "There is no earlier clip"}>Beat-match</button>
-  <button onclick={() => beatAlign(clip.id)} title="Move this clip, without changing its tempo, to the nearest place where its beat grid lines up with the audible part of its neighbour's (at the grain of the Snap setting), so it never lands past the end of the neighbour. A clip without a beat grid is not moved.">Beat-align</button>
-  <button disabled={!nb.next} onclick={() => nb.next && void autoTransition(clip.id, nb.next.id)} title="Transition into the next clip with the recipe set below">Auto transition</button>
+  <button onclick={toolMenu} title="Add a tool at the playhead">+ Tool ▾</button>
+  <button disabled={!nb.prev} onclick={() => void beatmatch(clip.id)} title={nb.prev ? "Match tempo and beats to the previous clip" : "There is no earlier clip"}>Beat-match</button>
+  <button onclick={() => beatAlign(clip.id)} title="Move this clip, tempo unchanged, to line its beat grid up with its neighbour's. Clips without a grid stay.">Beat-align</button>
+  <button disabled={!nb.next} onclick={() => nb.next && void autoTransition(clip.id, nb.next.id)} title="Transition into the next clip">Auto transition</button>
 </div>
 <details class="defaults">
   <summary>{recipeDef(recipePrefs.value.recipe).label}, {lengthLabel(requestedBars(recipePrefs.value.recipe, recipePrefs.value))}</summary>
@@ -238,8 +238,7 @@
   <button class:on={mv.overlay === "gain"} onclick={() => showOverlay("gain")}>Gain</button>
 </div>
 <p class="note">
-  Beat-match moves this clip so its beats sit on the previous clip's; it changes the clip's tempo and start. The curves are drawn over the clips on the bar (one kind at a time): with a
-  curve on, click on the selected clip to add a node, drag to move it, right-click to remove it; drag the clip by its name (where clips overlap they lie over each other: a click there takes the clip that came in last, the earlier one is grabbed by its own part, its edge handles or Tab).
+  Beat-match changes this clip's tempo and start to match the previous clip. With a curve on, click the selected clip to add a node, right-click to remove.
 </p>
 
 {#if menu}

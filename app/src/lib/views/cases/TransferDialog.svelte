@@ -73,7 +73,7 @@
   {#if choice === "new"}
     <input class="text" bind:value={newName} maxlength="255" aria-label="Name of the new case" placeholder="Name of the new case" />
     {#if newName.trim() && others.some((c) => c.name.trim().toLowerCase() === newName.trim().toLowerCase())}
-      <p class="warn" role="status">A case with this name already exists. Two cases with the same name are hard to tell apart.</p>
+      <p class="warn" role="status">A case with this name already exists.</p>
     {/if}
   {/if}
 
@@ -81,7 +81,7 @@
     <p class="sum" aria-live="polite">
       {#if choice === "new" || plan}
         {plural(added, "track")} will be added to “{destName}”{move ? `, and ${plural(removed, "track")} taken out of “${from.name}”` : ""}.
-        {#if move}They stay in the library and in every other case.{/if}
+        {#if move}They stay in the library and other cases.{/if}
       {:else}
         Working out what would change…
       {/if}

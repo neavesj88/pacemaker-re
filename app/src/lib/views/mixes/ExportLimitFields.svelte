@@ -20,13 +20,13 @@
   <label for="xs-fade">Fade at a cut inside the audio (partial export)</label>
   <span><input id="xs-fade" class="num-in" type="number" step="5" min="0" max="2000" bind:value={X.prefs.edgeFadeMs} onchange={changed} /> ms (0 = hard cut)</span>
 </div>
-<label class="check"><input type="checkbox" bind:checked={X.prefs.capAtPeak} onchange={changed} /> Never raise the mix past a true-peak ceiling (the target may then not be reached)</label>
+<label class="check"><input type="checkbox" bind:checked={X.prefs.capAtPeak} onchange={changed} /> Never raise the mix past a true-peak ceiling</label>
 {#if X.prefs.capAtPeak}
   <div class="grid">
     <label for="xs-ceil">Ceiling</label>
     <span><input id="xs-ceil" class="num-in" type="number" step="0.5" min="-20" max="0" bind:value={X.prefs.peakCeilingDb} onchange={changed} /> dBTP</span>
   </div>
-  <div class="muted small">The true-peak reading is accurate to about 0.3 dB, so leave that much room under the ceiling you need.</div>
+  <div class="muted small">Readings are accurate to about 0.3 dB; leave that much room.</div>
 {/if}
 
 <style>

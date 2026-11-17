@@ -89,7 +89,7 @@
 
 <aside class="insp" class:idle={!track} aria-label="Track details">
   {#if !track}
-    <p class="empty">Select a track to see its details and the tracks that mix well with it.</p>
+    <p class="empty">Select a track.</p>
   {:else}
     <h3 title={track.title}>{track.title}</h3>
     <div class="muted sub">{[track.artist, track.genre].filter(Boolean).join(" · ") || "No artist or genre"}</div>

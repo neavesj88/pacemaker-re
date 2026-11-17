@@ -24,6 +24,7 @@
   import KeyPickerDialog from "./KeyPickerDialog.svelte";
   import SectionsPanel from "./SectionsPanel.svelte";
   import EnergySourceSelect from "../metadata/EnergySourceSelect.svelte";
+  import HelpLink from "../help/HelpLink.svelte";
 
   // The library object changes on every open and every in-place reload (after a job, a BPM
   // edit), and a BPM edit changes the score, so the numbers are read again each time.
@@ -106,11 +107,7 @@
       <p class="muted">Open a library to analyse its tracks.</p>
     {:else}
       <p class="lead">{coverageText(s)}</p>
-      <p class="muted small">
-        A 1 to 10 estimate worked out from the audio: how loud the track is over time, how dense its attacks are, how much
-        sits below 150 Hz, and its tempo (the BPM stored for the track, ignored for a track never analysed). It is kept by this app, per library, and is not written into the library. It is
-        separate from any energy rating you set yourself; the Energy source setting below says which of the two the search, filters, smart cases, gap map, set builder and setlist use.
-      </p>
+      <p class="muted small">A 1 to 10 estimate from the audio. Kept by this app; your own rating is separate. <HelpLink id="bpm-keys-waveforms" /></p>
       <p class="muted small">{scaleText(s)}</p>
       {#if s.note}<p class="warn small" role="status">{s.note}</p>{/if}
       {#if s.problem}<p class="warn small" role="status">{s.problem}</p>{/if}
@@ -119,7 +116,7 @@
         <Button
           variant="primary"
           disabled={runDisabled || toAnalyse(s) === 0}
-          title="Only tracks never analysed, or whose file has changed since. You will be asked to confirm."
+          title="New or changed tracks only."
           onclick={() => {
             energy.closePanel();
             energy.askAnalyse();
@@ -127,7 +124,7 @@
         >Analyse {toAnalyse(s)} new or changed…</Button>
         <Button
           disabled={runDisabled || s.total === 0}
-          title="Measure every track again, even those that already have an estimate. You will be asked to confirm."
+          title="Measure every track again."
           onclick={() => {
             energy.closePanel();
             energy.askAnalyse(undefined, true);
@@ -135,7 +132,7 @@
         >Analyse all {s.total} again…</Button>
         {#if confirmForget}
           <span class="forget" role="alert">
-            Forget the {s.ready + s.skipped + s.stale} saved results? The audio and the library are not touched; the Energy (auto) column stays empty until you analyse again.
+            Forget the {s.ready + s.skipped + s.stale} saved results? Audio and library are not touched.
             <Button small data-autofocus onclick={() => (confirmForget = false)}>Keep them</Button>
             <Button small variant="primary" onclick={forget}>Forget</Button>
           </span>
@@ -154,11 +151,11 @@
           <legend>Scale</legend>
           <label class="radio">
             <input type="radio" name="energy-scale" checked={s.settings.scale === "fit"} onchange={() => save({ scale: "fit" })} />
-            <span><b>Fit to this library</b><br /><span class="muted">spread its tracks over 1 to 10, so a typical library uses the whole range</span></span>
+            <span><b>Fit to this library</b><br /><span class="muted">spread over 1 to 10</span></span>
           </label>
           <label class="radio">
             <input type="radio" name="energy-scale" checked={s.settings.scale === "fixed"} onchange={() => save({ scale: "fixed" })} />
-            <span><b>Fixed scale</b><br /><span class="muted">the same number for a track in any library, even when the library is all one style</span></span>
+            <span><b>Fixed scale</b><br /><span class="muted">same number in any library</span></span>
           </label>
         </fieldset>
         <label>
@@ -179,9 +176,9 @@
         <label>
           Tracks analysed at once
           <input type="number" min={LIMITS.threads.min} max={LIMITS.threads.max} step="1" value={s.settings.threads} onchange={(e) => saveNumber(e, "threads")} />
-          <span class="muted">(0 = decide by the computer; more is faster and uses more memory)</span>
+          <span class="muted">(0 = automatic)</span>
         </label>
-        <p class="muted small">Changing a setting re-scales the saved measurements at once; nothing is decoded again.</p>
+        <p class="muted small">Changing a setting re-scales saved results at once.</p>
       </div>
     {/if}
     {#snippet actions()}

@@ -15,6 +15,7 @@
   import { toast } from "$lib/state/toast.svelte";
   import Button from "$lib/ui/Button.svelte";
   import Modal from "$lib/ui/Modal.svelte";
+  import HelpLink from "../help/HelpLink.svelte";
   import Card from "./Card.svelte";
   import { device } from "./device.svelte";
   import PresetApplyModal from "./PresetApplyModal.svelte";
@@ -98,10 +99,9 @@
 </script>
 
 <Card title="Settings presets">
+  {#snippet aside()}<HelpLink id="device-page" anchor="settings-presets" />{/snippet}
   <p class="muted">
-    A preset is a named copy of the values in Device settings above. It is kept on this PC, not on the Pacemaker (the
-    device has nowhere to store it), so you can export it, import it on another PC, and apply it to a different card.
-    Applying shows every change first.
+    Named copies of Device settings, kept on this PC.
   </p>
   {#if error}
     <p class="bad">{error}</p>
@@ -138,7 +138,7 @@
       <ul>
         {#each list.unreadable as u (u)}<li>{u}</li>{/each}
       </ul>
-      <p class="muted">They are left as they are; delete or fix them in the folder.</p>
+      <p class="muted">Left as they are.</p>
     </details>
   {/if}
   <div class="actions">
@@ -166,8 +166,7 @@
 {#if deleting}
   <Modal title={`Delete the preset "${deleting.name}"?`} onclose={() => (deleting = null)}>
     <p>
-      {presetMeta(deleting, deleting.saved_utc ? stampLabel(deleting.saved_utc) : "")}. Its file in this app's settings
-      folder is removed and cannot be brought back. The Pacemaker is not changed, and nothing already applied is undone.
+      {presetMeta(deleting, deleting.saved_utc ? stampLabel(deleting.saved_utc) : "")}. Its file is removed for good. The Pacemaker is not changed.
     </p>
     {#snippet actions()}
       <Button data-autofocus onclick={() => (deleting = null)}>Keep it</Button>

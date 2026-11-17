@@ -32,7 +32,7 @@
     <p class="muted">{stems.statusError ? `Could not read the status: ${stems.statusError}` : "Reading the status…"}</p>
   {:else}
     <p class="muted intro">
-      Separation runs on this computer; no audio leaves it. The model and the engine are downloaded once, only after you accept each notice.
+      Runs on this computer. Each part downloads once, after you accept its notice.
     </p>
     {#each st.components as c (c.id)}
       {@const s = componentState(c)}
@@ -84,7 +84,7 @@
   <Modal title={`Remove ${removing.name}?`} onclose={() => (removing = null)}>
     <p>This deletes the downloaded file ({formatBytes(removing.installed_bytes)}) from this app's data folder:</p>
     <p><code>{st?.data_dir}</code></p>
-    <p class="muted">Your music and the Pacemaker are not touched. You can download it again later.</p>
+    <p class="muted">Your music and the Pacemaker are not touched.</p>
     {#snippet actions()}
       <Button data-autofocus onclick={() => (removing = null)}>Keep it</Button>
       <Button variant="primary" onclick={confirmRemove}>Remove</Button>

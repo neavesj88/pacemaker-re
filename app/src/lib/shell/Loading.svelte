@@ -19,7 +19,7 @@
   <div class="spin" aria-hidden="true"></div>
   <p>{what}</p>
   {#if slow}
-    <p class="muted">A Pacemaker with a hard drive can take a minute to read.</p>
+    <p class="muted">A hard-drive Pacemaker can take a minute.</p>
   {/if}
 </div>
 

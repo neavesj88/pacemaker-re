@@ -54,7 +54,7 @@
 </script>
 
 <Modal title={startIds.length === 1 ? `Tags and colour of this ${noun}` : `Tags and colour of ${startIds.length} ${thingsWord(noun)}`} onclose={requestClose}>
-  <p class="sub">These labels are kept by this app on this computer. They do not appear on the Pacemaker.</p>
+  <p class="sub">Kept by this app, not on the Pacemaker.</p>
   {#if startIds.length === 1}
     <p class="one" title={nameOf(startIds[0])}>{nameOf(startIds[0])}</p>
   {:else}

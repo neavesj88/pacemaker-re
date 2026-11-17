@@ -57,14 +57,12 @@
     </div>
     <p class="muted note">
       {#if c.exists}A library is there.{:else}No library is there yet.{/if}
-      The default is the Music folder, in a folder called Pacemaker Revival. Changing the folder does not move or delete the
-      library in the old one; copy it yourself if you want it in the new place.
+      Changing the folder does not move the old library.
       {#if !c.exists}<Button small variant="link" disabled={busy} onclick={makeNow}>Make it now</Button>{/if}
     </p>
     <label class="check">
       <input type="checkbox" checked={c.settings.open_at_start} disabled={busy} onchange={(e) => setOpenAtStart(e.currentTarget.checked)} />
       Open this library when the app starts
-      <span class="muted">(a Pacemaker is never opened by itself: you choose when it is read)</span>
     </label>
   {/if}
 </div>

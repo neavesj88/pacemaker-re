@@ -4,6 +4,7 @@
   import { selection } from "$lib/state/selection.svelte";
   import { session } from "$lib/state/session.svelte";
   import Button from "$lib/ui/Button.svelte";
+  import HelpLink from "../help/HelpLink.svelte";
   import { plural } from "./cleanupLogic";
   import { cleanup } from "./cleanupState.svelte";
   import CleanupPreview from "./CleanupPreview.svelte";
@@ -43,6 +44,7 @@
 
 <div class="bar">
   <h2>Tidy metadata</h2>
+  <HelpLink id="tidy-metadata" />
   <Button small active={tab === "tidy"} onclick={() => (tab = "tidy")}>Clean-up recipes</Button>
   <Button small active={tab === "tags"} onclick={() => (tab = "tags")}>Write tags to files</Button>
 </div>

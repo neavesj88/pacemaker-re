@@ -6,6 +6,7 @@
   import { session } from "$lib/state/session.svelte";
   import { toast } from "$lib/state/toast.svelte";
   import Button from "$lib/ui/Button.svelte";
+  import HelpLink from "../help/HelpLink.svelte";
   import Stars from "$lib/ui/Stars.svelte";
   import Table, { type Column } from "$lib/ui/Table.svelte";
   import { device } from "../device/device.svelte";
@@ -85,6 +86,7 @@
 
 <div class="bar">
   <h2>Free space</h2>
+  <HelpLink id="free-space" />
   {#if lib}
     <span class="chip">{session.isComputer ? libraryLabel("computer", lib.root, session.computer?.path ?? null) : volumeName(lib.root)}</span>
     <span class="sp"></span>
@@ -98,13 +100,11 @@
 
 {#if lib && detached}
   <p class="muted pad" role="status">
-    {volumeName(lib.root)} was ejected. It is safe to unplug the USB cable. To plan space on a Pacemaker again, plug it in
-    and open it from the drive list.
+    {volumeName(lib.root)} was ejected. Safe to unplug.
   </p>
 {:else if lib && session.isComputer}
   <p class="muted pad" role="status">
-    Free space plans which tracks to archive or remove so the music fits on a Pacemaker. This library on this computer is your master
-    copy, so nothing is archived or removed from it. Open the Pacemaker and use this view there.
+    Free space works on a Pacemaker. This library is the master copy: open the Pacemaker to use this view.
   </p>
 {:else if lib}
   <div class="layout">
@@ -129,10 +129,10 @@
           {#if v}<p class="verdict {v.tone}">{v.text}</p>{/if}
           {#if hiddenLine(plan.hidden)}<p class="note muted">{hiddenLine(plan.hidden)}</p>{/if}
           {#if plan.missing_audio > 0}
-            <p class="note muted">{plural(plan.missing_audio, "track")} {plan.missing_audio === 1 ? "has" : "have"} no audio file on the card; the Device view's Library health card lists them.</p>
+            <p class="note muted">{plural(plan.missing_audio, "track")} {plan.missing_audio === 1 ? "has" : "have"} no audio file on the card.</p>
           {/if}
           {#if plan.unchecked > 0}
-            <p class="note muted">{plural(plan.unchecked, "track")} {plan.unchecked === 1 ? "has" : "have"} a stored location that is not a plain path under the Music folder, so no file was looked at.</p>
+            <p class="note muted">{plural(plan.unchecked, "track")} {plan.unchecked === 1 ? "has" : "have"} a stored location that is not a plain path under Music, so no file was checked.</p>
           {/if}
           {#each plan.warnings as w (w)}<p class="note warn">{w}</p>{/each}
         {/if}

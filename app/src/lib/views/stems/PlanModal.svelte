@@ -23,7 +23,7 @@
 <Modal title="Make stems: review" {onclose}>
   <p class="head">{planHeadline(plan)}.</p>
   <p class="muted small">
-    Files go to <code>{plan.dest}</code> as {plan.format_label}. Nothing is written to the Pacemaker or changed in your original files.
+    Files go to <code>{plan.dest}</code> as {plan.format_label}. Originals are not changed.
   </p>
 
   <ul class="items">

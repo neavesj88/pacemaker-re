@@ -151,7 +151,7 @@
     <Modal title="Track list" onclose={close}>
       <div class="sub muted">
         {out ? `${out.entries.length} track${out.entries.length === 1 ? "" : "s"} · ${clock(out.durationSecs)} of audio` : "…"}
-        · times are the times in the exported audio file (its first sound is 0:00)
+        · times in the exported file
       </div>
 
       {#if error}
@@ -171,7 +171,7 @@
                   </td>
                 </tr>
               {:else}
-                <tr><td colspan="4" class="muted empty-row">No track would be heard in the export, so there is nothing to list.</td></tr>
+                <tr><td colspan="4" class="muted empty-row">No track is heard in the export.</td></tr>
               {/each}
             </tbody>
           </table>

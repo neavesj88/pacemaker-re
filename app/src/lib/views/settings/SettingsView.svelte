@@ -68,8 +68,7 @@
 
 <div class="page">
   <p class="lead muted">
-    These are the same controls you find where each feature is used; changing one here changes it there. They are
-    kept on this computer, not on the Pacemaker.
+    Same controls as in each feature. Kept on this computer, not on the Pacemaker.
   </p>
 
   {#each groups as g (g.area)}

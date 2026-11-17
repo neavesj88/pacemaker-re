@@ -22,7 +22,7 @@
   </select>
 </div>
 <div class="muted small">
-  When a clip is dragged over, or up against, another one, it moves so the two beat grids line up at this grain, using the tracks' real beat grids (a clip at half or double the other's tempo lines up on the beats they share). Hold Alt while dragging to move freely. The Beat-align button does the same in one step for the selected clip. A clip without a beat grid is not moved by it.
+  Dragged clips line up their beat grids at this grain. Alt = move freely.
 </div>
 
 <style>

@@ -19,13 +19,12 @@
   </label>
   <p class="muted small indent">
     {#if vdj.options.copy_audio}
-      A file that is already in the Audio folder with the same name, size and first and last 64 kB is reused, never overwritten.
+      Identical files already in the Audio folder are reused, never overwritten.
     {:else}
       {#if session.isComputer}
-        The list points at the files where they are in the library, so the library has to stay in the same place when VirtualDJ opens the list.
+        The list points at the files where they are. Keep the library in place.
       {:else}
-        The list points at the files where they are on the Pacemaker, so the card has to be plugged in at the same place when VirtualDJ
-        opens the list.
+        The list points at the files where they are. Keep the card plugged in at the same place.
       {/if}
     {/if}
   </p>
@@ -42,8 +41,7 @@
       <input id="vdj-base" bind:value={vdj.options.path_base} placeholder={folderHint || "same as above"} spellcheck="false" />
     </div>
     <p class="muted small indent">
-      Leave empty if the stick keeps the same drive letter or mount point. Otherwise write the full path it will have on the DJ's computer
-      (for example <code>D:\Gigs\{listName.trim() || "Set"}</code>), because the list needs full paths.
+      Leave empty if the drive letter stays the same. Otherwise the full path, for example <code>D:\Gigs\{listName.trim() || "Set"}</code>.
     </p>
   {/if}
   <label class="inline"><input type="checkbox" bind:checked={vdj.options.ordered} /> Keep the order of the case (list setting “ordered”)</label>

@@ -3,7 +3,6 @@
   // query.ts (QUERY_HELP), whose examples the tests compile, so this cannot describe syntax that
   // does not work. "Try" puts an example into the search box.
   import { filters } from "$lib/state/filters.svelte";
-  import { session } from "$lib/state/session.svelte";
   import Button from "$lib/ui/Button.svelte";
   import { popoverPlace, type PopoverPlace } from "./popoverPlace";
   import { QUERY_HELP } from "./query";
@@ -35,10 +34,7 @@
       style:max-height="{place.maxHeight}px"
       onclick={(e) => e.stopPropagation()}
     >
-      <p class="lead">
-        The search box above takes plain words and a small query language. Words are matched against the title, artist, album, genre,
-        key, comments, label, remixer, composer, year and tags; spaces between terms mean “and”.
-      </p>
+      <p class="lead">Plain words match title, artist, album, genre, key, comments, label, remixer, composer, year and tags. Spaces mean “and”.</p>
       <table>
         <tbody>
           {#each QUERY_HELP as row (row.syntax)}
@@ -56,9 +52,7 @@
         </tbody>
       </table>
       <p class="foot muted">
-        A word that looks like a field but is not one (<code>re:mix</code>) is searched as text and flagged under the filters; put it in quotes to
-        search for it on purpose. A term the search cannot read is ignored, never an empty list. Tags, colours and energy are kept by this app only;
-        they are not {session.isComputer ? "stored in the music library" : "on the device"}.
+        Unknown fields (<code>re:mix</code>) are searched as text; quote them to force it. Tags, colours and energy are kept by this app only.
       </p>
     </div>
   {/if}

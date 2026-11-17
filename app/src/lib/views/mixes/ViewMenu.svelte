@@ -64,7 +64,7 @@
 <svelte:window onclick={() => (open = false)} />
 
 <div class="wrap" bind:this={wrap}>
-  <Button small active={open} aria-haspopup="dialog" aria-expanded={open} onclick={toggle} title="How the timeline looks and follows the playhead: clip height, the whole-mix strip, sections, following">View ▾</Button>
+  <Button small active={open} aria-haspopup="dialog" aria-expanded={open} onclick={toggle} title="Timeline view options">View ▾</Button>
   {#if open && place}
     <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
     <div
@@ -88,15 +88,15 @@
       </div>
 
       <h4>Show</h4>
-      <label class="check" title="A thin strip above the ruler that always shows the whole mix, with a box over the part shown below. Click it to centre the view, drag the box to scroll."
+      <label class="check" title="Strip above the ruler showing the whole mix"
         ><input type="checkbox" checked={v.overview} onchange={(e) => viewPrefs.set({ overview: e.currentTarget.checked })} /> Whole-mix strip</label
       >
-      <label class="check" title={sections.showMarkers ? "Draw the detected sections (intro, build, drop, breakdown, outro) on the clips. Clips of tracks without sections show nothing." : "Turned off in the Sections panel's settings (show markers on waveforms)"}>
+      <label class="check" title={sections.showMarkers ? "Draw detected sections on the clips" : "Turned off in the Sections panel's settings (show markers on waveforms)"}>
         <input type="checkbox" checked={mv.sectionMarkers && sections.showMarkers} disabled={!sections.showMarkers} onchange={(e) => mv.setSectionMarkers(e.currentTarget.checked)} /> Sections on the clips
       </label>
 
       <h4>Following the playhead</h4>
-      <label class="check" title="Scroll the timeline with the playhead while the mix plays (the same tick as in the transport)">
+      <label class="check" title="Scroll with the playhead while playing">
         <input type="checkbox" checked={v.follow} onchange={(e) => { mv.follow = e.currentTarget.checked; mv.resumeFollow(); }} /> Follow the playhead while playing
       </label>
       <div role="radiogroup" aria-label="How the view follows" class="modes">
@@ -104,7 +104,7 @@
           <label class="check" class:off={!v.follow}><input type="radio" name="view-follow-mode" disabled={!v.follow} checked={followPrefs.value.mode === m.id} onchange={() => followPrefs.set({ mode: m.id })} /> {m.label}</label>
         {/each}
       </div>
-      <p class="muted small">More choices, such as where the playhead sits, are in Settings &gt; Mixes. Snap, Curves and Beat-align stay in the toolbar: they change the mix, not the view.</p>
+      <p class="muted small">More in Settings &gt; Mixes.</p>
     </div>
   {/if}
 </div>

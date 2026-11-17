@@ -75,11 +75,10 @@
 
   <label class="check danger">
     <input type="checkbox" checked={s.remove_missing} onchange={(e) => set("remove_missing", e.currentTarget.checked)} />
-    List what the receiving library has and the sending library has not, so it can be removed
+    List items only the receiving library has, for removal
   </label>
   <p class="muted note">
-    Off by default: nothing is ever removed. When it is on, those items are listed under Removals when you check, each named,
-    and removed only if you leave them ticked and confirm the list.
+    Off: nothing is removed. On: each item is named under Removals and removed only after you confirm.
   </p>
 
   <div><Button small variant="link" onclick={() => sync.resetSettings()}>Back to the defaults</Button></div>

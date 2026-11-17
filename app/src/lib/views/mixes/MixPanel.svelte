@@ -49,7 +49,7 @@
   <label for="mx-tempo">Mix tempo</label>
   <BpmField id="mx-tempo" value={doc.tempoBpm} onset={(v) => mixes.setTempo(v)} label="Mix tempo" placeholder="first track" stack />
 </div>
-<div class="muted small">The tempo tracks are matched to when added or synced (or double or half of it). Not stored in the mix file.</div>
+<div class="muted small">Not saved in the mix.</div>
 {#if meta}
   <div class="field">
     <span class="lbl">Rating</span>
@@ -63,7 +63,7 @@
     <label for="mx-comments">Comments</label>
     <input id="mx-comments" type="text" value={meta.comments} onchange={(e) => setMeta({ comments: e.currentTarget.value })} />
   </div>
-  <div class="muted small">Rating, genre and comments are written to the library as soon as you change them.</div>
+  <div class="muted small">Saved to the library at once.</div>
 {/if}
 
 <h4>Tool menu</h4>
@@ -71,7 +71,7 @@
   <input type="checkbox" checked={toolPrefs.showTrans} onchange={(e) => toolPrefs.setShowTrans(e.currentTarget.checked)} />
   Offer the Trans tool when adding a tool
 </label>
-<div class="muted small">Off by default. Trans (a beat-synced gate) plays in the preview and the audio export, but its file layout has not been checked on a real Pacemaker, so a mix saved with it may be refused or played differently by {session.isComputer ? "the Pacemaker" : "the device"}. Turning this on is your choice. It only hides the menu entry: mixes that already have the tool still show it. A volume curve is the clip's Gain curve; there is no separate Volume tool.</div>
+<div class="muted small">Untested on a real {session.isComputer ? "Pacemaker" : "device"}. Off by default; only hides the menu entry.</div>
 
 {#if mixes.problems.length > 0}
   <h4>Cannot save yet</h4>
@@ -100,8 +100,7 @@
 </div>
 
 <p class="note">
-  Click a clip, tool or crossfade to edit it. Drag clips along the bar; with Snap on they line up with a neighbour's beat grid (hold Alt to move freely), and clips that overlap lie over each other with the crossfade drawn on the overlap.
-  Click the curve of a selected crossfade to add a node; right-click a node to remove it.
+  Click a clip, tool or crossfade to edit it. Drag clips along the bar. Alt = move freely.
 </p>
 
 <style>

@@ -14,7 +14,7 @@
   <span>
     Replace keys that are already set
     <small class="muted">
-      Off: a track that has a key, including one you set by hand, is left alone.
+      Off: tracks with a key are left alone.
       {#if withKey > 0}{noun(withKey)} of these {withKey === 1 ? "has" : "have"} one.{/if}
     </small>
   </span>
@@ -25,8 +25,7 @@
   <span>
     Confidence floor, per cent
     <small class="muted">
-      A result below this is skipped and listed when the job ends, not written. 0 writes every result. The score is a
-      fit measure, not a probability.
+      Lower results are skipped and listed. 0 writes every result.
     </small>
   </span>
 </label>

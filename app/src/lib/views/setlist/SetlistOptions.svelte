@@ -37,7 +37,7 @@
       </label>
     {/each}
   </div>
-  {#if kind === "mix"}<p class="muted small">BPM is the tempo stored for each track, not the speed it is stretched to in the mix.</p>{/if}
+  {#if kind === "mix"}<p class="muted small">BPM is the stored tempo, not the mix speed.</p>{/if}
   <label class="chk"><input type="checkbox" bind:checked={setlist.options.hideEmpty} /> Leave out a column that is empty for every track</label>
   <label>Key as
     <select bind:value={setlist.options.keyNotation}>

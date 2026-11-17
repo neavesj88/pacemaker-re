@@ -4,6 +4,7 @@
   import { session } from "$lib/state/session.svelte";
   import Button from "$lib/ui/Button.svelte";
   import JobProgress from "../device/JobProgress.svelte";
+  import HelpLink from "../help/HelpLink.svelte";
   import CopyDialog from "./CopyDialog.svelte";
   import IntoCaseDialog from "./IntoCaseDialog.svelte";
   import { libs } from "./libraries.svelte";
@@ -28,6 +29,7 @@
 <div class="page">
   <div class="top">
     <h2>Libraries</h2>
+    <HelpLink id="libraries" />
   </div>
 
   {#if libs.error}
@@ -50,9 +52,7 @@
     {:else if libs.result}
       <p class="result" role="status">{libs.result}</p>
     {:else}
-      <p class="muted lead">
-        Drag tracks, mixes or cases across to copy them. You see the list before anything is written.
-      </p>
+      <p class="muted lead">Drag tracks, mixes or cases across to copy them.</p>
     {/if}
   </div>
 

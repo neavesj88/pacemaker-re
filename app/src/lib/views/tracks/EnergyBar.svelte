@@ -9,7 +9,7 @@
 </script>
 
 {#if energy !== null}
-  <span class="en" class:dim title="Energy {energy} of {MAX_ENERGY}{dim ? '. Not used: the Energy source setting does not count your rating' : ''}" role="img" aria-label="Energy {energy} of {MAX_ENERGY}">
+  <span class="en" class:dim title="Energy {energy} of {MAX_ENERGY}{dim ? '. Ignored by the Energy source setting' : ''}" role="img" aria-label="Energy {energy} of {MAX_ENERGY}">
     <span class="bar"><i style:width="{energy * 10}%" style:background="color-mix(in srgb, var(--accent) {hot}%, var(--green))"></i></span>
     <b>{energy}</b>
   </span>

@@ -10,8 +10,8 @@
   let { onclose }: { onclose: () => void } = $props();
 
   const MODES: { value: RefreshMode; label: string; note: string }[] = [
-    { value: "ask", label: "Ask me", note: "When the library is opened or edited and a copy no longer matches its rules, show what would change and wait for a yes." },
-    { value: "auto", label: "Do it automatically", note: "Rewrite the copy straight away, then say which smart cases changed and how." },
+    { value: "ask", label: "Ask me", note: "Show the changes and wait for a yes." },
+    { value: "auto", label: "Do it automatically", note: "Rewrite the copy straight away." },
     { value: "off", label: "Only when I press “Refresh smart cases”", note: "Nothing is written by itself." },
   ];
   const s = $derived(smartSettings.value);
@@ -30,7 +30,6 @@
         <span><strong>{m.label}</strong><span class="muted note">{m.note}</span></span>
       </label>
     {/each}
-    <p class="muted">Writes go through the same safety as every other change to {session.place.the}. Nothing is written when every copy is already current.</p>
   </fieldset>
   <fieldset>
     <legend>Exports</legend>
@@ -38,7 +37,7 @@
       <input type="checkbox" checked={s.export_smart} onchange={(e) => smartSettings.set({ export_smart: e.currentTarget.checked })} />
       <span>
         <strong>Include smart cases in the rekordbox XML of the whole library</strong>
-        <span class="muted note">Each becomes an ordinary playlist of the tracks it matches when you export (rekordbox XML cannot hold rules). Their ★ copies are not written a second time. M3U8, CSV and XML of a single smart case are always available.</span>
+        <span class="muted note">Written as ordinary playlists of their current tracks.</span>
       </span>
     </label>
     <label class="opt">

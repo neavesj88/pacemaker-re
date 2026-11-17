@@ -54,7 +54,7 @@
       <details open={plan.ratings.length > 0 && plan.ratings.length <= 12}>
         <summary>Ratings that change ({plan.ratings.length})</summary>
         {#if plan.ratings.length === 0}
-          <p class="muted">Every matched track already has the rating the file gives it (unrated tracks in the file never clear a rating).</p>
+          <p class="muted">Every matched track already has this rating.</p>
         {:else}
           <ul class="rows">
             {#each plan.ratings as r (r.track_id)}
@@ -110,9 +110,7 @@
           </select>
         </label>
         <p class="muted hint">
-          The device keeps one cue point per track, and this writes it in the same unit as the beat grid editor does (the
-          unit is inferred, not yet checked on a device). Only the first plain cue of each track is considered. Applied
-          cues show on the device, not as extra markers.
+          One cue point per track: the first plain cue. The cue unit is unverified on a device.
         </p>
         <details open={plan.cues.length <= 8}>
           <summary>{interop.cueSteps.length} of {plan.cues.length} would be written</summary>
@@ -135,11 +133,9 @@
       {@const cp = interop.colourPlan}
       <div class="colours">
         <h4>Track colours ({plan.colours.length})</h4>
-        <label><input type="checkbox" bind:checked={interop.colourLabels} /> Also set colour labels from the colours {interop.label} gave these tracks (a separate step with its own button, not part of Apply below)</label>
+        <label><input type="checkbox" bind:checked={interop.colourLabels} /> Also set colour labels from the {interop.label} colours (own button, not part of Apply)</label>
         <p class="muted hint">
-          Colour labels belong to this app (Tracks, Tags, colour, energy); the Pacemaker has no track colours, so nothing is
-          written to the device. The file stores a colour number, not a name, and what {interop.label} calls each number is not
-          verified here: the table below starts with every number set to "No colour", so nothing is set until you choose. "Fill in palette order" is a guess; check it against the colours you see in {interop.label}.
+          Labels stay in this app; nothing is written to the device. Nothing is set until you choose a colour per number. {interop.label} colour numbers are unverified.
         </p>
         {#if interop.colourLabels && cp}
           <table class="map" aria-label="Colour numbers in the file and the label colour each becomes">
@@ -181,7 +177,6 @@
               <p>
                 Set the colour label of the {cp.changes.length} track{cp.changes.length === 1 ? "" : "s"} listed above?
                 {#if cp.replaced > 0}{cp.replaced} of them already {cp.replaced === 1 ? "has" : "have"} a colour that will be replaced (shown in the list).{/if}
-                You can change any label again in Tracks.
               </p>
               <Button data-autofocus onclick={() => (interop.askingColours = false)}>Cancel</Button>
               <Button variant="primary" disabled={interop.applyingColours} onclick={() => interop.applyColours()}>{interop.applyingColours ? "Setting…" : `Set ${cp.changes.length} colour label${cp.changes.length === 1 ? "" : "s"}`}</Button>
@@ -210,7 +205,7 @@
             </li>
           {/each}
           {#if plan.unmatched_total > plan.unmatched.length}
-            <li class="muted">…and {plan.unmatched_total - plan.unmatched.length} more (only the first {plan.unmatched.length} are listed; the counts and the add button cover all of them)</li>
+            <li class="muted">…and {plan.unmatched_total - plan.unmatched.length} more</li>
           {/if}
         </ul>
       </details>
@@ -230,12 +225,11 @@
     </footer>
     {#if pendingColours > 0}
       <p class="muted hint" role="status">
-        {pendingColours} colour label{pendingColours === 1 ? " is" : "s are"} not set yet: use the "Set {pendingColours} colour label{pendingColours === 1 ? "" : "s"}…" button in the Track colours section.
-        Apply only writes ratings, cue points and cases.
+        {pendingColours} colour label{pendingColours === 1 ? " is" : "s are"} not set yet: use the "Set {interop.colourPlan?.changes.length ?? 0} colour label…" button. Apply covers ratings, cue points and cases only.
       </p>
     {/if}
     {#if plan.addable_paths.length}
-      <p class="muted hint">Adding files first lets more playlist entries match: the preview re-reads when the add finishes.</p>
+      <p class="muted hint">The preview refreshes after the add.</p>
     {/if}
   </section>
 {/if}
