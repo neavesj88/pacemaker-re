@@ -223,7 +223,7 @@
       aria-label={playback.error ? "Try again" : playback.playing ? "Pause" : "Play"}
       title={playback.error ? "Open the file again and play it" : "Play / pause (Space)"}
       disabled={!loaded}
-      onclick={() => (playback.error ? playback.retry() : playback.toggle())}>{playback.error ? "↻" : playback.playing ? "⏸" : "▶"}</Button
+      onclick={() => (playback.error ? playback.retry() : playback.toggle())}><span class="glyph">{playback.error ? "↻" : playback.playing ? "⏸" : "▶"}</span></Button
     >
     <Button
       small
@@ -343,8 +343,15 @@
     padding: calc(2px * var(--ps)) calc(8px * var(--ps));
     font-size: calc(12px * var(--ps));
   }
+  /* the waveform column takes the width the controls leave, so nothing in the controls may change
+     width as it plays: a wider pause glyph or a longer clock redrew the waveform a few pixels off */
+  .glyph {
+    display: inline-block;
+    width: 1.2em;
+    text-align: center;
+  }
   .time {
-    min-width: calc(92px * var(--ps));
+    min-width: 13ch;
     margin-right: calc(4px * var(--ps));
     color: var(--green);
     font: 600 calc(13px * var(--ps)) ui-monospace, Consolas, monospace;
