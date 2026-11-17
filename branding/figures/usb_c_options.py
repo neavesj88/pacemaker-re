@@ -1,15 +1,24 @@
 """The three ways to give the USB board a USB-C port, and the wiring for option B.
 
-No new photo tracing: every board outline here is the one traced for usb-board.svg (usb_board.py),
-imported rather than redrawn, so it keeps that figure's references (2 x 5 header pitch 2.0 mm and
-Mini-B shell 7.7 mm wide, 38 px/mm in the component photo, board about 38 mm long). The USB-C parts
-are drawn to the standard sizes (receptacle 8.9 mm wide, opening 8.9 x 3.2 mm), not traced; the
-breakout board size and wire runs are a schematic, and so is the pad order (pin 1 side not verified).
+The board outline, holes, switches and solder lands come from usb_board.py, checked here against the
+component-side photo straightened with the 2 x 5 header (2.0 mm pitch, 10 x 4.5 mm silkscreen box) as
+the scale (38 px/mm; the Mini-B shell then reads 7.3 mm in the photo, 7.7 mm is its real width). The
+USB-C parts are drawn to the standard sizes (receptacle opening 8.34 x 2.56 mm, shell about 8.9 mm
+wide), not traced; the adapter, breakout board and wire runs are a schematic, and so is the pad order
+(pin 1 side not verified). The straightened photo goes under panel A when a trace folder is given.
 """
+import os
+
 from figlib import Fig, GREY, INK, MAGENTA
-from figures.usb_board import L, H, C, outline, holes
+from figures.usb_board import L, C, TAB_H, SHELL_V1, outline, component, GOLD
+
+H = TAB_H                  # straight edge to the tab top
+UP = SHELL_V1 - TAB_H      # how far the Mini-B shell stands past the tab
 
 FILE = "usb-c-options.svg"
+
+# the component-side photo straightened onto the drawing's mm (24 px/mm); local only (work/ is gitignored)
+UNDERLAY = os.path.join(os.environ.get("PM_TRACE_DIR", os.path.join(os.path.dirname(__file__), "..", "..", "work", "trace")), "usbc/rect.png")
 
 OY = 15.0                  # board edge-to-top offset: room for the adapter above the case end
 PX = (0.0, 48.0, 96.0)     # panel origins
@@ -17,24 +26,10 @@ ADD = "#d9e3f3"            # parts added for the option
 WIRE = ("#c0392b", "#2a6fb0", "#2e8b57", INK)   # VBUS, D-, D+, GND
 
 
-def board(f, ox, oy, socket):
-    outline(f, ox, oy)
-    holes(f, ox, oy)
-    for x in (8.7, L - 8.7):          # the two switches, as in usb-board.svg
-        f.rect(ox + x - 2.1, oy + 4.0, 4.2, 2.7, r=0.3, sw=1.0, fill="#fff")
-        f.rect(ox + x - 0.7, oy + 3.2, 1.4, 0.8, r=0.3, sw=0.8)
-    f.rect(ox + C - 5, oy + H - 4.8, 10, 4.5, sw=1.0)     # 2 x 5 header
-    for i in range(5):
-        for y in (H - 3.8, H - 1.8):
-            f.rect(ox + C - 4 + i * 2 - 0.45, oy + y - 0.45, 0.9, 0.9, sw=0.7, fill="#1a1a1a")
-    if socket:                         # Mini-B shell, through the tab to the case end
-        f.rect(ox + C - 3.85, oy - 2.7, 7.7, 9.2, r=0.5, sw=1.4, fill="#fff")
-        f.rect(ox + C - 2.2, oy - 1.9, 4.4, 1.2, r=0.4, sw=0.9)
-        for i in range(5):
-            f.rect(ox + C - 1.8 + i * 0.8, oy + 6.6, 0.4, 1.0, sw=0.7, fill="#1a1a1a")
-        for dx in (-4.9, 4.1):
-            for y in (0.3, 4.6):
-                f.rect(ox + C + dx, oy + y, 0.8, 1.4, sw=0.7)
+def board(f, ox, oy, socket, lands=True):
+    """The USB board as in usb-board.svg, its tab top at oy."""
+    outline(f, oy + H, ox)
+    component(f, oy + H, ox, socket=socket, lands=lands)
 
 
 def caption(f, ox, oy, head, l1, l2):
@@ -65,7 +60,7 @@ def wiring(f, y0):
             f.text(49, yy + 0.7, "not connected", size=11, anchor="start")
     rail = 118.0
     f.line(100, y[4], rail, y[4], sw=1.8, colour=WIRE[3])
-    cc = (("A5  CC1", y0 + 10 + 5 * 6.2 + 4.0), ("B5  CC2", y0 + 10 + 6 * 6.2 + 4.0))
+    cc = (("A5  CC1", y0 + 10 + 5 * 6.2 + 4.0), ("B5  CC2", y0 + 10 + 5 * 6.2 + 11.6))
     for name, yy in cc:
         f.rect(68, yy - 2.2, 22, 4.4, r=0.4, sw=1.0, fill=ADD)
         f.text(70, yy + 0.7, name, size=11, colour=INK, anchor="start")
@@ -79,46 +74,46 @@ def wiring(f, y0):
 
 
 def build():
-    f = Fig("USB-C options for the USB board", 134, 100, scale=6, legend_title="USB-C options")
+    f = Fig("USB-C options for the USB board", 134, 102, scale=6, legend_title="USB-C options")
     oy = OY
     # ---- A: adapter ----
     ox = PX[0]
+    f.set_underlay(UNDERLAY, ox - 2, oy - 7.5, 1008 / 24, 878 / 24)
     board(f, ox, oy, socket=True)
-    f.rect(ox + C - 3.0, oy - 2.7, 6.0, 3.6, r=0.4, sw=1.2, fill=ADD)           # plug end inside the socket
-    f.rect(ox + C - 5.25, oy - 12.7, 10.5, 10.0, r=0.8, sw=1.6, fill=ADD)       # adapter body
-    f.rect(ox + C - 4.45, oy - 11.7, 8.9, 3.2, r=1.6, sw=1.2, fill="#fff")      # USB-C opening 8.9 x 3.2
+    f.rect(ox + C - 3.4, oy - UP, 6.8, 5.7, r=0.4, sw=1.2, fill=ADD)           # Mini-B plug end inside the socket (6.8 mm wide)
+    f.rect(ox + C - 5.25, oy - UP - 10.0, 10.5, 10.0, r=0.8, sw=1.6, fill=ADD)       # adapter body (typical, not measured)
+    f.rect(ox + C - 4.17, oy - UP - 7.7, 8.34, 2.56, r=1.28, sw=1.2, fill="#fff")   # USB-C opening 8.34 x 2.56
     caption(f, ox, oy, "A   Adapter", "Mini-USB to USB-C adapter plugs", "into the socket. No soldering.")
     # ---- B: breakout over the tab ----
     ox = PX[1]
-    board(f, ox, oy, socket=False)
+    board(f, ox, oy, socket=False)                                              # shell-leg lands left empty
     pads = [ox + C - 1.6 + i * 0.8 for i in range(5)]
-    for dx in (-4.9, 4.1):
-        for y in (0.3, 4.6):
-            f.rect(ox + C + dx, oy + y, 0.8, 1.4, sw=0.7, fill="#e8d9a8")
+    lead_y = oy + H - 6.55                                                      # the five lead pads, as in usb-board.svg
     for p in pads:
-        f.rect(p - 0.25, oy + 6.4, 0.5, 1.4, sw=0.7, fill="#e8d9a8")
+        f.rect(p - 0.25, lead_y, 0.5, 1.15, sw=0.7, fill=GOLD)
     bx = [ox + C - 3.0, ox + C - 1.0, ox + C + 1.0, ox + C + 3.0]
     for x, p, col in zip(bx, (pads[0], pads[1], pads[2], pads[4]), WIRE):
-        f.line(x, oy + 4.1, p, oy + 6.6, sw=1.6, colour=col)
-    f.rect(ox + C - 6.2, oy - 1.0, 12.4, 5.6, r=0.4, sw=1.4, fill=ADD)         # breakout board
+        f.line(x, oy + 4.1, p, lead_y + 0.2, sw=1.6, colour=col)
+    f.rect(ox + C - 5.2, oy - 1.0, 10.4, 5.6, r=0.4, sw=1.4, fill=ADD)         # breakout board, narrower than the 11.3 mm tab
     for x in bx:
         f.rect(x - 0.4, oy + 3.6, 0.8, 0.8, sw=0.7, fill="#e8d9a8")
     f.rect(ox + C - 4.45, oy - 2.7, 8.9, 5.5, r=0.5, sw=1.4, fill="#fff")      # USB-C receptacle
     caption(f, ox, oy, "B   Re-solder", "Mini-B removed, USB-C breakout over", "the tab, wired to the old pads.")
     # ---- C: receptacle on the board ----
     ox = PX[2]
-    board(f, ox, oy, socket=False)
+    board(f, ox, oy, socket=False, lands=False)
     f.rect(ox + C - 4.45, oy - 2.7, 8.9, 7.7, r=0.5, sw=1.4, fill="#fff")
-    for dx in (-5.25, 4.45):
+    for dx in (-5.25, 4.45):                                                     # the receptacle's shield legs
         for y in (0.3, 4.0):
             f.rect(ox + C + dx, oy + y, 0.8, 1.4, sw=0.7)
     for i in range(12):
         f.rect(ox + C - 2.75 - 0.15 + i * 0.5, oy + 5.3, 0.3, 1.0, sw=0.6, fill="#1a1a1a")
-    caption(f, ox, oy, "C   Replace the board", "Same outline, USB-C receptacle", "in place of the Mini-B.")
+    caption(f, ox, oy, "C   Replace the board", "New board, same outline, holes,", "switches and header, with USB-C.")
 
-    f.note("A: the adapter's USB-C opening is 8.9 x 3.2 mm.")
+    f.note("A: the USB-C opening is 8.3 x 2.6 mm.")
     f.note("B: a USB-C breakout wired to the old pads.")
-    f.note("C: a USB-C receptacle, 8.9 mm wide.")
-    f.note("Confirm pin 1 with a meter before soldering.")
+    f.note("C: a USB-C receptacle, about 8.9 mm wide.")
+    f.note("Adapter and breakout sizes are typical, not")
+    f.note("measured. Confirm pin 1 with a meter first.")
     wiring(f, oy + H + 16.0)
     return f

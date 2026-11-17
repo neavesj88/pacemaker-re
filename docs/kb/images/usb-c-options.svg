@@ -1,175 +1,202 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1176 686" width="1176" height="686" font-family="Helvetica, Arial, sans-serif">
-<rect width="1176" height="686" rx="10" fill="#fff"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1176 698" width="1176" height="698" font-family="Helvetica, Arial, sans-serif">
+<rect width="1176" height="698" rx="10" fill="#fff"/>
 <text x="30" y="30" font-size="15" font-weight="700" fill="#1a1a1a">USB-C options for the USB board</text>
 <g transform="translate(30 56) scale(6)">
-<path d="M0.00 28.30 L0.00 23.80 L6.50 18.80 L12.50 18.80 L12.50 15.60 L13.10 15.00 L24.90 15.00 L25.50 15.60 L25.50 18.80 L31.50 18.80 L38.00 23.80 L38.00 28.30 Z" fill="#f2f2f2" stroke="#1a1a1a" stroke-width="0.267" stroke-linejoin="round" stroke-linecap="round"/>
-<circle cx="2.7" cy="25.3" r="2.2" fill="none" stroke="#1a1a1a" stroke-width="0.167" stroke-linejoin="round" stroke-linecap="round"/>
-<circle cx="2.7" cy="25.3" r="1.45" fill="#fff" stroke="#1a1a1a" stroke-width="0.233" stroke-linejoin="round" stroke-linecap="round"/>
-<circle cx="35.3" cy="25.3" r="2.2" fill="none" stroke="#1a1a1a" stroke-width="0.167" stroke-linejoin="round" stroke-linecap="round"/>
-<circle cx="35.3" cy="25.3" r="1.45" fill="#fff" stroke="#1a1a1a" stroke-width="0.233" stroke-linejoin="round" stroke-linecap="round"/>
-<rect x="6.6" y="19.0" width="4.2" height="2.7" rx="0.3" fill="#fff" stroke="#1a1a1a" stroke-width="0.167" stroke-linejoin="round" stroke-linecap="round"/>
-<rect x="7.999999999999999" y="18.2" width="1.4" height="0.8" rx="0.3" fill="none" stroke="#1a1a1a" stroke-width="0.133" stroke-linejoin="round" stroke-linecap="round"/>
-<rect x="27.2" y="19.0" width="4.2" height="2.7" rx="0.3" fill="#fff" stroke="#1a1a1a" stroke-width="0.167" stroke-linejoin="round" stroke-linecap="round"/>
-<rect x="28.6" y="18.2" width="1.4" height="0.8" rx="0.3" fill="none" stroke="#1a1a1a" stroke-width="0.133" stroke-linejoin="round" stroke-linecap="round"/>
-<rect x="14.0" y="23.5" width="10" height="4.5" rx="0" fill="none" stroke="#1a1a1a" stroke-width="0.167" stroke-linejoin="round" stroke-linecap="round"/>
-<rect x="14.55" y="24.05" width="0.9" height="0.9" rx="0" fill="#1a1a1a" stroke="#1a1a1a" stroke-width="0.117" stroke-linejoin="round" stroke-linecap="round"/>
-<rect x="14.55" y="26.05" width="0.9" height="0.9" rx="0" fill="#1a1a1a" stroke="#1a1a1a" stroke-width="0.117" stroke-linejoin="round" stroke-linecap="round"/>
-<rect x="16.55" y="24.05" width="0.9" height="0.9" rx="0" fill="#1a1a1a" stroke="#1a1a1a" stroke-width="0.117" stroke-linejoin="round" stroke-linecap="round"/>
-<rect x="16.55" y="26.05" width="0.9" height="0.9" rx="0" fill="#1a1a1a" stroke="#1a1a1a" stroke-width="0.117" stroke-linejoin="round" stroke-linecap="round"/>
-<rect x="18.55" y="24.05" width="0.9" height="0.9" rx="0" fill="#1a1a1a" stroke="#1a1a1a" stroke-width="0.117" stroke-linejoin="round" stroke-linecap="round"/>
-<rect x="18.55" y="26.05" width="0.9" height="0.9" rx="0" fill="#1a1a1a" stroke="#1a1a1a" stroke-width="0.117" stroke-linejoin="round" stroke-linecap="round"/>
-<rect x="20.55" y="24.05" width="0.9" height="0.9" rx="0" fill="#1a1a1a" stroke="#1a1a1a" stroke-width="0.117" stroke-linejoin="round" stroke-linecap="round"/>
-<rect x="20.55" y="26.05" width="0.9" height="0.9" rx="0" fill="#1a1a1a" stroke="#1a1a1a" stroke-width="0.117" stroke-linejoin="round" stroke-linecap="round"/>
-<rect x="22.55" y="24.05" width="0.9" height="0.9" rx="0" fill="#1a1a1a" stroke="#1a1a1a" stroke-width="0.117" stroke-linejoin="round" stroke-linecap="round"/>
-<rect x="22.55" y="26.05" width="0.9" height="0.9" rx="0" fill="#1a1a1a" stroke="#1a1a1a" stroke-width="0.117" stroke-linejoin="round" stroke-linecap="round"/>
-<rect x="15.15" y="12.3" width="7.7" height="9.2" rx="0.5" fill="#fff" stroke="#1a1a1a" stroke-width="0.233" stroke-linejoin="round" stroke-linecap="round"/>
-<rect x="16.8" y="13.1" width="4.4" height="1.2" rx="0.4" fill="none" stroke="#1a1a1a" stroke-width="0.150" stroke-linejoin="round" stroke-linecap="round"/>
-<rect x="17.2" y="21.6" width="0.4" height="1.0" rx="0" fill="#1a1a1a" stroke="#1a1a1a" stroke-width="0.117" stroke-linejoin="round" stroke-linecap="round"/>
-<rect x="18.0" y="21.6" width="0.4" height="1.0" rx="0" fill="#1a1a1a" stroke="#1a1a1a" stroke-width="0.117" stroke-linejoin="round" stroke-linecap="round"/>
-<rect x="18.8" y="21.6" width="0.4" height="1.0" rx="0" fill="#1a1a1a" stroke="#1a1a1a" stroke-width="0.117" stroke-linejoin="round" stroke-linecap="round"/>
-<rect x="19.6" y="21.6" width="0.4" height="1.0" rx="0" fill="#1a1a1a" stroke="#1a1a1a" stroke-width="0.117" stroke-linejoin="round" stroke-linecap="round"/>
-<rect x="20.4" y="21.6" width="0.4" height="1.0" rx="0" fill="#1a1a1a" stroke="#1a1a1a" stroke-width="0.117" stroke-linejoin="round" stroke-linecap="round"/>
-<rect x="14.1" y="15.3" width="0.8" height="1.4" rx="0" fill="none" stroke="#1a1a1a" stroke-width="0.117" stroke-linejoin="round" stroke-linecap="round"/>
-<rect x="14.1" y="19.6" width="0.8" height="1.4" rx="0" fill="none" stroke="#1a1a1a" stroke-width="0.117" stroke-linejoin="round" stroke-linecap="round"/>
-<rect x="23.1" y="15.3" width="0.8" height="1.4" rx="0" fill="none" stroke="#1a1a1a" stroke-width="0.117" stroke-linejoin="round" stroke-linecap="round"/>
-<rect x="23.1" y="19.6" width="0.8" height="1.4" rx="0" fill="none" stroke="#1a1a1a" stroke-width="0.117" stroke-linejoin="round" stroke-linecap="round"/>
-<rect x="16.0" y="12.3" width="6.0" height="3.6" rx="0.4" fill="#d9e3f3" stroke="#1a1a1a" stroke-width="0.200" stroke-linejoin="round" stroke-linecap="round"/>
-<rect x="13.75" y="2.3000000000000007" width="10.5" height="10.0" rx="0.8" fill="#d9e3f3" stroke="#1a1a1a" stroke-width="0.267" stroke-linejoin="round" stroke-linecap="round"/>
-<rect x="14.55" y="3.3000000000000007" width="8.9" height="3.2" rx="1.6" fill="#fff" stroke="#1a1a1a" stroke-width="0.200" stroke-linejoin="round" stroke-linecap="round"/>
-<path d="M48.00 28.30 L48.00 23.80 L54.50 18.80 L60.50 18.80 L60.50 15.60 L61.10 15.00 L72.90 15.00 L73.50 15.60 L73.50 18.80 L79.50 18.80 L86.00 23.80 L86.00 28.30 Z" fill="#f2f2f2" stroke="#1a1a1a" stroke-width="0.267" stroke-linejoin="round" stroke-linecap="round"/>
-<circle cx="50.7" cy="25.3" r="2.2" fill="none" stroke="#1a1a1a" stroke-width="0.167" stroke-linejoin="round" stroke-linecap="round"/>
-<circle cx="50.7" cy="25.3" r="1.45" fill="#fff" stroke="#1a1a1a" stroke-width="0.233" stroke-linejoin="round" stroke-linecap="round"/>
-<circle cx="83.3" cy="25.3" r="2.2" fill="none" stroke="#1a1a1a" stroke-width="0.167" stroke-linejoin="round" stroke-linecap="round"/>
-<circle cx="83.3" cy="25.3" r="1.45" fill="#fff" stroke="#1a1a1a" stroke-width="0.233" stroke-linejoin="round" stroke-linecap="round"/>
-<rect x="54.6" y="19.0" width="4.2" height="2.7" rx="0.3" fill="#fff" stroke="#1a1a1a" stroke-width="0.167" stroke-linejoin="round" stroke-linecap="round"/>
-<rect x="56.0" y="18.2" width="1.4" height="0.8" rx="0.3" fill="none" stroke="#1a1a1a" stroke-width="0.133" stroke-linejoin="round" stroke-linecap="round"/>
-<rect x="75.2" y="19.0" width="4.2" height="2.7" rx="0.3" fill="#fff" stroke="#1a1a1a" stroke-width="0.167" stroke-linejoin="round" stroke-linecap="round"/>
-<rect x="76.6" y="18.2" width="1.4" height="0.8" rx="0.3" fill="none" stroke="#1a1a1a" stroke-width="0.133" stroke-linejoin="round" stroke-linecap="round"/>
-<rect x="62.0" y="23.5" width="10" height="4.5" rx="0" fill="none" stroke="#1a1a1a" stroke-width="0.167" stroke-linejoin="round" stroke-linecap="round"/>
-<rect x="62.55" y="24.05" width="0.9" height="0.9" rx="0" fill="#1a1a1a" stroke="#1a1a1a" stroke-width="0.117" stroke-linejoin="round" stroke-linecap="round"/>
-<rect x="62.55" y="26.05" width="0.9" height="0.9" rx="0" fill="#1a1a1a" stroke="#1a1a1a" stroke-width="0.117" stroke-linejoin="round" stroke-linecap="round"/>
-<rect x="64.55" y="24.05" width="0.9" height="0.9" rx="0" fill="#1a1a1a" stroke="#1a1a1a" stroke-width="0.117" stroke-linejoin="round" stroke-linecap="round"/>
-<rect x="64.55" y="26.05" width="0.9" height="0.9" rx="0" fill="#1a1a1a" stroke="#1a1a1a" stroke-width="0.117" stroke-linejoin="round" stroke-linecap="round"/>
-<rect x="66.55" y="24.05" width="0.9" height="0.9" rx="0" fill="#1a1a1a" stroke="#1a1a1a" stroke-width="0.117" stroke-linejoin="round" stroke-linecap="round"/>
-<rect x="66.55" y="26.05" width="0.9" height="0.9" rx="0" fill="#1a1a1a" stroke="#1a1a1a" stroke-width="0.117" stroke-linejoin="round" stroke-linecap="round"/>
-<rect x="68.55" y="24.05" width="0.9" height="0.9" rx="0" fill="#1a1a1a" stroke="#1a1a1a" stroke-width="0.117" stroke-linejoin="round" stroke-linecap="round"/>
-<rect x="68.55" y="26.05" width="0.9" height="0.9" rx="0" fill="#1a1a1a" stroke="#1a1a1a" stroke-width="0.117" stroke-linejoin="round" stroke-linecap="round"/>
-<rect x="70.55" y="24.05" width="0.9" height="0.9" rx="0" fill="#1a1a1a" stroke="#1a1a1a" stroke-width="0.117" stroke-linejoin="round" stroke-linecap="round"/>
-<rect x="70.55" y="26.05" width="0.9" height="0.9" rx="0" fill="#1a1a1a" stroke="#1a1a1a" stroke-width="0.117" stroke-linejoin="round" stroke-linecap="round"/>
-<rect x="62.1" y="15.3" width="0.8" height="1.4" rx="0" fill="#e8d9a8" stroke="#1a1a1a" stroke-width="0.117" stroke-linejoin="round" stroke-linecap="round"/>
-<rect x="62.1" y="19.6" width="0.8" height="1.4" rx="0" fill="#e8d9a8" stroke="#1a1a1a" stroke-width="0.117" stroke-linejoin="round" stroke-linecap="round"/>
-<rect x="71.1" y="15.3" width="0.8" height="1.4" rx="0" fill="#e8d9a8" stroke="#1a1a1a" stroke-width="0.117" stroke-linejoin="round" stroke-linecap="round"/>
-<rect x="71.1" y="19.6" width="0.8" height="1.4" rx="0" fill="#e8d9a8" stroke="#1a1a1a" stroke-width="0.117" stroke-linejoin="round" stroke-linecap="round"/>
-<rect x="65.15" y="21.4" width="0.5" height="1.4" rx="0" fill="#e8d9a8" stroke="#1a1a1a" stroke-width="0.117" stroke-linejoin="round" stroke-linecap="round"/>
-<rect x="65.95" y="21.4" width="0.5" height="1.4" rx="0" fill="#e8d9a8" stroke="#1a1a1a" stroke-width="0.117" stroke-linejoin="round" stroke-linecap="round"/>
-<rect x="66.75" y="21.4" width="0.5" height="1.4" rx="0" fill="#e8d9a8" stroke="#1a1a1a" stroke-width="0.117" stroke-linejoin="round" stroke-linecap="round"/>
-<rect x="67.55000000000001" y="21.4" width="0.5" height="1.4" rx="0" fill="#e8d9a8" stroke="#1a1a1a" stroke-width="0.117" stroke-linejoin="round" stroke-linecap="round"/>
-<rect x="68.35000000000001" y="21.4" width="0.5" height="1.4" rx="0" fill="#e8d9a8" stroke="#1a1a1a" stroke-width="0.117" stroke-linejoin="round" stroke-linecap="round"/>
-<line x1="64.0" y1="19.1" x2="65.4" y2="21.6" stroke="#c0392b" stroke-width="0.267"/>
-<line x1="66.0" y1="19.1" x2="66.2" y2="21.6" stroke="#2a6fb0" stroke-width="0.267"/>
-<line x1="68.0" y1="19.1" x2="67.0" y2="21.6" stroke="#2e8b57" stroke-width="0.267"/>
-<line x1="70.0" y1="19.1" x2="68.60000000000001" y2="21.6" stroke="#1a1a1a" stroke-width="0.267"/>
-<rect x="60.8" y="14.0" width="12.4" height="5.6" rx="0.4" fill="#d9e3f3" stroke="#1a1a1a" stroke-width="0.233" stroke-linejoin="round" stroke-linecap="round"/>
-<rect x="63.6" y="18.6" width="0.8" height="0.8" rx="0" fill="#e8d9a8" stroke="#1a1a1a" stroke-width="0.117" stroke-linejoin="round" stroke-linecap="round"/>
-<rect x="65.6" y="18.6" width="0.8" height="0.8" rx="0" fill="#e8d9a8" stroke="#1a1a1a" stroke-width="0.117" stroke-linejoin="round" stroke-linecap="round"/>
-<rect x="67.6" y="18.6" width="0.8" height="0.8" rx="0" fill="#e8d9a8" stroke="#1a1a1a" stroke-width="0.117" stroke-linejoin="round" stroke-linecap="round"/>
-<rect x="69.6" y="18.6" width="0.8" height="0.8" rx="0" fill="#e8d9a8" stroke="#1a1a1a" stroke-width="0.117" stroke-linejoin="round" stroke-linecap="round"/>
-<rect x="62.55" y="12.3" width="8.9" height="5.5" rx="0.5" fill="#fff" stroke="#1a1a1a" stroke-width="0.233" stroke-linejoin="round" stroke-linecap="round"/>
-<path d="M96.00 28.30 L96.00 23.80 L102.50 18.80 L108.50 18.80 L108.50 15.60 L109.10 15.00 L120.90 15.00 L121.50 15.60 L121.50 18.80 L127.50 18.80 L134.00 23.80 L134.00 28.30 Z" fill="#f2f2f2" stroke="#1a1a1a" stroke-width="0.267" stroke-linejoin="round" stroke-linecap="round"/>
-<circle cx="98.7" cy="25.3" r="2.2" fill="none" stroke="#1a1a1a" stroke-width="0.167" stroke-linejoin="round" stroke-linecap="round"/>
-<circle cx="98.7" cy="25.3" r="1.45" fill="#fff" stroke="#1a1a1a" stroke-width="0.233" stroke-linejoin="round" stroke-linecap="round"/>
-<circle cx="131.3" cy="25.3" r="2.2" fill="none" stroke="#1a1a1a" stroke-width="0.167" stroke-linejoin="round" stroke-linecap="round"/>
-<circle cx="131.3" cy="25.3" r="1.45" fill="#fff" stroke="#1a1a1a" stroke-width="0.233" stroke-linejoin="round" stroke-linecap="round"/>
-<rect x="102.60000000000001" y="19.0" width="4.2" height="2.7" rx="0.3" fill="#fff" stroke="#1a1a1a" stroke-width="0.167" stroke-linejoin="round" stroke-linecap="round"/>
-<rect x="104.0" y="18.2" width="1.4" height="0.8" rx="0.3" fill="none" stroke="#1a1a1a" stroke-width="0.133" stroke-linejoin="round" stroke-linecap="round"/>
-<rect x="123.2" y="19.0" width="4.2" height="2.7" rx="0.3" fill="#fff" stroke="#1a1a1a" stroke-width="0.167" stroke-linejoin="round" stroke-linecap="round"/>
-<rect x="124.6" y="18.2" width="1.4" height="0.8" rx="0.3" fill="none" stroke="#1a1a1a" stroke-width="0.133" stroke-linejoin="round" stroke-linecap="round"/>
-<rect x="110.0" y="23.5" width="10" height="4.5" rx="0" fill="none" stroke="#1a1a1a" stroke-width="0.167" stroke-linejoin="round" stroke-linecap="round"/>
-<rect x="110.55" y="24.05" width="0.9" height="0.9" rx="0" fill="#1a1a1a" stroke="#1a1a1a" stroke-width="0.117" stroke-linejoin="round" stroke-linecap="round"/>
-<rect x="110.55" y="26.05" width="0.9" height="0.9" rx="0" fill="#1a1a1a" stroke="#1a1a1a" stroke-width="0.117" stroke-linejoin="round" stroke-linecap="round"/>
-<rect x="112.55" y="24.05" width="0.9" height="0.9" rx="0" fill="#1a1a1a" stroke="#1a1a1a" stroke-width="0.117" stroke-linejoin="round" stroke-linecap="round"/>
-<rect x="112.55" y="26.05" width="0.9" height="0.9" rx="0" fill="#1a1a1a" stroke="#1a1a1a" stroke-width="0.117" stroke-linejoin="round" stroke-linecap="round"/>
-<rect x="114.55" y="24.05" width="0.9" height="0.9" rx="0" fill="#1a1a1a" stroke="#1a1a1a" stroke-width="0.117" stroke-linejoin="round" stroke-linecap="round"/>
-<rect x="114.55" y="26.05" width="0.9" height="0.9" rx="0" fill="#1a1a1a" stroke="#1a1a1a" stroke-width="0.117" stroke-linejoin="round" stroke-linecap="round"/>
-<rect x="116.55" y="24.05" width="0.9" height="0.9" rx="0" fill="#1a1a1a" stroke="#1a1a1a" stroke-width="0.117" stroke-linejoin="round" stroke-linecap="round"/>
-<rect x="116.55" y="26.05" width="0.9" height="0.9" rx="0" fill="#1a1a1a" stroke="#1a1a1a" stroke-width="0.117" stroke-linejoin="round" stroke-linecap="round"/>
-<rect x="118.55" y="24.05" width="0.9" height="0.9" rx="0" fill="#1a1a1a" stroke="#1a1a1a" stroke-width="0.117" stroke-linejoin="round" stroke-linecap="round"/>
-<rect x="118.55" y="26.05" width="0.9" height="0.9" rx="0" fill="#1a1a1a" stroke="#1a1a1a" stroke-width="0.117" stroke-linejoin="round" stroke-linecap="round"/>
-<rect x="110.55" y="12.3" width="8.9" height="7.7" rx="0.5" fill="#fff" stroke="#1a1a1a" stroke-width="0.233" stroke-linejoin="round" stroke-linecap="round"/>
-<rect x="109.75" y="15.3" width="0.8" height="1.4" rx="0" fill="none" stroke="#1a1a1a" stroke-width="0.117" stroke-linejoin="round" stroke-linecap="round"/>
-<rect x="109.75" y="19.0" width="0.8" height="1.4" rx="0" fill="none" stroke="#1a1a1a" stroke-width="0.117" stroke-linejoin="round" stroke-linecap="round"/>
-<rect x="119.45" y="15.3" width="0.8" height="1.4" rx="0" fill="none" stroke="#1a1a1a" stroke-width="0.117" stroke-linejoin="round" stroke-linecap="round"/>
-<rect x="119.45" y="19.0" width="0.8" height="1.4" rx="0" fill="none" stroke="#1a1a1a" stroke-width="0.117" stroke-linejoin="round" stroke-linecap="round"/>
-<rect x="112.1" y="20.3" width="0.3" height="1.0" rx="0" fill="#1a1a1a" stroke="#1a1a1a" stroke-width="0.100" stroke-linejoin="round" stroke-linecap="round"/>
-<rect x="112.6" y="20.3" width="0.3" height="1.0" rx="0" fill="#1a1a1a" stroke="#1a1a1a" stroke-width="0.100" stroke-linejoin="round" stroke-linecap="round"/>
-<rect x="113.1" y="20.3" width="0.3" height="1.0" rx="0" fill="#1a1a1a" stroke="#1a1a1a" stroke-width="0.100" stroke-linejoin="round" stroke-linecap="round"/>
-<rect x="113.6" y="20.3" width="0.3" height="1.0" rx="0" fill="#1a1a1a" stroke="#1a1a1a" stroke-width="0.100" stroke-linejoin="round" stroke-linecap="round"/>
-<rect x="114.1" y="20.3" width="0.3" height="1.0" rx="0" fill="#1a1a1a" stroke="#1a1a1a" stroke-width="0.100" stroke-linejoin="round" stroke-linecap="round"/>
-<rect x="114.6" y="20.3" width="0.3" height="1.0" rx="0" fill="#1a1a1a" stroke="#1a1a1a" stroke-width="0.100" stroke-linejoin="round" stroke-linecap="round"/>
-<rect x="115.1" y="20.3" width="0.3" height="1.0" rx="0" fill="#1a1a1a" stroke="#1a1a1a" stroke-width="0.100" stroke-linejoin="round" stroke-linecap="round"/>
-<rect x="115.6" y="20.3" width="0.3" height="1.0" rx="0" fill="#1a1a1a" stroke="#1a1a1a" stroke-width="0.100" stroke-linejoin="round" stroke-linecap="round"/>
-<rect x="116.1" y="20.3" width="0.3" height="1.0" rx="0" fill="#1a1a1a" stroke="#1a1a1a" stroke-width="0.100" stroke-linejoin="round" stroke-linecap="round"/>
-<rect x="116.6" y="20.3" width="0.3" height="1.0" rx="0" fill="#1a1a1a" stroke="#1a1a1a" stroke-width="0.100" stroke-linejoin="round" stroke-linecap="round"/>
-<rect x="117.1" y="20.3" width="0.3" height="1.0" rx="0" fill="#1a1a1a" stroke="#1a1a1a" stroke-width="0.100" stroke-linejoin="round" stroke-linecap="round"/>
-<rect x="117.6" y="20.3" width="0.3" height="1.0" rx="0" fill="#1a1a1a" stroke="#1a1a1a" stroke-width="0.100" stroke-linejoin="round" stroke-linecap="round"/>
-<rect x="2" y="52.099999999999994" width="22" height="4.4" rx="0.4" fill="#fff" stroke="#1a1a1a" stroke-width="0.167" stroke-linejoin="round" stroke-linecap="round"/>
-<line x1="24" y1="54.3" x2="68" y2="54.3" stroke="#c0392b" stroke-width="0.300"/>
-<rect x="68" y="52.099999999999994" width="32" height="4.4" rx="0.4" fill="#d9e3f3" stroke="#1a1a1a" stroke-width="0.167" stroke-linejoin="round" stroke-linecap="round"/>
-<rect x="2" y="58.3" width="22" height="4.4" rx="0.4" fill="#fff" stroke="#1a1a1a" stroke-width="0.167" stroke-linejoin="round" stroke-linecap="round"/>
-<line x1="24" y1="60.5" x2="68" y2="60.5" stroke="#2a6fb0" stroke-width="0.300"/>
-<rect x="68" y="58.3" width="32" height="4.4" rx="0.4" fill="#d9e3f3" stroke="#1a1a1a" stroke-width="0.167" stroke-linejoin="round" stroke-linecap="round"/>
-<rect x="2" y="64.5" width="22" height="4.4" rx="0.4" fill="#fff" stroke="#1a1a1a" stroke-width="0.167" stroke-linejoin="round" stroke-linecap="round"/>
-<line x1="24" y1="66.7" x2="68" y2="66.7" stroke="#2e8b57" stroke-width="0.300"/>
-<rect x="68" y="64.5" width="32" height="4.4" rx="0.4" fill="#d9e3f3" stroke="#1a1a1a" stroke-width="0.167" stroke-linejoin="round" stroke-linecap="round"/>
-<rect x="2" y="70.7" width="22" height="4.4" rx="0.4" fill="#fff" stroke="#1a1a1a" stroke-width="0.167" stroke-linejoin="round" stroke-linecap="round"/>
-<line x1="24" y1="72.9" x2="44" y2="72.9" stroke="#6b6b6b" stroke-width="0.300"/>
-<line x1="44.8" y1="71.9" x2="46.8" y2="73.9" stroke="#1a1a1a" stroke-width="0.267"/>
-<line x1="44.8" y1="73.9" x2="46.8" y2="71.9" stroke="#1a1a1a" stroke-width="0.267"/>
-<rect x="2" y="76.89999999999999" width="22" height="4.4" rx="0.4" fill="#fff" stroke="#1a1a1a" stroke-width="0.167" stroke-linejoin="round" stroke-linecap="round"/>
-<line x1="24" y1="79.1" x2="68" y2="79.1" stroke="#1a1a1a" stroke-width="0.300"/>
-<rect x="68" y="76.89999999999999" width="32" height="4.4" rx="0.4" fill="#d9e3f3" stroke="#1a1a1a" stroke-width="0.167" stroke-linejoin="round" stroke-linecap="round"/>
-<line x1="100" y1="79.1" x2="118.0" y2="79.1" stroke="#1a1a1a" stroke-width="0.300"/>
-<rect x="68" y="87.1" width="22" height="4.4" rx="0.4" fill="#d9e3f3" stroke="#1a1a1a" stroke-width="0.167" stroke-linejoin="round" stroke-linecap="round"/>
-<line x1="90" y1="89.3" x2="96" y2="89.3" stroke="#1a1a1a" stroke-width="0.233"/>
-<rect x="96" y="87.8" width="12" height="3.0" rx="0.3" fill="#fff" stroke="#1a1a1a" stroke-width="0.200" stroke-linejoin="round" stroke-linecap="round"/>
-<line x1="108" y1="89.3" x2="118.0" y2="89.3" stroke="#1a1a1a" stroke-width="0.233"/>
-<rect x="68" y="93.3" width="22" height="4.4" rx="0.4" fill="#d9e3f3" stroke="#1a1a1a" stroke-width="0.167" stroke-linejoin="round" stroke-linecap="round"/>
-<line x1="90" y1="95.5" x2="96" y2="95.5" stroke="#1a1a1a" stroke-width="0.233"/>
-<rect x="96" y="94.0" width="12" height="3.0" rx="0.3" fill="#fff" stroke="#1a1a1a" stroke-width="0.200" stroke-linejoin="round" stroke-linecap="round"/>
-<line x1="108" y1="95.5" x2="118.0" y2="95.5" stroke="#1a1a1a" stroke-width="0.233"/>
-<line x1="118.0" y1="79.1" x2="118.0" y2="95.5" stroke="#1a1a1a" stroke-width="0.300"/>
-<circle cx="118.0" cy="79.1" r="0.7" fill="#1a1a1a" stroke="#1a1a1a" stroke-width="0.133" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M0.00 29.00 L39.10 29.00 L39.10 24.50 C38.94 24.42 38.49 24.27 38.15 24.00 C37.81 23.73 37.40 23.25 37.05 22.90 C36.70 22.55 36.38 22.20 36.05 21.90 C35.72 21.60 35.38 21.35 35.05 21.10 C34.72 20.85 34.40 20.62 34.05 20.40 C33.70 20.17 33.37 19.95 32.95 19.75 C32.53 19.55 32.02 19.32 31.55 19.20 C31.08 19.07 30.38 19.03 30.15 19.00 L27.00 19.00 A1.5 1.5 0 0 1 25.50 17.50 L25.50 15.50 A0.5 0.5 0 0 0 25.00 15.00 L14.10 15.00 A0.5 0.5 0 0 0 13.60 15.50 L13.60 17.50 A1.5 1.5 0 0 1 12.10 19.00 L8.95 19.00 C8.72 19.03 8.02 19.07 7.55 19.20 C7.08 19.32 6.57 19.55 6.15 19.75 C5.73 19.95 5.40 20.17 5.05 20.40 C4.70 20.62 4.38 20.85 4.05 21.10 C3.72 21.35 3.38 21.60 3.05 21.90 C2.72 22.20 2.40 22.55 2.05 22.90 C1.70 23.25 1.29 23.73 0.95 24.00 C0.61 24.27 0.16 24.42 0.00 24.50 L0.00 29.00 Z" fill="#f2f2f2" stroke="#1a1a1a" stroke-width="0.267" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="2.9499999999999993" cy="25.6" r="2.3" fill="#f2cdb5" stroke="#1a1a1a" stroke-width="0.167" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="2.9499999999999993" cy="25.6" r="1.2" fill="#fff" stroke="#1a1a1a" stroke-width="0.233" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="4.950000000000001" cy="27.9" r="0.65" fill="#fff" stroke="#1a1a1a" stroke-width="0.150" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="36.150000000000006" cy="25.6" r="2.3" fill="#f2cdb5" stroke="#1a1a1a" stroke-width="0.167" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="36.150000000000006" cy="25.6" r="1.2" fill="#fff" stroke="#1a1a1a" stroke-width="0.233" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="34.15" cy="27.9" r="0.65" fill="#fff" stroke="#1a1a1a" stroke-width="0.150" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="14.25" y="15.4" width="1.6" height="2.799999999999999" rx="0.2" fill="#fff" stroke="#1a1a1a" stroke-width="0.150" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="14.25" y="20.7" width="1.6" height="2.8000000000000007" rx="0.2" fill="#fff" stroke="#1a1a1a" stroke-width="0.150" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="23.25" y="15.4" width="1.6" height="2.799999999999999" rx="0.2" fill="#fff" stroke="#1a1a1a" stroke-width="0.150" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="23.25" y="20.7" width="1.6" height="2.8000000000000007" rx="0.2" fill="#fff" stroke="#1a1a1a" stroke-width="0.150" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="15.700000000000001" y="13.6" width="7.7" height="8.9" rx="0.5" fill="#e8d9a8" stroke="#1a1a1a" stroke-width="0.267" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="18.150000000000002" y="16.0" width="2.8" height="2.6" rx="0.3" fill="#fff" stroke="#1a1a1a" stroke-width="0.167" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="16.9" y="19.5" width="0.9" height="1.1" rx="0" fill="#e8d9a8" stroke="#1a1a1a" stroke-width="0.133" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="21.3" y="19.5" width="0.9" height="1.1" rx="0" fill="#e8d9a8" stroke="#1a1a1a" stroke-width="0.133" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="17.7" y="22.45" width="0.5" height="1.15" rx="0" fill="#fff" stroke="#1a1a1a" stroke-width="0.133" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="18.5" y="22.45" width="0.5" height="1.15" rx="0" fill="#fff" stroke="#1a1a1a" stroke-width="0.133" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="19.3" y="22.45" width="0.5" height="1.15" rx="0" fill="#fff" stroke="#1a1a1a" stroke-width="0.133" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="20.1" y="22.45" width="0.5" height="1.15" rx="0" fill="#fff" stroke="#1a1a1a" stroke-width="0.133" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="20.900000000000002" y="22.45" width="0.5" height="1.15" rx="0" fill="#fff" stroke="#1a1a1a" stroke-width="0.133" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="6.949999999999999" y="19.7" width="4.4" height="2.9" rx="0.3" fill="#cfcfcf" stroke="#1a1a1a" stroke-width="0.217" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="8.450000000000001" y="19.0" width="1.4" height="0.7" rx="0.3" fill="#fff" stroke="#1a1a1a" stroke-width="0.167" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="7.625" y="22.45" width="0.75" height="0.8" rx="0" fill="#fff" stroke="#1a1a1a" stroke-width="0.133" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="8.775" y="22.45" width="0.75" height="0.8" rx="0" fill="#fff" stroke="#1a1a1a" stroke-width="0.133" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="9.925" y="22.45" width="0.75" height="0.8" rx="0" fill="#fff" stroke="#1a1a1a" stroke-width="0.133" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="27.75" y="19.7" width="4.4" height="2.9" rx="0.3" fill="#cfcfcf" stroke="#1a1a1a" stroke-width="0.217" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="29.25" y="19.0" width="1.4" height="0.7" rx="0.3" fill="#fff" stroke="#1a1a1a" stroke-width="0.167" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="28.425" y="22.45" width="0.75" height="0.8" rx="0" fill="#fff" stroke="#1a1a1a" stroke-width="0.133" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="29.575000000000003" y="22.45" width="0.75" height="0.8" rx="0" fill="#fff" stroke="#1a1a1a" stroke-width="0.133" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="30.725" y="22.45" width="0.75" height="0.8" rx="0" fill="#fff" stroke="#1a1a1a" stroke-width="0.133" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="14.850000000000001" y="24.35" width="9.8" height="4.1" rx="0" fill="#555" stroke="#1a1a1a" stroke-width="0.200" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="15.3" y="25.0" width="0.9" height="0.9" rx="0" fill="#e8d9a8" stroke="#1a1a1a" stroke-width="0.133" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="15.3" y="27.0" width="0.9" height="0.9" rx="0" fill="#e8d9a8" stroke="#1a1a1a" stroke-width="0.133" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="17.3" y="25.0" width="0.9" height="0.9" rx="0" fill="#e8d9a8" stroke="#1a1a1a" stroke-width="0.133" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="17.3" y="27.0" width="0.9" height="0.9" rx="0" fill="#e8d9a8" stroke="#1a1a1a" stroke-width="0.133" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="19.3" y="25.0" width="0.9" height="0.9" rx="0" fill="#e8d9a8" stroke="#1a1a1a" stroke-width="0.133" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="19.3" y="27.0" width="0.9" height="0.9" rx="0" fill="#e8d9a8" stroke="#1a1a1a" stroke-width="0.133" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="21.3" y="25.0" width="0.9" height="0.9" rx="0" fill="#e8d9a8" stroke="#1a1a1a" stroke-width="0.133" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="21.3" y="27.0" width="0.9" height="0.9" rx="0" fill="#e8d9a8" stroke="#1a1a1a" stroke-width="0.133" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="23.3" y="25.0" width="0.9" height="0.9" rx="0" fill="#e8d9a8" stroke="#1a1a1a" stroke-width="0.133" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="23.3" y="27.0" width="0.9" height="0.9" rx="0" fill="#e8d9a8" stroke="#1a1a1a" stroke-width="0.133" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="16.150000000000002" y="13.6" width="6.8" height="5.7" rx="0.4" fill="#d9e3f3" stroke="#1a1a1a" stroke-width="0.200" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="14.3" y="3.5999999999999996" width="10.5" height="10.0" rx="0.8" fill="#d9e3f3" stroke="#1a1a1a" stroke-width="0.267" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="15.38" y="5.8999999999999995" width="8.34" height="2.56" rx="1.28" fill="#fff" stroke="#1a1a1a" stroke-width="0.200" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M48.00 29.00 L87.10 29.00 L87.10 24.50 C86.94 24.42 86.49 24.27 86.15 24.00 C85.81 23.73 85.40 23.25 85.05 22.90 C84.70 22.55 84.38 22.20 84.05 21.90 C83.72 21.60 83.38 21.35 83.05 21.10 C82.72 20.85 82.40 20.62 82.05 20.40 C81.70 20.17 81.37 19.95 80.95 19.75 C80.53 19.55 80.02 19.32 79.55 19.20 C79.08 19.07 78.38 19.03 78.15 19.00 L75.00 19.00 A1.5 1.5 0 0 1 73.50 17.50 L73.50 15.50 A0.5 0.5 0 0 0 73.00 15.00 L62.10 15.00 A0.5 0.5 0 0 0 61.60 15.50 L61.60 17.50 A1.5 1.5 0 0 1 60.10 19.00 L56.95 19.00 C56.72 19.03 56.02 19.07 55.55 19.20 C55.08 19.32 54.57 19.55 54.15 19.75 C53.73 19.95 53.40 20.17 53.05 20.40 C52.70 20.62 52.38 20.85 52.05 21.10 C51.72 21.35 51.38 21.60 51.05 21.90 C50.72 22.20 50.40 22.55 50.05 22.90 C49.70 23.25 49.29 23.73 48.95 24.00 C48.61 24.27 48.16 24.42 48.00 24.50 L48.00 29.00 Z" fill="#f2f2f2" stroke="#1a1a1a" stroke-width="0.267" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="50.949999999999996" cy="25.6" r="2.3" fill="#f2cdb5" stroke="#1a1a1a" stroke-width="0.167" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="50.949999999999996" cy="25.6" r="1.2" fill="#fff" stroke="#1a1a1a" stroke-width="0.233" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="52.949999999999996" cy="27.9" r="0.65" fill="#fff" stroke="#1a1a1a" stroke-width="0.150" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="84.15" cy="25.6" r="2.3" fill="#f2cdb5" stroke="#1a1a1a" stroke-width="0.167" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="84.15" cy="25.6" r="1.2" fill="#fff" stroke="#1a1a1a" stroke-width="0.233" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="82.14999999999999" cy="27.9" r="0.65" fill="#fff" stroke="#1a1a1a" stroke-width="0.150" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="62.25" y="15.4" width="1.6" height="2.799999999999999" rx="0.2" fill="#fff" stroke="#1a1a1a" stroke-width="0.150" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="62.25" y="20.7" width="1.6" height="2.8000000000000007" rx="0.2" fill="#fff" stroke="#1a1a1a" stroke-width="0.150" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="71.25" y="15.4" width="1.6" height="2.799999999999999" rx="0.2" fill="#fff" stroke="#1a1a1a" stroke-width="0.150" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="71.25" y="20.7" width="1.6" height="2.8000000000000007" rx="0.2" fill="#fff" stroke="#1a1a1a" stroke-width="0.150" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="54.949999999999996" y="19.7" width="4.4" height="2.9" rx="0.3" fill="#cfcfcf" stroke="#1a1a1a" stroke-width="0.217" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="56.449999999999996" y="19.0" width="1.4" height="0.7" rx="0.3" fill="#fff" stroke="#1a1a1a" stroke-width="0.167" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="55.625" y="22.45" width="0.75" height="0.8" rx="0" fill="#fff" stroke="#1a1a1a" stroke-width="0.133" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="56.775" y="22.45" width="0.75" height="0.8" rx="0" fill="#fff" stroke="#1a1a1a" stroke-width="0.133" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="57.925" y="22.45" width="0.75" height="0.8" rx="0" fill="#fff" stroke="#1a1a1a" stroke-width="0.133" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="75.75" y="19.7" width="4.4" height="2.9" rx="0.3" fill="#cfcfcf" stroke="#1a1a1a" stroke-width="0.217" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="77.25" y="19.0" width="1.4" height="0.7" rx="0.3" fill="#fff" stroke="#1a1a1a" stroke-width="0.167" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="76.425" y="22.45" width="0.75" height="0.8" rx="0" fill="#fff" stroke="#1a1a1a" stroke-width="0.133" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="77.575" y="22.45" width="0.75" height="0.8" rx="0" fill="#fff" stroke="#1a1a1a" stroke-width="0.133" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="78.725" y="22.45" width="0.75" height="0.8" rx="0" fill="#fff" stroke="#1a1a1a" stroke-width="0.133" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="62.849999999999994" y="24.35" width="9.8" height="4.1" rx="0" fill="#555" stroke="#1a1a1a" stroke-width="0.200" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="63.3" y="25.0" width="0.9" height="0.9" rx="0" fill="#e8d9a8" stroke="#1a1a1a" stroke-width="0.133" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="63.3" y="27.0" width="0.9" height="0.9" rx="0" fill="#e8d9a8" stroke="#1a1a1a" stroke-width="0.133" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="65.3" y="25.0" width="0.9" height="0.9" rx="0" fill="#e8d9a8" stroke="#1a1a1a" stroke-width="0.133" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="65.3" y="27.0" width="0.9" height="0.9" rx="0" fill="#e8d9a8" stroke="#1a1a1a" stroke-width="0.133" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="67.3" y="25.0" width="0.9" height="0.9" rx="0" fill="#e8d9a8" stroke="#1a1a1a" stroke-width="0.133" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="67.3" y="27.0" width="0.9" height="0.9" rx="0" fill="#e8d9a8" stroke="#1a1a1a" stroke-width="0.133" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="69.3" y="25.0" width="0.9" height="0.9" rx="0" fill="#e8d9a8" stroke="#1a1a1a" stroke-width="0.133" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="69.3" y="27.0" width="0.9" height="0.9" rx="0" fill="#e8d9a8" stroke="#1a1a1a" stroke-width="0.133" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="71.3" y="25.0" width="0.9" height="0.9" rx="0" fill="#e8d9a8" stroke="#1a1a1a" stroke-width="0.133" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="71.3" y="27.0" width="0.9" height="0.9" rx="0" fill="#e8d9a8" stroke="#1a1a1a" stroke-width="0.133" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="65.7" y="22.45" width="0.5" height="1.15" rx="0" fill="#e8d9a8" stroke="#1a1a1a" stroke-width="0.117" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="66.5" y="22.45" width="0.5" height="1.15" rx="0" fill="#e8d9a8" stroke="#1a1a1a" stroke-width="0.117" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="67.3" y="22.45" width="0.5" height="1.15" rx="0" fill="#e8d9a8" stroke="#1a1a1a" stroke-width="0.117" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="68.10000000000001" y="22.45" width="0.5" height="1.15" rx="0" fill="#e8d9a8" stroke="#1a1a1a" stroke-width="0.117" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="68.9" y="22.45" width="0.5" height="1.15" rx="0" fill="#e8d9a8" stroke="#1a1a1a" stroke-width="0.117" stroke-linejoin="round" stroke-linecap="round"/>
+<line x1="64.55" y1="19.1" x2="65.95" y2="22.65" stroke="#c0392b" stroke-width="0.267"/>
+<line x1="66.55" y1="19.1" x2="66.75" y2="22.65" stroke="#2a6fb0" stroke-width="0.267"/>
+<line x1="68.55" y1="19.1" x2="67.55" y2="22.65" stroke="#2e8b57" stroke-width="0.267"/>
+<line x1="70.55" y1="19.1" x2="69.15" y2="22.65" stroke="#1a1a1a" stroke-width="0.267"/>
+<rect x="62.349999999999994" y="14.0" width="10.4" height="5.6" rx="0.4" fill="#d9e3f3" stroke="#1a1a1a" stroke-width="0.233" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="64.14999999999999" y="18.6" width="0.8" height="0.8" rx="0" fill="#e8d9a8" stroke="#1a1a1a" stroke-width="0.117" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="66.14999999999999" y="18.6" width="0.8" height="0.8" rx="0" fill="#e8d9a8" stroke="#1a1a1a" stroke-width="0.117" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="68.14999999999999" y="18.6" width="0.8" height="0.8" rx="0" fill="#e8d9a8" stroke="#1a1a1a" stroke-width="0.117" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="70.14999999999999" y="18.6" width="0.8" height="0.8" rx="0" fill="#e8d9a8" stroke="#1a1a1a" stroke-width="0.117" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="63.099999999999994" y="12.3" width="8.9" height="5.5" rx="0.5" fill="#fff" stroke="#1a1a1a" stroke-width="0.233" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M96.00 29.00 L135.10 29.00 L135.10 24.50 C134.94 24.42 134.49 24.27 134.15 24.00 C133.81 23.73 133.40 23.25 133.05 22.90 C132.70 22.55 132.38 22.20 132.05 21.90 C131.72 21.60 131.38 21.35 131.05 21.10 C130.72 20.85 130.40 20.62 130.05 20.40 C129.70 20.17 129.37 19.95 128.95 19.75 C128.53 19.55 128.02 19.32 127.55 19.20 C127.08 19.07 126.38 19.03 126.15 19.00 L123.00 19.00 A1.5 1.5 0 0 1 121.50 17.50 L121.50 15.50 A0.5 0.5 0 0 0 121.00 15.00 L110.10 15.00 A0.5 0.5 0 0 0 109.60 15.50 L109.60 17.50 A1.5 1.5 0 0 1 108.10 19.00 L104.95 19.00 C104.72 19.03 104.02 19.07 103.55 19.20 C103.08 19.32 102.57 19.55 102.15 19.75 C101.73 19.95 101.40 20.17 101.05 20.40 C100.70 20.62 100.38 20.85 100.05 21.10 C99.72 21.35 99.38 21.60 99.05 21.90 C98.72 22.20 98.40 22.55 98.05 22.90 C97.70 23.25 97.29 23.73 96.95 24.00 C96.61 24.27 96.16 24.42 96.00 24.50 L96.00 29.00 Z" fill="#f2f2f2" stroke="#1a1a1a" stroke-width="0.267" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="98.94999999999999" cy="25.6" r="2.3" fill="#f2cdb5" stroke="#1a1a1a" stroke-width="0.167" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="98.94999999999999" cy="25.6" r="1.2" fill="#fff" stroke="#1a1a1a" stroke-width="0.233" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="100.95" cy="27.9" r="0.65" fill="#fff" stroke="#1a1a1a" stroke-width="0.150" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="132.15" cy="25.6" r="2.3" fill="#f2cdb5" stroke="#1a1a1a" stroke-width="0.167" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="132.15" cy="25.6" r="1.2" fill="#fff" stroke="#1a1a1a" stroke-width="0.233" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="130.15" cy="27.9" r="0.65" fill="#fff" stroke="#1a1a1a" stroke-width="0.150" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="102.94999999999999" y="19.7" width="4.4" height="2.9" rx="0.3" fill="#cfcfcf" stroke="#1a1a1a" stroke-width="0.217" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="104.45" y="19.0" width="1.4" height="0.7" rx="0.3" fill="#fff" stroke="#1a1a1a" stroke-width="0.167" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="103.625" y="22.45" width="0.75" height="0.8" rx="0" fill="#fff" stroke="#1a1a1a" stroke-width="0.133" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="104.77499999999999" y="22.45" width="0.75" height="0.8" rx="0" fill="#fff" stroke="#1a1a1a" stroke-width="0.133" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="105.925" y="22.45" width="0.75" height="0.8" rx="0" fill="#fff" stroke="#1a1a1a" stroke-width="0.133" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="123.75" y="19.7" width="4.4" height="2.9" rx="0.3" fill="#cfcfcf" stroke="#1a1a1a" stroke-width="0.217" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="125.25" y="19.0" width="1.4" height="0.7" rx="0.3" fill="#fff" stroke="#1a1a1a" stroke-width="0.167" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="124.425" y="22.45" width="0.75" height="0.8" rx="0" fill="#fff" stroke="#1a1a1a" stroke-width="0.133" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="125.575" y="22.45" width="0.75" height="0.8" rx="0" fill="#fff" stroke="#1a1a1a" stroke-width="0.133" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="126.725" y="22.45" width="0.75" height="0.8" rx="0" fill="#fff" stroke="#1a1a1a" stroke-width="0.133" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="110.85" y="24.35" width="9.8" height="4.1" rx="0" fill="#555" stroke="#1a1a1a" stroke-width="0.200" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="111.3" y="25.0" width="0.9" height="0.9" rx="0" fill="#e8d9a8" stroke="#1a1a1a" stroke-width="0.133" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="111.3" y="27.0" width="0.9" height="0.9" rx="0" fill="#e8d9a8" stroke="#1a1a1a" stroke-width="0.133" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="113.3" y="25.0" width="0.9" height="0.9" rx="0" fill="#e8d9a8" stroke="#1a1a1a" stroke-width="0.133" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="113.3" y="27.0" width="0.9" height="0.9" rx="0" fill="#e8d9a8" stroke="#1a1a1a" stroke-width="0.133" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="115.3" y="25.0" width="0.9" height="0.9" rx="0" fill="#e8d9a8" stroke="#1a1a1a" stroke-width="0.133" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="115.3" y="27.0" width="0.9" height="0.9" rx="0" fill="#e8d9a8" stroke="#1a1a1a" stroke-width="0.133" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="117.3" y="25.0" width="0.9" height="0.9" rx="0" fill="#e8d9a8" stroke="#1a1a1a" stroke-width="0.133" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="117.3" y="27.0" width="0.9" height="0.9" rx="0" fill="#e8d9a8" stroke="#1a1a1a" stroke-width="0.133" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="119.3" y="25.0" width="0.9" height="0.9" rx="0" fill="#e8d9a8" stroke="#1a1a1a" stroke-width="0.133" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="119.3" y="27.0" width="0.9" height="0.9" rx="0" fill="#e8d9a8" stroke="#1a1a1a" stroke-width="0.133" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="111.1" y="12.3" width="8.9" height="7.7" rx="0.5" fill="#fff" stroke="#1a1a1a" stroke-width="0.233" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="110.3" y="15.3" width="0.8" height="1.4" rx="0" fill="none" stroke="#1a1a1a" stroke-width="0.117" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="110.3" y="19.0" width="0.8" height="1.4" rx="0" fill="none" stroke="#1a1a1a" stroke-width="0.117" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="120.0" y="15.3" width="0.8" height="1.4" rx="0" fill="none" stroke="#1a1a1a" stroke-width="0.117" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="120.0" y="19.0" width="0.8" height="1.4" rx="0" fill="none" stroke="#1a1a1a" stroke-width="0.117" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="112.64999999999999" y="20.3" width="0.3" height="1.0" rx="0" fill="#1a1a1a" stroke="#1a1a1a" stroke-width="0.100" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="113.14999999999999" y="20.3" width="0.3" height="1.0" rx="0" fill="#1a1a1a" stroke="#1a1a1a" stroke-width="0.100" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="113.64999999999999" y="20.3" width="0.3" height="1.0" rx="0" fill="#1a1a1a" stroke="#1a1a1a" stroke-width="0.100" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="114.14999999999999" y="20.3" width="0.3" height="1.0" rx="0" fill="#1a1a1a" stroke="#1a1a1a" stroke-width="0.100" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="114.64999999999999" y="20.3" width="0.3" height="1.0" rx="0" fill="#1a1a1a" stroke="#1a1a1a" stroke-width="0.100" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="115.14999999999999" y="20.3" width="0.3" height="1.0" rx="0" fill="#1a1a1a" stroke="#1a1a1a" stroke-width="0.100" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="115.64999999999999" y="20.3" width="0.3" height="1.0" rx="0" fill="#1a1a1a" stroke="#1a1a1a" stroke-width="0.100" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="116.14999999999999" y="20.3" width="0.3" height="1.0" rx="0" fill="#1a1a1a" stroke="#1a1a1a" stroke-width="0.100" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="116.64999999999999" y="20.3" width="0.3" height="1.0" rx="0" fill="#1a1a1a" stroke="#1a1a1a" stroke-width="0.100" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="117.14999999999999" y="20.3" width="0.3" height="1.0" rx="0" fill="#1a1a1a" stroke="#1a1a1a" stroke-width="0.100" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="117.64999999999999" y="20.3" width="0.3" height="1.0" rx="0" fill="#1a1a1a" stroke="#1a1a1a" stroke-width="0.100" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="118.14999999999999" y="20.3" width="0.3" height="1.0" rx="0" fill="#1a1a1a" stroke="#1a1a1a" stroke-width="0.100" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="2" y="52.8" width="22" height="4.4" rx="0.4" fill="#fff" stroke="#1a1a1a" stroke-width="0.167" stroke-linejoin="round" stroke-linecap="round"/>
+<line x1="24" y1="55.0" x2="68" y2="55.0" stroke="#c0392b" stroke-width="0.300"/>
+<rect x="68" y="52.8" width="32" height="4.4" rx="0.4" fill="#d9e3f3" stroke="#1a1a1a" stroke-width="0.167" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="2" y="59.0" width="22" height="4.4" rx="0.4" fill="#fff" stroke="#1a1a1a" stroke-width="0.167" stroke-linejoin="round" stroke-linecap="round"/>
+<line x1="24" y1="61.2" x2="68" y2="61.2" stroke="#2a6fb0" stroke-width="0.300"/>
+<rect x="68" y="59.0" width="32" height="4.4" rx="0.4" fill="#d9e3f3" stroke="#1a1a1a" stroke-width="0.167" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="2" y="65.2" width="22" height="4.4" rx="0.4" fill="#fff" stroke="#1a1a1a" stroke-width="0.167" stroke-linejoin="round" stroke-linecap="round"/>
+<line x1="24" y1="67.4" x2="68" y2="67.4" stroke="#2e8b57" stroke-width="0.300"/>
+<rect x="68" y="65.2" width="32" height="4.4" rx="0.4" fill="#d9e3f3" stroke="#1a1a1a" stroke-width="0.167" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="2" y="71.39999999999999" width="22" height="4.4" rx="0.4" fill="#fff" stroke="#1a1a1a" stroke-width="0.167" stroke-linejoin="round" stroke-linecap="round"/>
+<line x1="24" y1="73.6" x2="44" y2="73.6" stroke="#6b6b6b" stroke-width="0.300"/>
+<line x1="44.8" y1="72.6" x2="46.8" y2="74.6" stroke="#1a1a1a" stroke-width="0.267"/>
+<line x1="44.8" y1="74.6" x2="46.8" y2="72.6" stroke="#1a1a1a" stroke-width="0.267"/>
+<rect x="2" y="77.6" width="22" height="4.4" rx="0.4" fill="#fff" stroke="#1a1a1a" stroke-width="0.167" stroke-linejoin="round" stroke-linecap="round"/>
+<line x1="24" y1="79.8" x2="68" y2="79.8" stroke="#1a1a1a" stroke-width="0.300"/>
+<rect x="68" y="77.6" width="32" height="4.4" rx="0.4" fill="#d9e3f3" stroke="#1a1a1a" stroke-width="0.167" stroke-linejoin="round" stroke-linecap="round"/>
+<line x1="100" y1="79.8" x2="118.0" y2="79.8" stroke="#1a1a1a" stroke-width="0.300"/>
+<rect x="68" y="87.8" width="22" height="4.4" rx="0.4" fill="#d9e3f3" stroke="#1a1a1a" stroke-width="0.167" stroke-linejoin="round" stroke-linecap="round"/>
+<line x1="90" y1="90.0" x2="96" y2="90.0" stroke="#1a1a1a" stroke-width="0.233"/>
+<rect x="96" y="88.5" width="12" height="3.0" rx="0.3" fill="#fff" stroke="#1a1a1a" stroke-width="0.200" stroke-linejoin="round" stroke-linecap="round"/>
+<line x1="108" y1="90.0" x2="118.0" y2="90.0" stroke="#1a1a1a" stroke-width="0.233"/>
+<rect x="68" y="95.39999999999999" width="22" height="4.4" rx="0.4" fill="#d9e3f3" stroke="#1a1a1a" stroke-width="0.167" stroke-linejoin="round" stroke-linecap="round"/>
+<line x1="90" y1="97.6" x2="96" y2="97.6" stroke="#1a1a1a" stroke-width="0.233"/>
+<rect x="96" y="96.1" width="12" height="3.0" rx="0.3" fill="#fff" stroke="#1a1a1a" stroke-width="0.200" stroke-linejoin="round" stroke-linecap="round"/>
+<line x1="108" y1="97.6" x2="118.0" y2="97.6" stroke="#1a1a1a" stroke-width="0.233"/>
+<line x1="118.0" y1="79.8" x2="118.0" y2="97.6" stroke="#1a1a1a" stroke-width="0.300"/>
+<circle cx="118.0" cy="79.8" r="0.7" fill="#1a1a1a" stroke="#1a1a1a" stroke-width="0.133" stroke-linejoin="round" stroke-linecap="round"/>
 </g>
-<text x="30.0" y="249.8" font-size="12" fill="#1a1a1a" text-anchor="start" font-weight="700">A   Adapter</text>
-<text x="30.0" y="269.0" font-size="10.5" fill="#6b6b6b" text-anchor="start" font-weight="400">Mini-USB to USB-C adapter plugs</text>
-<text x="30.0" y="285.8" font-size="10.5" fill="#6b6b6b" text-anchor="start" font-weight="400">into the socket. No soldering.</text>
-<text x="318.0" y="249.8" font-size="12" fill="#1a1a1a" text-anchor="start" font-weight="700">B   Re-solder</text>
-<text x="318.0" y="269.0" font-size="10.5" fill="#6b6b6b" text-anchor="start" font-weight="400">Mini-B removed, USB-C breakout over</text>
-<text x="318.0" y="285.8" font-size="10.5" fill="#6b6b6b" text-anchor="start" font-weight="400">the tab, wired to the old pads.</text>
-<text x="606.0" y="249.8" font-size="12" fill="#1a1a1a" text-anchor="start" font-weight="700">C   Replace the board</text>
-<text x="606.0" y="269.0" font-size="10.5" fill="#6b6b6b" text-anchor="start" font-weight="400">Same outline, USB-C receptacle</text>
-<text x="606.0" y="285.8" font-size="10.5" fill="#6b6b6b" text-anchor="start" font-weight="400">in place of the Mini-B.</text>
-<text x="30.0" y="321.8" font-size="12" fill="#1a1a1a" text-anchor="start" font-weight="700">Option B wiring</text>
-<text x="42.0" y="353.0" font-size="10.5" fill="#6b6b6b" text-anchor="start" font-weight="400">Mini-B pads (old)</text>
-<text x="438.0" y="353.0" font-size="10.5" fill="#6b6b6b" text-anchor="start" font-weight="400">USB-C breakout pads</text>
-<text x="54.0" y="386.0" font-size="11" fill="#1a1a1a" text-anchor="start" font-weight="400">1  VBUS</text>
-<text x="450.0" y="386.0" font-size="11" fill="#1a1a1a" text-anchor="start" font-weight="400">A4  B4  A9  B9</text>
-<text x="54.0" y="423.2" font-size="11" fill="#1a1a1a" text-anchor="start" font-weight="400">2  D-</text>
-<text x="450.0" y="423.2" font-size="11" fill="#1a1a1a" text-anchor="start" font-weight="400">A7  B7</text>
-<text x="54.0" y="460.4" font-size="11" fill="#1a1a1a" text-anchor="start" font-weight="400">3  D+</text>
-<text x="450.0" y="460.4" font-size="11" fill="#1a1a1a" text-anchor="start" font-weight="400">A6  B6</text>
-<text x="54.0" y="497.6" font-size="11" fill="#1a1a1a" text-anchor="start" font-weight="400">4  ID</text>
-<text x="324.0" y="497.6" font-size="11" fill="#6b6b6b" text-anchor="start" font-weight="400">not connected</text>
-<text x="54.0" y="534.8" font-size="11" fill="#1a1a1a" text-anchor="start" font-weight="400">5  GND</text>
-<text x="450.0" y="534.8" font-size="11" fill="#1a1a1a" text-anchor="start" font-weight="400">A1  B1  A12  B12</text>
-<text x="450.0" y="596.0" font-size="11" fill="#1a1a1a" text-anchor="start" font-weight="400">A5  CC1</text>
-<text x="642.0" y="576.2" font-size="10.5" fill="#6b6b6b" text-anchor="middle" font-weight="400">5.1 kOhm</text>
-<text x="450.0" y="633.2" font-size="11" fill="#1a1a1a" text-anchor="start" font-weight="400">B5  CC2</text>
-<text x="642.0" y="613.4" font-size="10.5" fill="#6b6b6b" text-anchor="middle" font-weight="400">5.1 kOhm</text>
-<text x="753.0" y="534.8" font-size="11" fill="#1a1a1a" text-anchor="start" font-weight="400">GND</text>
+<text x="30.0" y="254.0" font-size="12" fill="#1a1a1a" text-anchor="start" font-weight="700">A   Adapter</text>
+<text x="30.0" y="273.2" font-size="10.5" fill="#6b6b6b" text-anchor="start" font-weight="400">Mini-USB to USB-C adapter plugs</text>
+<text x="30.0" y="290.0" font-size="10.5" fill="#6b6b6b" text-anchor="start" font-weight="400">into the socket. No soldering.</text>
+<text x="318.0" y="254.0" font-size="12" fill="#1a1a1a" text-anchor="start" font-weight="700">B   Re-solder</text>
+<text x="318.0" y="273.2" font-size="10.5" fill="#6b6b6b" text-anchor="start" font-weight="400">Mini-B removed, USB-C breakout over</text>
+<text x="318.0" y="290.0" font-size="10.5" fill="#6b6b6b" text-anchor="start" font-weight="400">the tab, wired to the old pads.</text>
+<text x="606.0" y="254.0" font-size="12" fill="#1a1a1a" text-anchor="start" font-weight="700">C   Replace the board</text>
+<text x="606.0" y="273.2" font-size="10.5" fill="#6b6b6b" text-anchor="start" font-weight="400">New board, same outline, holes,</text>
+<text x="606.0" y="290.0" font-size="10.5" fill="#6b6b6b" text-anchor="start" font-weight="400">switches and header, with USB-C.</text>
+<text x="30.0" y="326.0" font-size="12" fill="#1a1a1a" text-anchor="start" font-weight="700">Option B wiring</text>
+<text x="42.0" y="357.2" font-size="10.5" fill="#6b6b6b" text-anchor="start" font-weight="400">Mini-B pads (old)</text>
+<text x="438.0" y="357.2" font-size="10.5" fill="#6b6b6b" text-anchor="start" font-weight="400">USB-C breakout pads</text>
+<text x="54.0" y="390.2" font-size="11" fill="#1a1a1a" text-anchor="start" font-weight="400">1  VBUS</text>
+<text x="450.0" y="390.2" font-size="11" fill="#1a1a1a" text-anchor="start" font-weight="400">A4  B4  A9  B9</text>
+<text x="54.0" y="427.4" font-size="11" fill="#1a1a1a" text-anchor="start" font-weight="400">2  D-</text>
+<text x="450.0" y="427.4" font-size="11" fill="#1a1a1a" text-anchor="start" font-weight="400">A7  B7</text>
+<text x="54.0" y="464.6" font-size="11" fill="#1a1a1a" text-anchor="start" font-weight="400">3  D+</text>
+<text x="450.0" y="464.6" font-size="11" fill="#1a1a1a" text-anchor="start" font-weight="400">A6  B6</text>
+<text x="54.0" y="501.8" font-size="11" fill="#1a1a1a" text-anchor="start" font-weight="400">4  ID</text>
+<text x="324.0" y="501.8" font-size="11" fill="#6b6b6b" text-anchor="start" font-weight="400">not connected</text>
+<text x="54.0" y="539.0" font-size="11" fill="#1a1a1a" text-anchor="start" font-weight="400">5  GND</text>
+<text x="450.0" y="539.0" font-size="11" fill="#1a1a1a" text-anchor="start" font-weight="400">A1  B1  A12  B12</text>
+<text x="450.0" y="600.2" font-size="11" fill="#1a1a1a" text-anchor="start" font-weight="400">A5  CC1</text>
+<text x="642.0" y="580.4" font-size="10.5" fill="#6b6b6b" text-anchor="middle" font-weight="400">5.1 kOhm</text>
+<text x="450.0" y="645.8" font-size="11" fill="#1a1a1a" text-anchor="start" font-weight="400">B5  CC2</text>
+<text x="642.0" y="626.0" font-size="10.5" fill="#6b6b6b" text-anchor="middle" font-weight="400">5.1 kOhm</text>
+<text x="753.0" y="539.0" font-size="11" fill="#1a1a1a" text-anchor="start" font-weight="400">GND</text>
 <text x="870" y="60" font-size="13" font-weight="700" fill="#1a1a1a">USB-C options</text>
-<text x="870" y="86" font-size="12" fill="#6b6b6b">A: the adapter's USB-C opening is 8.9 x 3.2 mm.</text>
+<text x="870" y="86" font-size="12" fill="#6b6b6b">A: the USB-C opening is 8.3 x 2.6 mm.</text>
 <text x="870" y="104" font-size="12" fill="#6b6b6b">B: a USB-C breakout wired to the old pads.</text>
-<text x="870" y="122" font-size="12" fill="#6b6b6b">C: a USB-C receptacle, 8.9 mm wide.</text>
-<text x="870" y="140" font-size="12" fill="#6b6b6b">Confirm pin 1 with a meter before soldering.</text>
+<text x="870" y="122" font-size="12" fill="#6b6b6b">C: a USB-C receptacle, about 8.9 mm wide.</text>
+<text x="870" y="140" font-size="12" fill="#6b6b6b">Adapter and breakout sizes are typical, not</text>
+<text x="870" y="158" font-size="12" fill="#6b6b6b">measured. Confirm pin 1 with a meter first.</text>
 </svg>

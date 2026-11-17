@@ -88,12 +88,12 @@
 <line x1="350" y1="262" x2="230" y2="261" stroke="#e0109a" stroke-width="1.2"/><circle cx="230" cy="261" r="1.8" fill="#e0109a"/><circle cx="350" cy="262" r="10" fill="#e0109a"/><text x="350" y="266" text-anchor="middle" font-size="11" font-weight="700" fill="#fff">8</text>
 <line x1="190" y1="356" x2="190" y2="283" stroke="#e0109a" stroke-width="1.2"/><circle cx="190" cy="283" r="1.8" fill="#e0109a"/><circle cx="190" cy="356" r="10" fill="#e0109a"/><text x="190" y="360" text-anchor="middle" font-size="11" font-weight="700" fill="#fff">9</text>
 <text x="390" y="90" font-size="13" font-weight="700" fill="#1a1a1a">The play screen</text>
-<text x="390" y="112" font-size="12.5" fill="#1a1a1a"><tspan font-weight="700" fill="#e0109a">1</tspan><tspan dx="8" font-weight="700">Time</tspan><tspan dx="5">played and left</tspan></text>
-<text x="390" y="131" font-size="12.5" fill="#1a1a1a"><tspan font-weight="700" fill="#e0109a">2</tspan><tspan dx="8" font-weight="700">Level meters</tspan><tspan dx="5">ch1 / ch2</tspan></text>
-<text x="390" y="150" font-size="12.5" fill="#1a1a1a"><tspan font-weight="700" fill="#e0109a">3</tspan><tspan dx="8" font-weight="700">Tempo change</tspan><tspan dx="5"></tspan></text>
-<text x="390" y="169" font-size="12.5" fill="#1a1a1a"><tspan font-weight="700" fill="#e0109a">4</tspan><tspan dx="8" font-weight="700">BPM</tspan><tspan dx="5">this / other channel</tspan></text>
-<text x="390" y="188" font-size="12.5" fill="#1a1a1a"><tspan font-weight="700" fill="#e0109a">5</tspan><tspan dx="8" font-weight="700">Playback</tspan><tspan dx="5">play, pause, reverse, loop</tspan></text>
-<text x="390" y="207" font-size="12.5" fill="#1a1a1a"><tspan font-weight="700" fill="#e0109a">6</tspan><tspan dx="8" font-weight="700">Effects on</tspan><tspan dx="5"></tspan></text>
-<text x="390" y="226" font-size="12.5" fill="#1a1a1a"><tspan font-weight="700" fill="#e0109a">7</tspan><tspan dx="8" font-weight="700">Track</tspan><tspan dx="5">artist, title, album</tspan></text>
-<text x="390" y="245" font-size="12.5" fill="#1a1a1a"><tspan font-weight="700" fill="#e0109a">8</tspan><tspan dx="8" font-weight="700">Beat graph</tspan><tspan dx="5">ch1 and ch2</tspan></text>
-<text x="390" y="264" font-size="12.5" fill="#1a1a1a"><tspan font-weight="700" fill="#e0109a">9</tspan><tspan dx="8" font-weight="700">Battery</tspan><tspan dx="5"></tspan></text></svg>
+<text x="390" y="112" font-size="12.5" fill="#1a1a1a"><tspan font-weight="700" fill="#e0109a">1</tspan><tspan x="412" font-weight="700">Time</tspan><tspan dx="6" fill="#6b6b6b">played and left</tspan></text>
+<text x="390" y="131" font-size="12.5" fill="#1a1a1a"><tspan font-weight="700" fill="#e0109a">2</tspan><tspan x="412" font-weight="700">Level meters</tspan><tspan dx="6" fill="#6b6b6b">ch1 / ch2</tspan></text>
+<text x="390" y="150" font-size="12.5" fill="#1a1a1a"><tspan font-weight="700" fill="#e0109a">3</tspan><tspan x="412" font-weight="700">Tempo change</tspan><tspan dx="6" fill="#6b6b6b"></tspan></text>
+<text x="390" y="169" font-size="12.5" fill="#1a1a1a"><tspan font-weight="700" fill="#e0109a">4</tspan><tspan x="412" font-weight="700">BPM</tspan><tspan dx="6" fill="#6b6b6b">this / other channel</tspan></text>
+<text x="390" y="188" font-size="12.5" fill="#1a1a1a"><tspan font-weight="700" fill="#e0109a">5</tspan><tspan x="412" font-weight="700">Playback</tspan><tspan dx="6" fill="#6b6b6b">play, pause, reverse, loop</tspan></text>
+<text x="390" y="207" font-size="12.5" fill="#1a1a1a"><tspan font-weight="700" fill="#e0109a">6</tspan><tspan x="412" font-weight="700">Effects on</tspan><tspan dx="6" fill="#6b6b6b"></tspan></text>
+<text x="390" y="226" font-size="12.5" fill="#1a1a1a"><tspan font-weight="700" fill="#e0109a">7</tspan><tspan x="412" font-weight="700">Track</tspan><tspan dx="6" fill="#6b6b6b">artist, title, album</tspan></text>
+<text x="390" y="245" font-size="12.5" fill="#1a1a1a"><tspan font-weight="700" fill="#e0109a">8</tspan><tspan x="412" font-weight="700">Beat graph</tspan><tspan dx="6" fill="#6b6b6b">ch1 and ch2</tspan></text>
+<text x="390" y="264" font-size="12.5" fill="#1a1a1a"><tspan font-weight="700" fill="#e0109a">9</tspan><tspan x="412" font-weight="700">Battery</tspan><tspan dx="6" fill="#6b6b6b"></tspan></text></svg>

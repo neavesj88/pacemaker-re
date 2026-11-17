@@ -13,6 +13,8 @@ drawn symmetric from the clean right side and bottom lobe. The back cover has th
 USB board is placed so its 2 x 5 header lands on the small board's socket, and the audio board so
 its pin row lands on the audio socket (the cover is mirrored left to right when opened like a book).
 The audio board's jack-side edge is hidden under the strap in the photos, so it is drawn dashed.
+The 1 x 10 audio socket is 21 mm long in the rectified photo (10 pins at 2.0 mm pitch plus the housing),
+which also fixes where the cover's pin row sits.
 """
 import os
 
@@ -42,8 +44,8 @@ CELL = c("#d4d4d4")
 LIGHT = c("#f2f2f2")
 
 YO = 7.0              # mm of space above the case for the JACK END label
-MAIN_X = 80.0         # mm: the main assembly's left edge of the rectified frame (px 33.5)
 COVER_X = 0.0
+MAIN_X = 80.0        # mm: the main assembly's left edge of the rectified frame (px 33.5)
 
 
 def nf(k):
@@ -174,7 +176,9 @@ def main(f):
     # top flex and its connector, 1 x 10 audio socket
     v.poly([(388, 372), (428, 372), (428, 436), (498, 436), (498, 462), (388, 462)], sw=1.0, fill=COPPER)
     zif(v, 496, 404, 534, 492)
-    v.rect(324, 503, 504, 527, sw=1.1, fill=DARK)
+    v.rect(324, 503, 534, 527, sw=1.1, fill=DARK)
+    for i in range(10):
+        v.box(429 + (i - 4.5) * 20 - 3, 512, 6, 6, sw=0.5, fill=LIGHT)
     # microSD adapter plate, storage ZIF and ribbon
     v.rect(154, 553, 630, 806, r=0.5, sw=1.3, fill=DARK)
     v.rect(282, 530, 504, 558, sw=1.0, fill=COPPER)
@@ -186,13 +190,19 @@ def main(f):
         for dy in (50, 130):
             v.box(x0 + 52, 628 + dy, 40, 4, sw=0.9, fill=DARK)
     f.text(*v.p(176, 622), "TF2", size=9, anchor="start", colour="#bbb")
-    f.text(*v.p(608, 622), "TF1", size=9, anchor="start", colour="#bbb")
+    f.text(*v.p(582, 622), "TF1", size=9, anchor="start", colour="#bbb")
     for y0, y1 in ((762, 798), (818, 858), (876, 914), (930, 966)):
         v.rect(126, y0, 144, y1, r=0.2, sw=0.9, fill=COPPER)
     # memory and main chip with its sticker
     v.rect(154, 822, 256, 922, r=0.3, sw=1.1, fill="#555")
     v.rect(304, 806, 452, 910, r=0.3, sw=1.1, fill=DARK)
     v.circle(380, 850, 5.0, sw=1.0, fill="#fff")
+    # the sticker's red dots (19, spiral pattern as on the photo)
+    import math
+    for k in range(19):
+        a = k * 2.39996
+        rr = 4.0 * math.sqrt((k + 0.5) / 19) * 10
+        v.circle(380 + rr * math.cos(a) * 1.0, 850 + rr * math.sin(a), 0.55, sw=0.0, fill=c("#e0525a"))
     # display ZIF, its ribbon and the display window
     zif(v, 288, 954, 508, 992)
     v.rect(294, 992, 506, 1052, sw=1.0, fill=COPPER)
@@ -228,6 +238,9 @@ def main(f):
         f.items.append(f'<path d="M{x0:.2f} {y0:.2f} C{x0:.2f} {y0 + 3:.2f} {x1:.2f} {y1 - 3:.2f} {x1:.2f} {y1:.2f} '
                        f'S{x2 + 3:.2f} {y2 - 1:.2f} {x2:.2f} {y2:.2f}" fill="none" stroke="{col}" '
                        f'stroke-width="{2.2 / f.s:.3f}" stroke-linecap="round"/>')
+    # gold test/fiducial pads on the board, read off the rectified photo
+    for x0, y0, x1, y1 in ((306, 375, 326, 395), (130, 500, 158, 527), (634, 500, 662, 528), (649, 1107, 674, 1137)):
+        v.rect(x0, y0, x1, y1, r=0.2, sw=0.9, fill=GOLD)
     for X, Y in ((208, 462), (586, 464), (134, 656), (585, 854), (232, 954), (158, 1300), (636, 1302)):
         screw(v, X, Y)
     return v
@@ -277,7 +290,7 @@ def audio_board(v, cx=420):
     """The audio board. Seen from inside the cover with the jack end up, which is the photo turned half a
     turn (the cover swings open on its jack-end strap), so it is drawn without the left-right mirror the
     rest of the cover gets from the book-style opening. Board outline and screws are symmetric about the
-    case axis (hx); the 1 x 10 pin row is centred 15.5 px left of the axis, mirroring the socket on the
+    case axis (hx); the 1 x 10 pin row is centred 30.5 px left of the axis, mirroring the socket on the
     main assembly. Jack-side edge hidden under the strap (dashed)."""
     v.mirror = False
     hx = AX
@@ -291,11 +304,14 @@ def audio_board(v, cx=420):
     for x in (-hw + 27, hw - 27):
         v.circle(hx + x, bot - 35, 2.2, sw=1.0, fill="#fff")
         v.circle(hx + x, bot - 35, 1.3, sw=1.3, fill=GOLD)
-    v.box(cx + 61, bot - 98, 50, 80, r=0.3, sw=1.3, fill=DARK)
-    v.box(cx - 35, bot - 85, 80, 60, r=0.3, sw=1.3, fill="#fff")
+    # three parts along the board in the photo: black socket, white part, black socket (positions relative to the
+    # pin row, 1 mm of perspective uncertainty)
+    v.box(cx - 140, bot - 85, 57, 80, r=0.3, sw=1.3, fill=DARK)
+    v.box(cx - 36, bot - 85, 65, 60, r=0.3, sw=1.3, fill="#fff")
+    v.box(cx + 62, bot - 98, 52, 80, r=0.3, sw=1.3, fill=DARK)
     # pin row: 10 pins, 2.0 mm pitch, pointing to the USB end
     for i in range(10):
-        X = cx - 37 + (i - 4.5) * 20
+        X = cx - 52 + (i - 4.5) * 20
         v.box(X - 2.5, bot, 5, 45, sw=0.8, fill=DARK)
     v.mirror = True
 
@@ -310,7 +326,7 @@ def cover(f):
 
 
 def build():
-    f = Fig("Inside the Pacemaker: back cover opened out (left) and main assembly (right)", 152, 198, scale=5.0,
+    f = Fig("Inside the Pacemaker: back cover opened out and main assembly", 153, 198, scale=5.0,
             legend_title="Inside the unit")
     f.set_underlay(RECT, MAIN_X - 3.35, -18.9 + YO, 90, 215)
     vc = cover(f)
@@ -320,16 +336,17 @@ def build():
     for v, mid in ((vc, mid_c), (vm, mid_m)):
         f.text(mid, v.p(0, 203.5)[1] - 3.0, "JACK END", size=11, weight=700, colour=INK)
         f.text(mid, v.p(0, 1935)[1] + 5.0, "USB END", size=11, weight=700, colour=INK)
-    f.text(1.2, 193.5, "Back cover, opened out (inside view)", size=11, anchor="start")
+    f.text(COVER_X + 1.2, 193.5, "Back cover, opened out (inside view)", size=11, anchor="start")
     f.text(MAIN_X + 1.2, 193.5, "Main assembly, back cover off (seen from the back)", size=11, anchor="start")
-    # callouts: 1-6 and 9 on the main assembly (right column), 7-8 in the cover (left column)
-    f.callout(1, *vm.p(547, 700), "Storage", "microSD adapter, slots TF1/TF2", side="r")
-    f.callout(2, *vm.p(470, 580), "Storage ribbon (ZIF)", "ZIF, ribbon to the storage", side="r")
-    f.callout(3, *vm.p(480, 972), "Display ribbon (ZIF)", "ZIF, ribbon to the display", side="r")
-    f.callout(4, *vm.p(560, 1480), "Battery", "original about 48 x 30 mm", side="r")
+    # callouts: main assembly in the right column; cover boards 7 and 8 in the left column
+    f.callout(1, *vm.p(547, 700), "Replacement storage", "Sintech dual microSD adapter: card in TF1", side="r")
+    f.callout(2, *vm.p(470, 580), "Storage ribbon (ZIF)", "lift the latch before the ribbon", side="r")
+    f.callout(3, *vm.p(480, 972), "Display ribbon (ZIF)", "ribbon to the display, leave alone", side="r")
+    f.callout(4, *vm.p(560, 1480), "Battery", "original cell, about 48 x 30 mm", side="r")
     f.callout(5, *vm.p(672, 1521), "Battery plug", "white 2-pin, red and black wires", side="r")
     f.callout(6, *vm.p(455, 1684), "USB-board socket", "2 x 5, on the small board", side="r")
     f.callout(7, *vc.p(AX + 66, 1700), "USB board", "in the back cover, plugs into 6", side="l")
-    f.callout(8, *vc.p(AX - 60, 420), "Audio board", "in the cover: power, line out, phones", side="l")
-    f.callout(9, *vm.p(586, 464), "Screw positions", "PCB screws, cover bosses", side="r")
+    f.callout(8, *vc.p(2 * AX - 360, 372), "Audio board", "in the cover: power, line out, phones", side="l")
+    f.callout(9, *vm.p(586, 464), "Main-board screws", "silver, 7 in all", side="r")
+    f.callout(10, *vm.p(626.5, 358), "Cover screw bosses", "brass inserts around the rim", side="r")
     return f

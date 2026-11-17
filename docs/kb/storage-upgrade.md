@@ -17,6 +17,8 @@ A microSD card on a 1.8-inch 40-pin ZIF adapter replaces the hard drive. Other o
 
 ## Tested parts
 
+![The original 1.8-inch drive and the microSD adapter](images/storage-parts.svg)
+
 - Adapter: Sintech microSD TF to 1.8-inch 40-pin ZIF CE, dual-slot, card in slot 1.
 - Card: 64 GB UHS Speed Class 3 (U3) microSD.
 
@@ -48,7 +50,7 @@ You also need a Revival firmware file (`.pfw`): see [Installing firmware with th
 
 - Fake or no-name cards. Test new cards with H2testw.
 - Cards above 128 GiB.
-- Two cards on a dual-slot adapter: they join as one disk.
+- Two cards on a dual-slot adapter: they join as one disk, and the adapter only recognises them if both are the same brand and capacity. Use one card, in slot 1 (TF1).
 - Pulling on the flat ribbon. A short replacement is hard to find.
 
 ## Replacing the drive
