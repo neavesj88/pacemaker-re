@@ -130,13 +130,8 @@
       const rs = (ev: PointerEvent) => {
         moved = true;
         const pos = base + mv.samples(ev.clientX - startX);
-        if (ev.altKey) {
-          // no snapping: resize against the unsnapped position
-          const keep = mixes.snap;
-          mixes.snap = "off";
-          mixes.resizeClip(clip.id, edge, pos, { live: true });
-          mixes.snap = keep;
-        } else mixes.resizeClip(clip.id, edge, pos, { live: true });
+        // Alt: no snapping at all (neither the other clips nor the cue's own grid)
+        mixes.resizeClip(clip.id, edge, pos, { live: true, free: ev.altKey });
       };
       track(rs, () => {});
     }

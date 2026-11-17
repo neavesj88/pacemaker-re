@@ -3,6 +3,7 @@
 // like the recipe settings are (try/catch-guarded: everything works without storage).
 import { DEFAULT_LIST_PREFS, mergeListPrefs, type ListPrefs } from "./mixlist";
 import { loadPref, savePref } from "$lib/state/prefStore";
+import type { CueSnap } from "$lib/state/mixedit";
 
 const LIST_KEY = "pm.mixes.list.v1";
 const TOOLS_KEY = "pm.mixes.tools.v1";
@@ -12,14 +13,34 @@ class EditSettings {
   /** Ask before deleting clips, tools or crossfades in the editor. Off by default: a delete there is
    *  undoable (Ctrl+Z, or Undo on the toast that names what went), and a prompt slows editing. */
   confirmDelete = $state(false);
+  /** Where a cue may sit: on the track's own beats (like the Pacemaker's cue), its bar lines, or anywhere. */
+  cueSnap = $state<CueSnap>("beat");
 
   constructor() {
-    this.confirmDelete = loadPref(EDIT_KEY, (raw) => ((raw as { confirmDelete?: unknown } | null)?.confirmDelete === true ? true : this.confirmDelete), () => this.confirmDelete);
+    loadPref(
+      EDIT_KEY,
+      (raw) => {
+        const r = (raw ?? {}) as { confirmDelete?: unknown; cueSnap?: unknown };
+        if (r.confirmDelete === true) this.confirmDelete = true;
+        if (r.cueSnap === "off" || r.cueSnap === "beat" || r.cueSnap === "bar") this.cueSnap = r.cueSnap;
+        return null;
+      },
+      () => null,
+    );
+  }
+
+  #save() {
+    savePref(EDIT_KEY, { confirmDelete: this.confirmDelete, cueSnap: this.cueSnap });
   }
 
   setConfirmDelete(on: boolean) {
     this.confirmDelete = on;
-    savePref(EDIT_KEY, { confirmDelete: on });
+    this.#save();
+  }
+
+  setCueSnap(v: CueSnap) {
+    this.cueSnap = v;
+    this.#save();
   }
 }
 

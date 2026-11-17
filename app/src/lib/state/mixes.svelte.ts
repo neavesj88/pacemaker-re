@@ -34,6 +34,7 @@ import { renderMixPreview, type PreviewGains } from "$lib/api/export";
 import { tempoPrefs } from "$lib/views/mixes/tempoPrefs.svelte";
 import { snapPrefs } from "$lib/views/mixes/snapPrefs.svelte";
 import { recipePrefs } from "$lib/views/mixes/recipePrefs.svelte";
+import { editPrefs } from "$lib/views/mixes/listPrefs.svelte";
 import { followTransitions, pruneOrphans } from "./transitionFollow";
 import { snapModeOf } from "./snapPrefs";
 import { sections } from "./sections.svelte";
@@ -466,10 +467,26 @@ class Mixes {
     if (!opts.live) this.endGesture();
   }
 
-  /** Drag a clip edge to timeline position `pos`. */
-  resizeClip(id: string, edge: "left" | "right", pos: number, opts: { live?: boolean } = {}) {
-    this.edit("Trim clip", (d) => E.resizeClip(d, id, edge, pos, this.#snapOpts()), { group: `trim:${id}:${edge}` });
+  /** Drag a clip edge to timeline position `pos`. The left edge is the cue: it snaps to the track's
+   * own grid per the cue setting. `free` (Alt held) snaps to nothing. */
+  resizeClip(id: string, edge: "left" | "right", pos: number, opts: { live?: boolean; free?: boolean } = {}) {
+    const snap = opts.free ? { ...this.#snapOpts(), mode: "off" as const } : this.#snapOpts();
+    const cue = opts.free ? "off" : editPrefs.cueSnap;
+    this.edit("Trim clip", (d) => E.resizeClip(d, id, edge, pos, snap, cue), { group: `trim:${id}:${edge}` });
     if (!opts.live) this.endGesture();
+  }
+
+  /** Puts a clip's cue on the nearest beat (or bar line) of its own grid. */
+  snapCue(id: string) {
+    const grain = editPrefs.cueSnap === "bar" ? "bar" : "beat";
+    const c = this.doc ? E.clipOf(this.doc, id) : null;
+    if (c) this.edit("Snap cue", (d) => E.setCue(d, id, c.visibleStart, grain));
+  }
+
+  /** Moves a clip's cue one beat (or bar, per the cue setting) later or earlier on its own grid. */
+  stepCue(id: string, dir: 1 | -1) {
+    const grain = editPrefs.cueSnap === "bar" ? "bar" : "beat";
+    this.edit("Move cue", (d) => E.stepCue(d, id, dir, grain), { group: `cue:${id}` });
   }
 
   setChannel(id: string, channel: number) {
@@ -624,14 +641,22 @@ class Mixes {
       if (hd.held) {
         throw new Error(`Not matched: ${choice.factor === 2 ? "double" : "half"} time is ${stretchText(choice.stretchPct)}, over your ${tempoPrefs.value.warnPct}% limit.`);
       }
-      this.edit("Match tempo", () => hd.doc);
+      this.edit("Match tempo", () => this.#cueOnBeat(hd.doc, clipId));
       return { ...s, targetBpm: choice.playsAt, speed: choice.speed, notes: [...s.notes, `Matched at ${choice.factor === 2 ? "double" : "half"} time (${stretchText(choice.stretchPct)}); the beats were not re-aligned`] };
     }
     if (c && s.speed > 0 && exceeds(s.speed, tempoPrefs.value.warnPct)) {
       throw new Error(`Not matched: ${stretchText((s.speed - 1) * 100)} stretch is over your ${tempoPrefs.value.warnPct}% limit.`);
     }
-    this.edit("Beat-match", (d) => E.applyBeatmatch(d, s));
+    this.edit("Beat-match", (d) => this.#cueOnBeat(E.applyBeatmatch(d, s), clipId));
     return s;
+  }
+
+  /** After a beat-match the beats line up but a cue cut between beats would still start the track
+   * mid-beat: with cue snapping on, the cue moves to the track's nearest beat (bar line). */
+  #cueOnBeat(doc: MixDoc, clipId: string): MixDoc {
+    const grain = editPrefs.cueSnap;
+    const c = E.clipOf(doc, clipId);
+    return grain === "off" || !c ? doc : E.setCue(doc, clipId, c.visibleStart, grain);
   }
 
   /** Plays a clip at `target` BPM (or double / half of it, whichever stretches it least). A match

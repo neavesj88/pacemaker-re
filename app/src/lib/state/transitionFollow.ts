@@ -33,6 +33,9 @@ import { beatMap, loopRun, type OnMove } from "./transitionRecipes.ts";
 
 type Win = { start: number; length: number };
 
+/** What the clip is called on screen (ClipBlock): its track title; the stored clipName is a generic "AudioClip". */
+const nameOf = (c: Clip) => c.track?.title || c.fuzzyId?.title || "a clip";
+
 const samePos = (a: number, b: number) => Math.abs(a - b) <= 1;
 
 /** A clip changed where or how long it is heard, or how fast it plays. */
@@ -87,7 +90,7 @@ export function pruneOrphans(base: MixDoc, doc: MixDoc): { doc: MixDoc; removed:
       const { members, loops } = membersOf(f0, claimed);
       for (const { p } of members) drop.add(p.id);
       for (const p of loops) drop.add(p.id);
-      removed.push(`the crossfade from "${f0.from.clipName || "a clip"}" into "${f0.to.clipName || "a clip"}"` + (members.length + loops.length > 0 ? ` and its ${members.length + loops.length} tool${members.length + loops.length === 1 ? "" : "s"}` : ""));
+      removed.push(`the crossfade from "${nameOf(f0.from)}" into "${nameOf(f0.to)}"` + (members.length + loops.length > 0 ? ` and its ${members.length + loops.length} tool${members.length + loops.length === 1 ? "" : "s"}` : ""));
     } else removed.push(`the crossfade "${t.name}"`);
   }
   const gone = new Set(orphans.map((t) => t.id));

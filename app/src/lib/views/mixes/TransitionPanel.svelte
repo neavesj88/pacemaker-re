@@ -57,7 +57,7 @@
 <div class="field"><span class="lbl">Starts</span><span class="val">bar {barBeat(at.start, bpm).bar} · {clock(at.start / SR)}</span></div>
 <div class="field"><span class="lbl">Length</span><span class="val">{bars.toFixed(bars % 1 === 0 ? 0 : 1)} bars · {clock(at.length / SR)}</span></div>
 {#if !heard}
-  <div class="muted small">The clips do not overlap here, so this crossfade does nothing. Move a clip or delete it.</div>
+  <div class="muted small">Clips don't overlap: this crossfade does nothing.</div>
 {:else if at.clamped}
   <div class="muted small">
     Reaches past the shared audio (stored: {(t.length / SR).toFixed(1)} s). Playback and export cut it to the overlap.

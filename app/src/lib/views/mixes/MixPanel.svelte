@@ -71,7 +71,7 @@
   <input type="checkbox" checked={toolPrefs.showTrans} onchange={(e) => toolPrefs.setShowTrans(e.currentTarget.checked)} />
   Offer the Trans tool when adding a tool
 </label>
-<div class="muted small">Untested on a real {session.isComputer ? "Pacemaker" : "device"}. Off by default; only hides the menu entry.</div>
+<div class="muted small">Untested on a real Pacemaker.</div>
 
 {#if mixes.problems.length > 0}
   <h4>Cannot save yet</h4>
@@ -81,7 +81,7 @@
     </ul>
   </div>
 {:else if mixes.dirty}
-  <div class="muted small" style="margin-top: 10px">Unsaved changes. Ctrl+S saves.</div>
+  <div class="muted small" style="margin-top: 10px">Unsaved. Ctrl+S saves.</div>
 {/if}
 
 <div class="buttons">
@@ -99,9 +99,6 @@
     >{/if}
 </div>
 
-<p class="note">
-  Click a clip, tool or crossfade to edit it. Drag clips along the bar. Alt = move freely.
-</p>
 
 <style>
   .small {

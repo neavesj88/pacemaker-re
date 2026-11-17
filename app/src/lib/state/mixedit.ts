@@ -540,10 +540,13 @@ export function freeChannel(doc: MixDoc, from: number, to: number, exclude: stri
 
 /** Trims a clip from an edge to timeline position `pos` (snapped like a move): the audible
  * start / end moves, the audio and everything on it stay where they are. Cannot reveal audio
- * that does not exist (before the file's start or after its end) or shrink below `MIN_LENGTH`. */
-export function resizeClip(doc: MixDoc, id: string, edge: "left" | "right", pos: number, opts?: SnapOptions): MixDoc {
+ * that does not exist (before the file's start or after its end) or shrink below `MIN_LENGTH`. With `cue`
+ * on, the left edge (the cue) snaps to the clip's own grid instead of the other clips' (`setCue`). */
+export function resizeClip(doc: MixDoc, id: string, edge: "left" | "right", pos: number, opts?: SnapOptions, cue: CueSnap = "off"): MixDoc {
   const c = clipOf(doc, id);
   if (!c) return doc;
+  // the left edge is the cue: with cue snapping on it lands on the track's own grid, not the other clips'
+  if (edge === "left" && cue !== "off" && hasGrid(c)) return setCue(doc, id, pos, cue);
   const targets = opts && opts.mode !== "off" ? snapTargets(doc, opts.mode, [id, ...(opts.exclude ?? [])], [pos - SR, pos + SR], opts.sections) : [];
   const p = opts ? snap(pos, targets, opts.threshold) : pos;
   if (edge === "left") {
@@ -552,6 +555,58 @@ export function resizeClip(doc: MixDoc, id: string, edge: "left" | "right", pos:
   }
   const v = Math.max(Math.min(p, c.start + c.length), c.visibleStart + MIN_LENGTH);
   return replaceClip(doc, id, (x) => ({ ...x, trimEnd: x.start + x.length - v }));
+}
+
+// ---- cue points ------------------------------------------------------------------------------
+// The cue is the clip's audible start (`trimStart`). Like the cue on the Pacemaker itself it can
+// snap to the track's own beat grid ("beat", or "bar" for downbeats), so a cut never starts the
+// track between beats.
+
+export type CueSnap = "off" | "beat" | "bar";
+
+/** The clip's own grid lines a cue may sit on (timeline samples): its beats, or its downbeats for
+ * "bar", from the first audio up to the shortest length the clip may keep. */
+export function cueTargets(c: Clip, grain: Exclude<CueSnap, "off">): number[] {
+  const last = c.start + c.length - c.trimEnd - MIN_LENGTH;
+  return clipBeatPoints(c)
+    .filter((b) => (grain === "beat" || b.kind !== "beat") && b.time >= c.start && b.time <= last)
+    .map((b) => b.time)
+    .sort((a, b) => a - b);
+}
+
+/** Where a cue asked for at timeline `pos` goes: the nearest grid line, or `pos` itself when snapping
+ * is off or the track has no grid. */
+export function snapCue(c: Clip, pos: number, grain: CueSnap): number {
+  if (grain === "off") return pos;
+  const t = cueTargets(c, grain);
+  const i = nearestIndex(t, pos);
+  return i < 0 ? pos : t[i];
+}
+
+/** Sets clip `id`'s cue to timeline `pos` (snapped per `grain`), kept inside the audio. */
+export function setCue(doc: MixDoc, id: string, pos: number, grain: CueSnap): MixDoc {
+  const c = clipOf(doc, id);
+  if (!c) return doc;
+  const v = Math.round(Math.min(Math.max(snapCue(c, pos, grain), c.start), c.visibleEnd - MIN_LENGTH));
+  return v === c.visibleStart ? doc : replaceClip(doc, id, (x) => ({ ...x, trimStart: v - x.start }));
+}
+
+/** How far the cue is from the nearest beat of the track (samples, + = after it); null without a grid. */
+export function cueOffBeat(c: Clip): number | null {
+  const t = cueTargets(c, "beat");
+  const i = nearestIndex(t, c.visibleStart);
+  return i < 0 ? null : c.visibleStart - t[i];
+}
+
+/** Moves the cue to the next (`dir` 1) or previous (-1) beat, or bar line for "bar", of the track's
+ * grid. A cue between lines goes to the line on that side. Unchanged at either end or without a grid. */
+export function stepCue(doc: MixDoc, id: string, dir: 1 | -1, grain: Exclude<CueSnap, "off">): MixDoc {
+  const c = clipOf(doc, id);
+  if (!c) return doc;
+  const t = cueTargets(c, grain);
+  const at = c.visibleStart;
+  const to = dir > 0 ? t.find((x) => x > at + 1) : [...t].reverse().find((x) => x < at - 1);
+  return to === undefined ? doc : setCue(doc, id, to, "off");
 }
 
 /** The most a clip added with both decks busy may lie over another clip, as a fraction of its own

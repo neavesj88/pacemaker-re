@@ -9,12 +9,13 @@
   import { addProcessTo, autoTransition, beatAlign, beatmatch, clipTitle, duplicateSelection, neighbours, toolChoices } from "./actions";
   import BpmField from "./BpmField.svelte";
   import { barBeat, clock, fmtSemis, keyToEnv, SR } from "./layout";
-  import { toolPrefs } from "./listPrefs.svelte";
+  import { editPrefs, toolPrefs } from "./listPrefs.svelte";
   import RecipeSettings from "./RecipeSettings.svelte";
   import { recipePrefs } from "./recipePrefs.svelte";
   import { tempoPrefs } from "./tempoPrefs.svelte";
   import { lengthLabel, recipeDef, requestedBars } from "$lib/state/transitionRecipes";
   import { mv, type EnvOverlay } from "./view.svelte";
+  import { editGrid } from "$lib/views/tracks/trackActions";
 
   let { clip, ondelete }: { clip: Clip; ondelete: () => void } = $props();
 
@@ -30,6 +31,13 @@
   const gain = $derived(clip.gain[0]?.value ?? 0);
   const keyEnv = $derived(keyToEnv(clip.key));
   const warnPct = $derived(tempoPrefs.value.warnPct);
+  const grid = $derived(E.hasGrid(clip));
+  const offBeat = $derived(E.cueOffBeat(clip));
+  const cueGrain = $derived(editPrefs.cueSnap === "bar" ? "bar" : "beat");
+  function openGrid(e: MouseEvent) {
+    e.preventDefault();
+    void editGrid(clip.trackId);
+  }
   const tooMuch = $derived(exceeds(speed, warnPct));
   /** The tempo of the clip before this one where it ends: what "Sync to previous clip" matches. */
   const prevBpm = $derived(nb.prev ? E.effectiveBpm(nb.prev, nb.prev.length - nb.prev.trimEnd) : null);
@@ -220,11 +228,25 @@
 <h4>Position</h4>
 <div class="field"><span class="lbl">Starts</span><span class="val">bar {pos.bar} · beat {pos.beat} · {clock(clip.visibleStartSec)}</span></div>
 <div class="field"><span class="lbl">Audible</span><span class="val">{clock((clip.visibleEnd - clip.visibleStart) / SR)}</span></div>
-{#if clip.trimStart > 0 || clip.trimEnd > 0}
-  <div class="muted small">
-    Trimmed: {clock(clip.trimStart / SR)} cue{clip.trimEnd > 0 ? `, ${clock(clip.trimEnd / SR)} cut from the end` : ""}.
-  </div>
-{/if}
+<div class="field">
+  <span class="lbl">Cue</span>
+  <span class="val"
+    >{clock(clip.trimStart / SR)}{#if offBeat !== null}{#if Math.abs(offBeat) <= SR * 0.002}<span class="onbeat">&nbsp;· on beat</span>{:else}<span class="offbeat">&nbsp;· {offBeat > 0 ? "+" : "−"}{Math.round(Math.abs(offBeat) / SR * 1000)} ms off beat</span>{/if}{/if}</span
+  >
+</div>
+<div class="buttons">
+  <button disabled={!grid} onclick={() => mixes.stepCue(clip.id, -1)} title="Cue one {cueGrain} earlier">◀ {cueGrain}</button>
+  <button disabled={!grid} onclick={() => mixes.stepCue(clip.id, 1)} title="Cue one {cueGrain} later">{cueGrain} ▶</button>
+  <button disabled={!grid || (offBeat !== null && Math.abs(offBeat) <= SR * 0.002)} onclick={() => mixes.snapCue(clip.id)} title="Cue to the nearest {cueGrain}">Snap to {cueGrain}</button>
+  <select aria-label="Cue snap" title="Dragging the start edge snaps the cue to" value={editPrefs.cueSnap} onchange={(e) => editPrefs.setCueSnap(e.currentTarget.value as E.CueSnap)}>
+    <option value="beat">Snap: beat</option>
+    <option value="bar">Snap: bar</option>
+    <option value="off">Snap: off</option>
+  </select>
+</div>
+{#if !grid}<div class="muted small">No beat grid. <a href="#/grid" onclick={openGrid}>Analyse or fix it</a></div>
+{:else}<div class="small"><a href="#/grid" onclick={openGrid}>Fix the beat grid…</a></div>{/if}
+{#if clip.trimEnd > 0}<div class="muted small">{clock(clip.trimEnd / SR)} cut from the end.</div>{/if}
 
 <h4>Actions</h4>
 <div class="buttons">
@@ -249,9 +271,7 @@
   <button class:on={mv.overlay === "key"} onclick={() => showOverlay("key")}>Key</button>
   <button class:on={mv.overlay === "gain"} onclick={() => showOverlay("gain")}>Gain</button>
 </div>
-<p class="note">
-  Beat-match changes this clip's tempo and start to match the previous clip. With a curve on, click the selected clip to add a node, right-click to remove.
-</p>
+<p class="note">Click the clip to add a node, right-click to remove.</p>
 
 {#if menu}
   <ContextMenu x={menu.x} y={menu.y} items={menu.items} onclose={() => (menu = null)} />
@@ -285,6 +305,12 @@
   }
   .small {
     font-size: 12px;
+  }
+  .onbeat {
+    color: var(--ok);
+  }
+  .offbeat {
+    color: var(--warn);
   }
   .lbl {
     color: var(--muted);

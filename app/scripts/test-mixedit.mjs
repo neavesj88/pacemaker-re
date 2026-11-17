@@ -2321,4 +2321,40 @@ test("follow: when the end of the window moves by whole beats the loops move wit
   assert.ok(shifted >= 1, "at least one of the drags moved the window end by a beat or more, so the loops had to follow");
 });
 
+
+test("cue: snaps to the track's own beats, steps by beat or bar, and Alt-free trim stays put", () => {
+  // 120 BPM: a beat is half a second; first beat 0.25 s into the file, first downbeat at beat 0
+  const beat = E.SR / 2;
+  const first = E.SR / 4;
+  const d = doc([clip("a", 10 * E.SR, 60 * E.SR, 120, 1, grid(120, first, 100, 0))]);
+  const c0 = d.clips[0];
+  // a cut between beats lands on the nearest beat
+  const at = c0.start + first + 3 * beat + 0.3 * beat;
+  const s1 = E.setCue(d, "a", at, "beat").clips[0];
+  assert.equal(s1.visibleStart, c0.start + first + 3 * beat);
+  assert.equal(E.cueOffBeat(s1), 0);
+  // bar grain: nearest downbeat (beat 4), not beat 3
+  const s2 = E.setCue(d, "a", c0.start + first + 3.4 * beat, "bar").clips[0];
+  assert.equal(s2.visibleStart, c0.start + first + 4 * beat);
+  // off: exactly where asked, and the off-beat distance says so
+  const s3 = E.setCue(d, "a", at, "off").clips[0];
+  assert.equal(s3.visibleStart, Math.round(at));
+  close(E.cueOffBeat(s3), 0.3 * beat, 1);
+  // the left-edge drag uses the cue snap, and only with it on
+  assert.equal(E.resizeClip(d, "a", "left", at, { mode: "bar", threshold: E.SR }, "beat").clips[0].visibleStart, c0.start + first + 3 * beat);
+  assert.equal(E.resizeClip(d, "a", "left", at, { mode: "off", threshold: 0 }, "off").clips[0].visibleStart, Math.round(at));
+  // stepping: from an off-beat cue to the next / previous beat, then a whole bar
+  const d3 = E.setCue(d, "a", at, "off");
+  assert.equal(E.stepCue(d3, "a", 1, "beat").clips[0].visibleStart, c0.start + first + 4 * beat);
+  assert.equal(E.stepCue(d3, "a", -1, "beat").clips[0].visibleStart, c0.start + first + 3 * beat);
+  const d4 = E.setCue(d, "a", c0.start + first + 4 * beat, "off");
+  assert.equal(E.stepCue(d4, "a", 1, "bar").clips[0].visibleStart, c0.start + first + 8 * beat);
+  // nothing before the first beat: stepping back from it changes nothing
+  const d5 = E.setCue(d, "a", c0.start + first, "off");
+  assert.equal(E.stepCue(d5, "a", -1, "beat"), d5);
+  // no grid: snapping leaves the position, the off-beat readout is null
+  const nog = doc([clip("b", 0, 60 * E.SR, 120, 1, null)]);
+  assert.equal(E.setCue(nog, "b", 12345, "beat").clips[0].visibleStart, 12345);
+  assert.equal(E.cueOffBeat(nog.clips[0]), null);
+});
 console.log(`\n${n} tests passed`);
