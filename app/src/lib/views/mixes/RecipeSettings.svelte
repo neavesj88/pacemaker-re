@@ -4,6 +4,7 @@
   import { LOOP_BEATS, LOOP_REPEATS, LOOP_SHORTEST, RECIPES, SECTION_REACH, lengthLabel, loopLengthLabel, nearestLength, recipeDef, requestedBars, sectionEdgeWords, type RecipeId } from "$lib/state/transitionRecipes";
   import type { CutAt, ConflictPolicy, CrossfadePlace, LoopOutStart, OnMove, SectionEdge } from "$lib/state/transitionRecipes";
   import { recipePrefs } from "./recipePrefs.svelte";
+  import { editPrefs } from "./listPrefs.svelte";
 
   const p = $derived(recipePrefs.value);
   const def = $derived(recipeDef(p.recipe));
@@ -108,6 +109,13 @@
     <option value="ask">Ask, naming each one</option>
     <option value="skip">Keep mine, skip the new one</option>
     <option value="replace">Replace mine (Undo restores)</option>
+  </select>
+</div>
+<div class="field">
+  <label for="rs-del">Deleting in the editor</label>
+  <select id="rs-del" value={editPrefs.confirmDelete ? "ask" : "undo"} onchange={(e) => editPrefs.setConfirmDelete(e.currentTarget.value === "ask")}>
+    <option value="undo">Delete at once (Undo restores)</option>
+    <option value="ask">Ask first, naming each one</option>
   </select>
 </div>
 <div class="field">

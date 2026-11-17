@@ -510,7 +510,7 @@ test("recipe settings saved before the version stamp: the old default null becom
 test("recipe settings: defaults, merge ignores junk", () => {
   assert.deepEqual(R.mergeRecipePrefs(undefined), R.DEFAULT_RECIPE_PREFS);
   assert.deepEqual(R.mergeRecipePrefs("x"), R.DEFAULT_RECIPE_PREFS);
-  assert.deepEqual(R.DEFAULT_RECIPE_PREFS, { recipe: "bassSwap", bars: 16, placeAt: "end", cutAt: "end", onConflict: "ask", sectionEdge: "off", sectionReachBars: 8, onMove: "follow", loopOutBeats: 8, loopOutStart: "start", loopCutBeats: 4, loopCutShortest: 0.25, loopCutRepeats: 2, loopCutRising: false });
+  assert.deepEqual(R.DEFAULT_RECIPE_PREFS, { recipe: "bassSwap", bars: 16, placeAt: "end", cutAt: "end", onConflict: "replace", sectionEdge: "off", sectionReachBars: 8, onMove: "follow", loopOutBeats: 8, loopOutStart: "start", loopCutBeats: 4, loopCutShortest: 0.25, loopCutRepeats: 2, loopCutRising: false });
   assert.deepEqual(R.mergeRecipePrefs({ recipe: "echoOut", bars: 4, cutAt: "start", onConflict: "replace" }), { ...R.DEFAULT_RECIPE_PREFS, recipe: "echoOut", bars: 4, cutAt: "start", onConflict: "replace" });
   assert.deepEqual(R.mergeRecipePrefs({ recipe: "nope", bars: -3, cutAt: "middle", onConflict: 7, sectionEdge: "middle", sectionReachBars: "8" }), R.DEFAULT_RECIPE_PREFS);
   assert.equal(R.mergeRecipePrefs({ bars: 1000 }).bars, 16);

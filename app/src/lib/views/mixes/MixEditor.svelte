@@ -14,6 +14,7 @@
   import type { SnapGrain } from "$lib/state/snapPrefs";
   import BpmField from "./BpmField.svelte";
   import { confirm } from "./confirm.svelte";
+  import { editPrefs } from "./listPrefs.svelte";
   import { cancelExport, closeMix, exportAudio, newMix, reloadChangedMix, saveMix, saveMixAs } from "./flow";
   import Inspector from "./Inspector.svelte";
   import { PPS_MAX, PPS_MIN, SR, clock, ppsFromSlider, sliderFromPps } from "./layout";
@@ -116,9 +117,18 @@
     for (const t of d.transitions) {
       if (t.between && (ids.includes(t.between.from) || ids.includes(t.between.to)) && !ids.includes(t.id)) lines.push(describe(d, t.id) + " (joins a deleted clip)");
     }
+    if (!editPrefs.confirmDelete) {
+      // undoable, so no prompt: the toast names what went and offers Undo
+      mixes.deleteSelection();
+      toast.show(lines.length === 1 ? `Deleted ${lines[0]}.` : `Deleted ${lines.length} items.`, "ok", {
+        details: lines.length > 1 ? lines.join("\n") : undefined,
+        action: undoAction(),
+      });
+      return;
+    }
     confirm.ask({
       title: ids.length === 1 ? "Delete from the mix" : `Delete ${ids.length} items from the mix`,
-      message: "These will be removed from the mix (Ctrl+Z brings them back until you save and close):",
+      message: "Ctrl+Z brings them back until you save and close.",
       items: lines,
       confirmLabel: "Delete",
       danger: true,

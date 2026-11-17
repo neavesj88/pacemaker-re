@@ -104,6 +104,7 @@ const PREF_ENTRIES = {
   "pacemaker-revival.mixexport": "mix-export",
   "pacemaker-revival.tracklist": "tracklist",
   "pm.mixes.recipes.v1": "auto-transitions",
+  "pm.mixes.edit.v1": "auto-transitions",
   "pm.mixes.tempo.v1": "mix-tempo",
   "pm.mixes.snap.v1": "mix-snap",
   "pm.mixes.follow.v1": "mix-follow",
@@ -121,6 +122,9 @@ const PREF_ENTRIES = {
   "pacemaker-revival.waveColours": "interface",
   "pacemaker-revival.playheadFps": "interface",
   "pacemaker-revival.finishedNoteSeconds": "interface",
+  "pacemaker-revival.connectAsk": "pacemaker-connect",
+  "pacemaker-revival.connectSecs": "pacemaker-connect",
+  "pacemaker-revival.offerBundledFirmware": "device-firmware-offer",
 };
 const VIEW_STATE = {
   "pm.tracks.view.v1": "which columns the track table shows and how it is sorted",

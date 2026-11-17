@@ -6,6 +6,24 @@ import { loadPref, savePref } from "$lib/state/prefStore";
 
 const LIST_KEY = "pm.mixes.list.v1";
 const TOOLS_KEY = "pm.mixes.tools.v1";
+const EDIT_KEY = "pm.mixes.edit.v1";
+
+class EditSettings {
+  /** Ask before deleting clips, tools or crossfades in the editor. Off by default: a delete there is
+   *  undoable (Ctrl+Z, or Undo on the toast that names what went), and a prompt slows editing. */
+  confirmDelete = $state(false);
+
+  constructor() {
+    this.confirmDelete = loadPref(EDIT_KEY, (raw) => ((raw as { confirmDelete?: unknown } | null)?.confirmDelete === true ? true : this.confirmDelete), () => this.confirmDelete);
+  }
+
+  setConfirmDelete(on: boolean) {
+    this.confirmDelete = on;
+    savePref(EDIT_KEY, { confirmDelete: on });
+  }
+}
+
+export const editPrefs = new EditSettings();
 
 class ListSettings {
   value = $state<ListPrefs>({ ...DEFAULT_LIST_PREFS });

@@ -212,7 +212,7 @@ export const DEFAULT_RECIPE_PREFS: RecipePrefs = {
   bars: 16,
   placeAt: "end",
   cutAt: "end",
-  onConflict: "ask",
+  onConflict: "replace",
   sectionEdge: "off",
   sectionReachBars: 8,
   onMove: "follow",
