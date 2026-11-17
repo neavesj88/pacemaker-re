@@ -92,6 +92,27 @@ describe("the reader never makes HTML", () => {
   });
 });
 
+describe("pictures", () => {
+  it("a picture of docs/kb/images on its own line is an image block; anything else stays text", () => {
+    const b = L.parseMarkdown("Before.\n![The play screen](images/pm-play-screen.png)\nAfter.");
+    assert.deepEqual(b.map((x) => x.t), ["p", "img", "p"]);
+    assert.deepEqual(b[1], { t: "img", src: "pm-play-screen.png", alt: "The play screen" });
+    for (const s of ["![x](../secret.png)", "![x](https://example.com/a.png)", "![x](images/a.gif)", "text ![x](images/a.png)"]) assert.ok(!L.parseMarkdown(s).some((x) => x.t === "img"), s);
+  });
+  it("the alt text is searchable", () => assert.ok(L.blocksText(L.parseMarkdown("![Crossfader and buttons](images/a.svg)")).includes("Crossfader")));
+  it("every picture an article shows exists, and every file in docs/kb/images is shown somewhere", () => {
+    const dir = path.join(KB, "images");
+    const have = new Set(fs.existsSync(dir) ? fs.readdirSync(dir) : []);
+    const used = new Set();
+    for (const e of index.entries) for (const b of e.blocks) if (b.t === "img") {
+      used.add(b.src);
+      assert.ok(have.has(b.src), `${e.article.id} shows images/${b.src}, which does not exist`);
+      assert.ok(b.alt.length >= 5, `${e.article.id}: images/${b.src} needs alt text`);
+    }
+    for (const f of have) assert.ok(used.has(f), `docs/kb/images/${f} is not shown by any article`);
+  });
+});
+
 describe("search hits point at a chapter", () => {
   const art = (id, body) => L.parseArticle(`---\nid: ${id}\ntitle: ${id} title\ntopic: Start here\nkeywords: one, two, three\nsummary: A summary that is long enough.\n---\n\n# ${id} title\n\n${body}`, id + ".md");
   const idx = L.buildIndex([
@@ -213,7 +234,9 @@ describe("the articles in docs/kb", () => {
   });
   it("every relative .md link in the files points at a file in docs/kb (so it works on GitHub)", () => {
     for (const [f, raw] of [...raws, ["README.md", readme]]) {
-      for (const m of raw.matchAll(/\]\(([^)\s]+)\)/g)) {
+      // picture lines are checked by the pictures test
+      const text = raw.replace(/^\s*!\[[^\]]*\]\(images\/[^)\s]+\)\s*$/gm, "");
+      for (const m of text.matchAll(/\]\(([^)\s]+)\)/g)) {
         const target = m[1];
         if (/^https?:\/\//.test(target)) continue;
         const m2 = /^([a-z0-9-]+\.md)(#[a-z0-9-]+)?$/.exec(target);
@@ -312,10 +335,10 @@ describe("nested lists", () => {
     assert.equal(main.subs[6].items.length, 4);
     assert.ok(main.items[7].map((n) => n.text).join("").startsWith("Open the Device page again"));
   });
-  it("the real articles: storage-upgrade steps run 1 to 8 in one list", () => {
+  it("the real articles: storage-upgrade steps run 1 to 12 in one list", () => {
     const steps = real("storage-upgrade").filter((b) => b.t === "ol");
     assert.equal(steps.length, 1, listSizes(real("storage-upgrade")).join());
-    assert.equal(steps[0].items.length, 8);
+    assert.equal(steps[0].items.length, 12);
     assert.equal(steps[0].subs[3].items.length, 2);
   });
   it("the real articles: firmware-methods DFU steps and free-space steps are not split in two", () => {

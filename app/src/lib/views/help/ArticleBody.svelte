@@ -1,6 +1,7 @@
 <script lang="ts">
   // Draws the blocks the reader (helpLogic.ts) made. Every piece is text: nothing here is {@html}.
   import type { Block, Inline, ListBlock } from "./helpLogic";
+  import { helpImage } from "./articles";
 
   let {
     blocks,
@@ -55,6 +56,9 @@
     {@render list(b)}
   {:else if b.t === "code"}
     <pre><code>{b.text}</code></pre>
+  {:else if b.t === "img"}
+    {@const url = helpImage(b.src)}
+    {#if url}<figure><img src={url} alt={b.alt} loading="lazy" />{#if b.alt}<figcaption>{b.alt}</figcaption>{/if}</figure>{/if}
   {:else if b.t === "table"}
     <div class="tbl">
       <table>
@@ -130,6 +134,20 @@
     border-left: 3px solid var(--accent);
     background: var(--accent-soft);
     border-radius: 0 4px 4px 0;
+  }
+  figure {
+    margin: 4px 0 14px;
+  }
+  img {
+    display: block;
+    max-width: min(100%, 520px);
+    height: auto;
+    border-radius: 6px;
+  }
+  figcaption {
+    margin-top: 4px;
+    font-size: 12px;
+    color: var(--muted);
   }
   .tbl {
     margin: 0 0 12px;

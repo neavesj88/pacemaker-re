@@ -108,7 +108,12 @@ export type Block =
   | ListBlock
   | { t: "table"; head: Inline[][]; rows: Inline[][][] }
   | { t: "code"; text: string }
-  | { t: "note"; inl: Inline[] };
+  | { t: "note"; inl: Inline[] }
+  /** A picture on a line of its own, `![alt](images/name.png)`: `src` is the file name inside docs/kb/images. */
+  | { t: "img"; src: string; alt: string };
+
+/** A line that is only a picture of docs/kb/images: `![alt](images/name.png)` (png, svg, jpg, webp). */
+const IMAGE = /^\s*!\[([^\]]*)\]\((?:\.\/)?images\/([a-z0-9][a-z0-9-]*\.(?:png|svg|jpe?g|webp))\)\s*$/;
 
 /** "Boot with USB unplugged" becomes "boot-with-usb-unplugged": the anchor of a heading. */
 export function slugify(text: string): string {
@@ -318,6 +323,13 @@ export function parseMarkdown(src: string): Block[] {
       i++;
       continue;
     }
+    // a picture on its own line
+    const img = IMAGE.exec(line);
+    if (img) {
+      blocks.push({ t: "img", src: img[2], alt: stripMarks(img[1]) });
+      i++;
+      continue;
+    }
     // note (a block quote)
     if (/^\s*>/.test(line)) {
       const body: string[] = [];
@@ -349,6 +361,7 @@ export function parseMarkdown(src: string): Block[] {
       !/^\s*```/.test(lines[i]) &&
       !/^(#{1,4})\s+/.test(lines[i]) &&
       !/^\s*>/.test(lines[i]) &&
+      !IMAGE.test(lines[i]) &&
       !BULLET.test(lines[i]) &&
       !NUMBERED.test(lines[i]) &&
       !(isTableRow(lines[i]) && i + 1 < lines.length && isTableRule(lines[i + 1]))
@@ -377,6 +390,7 @@ export function blocksText(blocks: Block[]): string {
       parts.push(b.head.map(inlineText).join(" "));
       for (const r of b.rows) parts.push(r.map(inlineText).join(" "));
     } else if (b.t === "code") parts.push(b.text.replace(/\s+/g, " "));
+    else if (b.t === "img") parts.push(b.alt);
   }
   return parts.join(" ").replace(/\s+/g, " ").trim();
 }

@@ -7,6 +7,15 @@ import { buildIndex, parseArticle, type HelpIndex } from "./helpLogic";
 // docs/kb is at the repository root, five folders up from here (help, views, lib, src, app)
 const files = import.meta.glob<string>(["../../../../../docs/kb/*.md", "!../../../../../docs/kb/README.md"], { query: "?raw", import: "default", eager: true });
 
+// the pictures the articles show (`![alt](images/name.png)`), bundled with the app like the articles
+const imageFiles = import.meta.glob<string>("../../../../../docs/kb/images/*.{png,svg,jpg,jpeg,webp}", { query: "?url", import: "default", eager: true });
+const images = new Map(Object.entries(imageFiles).map(([file, url]) => [file.slice(file.lastIndexOf("/") + 1), url]));
+
+/** The bundled address of a picture in docs/kb/images, by file name; null when there is no such file. */
+export function helpImage(name: string): string | null {
+  return images.get(name) ?? null;
+}
+
 let index: HelpIndex | null = null;
 
 /** The search index of every article. Built on the first call, then reused: searching is only comparing strings. */

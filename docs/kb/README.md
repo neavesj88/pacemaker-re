@@ -56,22 +56,24 @@ New: [Getting started](getting-started.md). Problems: [Troubleshooting and FAQ](
 ## Firmware and hardware
 
 - [Installing firmware with the app](install-firmware.md): The Firmware card on the Device page checks a .pfw file, copies it to the Pacemaker and shows the steps to finish the install.
-- [Upgrading the storage to a microSD card](storage-upgrade.md): Replace the Pacemaker's 1.8-inch hard drive with a microSD card on a ZIF adapter, including parts, card requirements and install steps.
+- [Upgrading the storage to a microSD card](storage-upgrade.md): Step-by-step guide to replacing the Pacemaker's 1.8-inch hard drive with a microSD card on a ZIF adapter: parts, tools, teardown, first start and firmware.
 - [Other ways to upgrade the storage](storage-alternatives.md): Compares the ways to replace the 1.8-inch hard drive: microSD adapters, iFlash boards, CompactFlash, mSATA, ZIF SSD and another hard drive.
 - [Ways to install firmware](firmware-methods.md): Five ways to put a firmware file on the Pacemaker or recover a unit that will not start: the app, manual copy, restore-library.py, USB and DFU.
-- [Replacing the battery](battery-replacement.md): Replace the Pacemaker's single lithium-polymer cell: specification, cells that fit, and the removal and soldering steps.
+- [Replacing the battery](battery-replacement.md): Replace the Pacemaker's lithium-polymer cell with a 103048 1600 mAh cell: size and plug checks, polarity test, and step-by-step fitting.
+- [Replacing the USB port with USB-C](usb-c-port.md): Three ways to give the Pacemaker a USB-C port: a Mini-USB to USB-C adapter, re-soldering the port on the USB board, or replacing that board.
+- [Swapping the screen](screen-swap.md): A starting point for replacing the Pacemaker's screen with a like-for-like panel: what is known about the panel and how to find a match.
 
 ## Using the Pacemaker
 
-- [Controls tour](pm-controls-tour.md): Every control on the Pacemaker and what it does.
-- [Power and charging](pm-power-charging.md): Switch the Pacemaker on and off, charge it from USB or the power adapter, and check how long a charge lasts.
-- [Browsing and loading tracks](pm-browsing-loading.md): Open the track list, move through it, filter by genre, BPM and more, and load a track onto a channel.
-- [Mixing and beatmatching](pm-mixing.md): Cue a track in the headphones, match its tempo by hand or with one press, blend with the crossfader and adjust EQ and gain.
-- [Effects, EQ and the Vocal filter](pm-effects.md): Use the Pacemaker's effects from the touchpad, change the pad layout and enable the Revival Vocal filter.
-- [Cues, loops and reverse](pm-cues-loops.md): Set a cue point, make and adjust a loop, and play in reverse on the Pacemaker.
-- [Recording mixes and making cases](pm-recording.md): Record a live mix on the Pacemaker and make and edit cases (playlists) on the unit.
-- [The settings menu](pm-settings-menu.md): Every setting in the Pacemaker's settings menu with its options and default, and how to change them from the app.
-- [Connecting to a computer](pm-computer-connection.md): Connect the Pacemaker to a computer over USB, disconnect safely, and copy music and playlists to it.
+- [Controls tour](pm-controls-tour.md): Every control, connector and screen element of the Pacemaker, numbered, with what each does and how the P-switch changes it.
+- [Power and charging](pm-power-charging.md): Switch the Pacemaker on and off, charge it from USB or the power adapter, read the power symbol and check how long a charge lasts.
+- [Browsing and loading tracks](pm-browsing-loading.md): Open the track list, move through it, filter by genre, BPM and more, combine or clear filters, and load a track onto a channel.
+- [Mixing and beatmatching](pm-mixing.md): Cue a track in the headphones, match its tempo by hand or with one press, blend with the crossfader, adjust EQ and gain and use kill-all.
+- [Effects, EQ and the Vocal filter](pm-effects.md): Use the Pacemaker's colour and beat effects and Key from the touchpad, change the pad layout and enable the Revival Vocal filter.
+- [Cues, loops and reverse](pm-cues-loops.md): Set and use a cue point, make, exit, re-enter, adjust, halve and double a loop, and play in reverse on the Pacemaker.
+- [Recording mixes and making cases](pm-recording.md): Record a live mix on the Pacemaker, halt or lock it, and create, fill and trim cases (playlists) from the track list.
+- [The settings menu](pm-settings-menu.md): Every setting in the Pacemaker's settings menu with its exact options and default, how to change one on the unit, and how to edit them from the app.
+- [Connecting to a computer](pm-computer-connection.md): Connect the Pacemaker to a computer over USB, manage tracks, cases and mixes with Pacemaker Revival, export mixes and eject safely.
 - [Button combinations and recovery](pm-button-combos-recovery.md): The key combinations held at power-on (DFU, debug menu, diagnostics), what each does, and which can erase the library.
 
 ## Problems and answers

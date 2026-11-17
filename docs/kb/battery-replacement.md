@@ -3,24 +3,30 @@ id: battery-replacement
 title: Replacing the battery
 topic: Firmware and hardware
 order: 5
-keywords: battery, replace battery, lipo, lithium polymer, 3.7 v, 1100 mah, lpd 723048, 803448, 103450, charge, protection circuit, short battery life, opening the case, solder, polarity, multimeter, safety, swollen
-summary: Replace the Pacemaker's single lithium-polymer cell: specification, cells that fit, and the removal and soldering steps.
+keywords: battery, replace battery, lipo, lithium polymer, 3.7 v, 1600 mah, 103048, hxjnldc, 1100 mah, lpd 723048, connector, jst ph, charge, protection board, short battery life, opening the case, solder, polarity, multimeter, safety, swollen
+summary: Replace the Pacemaker's lithium-polymer cell with a 103048 1600 mAh cell: size and plug checks, polarity test, and step-by-step fitting.
 ---
 
 # Replacing the battery
 
-The battery is a single lithium-polymer cell. Measure your own cell before buying.
+The Pacemaker holds one lithium-polymer cell. This guide fits an HXJNLDC 103048 cell (3.7 V, 1600 mAh) in place of the original.
 
-> A short-circuited, crushed, pierced, overcharged or reversed lithium cell can catch fire. Never use or charge a swollen or deeply flat cell, or a cell without a protection board. Work on a non-flammable surface.
+> A short-circuited, crushed, pierced, overcharged or reversed lithium cell can catch fire. Never use or charge a swollen or deeply flat cell. Work on a non-flammable surface.
 
-## Cell specification
+## The battery used
 
-- Single-cell lithium-polymer pouch, 3.7 V (4.2 V full), about 1100 mAh (LPD 723048), about 48 x 30 x 7.2 mm.
-- Built-in protection circuit.
-- Charge rating of at least 1 A.
-- No larger than the old cell in any dimension.
+| Item | Original cell | Replacement |
+|---|---|---|
+| Model | LPD 723048 (closest datasheet match) | HXJNLDC 103048 |
+| Voltage | 3.7 V nominal, 4.2 V full | 3.7 V nominal, 4.2 V full |
+| Capacity | About 1100 mAh | 1600 mAh (5.92 Wh) |
+| Size | 48 x 30 x 7.2 mm | 48.5 x 30 x 10 mm |
+| Protection | Built-in | Protection board on the cell |
+| Leads | Plug on the original | Red and black leads to a white 2-pin plug |
 
-## Cells that fit
+Any replacement needs built-in protection and a charge rating of at least 1 A, and must be no larger than the space the old cell leaves.
+
+Other cells reported to fit:
 
 | Cell | Size | Notes |
 |---|---|---|
@@ -29,20 +35,54 @@ The battery is a single lithium-polymer cell. Measure your own cell before buyin
 | 1500 mAh | - | 1 to 2 mm too tall until the old hard-drive retaining brackets were removed |
 | 1000 mAh | - | Fits with room to spare |
 
-## Connector and polarity
+## Fit and connector
 
-The connector pitch, pin count, pin order and polarity are not known for certain. Do not rely on wire colours. Check the old cell's polarity with a multimeter before connecting a new one. Reversed polarity can destroy the power chip or the board.
+![The battery bay and the two cells compared](images/battery-fit.svg)
+
+**Thickness.** The new cell is 10 mm thick, about 2.8 mm more than the original 7.2 mm. Check the bay depth with the case open before you commit: the cell must clear the board connector, the hard-drive locating stays and the two moulded plastic feet, and the back must close without pressing on the cell.
+
+**Plug.** The listing most likely describes a JST PH plug, but the same maker sells other pitches, so measure the plug you received. Measure the distance between the centres of the two pins:
+
+| Pitch | Series |
+|---|---|
+| 2.0 mm | JST PH (most likely) |
+| 1.5 mm | JST ZH |
+| 1.0 mm | JST SH |
+
+The original cell plugs into a small white 2-pin socket at the edge of the board, next to the cell (see the drawing). Its series and pitch are not printed: measure the old plug the same way and compare.
+
+If the plug does not match the board:
+
+- Re-pin: slide the crimped contacts out of the white housing and push them into a housing of the right series.
+- Or cut the plug off and solder the leads to the board plug's wires, one wire at a time, and cover each joint with heat-shrink.
+
+**Polarity.** Red is usually positive and black negative, but generic plugs are sometimes wired the other way round. Check with a multimeter before connecting:
+
+1. Do this with the cell on the bench, before the plug goes near the board. Set the multimeter to DC volts.
+2. Touch the red probe to the red lead's metal contact and the black probe to the black lead's. The new cell should read about 3.7 V or a little more, with a plus sign. A minus sign means the red lead is actually negative.
+3. Read the + and - marking on the board socket (or photograph the old cell's leads before removing it). The pass condition: the red lead reads positive on the multimeter and lands on the board's + pin. If either fails, the plug is reversed for this board; re-pin it or solder instead.
+
+> Keep the two probe tips apart: bridging the contacts short-circuits the cell.
+
+> Reversed polarity can destroy the power chip or the board.
 
 ## Replace the battery
 
-1. Switch off and unplug the mains adapter and USB cable.
-2. Open the case with a small Philips screwdriver and plastic tools. Photograph every layer. Do not pry at the display, ribbon cables or the ZIF hard-drive cable.
-3. Photograph the connector and leads. Check the lead polarity as in Connector and polarity before disconnecting.
-4. Cut the old connector off with a few millimetres of lead. Cut and insulate one lead at a time so the leads never touch.
-5. Solder the leads to the new cell with the correct polarity. Cover each joint with heat-shrink or Kapton tape. Do not bend or heat the pouch tab.
-6. Check the fit. The cell must clear the connector, the hard-drive locating stays and the two moulded plastic feet, and nothing may press on the pouch. If it is too tall, use a thinner cell or or, if the hard drive was replaced by something smaller, remove the retaining brackets.
-7. Re-check polarity against your photos.
-8. Close the case, reseat the ZIF ribbon fully and switch on with the mains adapter connected. Check the battery percentage on the status screen.
+Tools: Torx T6 screwdriver, plastic opening tools, multimeter, double-sided foam tape, side cutters and soldering iron with heat-shrink (only if the plug must be changed).
+
+1. Back up the library, then switch the Pacemaker off. Unplug the mains adapter and USB cable. See [Power and charging](pm-power-charging.md).
+2. Remove the six Torx T6 screws from the back.
+3. Lift the back plate straight up. Photograph every layer. Do not pry at the display, ribbon cables or the ZIF hard-drive cable.
+4. Photograph the old cell's plug and leads, and note which socket pin or pad each wire goes to.
+5. Disconnect the old cell: pull its plug straight out of the board socket by the housing, not by the wires.
+6. Lift the old cell out. It may be held by tape; peel it slowly and do not bend or pierce the pouch.
+7. Check the new cell's polarity and plug as in Fit and connector. Change the plug only if it does not match.
+8. Dry-fit the new cell in the bay without connecting it. It must lie flat and clear every part listed under Fit and connector.
+9. Plug into the board socket. For a soldered board, solder the new red lead to the + pad and the black lead to the - pad, one wire at a time, and cover each joint with heat-shrink.
+10. Secure the cell with double-sided foam tape under it so it cannot slide. Keep the leads clear of the screw posts and ribbon cables.
+11. Close the case: reseat the ZIF ribbon fully, lower the back plate straight down and refit the six screws. If the back bulges or presses on the cell, stop and reopen it.
+12. Charge the cell fully for the first time while watching it: connect the adapter and check every few minutes that the cell and case stay cool. Disconnect it if anything warms noticeably, smells or swells.
+13. Switch on and open **Settings > About > Status**. Check that the battery percentage reads normally.
 
 ## Troubleshooting
 
@@ -50,4 +90,10 @@ The connector pitch, pin count, pin order and polarity are not known for certain
 - If "hard drive needs checking" appears, reseat the ZIF ribbon.
 - Does not start with a new cell: run on the mains adapter with no battery fitted.
 
-See also [Power and charging](pm-power-charging.md).
+## Safety
+
+- Never puncture, crush or bend the cell, and do not bend or heat the pouch tab.
+- Keep metal tools off both terminals at once. Cut and insulate one lead at a time so the leads never touch.
+- Do not use a cell without a protection board, or one that is swollen, damaged or deeply discharged.
+- Charge a new cell for the first time under watch, on a non-flammable surface.
+- The 103048 is listed for about 1.6 A maximum discharge; do not use it for high-power loads.

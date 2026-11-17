@@ -3,8 +3,8 @@ id: pm-browsing-loading
 title: Browsing and loading tracks
 topic: Using the Pacemaker
 order: 3
-keywords: browse, track list, load track, filters, genre, artist, album, bpm filter, key filter, split, linked, double tap, autocue, case, library, find a track, p-switch filter
-summary: Open the track list, move through it, filter by genre, BPM and more, and load a track onto a channel.
+keywords: browse, track list, load track, select track, filters, genre, artist, album, bpm filter, key filter, split, linked, double tap, autocue, case, library, find a track, p-switch filter, all entry, combine filters, menu button
+summary: Open the track list, move through it, filter by genre, BPM and more, combine or clear filters, and load a track onto a channel.
 ---
 
 # Browsing and loading tracks
@@ -13,23 +13,43 @@ summary: Open the track list, move through it, filter by genre, BPM and more, an
 
 1. Press **Channel 1** or **Channel 2**.
 2. Double-tap the middle of the touchpad to open the track list.
-3. Stroke up or down on the pad to move the cursor. Tap the north or south edge to step one row.
-4. Load the track:
-   - **Play** loads and plays it.
-   - **Cue** loads it ready at the first beat.
-   - Swipe left or right, or tap the west or east edge, to load it cued or playing according to the **Autocue** setting.
+3. Stroke up or down on the pad to move the cursor.
+4. Load the track with one of these:
 
-**Menu** enters or leaves the music library. In a list sorted by title, **Forward** and **Rewind** jump to the next or previous initial letter.
+| Action | Result |
+|---|---|
+| **Play** | Loads the track and starts it |
+| **Cue** | Loads the track cued at its first beat |
+| Swipe left or right on the pad | Loads it cued or playing, according to the **Autocue** setting |
+| Tap the west or east edge | Same as the swipe |
+
+## Move faster or slower
+
+| Action | Result |
+|---|---|
+| Tap the north or south edge | Steps one row |
+| **Forward** or **Rewind** | Jumps to the next or previous initial letter. Works only when the list is sorted by title |
+| **Menu** | Enters or leaves the music library |
 
 ## Filter the list
 
 1. In the track list, hold the P-switch up.
-2. Slide left or right to pick a filter. Stroke up or down to pick a value. Swipe left or right to apply it.
-3. Release the P-switch.
-4. Press **Cue** on several entries to combine them, or on an applied entry to remove it.
-5. Choose **All** to clear a filter.
+2. Slide left or right on the pad to pick a filter, or tap the west or east edge.
+3. Stroke up or down to browse the values, or tap the north or south edge to step.
+4. Swipe left or right to apply the value.
+5. Release the P-switch. The list now shows only the matching tracks.
 
 Default filters: Case, Mix, Genre, Artist, Album, BPM. Optional: Remix, Label, Year, Added, Key, Rating, Type, Bitrate. Enable them under **Settings, Configure, Track list filters**.
+
+### Combine filters
+
+1. Browse the values of a filter. Applied values are highlighted.
+2. Press **Cue** on each value to add. Values from several filters combine.
+
+### Remove filters
+
+- Press **Cue** on an applied value to remove it.
+- Choose the **All** entry to clear every applied value of that filter.
 
 ## Track list per channel
 

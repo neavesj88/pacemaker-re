@@ -23,6 +23,8 @@ With USB plugged in before the keys are held, the Pacemaker boots normally.
 
 ## Restore hard drive
 
+> Restoring the hard drive erases the library. Copy tracks, cases and mixes to the computer first if you can.
+
 If it shows "Sorry friend... hard drive needs checking":
 
 1. Reseat the ZIF ribbon first. A loose ribbon causes this message.
@@ -32,7 +34,7 @@ If it shows "Sorry friend... hard drive needs checking":
 
 ## Recover with DFU
 
-See [Recover with DFU](firmware-methods.md#recover-with-dfu). Use only restore files made by the project's script.
+See [Recover with DFU](firmware-methods.md#recover-with-dfu). Use only restore files built by `make-restore-dfu.py`.
 
 ## Switch off
 

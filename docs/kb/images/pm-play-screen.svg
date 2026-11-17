@@ -1,0 +1,99 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 620 380" width="620" height="380" font-family="Helvetica, Arial, sans-serif">
+<rect width="620" height="380" rx="10" fill="#fff"/>
+<defs><clipPath id="lcd"><circle cx="190" cy="200" r="122"/></clipPath></defs>
+<circle cx="190" cy="200" r="128" fill="none" stroke="#1a1a1a" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"/>
+<g clip-path="url(#lcd)"><rect x="62" y="72" width="256" height="256" fill="#000"/>
+<text x="156" y="118" text-anchor="end" font-size="13" fill="#f2f2f2">-01:43</text>
+<path d="M185 108 L196 114 L185 120 Z" fill="#f2f2f2"/>
+<text x="224" y="118" font-size="13" fill="#8a8a8a">02:31</text>
+<line x1="124" y1="126" x2="256" y2="126" stroke="#8a8a8a" stroke-width="1"/>
+<circle cx="176" cy="139" r="4.5" fill="none" stroke="#ff40ff" stroke-width="2"/>
+<circle cx="190" cy="139" r="4.5" fill="none" stroke="#f2f2f2" stroke-width="2"/>
+<circle cx="204" cy="139" r="4.5" fill="none" stroke="#40ff60" stroke-width="2"/>
+<rect x="94" y="242.0" width="14" height="3" fill="#e070ff"/>
+<rect x="94" y="237.4" width="14" height="3" fill="#e070ff"/>
+<rect x="94" y="232.8" width="14" height="3" fill="#e070ff"/>
+<rect x="94" y="228.2" width="14" height="3" fill="#e070ff"/>
+<rect x="94" y="223.6" width="14" height="3" fill="#f060ff"/>
+<rect x="94" y="219.0" width="14" height="3" fill="#f060ff"/>
+<rect x="94" y="214.4" width="14" height="3" fill="#f060ff"/>
+<rect x="94" y="209.8" width="14" height="3" fill="#ff50ff"/>
+<rect x="94" y="205.2" width="14" height="3" fill="#ff50ff"/>
+<rect x="94" y="200.6" width="14" height="3" fill="#ff50ff"/>
+<rect x="94" y="196.0" width="14" height="3" fill="#ff50ff"/>
+<rect x="94" y="191.4" width="14" height="3" fill="#ff50e8"/>
+<rect x="94" y="186.8" width="14" height="3" fill="#ff50e8"/>
+<rect x="94" y="182.2" width="14" height="3" fill="#3a2a3e"/>
+<rect x="94" y="177.6" width="14" height="3" fill="#3a2a3e"/>
+<rect x="94" y="173.0" width="14" height="3" fill="#3a2a3e"/>
+<rect x="94" y="168.4" width="14" height="3" fill="#3a2a3e"/>
+<rect x="94" y="163.8" width="14" height="3" fill="#3a2a3e"/>
+<rect x="94" y="159.2" width="14" height="3" fill="#3a2a3e"/>
+<rect x="94" y="154.6" width="14" height="3" fill="#3a2a3e"/>
+<rect x="94" y="150.0" width="14" height="3" fill="#3a2a3e"/>
+<rect x="94" y="145.4" width="14" height="3" fill="#3a2a3e"/>
+<rect x="94" y="140.8" width="14" height="3" fill="#3a2a3e"/>
+<rect x="94" y="136.2" width="14" height="3" fill="#3a2a3e"/>
+<rect x="272" y="242.0" width="14" height="3" fill="#3a2a3e"/>
+<rect x="272" y="237.4" width="14" height="3" fill="#3a2a3e"/>
+<rect x="272" y="232.8" width="14" height="3" fill="#3a2a3e"/>
+<rect x="272" y="228.2" width="14" height="3" fill="#3a2a3e"/>
+<rect x="272" y="223.6" width="14" height="3" fill="#3a2a3e"/>
+<rect x="272" y="219.0" width="14" height="3" fill="#3a2a3e"/>
+<rect x="272" y="214.4" width="14" height="3" fill="#3a2a3e"/>
+<rect x="272" y="209.8" width="14" height="3" fill="#3a2a3e"/>
+<rect x="272" y="205.2" width="14" height="3" fill="#3a2a3e"/>
+<rect x="272" y="200.6" width="14" height="3" fill="#3a2a3e"/>
+<rect x="272" y="196.0" width="14" height="3" fill="#3a2a3e"/>
+<rect x="272" y="191.4" width="14" height="3" fill="#3a2a3e"/>
+<rect x="272" y="186.8" width="14" height="3" fill="#3a2a3e"/>
+<rect x="272" y="182.2" width="14" height="3" fill="#3a2a3e"/>
+<rect x="272" y="177.6" width="14" height="3" fill="#3a2a3e"/>
+<rect x="272" y="173.0" width="14" height="3" fill="#3a2a3e"/>
+<rect x="272" y="168.4" width="14" height="3" fill="#3a2a3e"/>
+<rect x="272" y="163.8" width="14" height="3" fill="#3a2a3e"/>
+<rect x="272" y="159.2" width="14" height="3" fill="#3a2a3e"/>
+<rect x="272" y="154.6" width="14" height="3" fill="#3a2a3e"/>
+<rect x="272" y="150.0" width="14" height="3" fill="#3a2a3e"/>
+<rect x="272" y="145.4" width="14" height="3" fill="#3a2a3e"/>
+<rect x="272" y="140.8" width="14" height="3" fill="#3a2a3e"/>
+<rect x="272" y="136.2" width="14" height="3" fill="#3a2a3e"/>
+<text x="190" y="178" text-anchor="middle" font-size="12.5" fill="#f2f2f2">Artist Name</text>
+<text x="190" y="195" text-anchor="middle" font-size="13.5" font-weight="700" fill="#f2f2f2">Track Title</text>
+<text x="190" y="212" text-anchor="middle" font-size="12.5" fill="#f2f2f2">(Album)</text>
+<text x="190" y="240" text-anchor="middle" font-size="12.5" fill="#f2f2f2">+0.83%</text>
+<line x1="124" y1="250" x2="256" y2="250" stroke="#8a8a8a" stroke-width="1"/>
+<rect x="124" y="254" width="132" height="14" fill="none" stroke="#8a8a8a" stroke-width="1"/>
+<line x1="138" y1="255" x2="138" y2="261" stroke="#f2f2f2" stroke-width="1.5"/>
+<line x1="142" y1="261" x2="142" y2="267" stroke="#8a8a8a" stroke-width="1.5"/>
+<line x1="164" y1="255" x2="164" y2="261" stroke="#f2f2f2" stroke-width="1.5"/>
+<line x1="168" y1="261" x2="168" y2="267" stroke="#8a8a8a" stroke-width="1.5"/>
+<line x1="190" y1="255" x2="190" y2="261" stroke="#f2f2f2" stroke-width="1.5"/>
+<line x1="194" y1="261" x2="194" y2="267" stroke="#8a8a8a" stroke-width="1.5"/>
+<line x1="216" y1="255" x2="216" y2="261" stroke="#f2f2f2" stroke-width="1.5"/>
+<line x1="220" y1="261" x2="220" y2="267" stroke="#8a8a8a" stroke-width="1.5"/>
+<line x1="242" y1="255" x2="242" y2="261" stroke="#f2f2f2" stroke-width="1.5"/>
+<line x1="246" y1="261" x2="246" y2="267" stroke="#8a8a8a" stroke-width="1.5"/>
+<text x="176" y="287" text-anchor="end" font-size="13" fill="#f2f2f2">127.1</text>
+<circle cx="190" cy="283" r="5" fill="none" stroke="#f2f2f2" stroke-width="1.4"/><path d="M190 278 A5 5 0 0 1 190 288 Z" fill="#f2f2f2"/>
+<text x="204" y="287" font-size="13" fill="#8a8a8a">127</text>
+</g>
+<line x1="30" y1="100" x2="130" y2="114" stroke="#e0109a" stroke-width="1.2"/><circle cx="130" cy="114" r="1.8" fill="#e0109a"/><circle cx="30" cy="100" r="10" fill="#e0109a"/><text x="30" y="104" text-anchor="middle" font-size="11" font-weight="700" fill="#fff">1</text>
+<line x1="30" y1="170" x2="100" y2="180" stroke="#e0109a" stroke-width="1.2"/><circle cx="100" cy="180" r="1.8" fill="#e0109a"/><circle cx="30" cy="170" r="10" fill="#e0109a"/><text x="30" y="174" text-anchor="middle" font-size="11" font-weight="700" fill="#fff">2</text>
+<line x1="30" y1="240" x2="170" y2="236" stroke="#e0109a" stroke-width="1.2"/><circle cx="170" cy="236" r="1.8" fill="#e0109a"/><circle cx="30" cy="240" r="10" fill="#e0109a"/><text x="30" y="244" text-anchor="middle" font-size="11" font-weight="700" fill="#fff">3</text>
+<line x1="30" y1="300" x2="160" y2="283" stroke="#e0109a" stroke-width="1.2"/><circle cx="160" cy="283" r="1.8" fill="#e0109a"/><circle cx="30" cy="300" r="10" fill="#e0109a"/><text x="30" y="304" text-anchor="middle" font-size="11" font-weight="700" fill="#fff">4</text>
+<line x1="350" y1="100" x2="190" y2="114" stroke="#e0109a" stroke-width="1.2"/><circle cx="190" cy="114" r="1.8" fill="#e0109a"/><circle cx="350" cy="100" r="10" fill="#e0109a"/><text x="350" y="104" text-anchor="middle" font-size="11" font-weight="700" fill="#fff">5</text>
+<line x1="350" y1="138" x2="204" y2="139" stroke="#e0109a" stroke-width="1.2"/><circle cx="204" cy="139" r="1.8" fill="#e0109a"/><circle cx="350" cy="138" r="10" fill="#e0109a"/><text x="350" y="142" text-anchor="middle" font-size="11" font-weight="700" fill="#fff">6</text>
+<line x1="350" y1="190" x2="224" y2="194" stroke="#e0109a" stroke-width="1.2"/><circle cx="224" cy="194" r="1.8" fill="#e0109a"/><circle cx="350" cy="190" r="10" fill="#e0109a"/><text x="350" y="194" text-anchor="middle" font-size="11" font-weight="700" fill="#fff">7</text>
+<line x1="350" y1="262" x2="230" y2="261" stroke="#e0109a" stroke-width="1.2"/><circle cx="230" cy="261" r="1.8" fill="#e0109a"/><circle cx="350" cy="262" r="10" fill="#e0109a"/><text x="350" y="266" text-anchor="middle" font-size="11" font-weight="700" fill="#fff">8</text>
+<line x1="190" y1="356" x2="190" y2="283" stroke="#e0109a" stroke-width="1.2"/><circle cx="190" cy="283" r="1.8" fill="#e0109a"/><circle cx="190" cy="356" r="10" fill="#e0109a"/><text x="190" y="360" text-anchor="middle" font-size="11" font-weight="700" fill="#fff">9</text>
+<text x="390" y="90" font-size="13" font-weight="700" fill="#1a1a1a">The play screen</text>
+<text x="390" y="112" font-size="12.5" fill="#1a1a1a"><tspan font-weight="700" fill="#e0109a">1</tspan><tspan dx="8" font-weight="700">Time</tspan><tspan dx="5">played and left</tspan></text>
+<text x="390" y="131" font-size="12.5" fill="#1a1a1a"><tspan font-weight="700" fill="#e0109a">2</tspan><tspan dx="8" font-weight="700">Level meters</tspan><tspan dx="5">ch1 / ch2</tspan></text>
+<text x="390" y="150" font-size="12.5" fill="#1a1a1a"><tspan font-weight="700" fill="#e0109a">3</tspan><tspan dx="8" font-weight="700">Tempo change</tspan><tspan dx="5"></tspan></text>
+<text x="390" y="169" font-size="12.5" fill="#1a1a1a"><tspan font-weight="700" fill="#e0109a">4</tspan><tspan dx="8" font-weight="700">BPM</tspan><tspan dx="5">this / other channel</tspan></text>
+<text x="390" y="188" font-size="12.5" fill="#1a1a1a"><tspan font-weight="700" fill="#e0109a">5</tspan><tspan dx="8" font-weight="700">Playback</tspan><tspan dx="5">play, pause, reverse, loop</tspan></text>
+<text x="390" y="207" font-size="12.5" fill="#1a1a1a"><tspan font-weight="700" fill="#e0109a">6</tspan><tspan dx="8" font-weight="700">Effects on</tspan><tspan dx="5"></tspan></text>
+<text x="390" y="226" font-size="12.5" fill="#1a1a1a"><tspan font-weight="700" fill="#e0109a">7</tspan><tspan dx="8" font-weight="700">Track</tspan><tspan dx="5">artist, title, album</tspan></text>
+<text x="390" y="245" font-size="12.5" fill="#1a1a1a"><tspan font-weight="700" fill="#e0109a">8</tspan><tspan dx="8" font-weight="700">Beat graph</tspan><tspan dx="5">ch1 and ch2</tspan></text>
+<text x="390" y="264" font-size="12.5" fill="#1a1a1a"><tspan font-weight="700" fill="#e0109a">9</tspan><tspan dx="8" font-weight="700">Battery</tspan><tspan dx="5"></tspan></text></svg>
