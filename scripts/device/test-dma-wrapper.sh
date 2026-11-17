@@ -17,6 +17,8 @@ if [ -n "$CHROOT" ]; then
   mkdir -p "$CHROOT$FB"; mountpoint -q "$CHROOT$FB" || mount --bind "$FB" "$CHROOT$FB"
   mountpoint -q "$CHROOT/proc" || mount -t proc proc "$CHROOT/proc"
   mountpoint -q "$CHROOT/dev" || mount --bind /dev "$CHROOT/dev"
+  # unmount on any exit: a later `rm -rf $CHROOT` would otherwise walk into the host's live /dev through the bind
+  trap 'umount -l "$CHROOT/dev" "$CHROOT/proc" "$CHROOT$FB" 2>/dev/null' EXIT
   cp "$HERE/pmplayer-wrapper.sh" "$HERE/hdparm-boot.sh" "$FB/"; W="$FB/pmplayer-wrapper.sh"
   RUN="chroot $CHROOT ${DEVSHELL:-/bin/sh}"; WATCH=1; WAIT=3; SPATH="/usr/bin:/bin:/sbin:/usr/sbin"
 fi

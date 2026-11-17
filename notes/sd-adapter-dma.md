@@ -247,7 +247,7 @@ FEATURES), and its printk now says "enabling UDMA2 mode". 3 bytes; sections, sym
 (objdump/readelf diff). `mxc_ide_set_speed` takes 0x42 on its UDMA path (index 2). Nothing enables DMA by itself:
 the adapter still needs the `revival-dma` flag, and a drive that reports DMA gets UDMA2 from `-d 1` and then the
 boot-time `-X udma5` as before. The wrapper reads the mode `-d 1` set from that kernel line (`dma_on_level`) instead
-of assuming UDMA3. Image diff 075 vs 074: `system.xml` (x2, FWVERSION), the wrapper, `mxc_ide.ko`; nothing else.
+of assuming UDMA3. Image diff 075 vs 074: `system.xml` (x3, FWVERSION), the wrapper, `mxc_ide.ko`, and comment lines in `hdpboot` / `hddmount.sh`; nothing else. Reviewed independently from the disassembly (timing table entry 2 is a sane UDMA2 row, no other UDMA3 use in the module); the wrapper tests pass under dash and under the device's own /bin/sh and busybox 1.1.3 ash (54 checks each). Build: pfw sha256 0d31a684...a501.
 
 To test on the device: back up the library, put an empty `revival-dma` in `.Pacemaker`, boot on battery with USB
 unplugged, play a track while scrolling and loading others, then read `revival-diag.txt`: the verdict line, the DMA

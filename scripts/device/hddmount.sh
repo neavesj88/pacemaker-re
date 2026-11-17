@@ -2,7 +2,7 @@
 # Stock hddmount.sh (only the production-test tool pmptest runs it; the normal boot is pwrApplication) with its
 # "hdparm -d 1 /dev/hda" replaced by /sbin/hdpboot (scripts/device/hdparm-boot.sh): the same command for a drive that
 # reports DMA, nothing for the SD adapter, because the patched ide-core would let it through and put that drive in
-# UDMA3. DMA for the adapter is opt-in and handled only by the image wrapper (revival-dma flag).
+# DMA (UDMA3 before 075, UDMA2 from 075). DMA for the adapter is opt-in and handled only by the image wrapper (revival-dma flag).
 KERNEL_PATCHLEVEL=`uname -a | cut -d - -f 1 | cut -d . -f 3`
 
 pmptest -8 -1
