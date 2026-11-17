@@ -144,7 +144,7 @@ def build():
     f.text(SX, b2 + 4.6, "New cell, HXJNLDC 103048: 48.5 x 30 x 10 mm, 1600 mAh", size=11, anchor="start")
 
     # ---- callouts ---------------------------------------------------------------------------------
-    f.callout(1, X(26.5), Y(6.0), "Cell", "original, 1100 mAh, about 48 x 30 mm", side="r")
+    f.callout(1, X(26.5), Y(6.0), "Cell", "original PR-723048, about 48 x 30 mm", side="r")
     f.callout(2, X(21.0), Y(31.0), "Foam pad", "between the cell and the back", side="r")
     f.callout(3, X(17.5), Y(-5.9), "2-pin plug", "white, at the cell's terminal end", side="r")
     f.callout(4, X(28.6), Y(-3.8), "Cell wires", "red and black, run in under the foil", side="r")
@@ -152,8 +152,9 @@ def build():
     f.callout(6, X(32.6), Y(22.0), "2 x 5 socket", "2.0 mm pitch, pins 6 and 10 marked", side="r")
     f.callout(7, X(40.4), Y(22.4), "Gold contact", "on the small board", side="r")
     f.note("")
-    f.note("Check the back closes without")
-    f.note("pressing on the cell.")
+    f.note("Remove the ribs inside the back")
+    f.note("cover over the cell so the back")
+    f.note("closes without pressing on it.")
     f.note("")
     f.note("The new cell's plug is too big for")
     f.note("the socket: move the original plug")

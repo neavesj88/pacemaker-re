@@ -131,7 +131,7 @@
 <text x="679.0" y="324.8" font-size="11" font-weight="700" fill="#fff" text-anchor="middle">7</text>
 <text x="715.0" y="60" font-size="13" font-weight="700" fill="#1a1a1a">Battery end</text>
 <text x="715.0" y="86" font-size="12.5" fill="#1a1a1a"><tspan font-weight="700" fill="#e0109a">1</tspan><tspan x="737.0" font-weight="700">Cell</tspan></text>
-<text x="737.0" y="103" font-size="12" fill="#6b6b6b">original, 1100 mAh, about 48 x 30 mm</text>
+<text x="737.0" y="103" font-size="12" fill="#6b6b6b">original PR-723048, about 48 x 30 mm</text>
 <text x="715.0" y="125" font-size="12.5" fill="#1a1a1a"><tspan font-weight="700" fill="#e0109a">2</tspan><tspan x="737.0" font-weight="700">Foam pad</tspan></text>
 <text x="737.0" y="142" font-size="12" fill="#6b6b6b">between the cell and the back</text>
 <text x="715.0" y="164" font-size="12.5" fill="#1a1a1a"><tspan font-weight="700" fill="#e0109a">3</tspan><tspan x="737.0" font-weight="700">2-pin plug</tspan></text>
@@ -145,10 +145,11 @@
 <text x="715.0" y="320" font-size="12.5" fill="#1a1a1a"><tspan font-weight="700" fill="#e0109a">7</tspan><tspan x="737.0" font-weight="700">Gold contact</tspan></text>
 <text x="737.0" y="337" font-size="12" fill="#6b6b6b">on the small board</text>
 <text x="715.0" y="359" font-size="12" fill="#6b6b6b"></text>
-<text x="715.0" y="377" font-size="12" fill="#6b6b6b">Check the back closes without</text>
-<text x="715.0" y="395" font-size="12" fill="#6b6b6b">pressing on the cell.</text>
-<text x="715.0" y="413" font-size="12" fill="#6b6b6b"></text>
-<text x="715.0" y="431" font-size="12" fill="#6b6b6b">The new cell's plug is too big for</text>
-<text x="715.0" y="449" font-size="12" fill="#6b6b6b">the socket: move the original plug</text>
-<text x="715.0" y="467" font-size="12" fill="#6b6b6b">onto it, red to the + side.</text>
+<text x="715.0" y="377" font-size="12" fill="#6b6b6b">Remove the ribs inside the back</text>
+<text x="715.0" y="395" font-size="12" fill="#6b6b6b">cover over the cell so the back</text>
+<text x="715.0" y="413" font-size="12" fill="#6b6b6b">closes without pressing on it.</text>
+<text x="715.0" y="431" font-size="12" fill="#6b6b6b"></text>
+<text x="715.0" y="449" font-size="12" fill="#6b6b6b">The new cell's plug is too big for</text>
+<text x="715.0" y="467" font-size="12" fill="#6b6b6b">the socket: move the original plug</text>
+<text x="715.0" y="485" font-size="12" fill="#6b6b6b">onto it, red to the + side.</text>
 </svg>

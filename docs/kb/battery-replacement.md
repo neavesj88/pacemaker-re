@@ -3,7 +3,7 @@ id: battery-replacement
 title: Replacing the battery
 topic: Firmware and hardware
 order: 5
-keywords: battery, replace battery, lipo, lithium polymer, 3.7 v, 1600 mah, 103048, hxjnldc, 1100 mah, lpd 723048, connector, jst ph, charge, protection board, short battery life, opening the case, solder, polarity, multimeter, safety, swollen
+keywords: battery, replace battery, lipo, lithium polymer, 3.7 v, 1600 mah, 103048, hxjnldc, 1100 mah, pr-723048, 723048, lpd 723048, back cover ribs, pigtail, reversed polarity, connector, jst ph, charge, protection board, short battery life, opening the case, solder, polarity, multimeter, safety, swollen
 summary: Replace the Pacemaker's lithium-polymer cell with a 103048 1600 mAh cell: size and plug checks, polarity test, and step-by-step fitting.
 ---
 
@@ -17,7 +17,7 @@ The Pacemaker holds one lithium-polymer cell. This guide fits an HXJNLDC 103048 
 
 | Item | Original cell | Replacement |
 |---|---|---|
-| Model | LPD 723048 (closest datasheet match) | HXJNLDC 103048 |
+| Model | PR-723048 (printed on the cell) | HXJNLDC 103048 |
 | Voltage | 3.7 V nominal, 4.2 V full | 3.7 V nominal, 4.2 V full |
 | Capacity | About 1100 mAh | 1600 mAh (5.92 Wh) |
 | Size | 48 x 30 x 7.2 mm | 48.5 x 30 x 10 mm |
@@ -39,7 +39,7 @@ Other cells reported to fit:
 
 ![The battery bay and the two cells compared](images/battery-fit.svg)
 
-**Thickness.** The new cell is 10 mm thick, about 2.8 mm more than the original 7.2 mm. Check the bay depth with the case open before you commit: the cell must clear the board connector, the hard-drive locating stays and the two moulded plastic feet, and the back must close without pressing on the cell.
+**Thickness.** The new cell is 10 mm thick, about 2.8 mm more than the original 7.2 mm. A row of moulded plastic ribs runs across the inside of the back cover, over the cell: remove them flush with the cover so the back closes without pressing on the cell. The cell must also clear the board connector, the hard-drive locating stays and the two moulded plastic feet.
 
 **Plug.** The original cell plugs into a small white 2-pin socket at the edge of the board, next to the cell, with **+** printed on the board beside it (see the drawing). The HXJNLDC 103048's plug is about twice that size and does not fit.
 
@@ -49,7 +49,7 @@ Move the original plug onto the new cell (it fits the socket and keeps the polar
 2. Cut the new cell's plug off, one wire at a time.
 3. Join red to red and black to black, one wire at a time: solder, then cover with heat-shrink before starting the next.
 
-To keep the old cell whole instead, buy a 2-pin pigtail of the socket's series. Measure the distance between the centres of the old plug's two pins:
+Or splice on a 2-pin pigtail of the socket's series. Kit pigtails are often wired the opposite way round to this board: check against the old plug before connecting. Measure the distance between the centres of the old plug's two pins:
 
 | Pitch | Series |
 |---|---|
@@ -65,7 +65,7 @@ To keep the old cell whole instead, buy a 2-pin pigtail of the socket's series. 
 
 > Keep the two probe tips apart: bridging the contacts short-circuits the cell.
 
-> Reversed polarity can destroy the power chip or the board.
+> Reversed polarity heats the chip beside the CHARGER marking on the board within seconds, hot enough to burn a finger. Unplug at once; left connected, it can destroy the chip or the board.
 
 ## Replace the battery
 
@@ -77,16 +77,18 @@ Tools: Torx T6 screwdriver, plastic opening tools, multimeter, double-sided foam
 4. Photograph the old cell's plug and leads, and note which socket pin or pad each wire goes to.
 5. Disconnect the old cell: pull its plug straight out of the board socket by the housing, not by the wires.
 6. Lift the old cell out. It may be held by tape; peel it slowly and do not bend or pierce the pouch.
-7. Move the original plug onto the new cell as in Fit and connector, then check the polarity.
-8. Dry-fit the new cell in the bay without connecting it. It must lie flat and clear every part listed under Fit and connector.
-9. Plug into the board socket, red lead on the side marked +.
-10. Secure the cell with double-sided foam tape under it so it cannot slide. Keep the leads clear of the screw posts and ribbon cables.
-11. Close the case: reseat the ZIF ribbon fully, lower the back plate straight down and refit the six screws. If the back bulges or presses on the cell, stop and reopen it.
-12. Charge the cell fully for the first time while watching it: connect the adapter and check every few minutes that the cell and case stay cool. Disconnect it if anything warms noticeably, smells or swells.
-13. Switch on and open **Settings > About > Status**. Check that the battery percentage reads normally.
+7. Remove the moulded ribs across the inside of the back cover, over the cell, flush with the cover.
+8. Move the original plug (or a matching pigtail) onto the new cell as in Fit and connector, then check the polarity.
+9. Dry-fit the new cell in the bay without connecting it. It must lie flat and clear every part listed under Fit and connector.
+10. Plug into the board socket, red lead on the side marked +. Feel the chip beside the CHARGER marking for the first few seconds: if it warms, unplug at once.
+11. Secure the cell with double-sided foam tape under it so it cannot slide. Keep the leads clear of the screw posts and ribbon cables.
+12. Close the case: reseat the ZIF ribbon fully, lower the back plate straight down and refit the six screws. If the back bulges or presses on the cell, stop and reopen it.
+13. Charge the cell fully for the first time while watching it: connect the adapter and check every few minutes that the cell and case stay cool. Disconnect it if anything warms noticeably, smells or swells.
+14. Switch on and open **Settings > About > Status**. Check that the battery percentage reads normally.
 
 ## Troubleshooting
 
+- A chip gets hot right after connecting: reversed polarity. Unplug at once and swap the leads.
 - Shuts down at start: check polarity first. A too-low battery voltage also forces shutdown.
 - If "hard drive needs checking" appears, reseat the ZIF ribbon.
 - Does not start with a new cell: run on the mains adapter with no battery fitted.
