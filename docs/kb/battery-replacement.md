@@ -69,6 +69,8 @@ Or splice on a 2-pin pigtail of the socket's series. Kit pigtails are often wire
 
 ## Replace the battery
 
+![The battery socket and the chip that heats if the battery is reversed](images/battery-board.svg)
+
 Tools: Torx T6 screwdriver, plastic opening tools, multimeter, double-sided foam tape, side cutters, soldering iron, solder and heat-shrink (to move the original plug onto the new cell).
 
 1. Back up the library, then switch the Pacemaker off. Unplug the mains adapter and USB cable. See [Power and charging](pm-power-charging.md).
