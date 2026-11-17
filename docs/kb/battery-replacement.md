@@ -65,7 +65,7 @@ Or splice on a 2-pin pigtail of the socket's series. Kit pigtails are often wire
 
 > Keep the two probe tips apart: bridging the contacts short-circuits the cell.
 
-> Reversed polarity heats a chip next to the main processor within seconds, hot enough to burn a finger. Unplug at once; left connected, it can destroy the chip or the board.
+> Reversed polarity heats the Samsung chip beside the main processor (the chip under the dotted sticker) within seconds, hot enough to burn a finger. Unplug at once; left connected, it can destroy the chip or the board.
 
 ## Replace the battery
 
@@ -80,7 +80,7 @@ Tools: Torx T6 screwdriver, plastic opening tools, multimeter, double-sided foam
 7. Remove the moulded ribs across the inside of the back cover, over the cell, flush with the cover.
 8. Move the original plug (or a matching pigtail) onto the new cell as in Fit and connector, then check the polarity.
 9. Dry-fit the new cell in the bay without connecting it. It must lie flat and clear every part listed under Fit and connector.
-10. Plug into the board socket, red lead on the side marked +. Feel the chips next to the main processor for the first few seconds: if it warms, unplug at once.
+10. Plug into the board socket, red lead on the side marked +. Feel the Samsung chip beside the main processor for the first few seconds: if it warms, unplug at once.
 11. Secure the cell with double-sided foam tape under it so it cannot slide. Keep the leads clear of the screw posts and ribbon cables.
 12. Close the case: reseat the ZIF ribbon fully, lower the back plate straight down and refit the six screws. If the back bulges or presses on the cell, stop and reopen it.
 13. Charge the cell fully for the first time while watching it: connect the adapter and check every few minutes that the cell and case stay cool. Disconnect it if anything warms noticeably, smells or swells.
