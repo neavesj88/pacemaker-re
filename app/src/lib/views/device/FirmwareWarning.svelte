@@ -7,7 +7,7 @@
   import { device } from "./device.svelte";
   import { backupStamp, canCopy } from "./firmwareLogic";
 
-  let { fileName, fwVersion, onconfirm, oncancel }: { fileName: string; fwVersion: string; onconfirm: () => void; oncancel: () => void } = $props();
+  let { fileName, fwVersion, same = false, onconfirm, oncancel }: { fileName: string; fwVersion: string; same?: boolean; onconfirm: () => void; oncancel: () => void } = $props();
 
   let backup = $state(false);
   let risk = $state(false);
@@ -21,6 +21,7 @@
 
 <Modal title="Install firmware {fwVersion}?" onclose={oncancel}>
   <p class="muted file">{fileName}</p>
+  {#if same}<p class="muted file">Same number as installed: nothing is flashed.</p>{/if}
 
   <label class="check">
     <input type="checkbox" bind:checked={backup} />

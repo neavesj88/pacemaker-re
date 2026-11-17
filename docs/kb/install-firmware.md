@@ -18,7 +18,7 @@ The app includes a Revival firmware file. A `.pfw` file of your own is also acce
 1. Switch the Pacemaker off and take the storage out (for example a microSD card, see [Upgrading the storage to a microSD card](storage-upgrade.md)).
 2. Put it in a card reader. Press **Rescan** in the app and open the drive.
 3. Go to **Device** and read the **Firmware** card: firmware, included with the app, software and bootloader numbers.
-4. To install the included firmware, press **Update to** followed by its number (shown when it is newer than the one on the Pacemaker). For a file of your own, press **Install firmware...** and choose the `.pfw` file.
+4. To install the included firmware, press **Update to** followed by its number (see Update to the included firmware below). For a file of your own, press **Install firmware...** and choose the `.pfw` file.
 5. For your own file, read the check: file name, size, numbers, checksum result and the number installed now. If it lists problems there is no Copy button. Press **Copy to device**.
 6. For any Revival firmware, including the included one, a warning follows: tick both boxes (verified backup, install at your own risk), then press **Copy firmware**.
 7. In the **Waiting on the device** box:
@@ -34,7 +34,15 @@ With the Pacemaker docked over USB, follow the same steps and unplug USB before 
 
 ## Update to the included firmware
 
-**Update to** appears with the line "Update available. Settings reset after updating." only when the included number is higher than the one on the Pacemaker. A file that cannot be installed shows its problems instead of the warning.
+The Firmware card always has a button for the included file:
+
+| Pacemaker has | Button |
+|---|---|
+| A lower number | **Update to** followed by the number, with "Update available. Settings reset after updating." |
+| The same number | **Firmware warning...** (shows the warning; copying changes nothing) |
+| A higher or unreadable number | **Install** followed by the number |
+
+A file that cannot be installed shows its problems instead of the warning.
 
 | Setting | Where | Default |
 |---|---|---|

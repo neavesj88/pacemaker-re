@@ -16,7 +16,7 @@
   import { device } from "./device.svelte";
   import JobProgress from "./JobProgress.svelte";
   import { firmwareOffer } from "./firmware.svelte";
-  import { isRevivalFirmware, offerUpdate, recoveryButton, recoveryState } from "./firmwareLogic";
+  import { bundledLabel, fwNumber, isRevivalFirmware, offerUpdate, recoveryButton, recoveryState } from "./firmwareLogic";
   import FirmwareWarning from "./FirmwareWarning.svelte";
   import HelpLink from "../help/HelpLink.svelte";
   import { bytes } from "./format";
@@ -135,14 +135,14 @@
     <p class="update">Update available. Settings reset after updating.</p>
   {/if}
   <div class="actions">
-    {#if offered && bundled}
+    {#if bundled}
       <Button
-        variant="primary"
+        variant={offered ? "primary" : undefined}
         disabled={inspecting || device.blocked || !session.library}
         title={jobs.busy ? "Another job is still running" : undefined}
         onclick={updateBundled}
       >
-        Update to {bundled.fw_version}
+        {bundledLabel(bundled.fw_version, fw?.fw_version, offered)}
       </Button>
     {/if}
     <Button
@@ -240,7 +240,7 @@
 
 {#if warn}
   {@const w = warn}
-  <FirmwareWarning fileName={w.info.file_name} fwVersion={w.info.fw_version} onconfirm={() => install(w)} oncancel={() => (warn = null)} />
+  <FirmwareWarning fileName={w.info.file_name} fwVersion={w.info.fw_version} same={fwNumber(w.info.fw_version) !== null && fwNumber(w.info.fw_version) === fwNumber(fw?.fw_version)} onconfirm={() => install(w)} oncancel={() => (warn = null)} />
 {/if}
 
 <style>
