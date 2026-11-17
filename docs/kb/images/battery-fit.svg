@@ -148,7 +148,7 @@
 <text x="715.0" y="377" font-size="12" fill="#6b6b6b">Check the back closes without</text>
 <text x="715.0" y="395" font-size="12" fill="#6b6b6b">pressing on the cell.</text>
 <text x="715.0" y="413" font-size="12" fill="#6b6b6b"></text>
-<text x="715.0" y="431" font-size="12" fill="#6b6b6b">2-pin plug: measure the pitch</text>
-<text x="715.0" y="449" font-size="12" fill="#6b6b6b">(PH 2.0 / ZH 1.5 / SH 1.0 mm)</text>
-<text x="715.0" y="467" font-size="12" fill="#6b6b6b">and the polarity</text>
+<text x="715.0" y="431" font-size="12" fill="#6b6b6b">The new cell's plug is too big for</text>
+<text x="715.0" y="449" font-size="12" fill="#6b6b6b">the socket: move the original plug</text>
+<text x="715.0" y="467" font-size="12" fill="#6b6b6b">onto it, red to the + side.</text>
 </svg>

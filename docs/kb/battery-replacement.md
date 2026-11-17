@@ -41,20 +41,21 @@ Other cells reported to fit:
 
 **Thickness.** The new cell is 10 mm thick, about 2.8 mm more than the original 7.2 mm. Check the bay depth with the case open before you commit: the cell must clear the board connector, the hard-drive locating stays and the two moulded plastic feet, and the back must close without pressing on the cell.
 
-**Plug.** The listing most likely describes a JST PH plug, but the same maker sells other pitches, so measure the plug you received. Measure the distance between the centres of the two pins:
+**Plug.** The original cell plugs into a small white 2-pin socket at the edge of the board, next to the cell, with **+** printed on the board beside it (see the drawing). The HXJNLDC 103048's plug is about twice that size and does not fit.
+
+Move the original plug onto the new cell (it fits the socket and keeps the polarity):
+
+1. Cut the old cell's leads one at a time, as close to the old cell as possible, so the plug keeps the most wire.
+2. Cut the new cell's plug off, one wire at a time.
+3. Join red to red and black to black, one wire at a time: solder, then cover with heat-shrink before starting the next.
+
+To keep the old cell whole instead, buy a 2-pin pigtail of the socket's series. Measure the distance between the centres of the old plug's two pins:
 
 | Pitch | Series |
 |---|---|
-| 2.0 mm | JST PH (most likely) |
-| 1.5 mm | JST ZH |
 | 1.0 mm | JST SH |
-
-The original cell plugs into a small white 2-pin socket at the edge of the board, next to the cell (see the drawing). Its series and pitch are not printed: measure the old plug the same way and compare.
-
-If the plug does not match the board:
-
-- Re-pin: slide the crimped contacts out of the white housing and push them into a housing of the right series.
-- Or cut the plug off and solder the leads to the board plug's wires, one wire at a time, and cover each joint with heat-shrink.
+| 1.25 mm | Molex PicoBlade or JST GH |
+| 1.5 mm | JST ZH |
 
 **Polarity.** Red is usually positive and black negative, but generic plugs are sometimes wired the other way round. Check with a multimeter before connecting:
 
@@ -68,7 +69,7 @@ If the plug does not match the board:
 
 ## Replace the battery
 
-Tools: Torx T6 screwdriver, plastic opening tools, multimeter, double-sided foam tape, side cutters and soldering iron with heat-shrink (only if the plug must be changed).
+Tools: Torx T6 screwdriver, plastic opening tools, multimeter, double-sided foam tape, side cutters, soldering iron, solder and heat-shrink (to move the original plug onto the new cell).
 
 1. Back up the library, then switch the Pacemaker off. Unplug the mains adapter and USB cable. See [Power and charging](pm-power-charging.md).
 2. Remove the six Torx T6 screws from the back.
@@ -76,9 +77,9 @@ Tools: Torx T6 screwdriver, plastic opening tools, multimeter, double-sided foam
 4. Photograph the old cell's plug and leads, and note which socket pin or pad each wire goes to.
 5. Disconnect the old cell: pull its plug straight out of the board socket by the housing, not by the wires.
 6. Lift the old cell out. It may be held by tape; peel it slowly and do not bend or pierce the pouch.
-7. Check the new cell's polarity and plug as in Fit and connector. Change the plug only if it does not match.
+7. Move the original plug onto the new cell as in Fit and connector, then check the polarity.
 8. Dry-fit the new cell in the bay without connecting it. It must lie flat and clear every part listed under Fit and connector.
-9. Plug into the board socket. For a soldered board, solder the new red lead to the + pad and the black lead to the - pad, one wire at a time, and cover each joint with heat-shrink.
+9. Plug into the board socket, red lead on the side marked +.
 10. Secure the cell with double-sided foam tape under it so it cannot slide. Keep the leads clear of the screw posts and ribbon cables.
 11. Close the case: reseat the ZIF ribbon fully, lower the back plate straight down and refit the six screws. If the back bulges or presses on the cell, stop and reopen it.
 12. Charge the cell fully for the first time while watching it: connect the adapter and check every few minutes that the cell and case stay cool. Disconnect it if anything warms noticeably, smells or swells.

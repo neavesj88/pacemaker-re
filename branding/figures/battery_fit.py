@@ -155,9 +155,9 @@ def build():
     f.note("Check the back closes without")
     f.note("pressing on the cell.")
     f.note("")
-    f.note("2-pin plug: measure the pitch")
-    f.note("(PH 2.0 / ZH 1.5 / SH 1.0 mm)")
-    f.note("and the polarity")
+    f.note("The new cell's plug is too big for")
+    f.note("the socket: move the original plug")
+    f.note("onto it, red to the + side.")
     return f
 
 
