@@ -65,7 +65,7 @@ Or splice on a 2-pin pigtail of the socket's series. Kit pigtails are often wire
 
 > Keep the two probe tips apart: bridging the contacts short-circuits the cell.
 
-> Reversed polarity heats the Samsung chip beside the main processor (the chip under the dotted sticker) within seconds, hot enough to burn a finger. Unplug at once; left connected, it can destroy the chip or the board.
+> Reversed polarity heats the Samsung chip beside the main processor (the processor is the chip with the dotted sticker) within seconds, hot enough to burn a finger. Unplug at once; left connected, it can destroy the chip or the board.
 
 ## Replace the battery
 
