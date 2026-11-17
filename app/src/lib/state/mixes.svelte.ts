@@ -34,7 +34,7 @@ import { renderMixPreview, type PreviewGains } from "$lib/api/export";
 import { tempoPrefs } from "$lib/views/mixes/tempoPrefs.svelte";
 import { snapPrefs } from "$lib/views/mixes/snapPrefs.svelte";
 import { recipePrefs } from "$lib/views/mixes/recipePrefs.svelte";
-import { followTransitions } from "./transitionFollow";
+import { followTransitions, pruneOrphans } from "./transitionFollow";
 import { snapModeOf } from "./snapPrefs";
 import { sections } from "./sections.svelte";
 import { session } from "./session.svelte";
@@ -283,13 +283,37 @@ class Mixes {
     this.#groupAt = now;
     this.doc = after;
     this.dirty = true;
+    // a one-off edit settles now; a gesture (a drag) settles when it ends, so it can pass a gap and come back
+    if (opts.group) this.#gestureEdited = true;
+    else this.#pruneOrphans();
     this.#syncDepth();
     this.#scheduleCheck();
+  }
+
+  /** A grouped edit (a drag) happened since the last endGesture. */
+  #gestureEdited = false;
+
+  /** Crossfades whose clips no longer share audio go, with their tools, inside the undo step that
+   * pulled the clips apart (so Ctrl+Z brings them back), and a toast names them. */
+  #pruneOrphans() {
+    const doc = this.doc;
+    const base = this.#undo[this.#undo.length - 1]?.doc;
+    if (!doc || !base) return;
+    const r = pruneOrphans(base, doc);
+    if (r.doc === doc) return;
+    this.doc = r.doc;
+    toast.show(r.removed.length === 1 ? `Removed ${r.removed[0]}: its clips no longer overlap. Ctrl+Z restores.` : `Removed ${r.removed.length} crossfades whose clips no longer overlap. Ctrl+Z restores.`, "info", {
+      details: r.removed.length > 1 ? r.removed.join("\n") : undefined,
+    });
   }
 
   /** Ends the current gesture: the next edit starts a new undo step even in the same group. */
   endGesture() {
     this.#group = "";
+    if (!this.#gestureEdited) return;
+    this.#gestureEdited = false;
+    this.#pruneOrphans();
+    this.#scheduleCheck();
   }
 
   undo() {

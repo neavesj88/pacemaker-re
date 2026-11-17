@@ -2118,6 +2118,28 @@ test("follow: no overlap keeps everything, dragging back restores it exactly, th
   assert.deepEqual(eqOf(viaEarly, "b").map((p) => [p.start, p.length]), eqOf(direct, "b").map((p) => [p.start, p.length]));
 });
 
+test("prune: clips pulled apart lose their crossfade and its tools; overlapping ones and other tools stay", () => {
+  const d = followDoc(48);
+  const toolsOf = (x, id) => x.clips.find((c) => c.id === id).processes.filter((p) => p.kind === "tool").length;
+  assert.ok(toolsOf(d, "a") > 0 && toolsOf(d, "b") > 0, "the recipe placed tools on both clips");
+  // still overlapping: nothing to prune, the same document comes back
+  const near = TF.followTransitions(d, E.moveClip(d, "b", 40 * BAR), "follow");
+  assert.equal(TF.pruneOrphans(d, near).doc, near);
+  // pulled apart: the fade and every tool it placed go, with a name for the toast
+  const apart = TF.followTransitions(d, E.moveClip(d, "b", 80 * BAR), "follow");
+  const r = TF.pruneOrphans(d, apart);
+  assert.equal(r.doc.transitions.length, 0);
+  assert.equal(toolsOf(r.doc, "a"), 0);
+  assert.equal(toolsOf(r.doc, "b"), 0);
+  assert.equal(r.removed.length, 1);
+  assert.match(r.removed[0], /crossfade/);
+  // a tool of the user's away from the fade stays on its clip
+  const mine = E.addProcess(d, "a", E.newTool("Reverb", 2 * BAR, BAR, "mine"));
+  const apart2 = TF.followTransitions(mine, E.moveClip(mine, "b", 80 * BAR), "follow");
+  const kept = TF.pruneOrphans(mine, apart2).doc.clips.find((c) => c.id === "a").processes.map((p) => p.id);
+  assert.deepEqual(kept, ["mine"]);
+});
+
 test("follow: later frames of a merged step that edit a tool or the fade itself are kept, not rebuilt from the step's start", () => {
   const d = followDoc(48);
   const [eq] = eqOf(d, "b");

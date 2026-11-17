@@ -43,6 +43,58 @@ const touched = (a: TransitionDoc, b: TransitionDoc) => !samePos(a.start, b.star
 
 const beatOf = (c: Clip, at: number) => (60 * SR) / Math.max(1, effectiveBpm(c, Math.max(0, at - c.start)));
 
+/** The tools a crossfade placed: on its two clips, inside its window, touching an edge of it (every
+ * tool a recipe makes does), plus the run of loops of a loop recipe on the outgoing clip. `claimed`
+ * keeps a tool from belonging to two crossfades. */
+function membersOf(f: NonNullable<ReturnType<typeof effectiveFade>>, claimed: Set<string>, keepLoops = true) {
+  const beat0 = beatOf(f.to, f.start);
+  const w0 = { start: f.start, end: f.start + f.length };
+  const members: { clip: Clip; p: ToolDoc }[] = [];
+  for (const c of [f.from, f.to]) {
+    for (const p of c.processes) {
+      if (p.kind !== "tool" || claimed.has(p.id)) continue;
+      const s = c.start + p.start;
+      const e = s + p.length;
+      if (s >= w0.start - beat0 && e <= w0.end + beat0 && (Math.abs(s - w0.start) <= beat0 || Math.abs(e - w0.end) <= beat0)) {
+        members.push({ clip: c, p });
+        claimed.add(p.id);
+      }
+    }
+  }
+  const loops = keepLoops ? loopRun(f.from, w0, beat0).filter((p) => !claimed.has(p.id)) : [];
+  for (const p of loops) claimed.add(p.id);
+  return { members, loops, beat0, w0 };
+}
+
+/**
+ * Crossfades left with nothing to join: their two clips no longer share any audio (the clips were
+ * pulled apart, or one was trimmed or moved away). Each such crossfade is removed from `doc`, with
+ * the tools it placed (worked out from `base`, the document the undo step began from, where the
+ * crossfade still sat on its clips). Called when a gesture ends or a one-off edit lands, so a drag
+ * can still pass through a gap and come back; Undo brings it all back. Returns `doc` itself when
+ * nothing is orphaned, and the names of what went.
+ */
+export function pruneOrphans(base: MixDoc, doc: MixDoc): { doc: MixDoc; removed: string[] } {
+  const orphans = doc.transitions.filter((t) => !effectiveFade(doc, t));
+  if (orphans.length === 0) return { doc, removed: [] };
+  const claimed = new Set<string>();
+  const drop = new Set<string>();
+  const removed: string[] = [];
+  for (const t of orphans) {
+    const t0 = base.transitions.find((x) => x.id === t.id);
+    const f0 = t0 ? effectiveFade(base, t0) : null;
+    if (f0) {
+      const { members, loops } = membersOf(f0, claimed);
+      for (const { p } of members) drop.add(p.id);
+      for (const p of loops) drop.add(p.id);
+      removed.push(`the crossfade from "${f0.from.clipName || "a clip"}" into "${f0.to.clipName || "a clip"}"` + (members.length + loops.length > 0 ? ` and its ${members.length + loops.length} tool${members.length + loops.length === 1 ? "" : "s"}` : ""));
+    } else removed.push(`the crossfade "${t.name}"`);
+  }
+  const gone = new Set(orphans.map((t) => t.id));
+  const clips = doc.clips.map((c) => (c.processes.some((p) => drop.has(p.id)) ? { ...c, processes: c.processes.filter((p) => !drop.has(p.id)) } : c));
+  return { doc: refresh({ ...doc, clips, transitions: doc.transitions.filter((t) => !gone.has(t.id)) }), removed };
+}
+
 /** `after` (the document `fn` produced from `before`) with the crossfades whose clips moved since
  * `base` re-fitted, and their tools with them. `base` is the document the current undo step began
  * from (`before` when the edit starts a new step). "stay" and "nothing moved" return `after` itself. */
@@ -63,26 +115,10 @@ export function followTransitions(base: MixDoc, after: MixDoc, mode: OnMove, bef
     const to1 = clipOf(after, f.to.id);
     if (!from1 || !to1) continue;
 
-    // the tools this transition placed: on its two clips, inside its window, touching an edge of it
-    const beat0 = beatOf(f.to, f.start);
+    // the tools this transition placed, and the loops of a loop recipe (outgoing clip only; not when
+    // its tempo changed, see the header)
+    const { members, loops: loopMembers, beat0, w0 } = membersOf(f, claimed, JSON.stringify(f.from.tempo) === JSON.stringify(from1.tempo));
     const bar0 = beat0 * BEATS_PER_BAR;
-    const w0 = { start: f.start, end: f.start + f.length };
-    const members: { clip: Clip; p: ToolDoc }[] = [];
-    for (const c of [f.from, f.to]) {
-      for (const p of c.processes) {
-        if (p.kind !== "tool" || claimed.has(p.id)) continue;
-        const s = c.start + p.start;
-        const e = s + p.length;
-        if (s >= w0.start - beat0 && e <= w0.end + beat0 && (Math.abs(s - w0.start) <= beat0 || Math.abs(e - w0.end) <= beat0)) {
-          members.push({ clip: c, p });
-          claimed.add(p.id);
-        }
-      }
-    }
-
-    // the loops of a loop recipe (outgoing clip only; not when its tempo changed, see the header)
-    const loopMembers = JSON.stringify(f.from.tempo) === JSON.stringify(from1.tempo) ? loopRun(f.from, w0, beat0).filter((p) => !claimed.has(p.id)) : [];
-    for (const p of loopMembers) claimed.add(p.id);
 
     // only an edit that moved, trimmed or retimed one of its clips re-fits it. Compared with the
     // previous frame, not with `base`: a merged step that edits a tool, an envelope or the fade
