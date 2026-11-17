@@ -80,7 +80,7 @@ There is no length cap: the string is copied whole (`strlen`) and drawn.
 (`CharacterFunctions::copy`, 0x6c5e18, is literally a jump to `mbstowcs`). The program never calls
 `setlocale` to set a locale (the only call, 0x7f54b8, is the query `setlocale(0, NULL)`), so it runs in the
 "C" locale and **bytes >= 0x80 are not decodable**: the Legal text, the model string and the URL must be
-**pure ASCII**. (`legal.txt` is: 2909 bytes, 46 LF, no CR, no byte above 0x7e.) The `wchar_t*` strings (`Pacemaker Player`,
+**pure ASCII**. (`legal.txt` is: 1333 bytes, 22 LF, no CR, no byte above 0x7e.) The `wchar_t*` strings (`Pacemaker Player`,
 `Tonium;Device;`) are 4-byte-per-char and need 4-byte alignment.
 
 Lang files are different: `is::loadLanguageFileInternal` (0x388330) reads lines with `strtol` for the id and
@@ -118,14 +118,14 @@ New block layout inside the 13156-byte region 0x844b90..0x847ef4 (zero everythin
 
 | what | file offset | VA | bytes |
 |---|---|---|---|
-| Legal text = `device/about/legal.txt` verbatim + NUL | 0x844b90 | 0x84cb90 | 2909 + 1 (variable length; the model and URL slots sit at the end of the freed block) |
+| Legal text = `device/about/legal.txt` verbatim + NUL | 0x844b90 | 0x84cb90 | 1333 + 1 (variable length; the model and URL slots sit at the end of the freed block) |
 | `Pacemaker Revival` + NUL | 0x847e00 | 0x84fe00 | 18 |
 | `github.com/neavesj88/pacemaker-re` + NUL | 0x847e20 | 0x84fe20 | 34 (ends 0x847e42) |
 | zero fill to 0x847ef4 | 0x845726 | | 10 190 free |
 
 | # | file | file offset | old | new | why safe |
 |---|---|---|---|---|---|
-| 1 | pmplayer | 0x844b90..0x847ef4 | the 13152-byte stock Legal text (sha256 `d2a84f37...c639211`, starts `Pacemaker Legal Notices:`) + 4 NULs | zeros, then the block layout above | The only reference is pool word 0x39c08c = 0x84cb90, which stays valid because the new text starts at the same address. 2910 bytes < 13156. ASCII only, as the C-locale `mbstowcs` needs. Lines are LF-separated and wrapped at 186 px by the existing code. |
+| 1 | pmplayer | 0x844b90..0x847ef4 | the 13152-byte stock Legal text (sha256 `d2a84f37...c639211`, starts `Pacemaker Legal Notices:`) + 4 NULs | zeros, then the block layout above | The only reference is pool word 0x39c08c = 0x84cb90, which stays valid because the new text starts at the same address. 1334 bytes < 13156. ASCII only, as the C-locale `mbstowcs` needs. Lines are LF-separated and wrapped at 186 px by the existing code. |
 | 2 | pmplayer | 0x394088 (VA 0x39c088) | `f4 fe 84 00` (0x84fef4) | `20 fe 84 00` (0x84fe20) | Single user (`SettingString::paint`), consumed as `char*` -> `mbstowcs`, 33 chars fit the 186 px / 0.7 squeeze budget. |
 | 3 | pmplayer | 0x847ef4..0x847f05 | `www.pacemaker.net` + NUL (18 bytes) | 18 zero bytes | Optional hygiene; only after #2, since #2 removes its single reference. The following padding and the next item at 0x847f0c are untouched. |
 | 4 | pmplayer | 0x350874 and 0x350924 (VA 0x358874, 0x358924) | `c8 87 84 00` (0x8487c8, `P211`) | `00 fe 84 00` (0x84fe00) | `PwrSettings` constructors, default model. `char*` -> `juce::String(const char*)`, copied by value. |
@@ -194,7 +194,7 @@ bytes, sha256 `f0fb0f36529734afa337ec5bc8b6d570e9a92f60709132cb8a8aeb196cac8d50`
 
 | # | where | what | applied |
 |---|---|---|---|
-| 1 | pmplayer 0x844b90..0x847f06 | zeroed, then `device/about/legal.txt` + NUL (2910 bytes) at 0x844b90, `Pacemaker Revival\0` at 0x847e00, `github.com/neavesj88/pacemaker-re\0` at 0x847e20 | yes |
+| 1 | pmplayer 0x844b90..0x847f06 | zeroed, then `device/about/legal.txt` + NUL (1334 bytes) at 0x844b90, `Pacemaker Revival\0` at 0x847e00, `github.com/neavesj88/pacemaker-re\0` at 0x847e20 | yes |
 | 2 | pmplayer 0x394088 | `f4 fe 84 00` -> `20 fe 84 00` (Support pane URL) | yes |
 | 3 | pmplayer 0x847ef4 | `www.pacemaker.net\0` zeroed (covered by the block zeroing in #1; the test asserts the string is gone) | yes |
 | 4 | pmplayer 0x350874, 0x350924 | `c8 87 84 00` -> `00 fe 84 00` (PwrSettings default model) | yes |
