@@ -35,7 +35,14 @@
 {/if}
 
 {#if session.library}
-  {#if session.isDetached}
+  {#if session.isDetached && session.removed}
+    <div class="banner warn row" role="alert">
+      <span class="text">
+        {label} · {session.library.root} · removed without Eject. Nothing can be written to it.{session.removed.writing ? ` "${session.removed.writing}" was stopped: run Library health when it is back.` : ""} Plug it back in, or switch library.
+      </span>
+      {#if session.computerOffer?.exists}<Button small onclick={() => session.computerOffer && void session.load(session.computerOffer.path)}>Open this computer's library</Button>{/if}
+    </div>
+  {:else if session.isDetached}
     <div class="banner warn">{label} · {session.library.root} · ejected: safe to unplug. Nothing can be written to it. To keep working, {session.computerOffer?.exists ? "open the library on this computer, " : ""}dock a Pacemaker and press Rescan, or open a folder.</div>
   {:else if session.library.problems.length === 0}
     <div class="banner ok">{label} · {session.library.root} · music.db is {session.isComputer ? "compatible with a Pacemaker" : "device-compatible"}</div>

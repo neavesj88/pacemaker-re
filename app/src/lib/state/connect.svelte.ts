@@ -18,9 +18,10 @@ import {
   type ConnectState,
 } from "./connectLogic";
 import { nav } from "./nav.svelte";
-import { sameRoot } from "./place";
+import { libraryKind, sameRoot } from "./place";
 import { loadPref, savePref } from "./prefStore";
 import { session } from "./session.svelte";
+import { device } from "$lib/views/device/device.svelte";
 
 class Connect {
   /** Ask to open a Pacemaker when one is connected (Settings > Library). */
@@ -62,6 +63,13 @@ class Connect {
       return; // no answer this time: nothing changes, the next check tries again
     }
     session.setVolumes(list);
+    // the open Pacemaker gone without Eject: read-only from now on, a running write is stopped
+    const open = session.attached;
+    if (open && open.kind === "pacemaker" && libraryKind(open.root) === "pacemaker" && !list.some((v) => sameRoot(v, open.root))) {
+      const writing = device.job ? device.job.label : null;
+      if (device.job) device.cancel();
+      session.markRemoved(writing);
+    }
     this.#s = step(this.#s, list, session.attached?.root ?? null, this.ask);
   }
 

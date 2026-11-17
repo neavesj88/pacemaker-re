@@ -14,7 +14,7 @@ import type { Collection, LibraryKind, LibraryView, NeedsAnalysis, Track } from 
 import { allSaveable, unsavedWork, type UnsavedWork } from "./leaveGuard";
 import { LoadSeq, reloadAfter } from "./loadSeq";
 import { nav } from "./nav.svelte";
-import { placeWords, startupRoot } from "./place";
+import { libraryKind, placeWords, sameRoot, startupRoot } from "./place";
 
 const resetHooks: (() => void)[] = [];
 
@@ -105,6 +105,18 @@ class Session {
   /** `lib` was ejected: see `#detached`. */
   markDetached(lib: unknown) {
     this.#detached = lib;
+    this.removed = null;
+  }
+
+  /** The open Pacemaker vanished without Eject (unplugged): the library stays on screen read-only,
+   *  like an ejected one, and the banner says it was removed. `writing` names the write that was
+   *  running then (stopped), so the banner can ask for a health check. */
+  removed = $state<{ writing: string | null } | null>(null);
+
+  markRemoved(writing: string | null) {
+    if (!this.#library || this.isDetached) return;
+    this.#detached = this.#library;
+    this.removed = { writing };
   }
 
   /** The library on this computer as an offer in pickers: null while the settings file is unreadable,
@@ -287,13 +299,21 @@ class Session {
       const view = await openLibrary(root);
       if (!this.#seq.current(ticket)) return;
       this.#library = new OpenLibrary(view);
+      this.removed = null;
       opened = true;
       if (!keepView) {
         nav.go("tracks", {}, true);
         for (const fn of resetHooks) fn();
       }
     } catch (e) {
-      if (this.#seq.current(ticket)) this.error = String(e);
+      if (this.#seq.current(ticket)) {
+        // a Pacemaker picked from a list that was out of date: say so plainly and correct the list
+        const gone = libraryKind(root) === "pacemaker" && !(await listVolumes().catch(() => [] as string[])).some((v) => sameRoot(v, root));
+        if (gone) {
+          this.error = `The Pacemaker at ${root} isn't connected. Plug it in, then choose it again.`;
+          void this.refreshVolumes().catch(() => {});
+        } else this.error = String(e);
+      }
     } finally {
       if (this.#seq.end(ticket)) {
         this.loading = false;
