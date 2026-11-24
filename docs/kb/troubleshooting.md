@@ -42,7 +42,7 @@ Last resort: method 5 (DFU) in [Ways to install firmware](firmware-methods.md).
 ## Slow loading or stutter on an SD card
 
 - Use a genuine UHS U3 card: [Upgrading the storage to a microSD card](storage-upgrade.md).
-- Optional DMA mode needs firmware **180096073 or later**. Off by default.
+- Optional DMA mode needs firmware **180096073 or later**; **180096075** or later runs it at UDMA2 (earlier builds start at UDMA3). Off by default.
 
 ### Enable DMA mode
 
